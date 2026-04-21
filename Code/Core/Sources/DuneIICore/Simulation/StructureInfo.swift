@@ -118,6 +118,12 @@ extension Simulation {
         /// structure. Defaulted so the 18 non-CY rows don't need to
         /// spell it out.
         public let notOnConcrete: Bool
+        /// `ObjectInfo.buildTime`. Units are "game ticks at standard
+        /// buildSpeed = 256" — our `tickConstruction` drains `countDown
+        /// = buildTime << 8` at 256 per tick, so the full build takes
+        /// `buildTime` ticks (~4 seconds for a WINDTRAP at the
+        /// scheduler's 12 Hz cadence).
+        public let buildTime: UInt16
 
         public init(
             hitpoints: UInt16,
@@ -131,6 +137,7 @@ extension Simulation {
             structuresRequired: UInt32,
             upgradeLevelRequired: UInt8,
             sortPriority: UInt16,
+            buildTime: UInt16,
             notOnConcrete: Bool = false
         ) {
             self.hitpoints = hitpoints
@@ -144,6 +151,7 @@ extension Simulation {
             self.structuresRequired = structuresRequired
             self.upgradeLevelRequired = upgradeLevelRequired
             self.sortPriority = sortPriority
+            self.buildTime = buildTime
             self.notOnConcrete = notOnConcrete
         }
 
@@ -159,116 +167,116 @@ extension Simulation {
                           priorityBuild: 0, priorityTarget: 5,
                           availableCampaign: 1,  availableHouse: House.flagAll,
                           structuresRequired: 0, upgradeLevelRequired: 0,
-                          sortPriority: 2),
+                          sortPriority: 2, buildTime: 16),
             // 1 SLAB_2x2
             StructureInfo(hitpoints: 20, buildCredits: 20,  fogUncoverRadius: 1, layout: .s2x2,
                           priorityBuild: 0, priorityTarget: 10,
                           availableCampaign: 4,  availableHouse: House.flagAll,
                           structuresRequired: 0, upgradeLevelRequired: 1,
-                          sortPriority: 4),
+                          sortPriority: 4, buildTime: 16),
             // 2 PALACE
             StructureInfo(hitpoints: 1000, buildCredits: 999, fogUncoverRadius: 5, layout: .s3x3,
                           priorityBuild: 0, priorityTarget: 400,
                           availableCampaign: 8,  availableHouse: House.flagAll,
                           structuresRequired: 1 << 11, upgradeLevelRequired: 0,
-                          sortPriority: 5),
+                          sortPriority: 5, buildTime: 130),
             // 3 LIGHT_VEHICLE (Light Fctry) — needs REFINERY|WINDTRAP
             StructureInfo(hitpoints: 350, buildCredits: 400, fogUncoverRadius: 3, layout: .s2x2,
                           priorityBuild: 0, priorityTarget: 200,
                           availableCampaign: 3,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 12) | (1 << 9), upgradeLevelRequired: 0,
-                          sortPriority: 14),
+                          sortPriority: 14, buildTime: 96),
             // 4 HEAVY_VEHICLE (Heavy Fctry) — needs OUTPOST|WINDTRAP|LIGHT_VEHICLE
             StructureInfo(hitpoints: 200, buildCredits: 600, fogUncoverRadius: 3, layout: .s3x2,
                           priorityBuild: 0, priorityTarget: 600,
                           availableCampaign: 4,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 18) | (1 << 9) | (1 << 3), upgradeLevelRequired: 0,
-                          sortPriority: 28),
+                          sortPriority: 28, buildTime: 144),
             // 5 HIGH_TECH (Hi-Tech) — needs OUTPOST|WINDTRAP|LIGHT_VEHICLE
             StructureInfo(hitpoints: 400, buildCredits: 500, fogUncoverRadius: 3, layout: .s3x2,
                           priorityBuild: 0, priorityTarget: 200,
                           availableCampaign: 5,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 18) | (1 << 9) | (1 << 3), upgradeLevelRequired: 0,
-                          sortPriority: 30),
+                          sortPriority: 30, buildTime: 120),
             // 6 HOUSE_OF_IX — needs REFINERY|STARPORT|WINDTRAP
             StructureInfo(hitpoints: 400, buildCredits: 500, fogUncoverRadius: 3, layout: .s2x2,
                           priorityBuild: 0, priorityTarget: 100,
                           availableCampaign: 7,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 12) | (1 << 11) | (1 << 9), upgradeLevelRequired: 0,
-                          sortPriority: 34),
+                          sortPriority: 34, buildTime: 120),
             // 7 WOR_TROOPER (WOR) — needs OUTPOST|BARRACKS|WINDTRAP, no Atreides
             StructureInfo(hitpoints: 400, buildCredits: 400, fogUncoverRadius: 3, layout: .s2x2,
                           priorityBuild: 0, priorityTarget: 175,
                           availableCampaign: 5,  availableHouse: House.flagWorHouses,
                           structuresRequired: (1 << 18) | (1 << 10) | (1 << 9), upgradeLevelRequired: 0,
-                          sortPriority: 20),
+                          sortPriority: 20, buildTime: 104),
             // 8 CONSTRUCTION_YARD — FLAG_STRUCTURE_NEVER + availableCampaign=99
             //   + notOnConcrete=true (the only structure with this flag).
             StructureInfo(hitpoints: 400, buildCredits: 400, fogUncoverRadius: 3, layout: .s2x2,
                           priorityBuild: 0, priorityTarget: 300,
                           availableCampaign: 99, availableHouse: House.flagAll,
                           structuresRequired: flagStructureNever, upgradeLevelRequired: 0,
-                          sortPriority: 0, notOnConcrete: true),
+                          sortPriority: 0, buildTime: 80, notOnConcrete: true),
             // 9 WINDTRAP
             StructureInfo(hitpoints: 200, buildCredits: 300, fogUncoverRadius: 2, layout: .s2x2,
                           priorityBuild: 0, priorityTarget: 300,
                           availableCampaign: 1,  availableHouse: House.flagAll,
                           structuresRequired: 0, upgradeLevelRequired: 0,
-                          sortPriority: 6),
+                          sortPriority: 6, buildTime: 48),
             // 10 BARRACKS — needs OUTPOST|WINDTRAP, no Harkonnen
             StructureInfo(hitpoints: 300, buildCredits: 300, fogUncoverRadius: 2, layout: .s2x2,
                           priorityBuild: 0, priorityTarget: 100,
                           availableCampaign: 2,  availableHouse: House.flagBarracksHouses,
                           structuresRequired: (1 << 18) | (1 << 9), upgradeLevelRequired: 0,
-                          sortPriority: 18),
+                          sortPriority: 18, buildTime: 72),
             // 11 STARPORT — needs REFINERY|WINDTRAP
             StructureInfo(hitpoints: 500, buildCredits: 500, fogUncoverRadius: 6, layout: .s3x3,
                           priorityBuild: 0, priorityTarget: 250,
                           availableCampaign: 6,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 12) | (1 << 9), upgradeLevelRequired: 0,
-                          sortPriority: 32),
+                          sortPriority: 32, buildTime: 120),
             // 12 REFINERY — needs WINDTRAP
             StructureInfo(hitpoints: 450, buildCredits: 400, fogUncoverRadius: 4, layout: .s3x2,
                           priorityBuild: 0, priorityTarget: 300,
                           availableCampaign: 1,  availableHouse: House.flagAll,
                           structuresRequired: 1 << 9, upgradeLevelRequired: 0,
-                          sortPriority: 8),
+                          sortPriority: 8, buildTime: 80),
             // 13 REPAIR — needs OUTPOST|WINDTRAP|LIGHT_VEHICLE
             StructureInfo(hitpoints: 200, buildCredits: 700, fogUncoverRadius: 3, layout: .s3x2,
                           priorityBuild: 0, priorityTarget: 600,
                           availableCampaign: 5,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 18) | (1 << 9) | (1 << 3), upgradeLevelRequired: 0,
-                          sortPriority: 24),
+                          sortPriority: 24, buildTime: 80),
             // 14 WALL — needs OUTPOST|WINDTRAP
             StructureInfo(hitpoints: 50,  buildCredits: 50,  fogUncoverRadius: 1, layout: .s1x1,
                           priorityBuild: 0, priorityTarget: 30,
                           availableCampaign: 4,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 18) | (1 << 9), upgradeLevelRequired: 0,
-                          sortPriority: 16),
+                          sortPriority: 16, buildTime: 40),
             // 15 TURRET — needs OUTPOST|WINDTRAP
             StructureInfo(hitpoints: 200, buildCredits: 125, fogUncoverRadius: 2, layout: .s1x1,
                           priorityBuild: 75, priorityTarget: 150,
                           availableCampaign: 5,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 18) | (1 << 9), upgradeLevelRequired: 0,
-                          sortPriority: 22),
+                          sortPriority: 22, buildTime: 64),
             // 16 ROCKET_TURRET (R-Turret) — needs OUTPOST|WINDTRAP + upgradeLevel 2
             StructureInfo(hitpoints: 200, buildCredits: 250, fogUncoverRadius: 5, layout: .s1x1,
                           priorityBuild: 100, priorityTarget: 75,
                           availableCampaign: 0,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 18) | (1 << 9), upgradeLevelRequired: 2,
-                          sortPriority: 26),
+                          sortPriority: 26, buildTime: 96),
             // 17 SILO — needs REFINERY|WINDTRAP
             StructureInfo(hitpoints: 150, buildCredits: 150, fogUncoverRadius: 2, layout: .s2x2,
                           priorityBuild: 0, priorityTarget: 150,
                           availableCampaign: 2,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 12) | (1 << 9), upgradeLevelRequired: 0,
-                          sortPriority: 12),
+                          sortPriority: 12, buildTime: 48),
             // 18 OUTPOST — needs WINDTRAP
             StructureInfo(hitpoints: 500, buildCredits: 400, fogUncoverRadius: 10, layout: .s2x2,
                           priorityBuild: 0, priorityTarget: 275,
                           availableCampaign: 2,  availableHouse: House.flagAll,
                           structuresRequired: 1 << 9, upgradeLevelRequired: 0,
-                          sortPriority: 10)
+                          sortPriority: 10, buildTime: 80)
         ]
 
         public static func lookup(_ type: UInt8) -> StructureInfo? {

@@ -354,6 +354,72 @@ extension Simulation {
             return -Int16(neededSlabs)
         }
 
+        /// Per-tick countdown decrement used by `tickConstruction`.
+        /// Matches OpenDUNE's `buildSpeed = 256` at standard game
+        /// speed — combined with `countDown = buildTime << 8`, one
+        /// `buildTime` unit drains in one scheduler tick. Slice 4d+
+        /// will scale by house / game-speed factors.
+        public static let defaultBuildSpeed: UInt16 = 256
+
+        /// Port of the post-factory-window tail of `Structure_BuildObject`
+        /// for CONSTRUCTION_YARD yards: flip the yard into `BUSY` with
+        /// `objectType = type` and `countDown = buildTime << 8`.
+        /// Returns `true` on success. Rejects: non-yard slots, yards
+        /// that are already `BUSY`, out-of-range `objectType`, or
+        /// freed / reserved slots.
+        ///
+        /// Deferred vs OpenDUNE (see `StructureConstruction.md` §3):
+        /// - No pre-allocated placeholder / linkedID dance — the
+        ///   `Structure_Create` happens at placement-commit instead.
+        /// - No credit drain.
+        /// - No `onHold` / `Structure_CancelBuild`.
+        /// - No upgrade or starport branches.
+        @discardableResult
+        public static func startConstruction(
+            yardIndex: Int,
+            objectType: UInt8,
+            pool: inout StructurePool
+        ) -> Bool {
+            guard yardIndex >= 0, yardIndex < StructurePool.capacitySoft else { return false }
+            let slot = pool[yardIndex]
+            guard slot.isUsed, slot.isAllocated else { return false }
+            guard slot.type == 8 /* CONSTRUCTION_YARD */ else { return false }
+            guard slot.state != StructureState.busy.rawValue else { return false }
+            guard let info = StructureInfo.lookup(objectType) else { return false }
+
+            var updated = slot
+            updated.objectType = UInt16(objectType)
+            updated.countDown = info.buildTime &<< 8
+            updated.state = StructureState.busy.rawValue
+            pool[yardIndex] = updated
+            return true
+        }
+
+        /// Port of the `countDown` decrement from OpenDUNE's
+        /// `GameLoop_Structure`. For every BUSY yard in the pool's
+        /// `findArray`: subtract `defaultBuildSpeed` from `countDown`;
+        /// when `countDown` would reach zero, clamp + flip `state` to
+        /// `READY`. IDLE / JUSTBUILT / READY slots are untouched.
+        ///
+        /// Deferred: credit drain (per-tick house spend), game-speed
+        /// scaling, and the `Structure_CancelBuild` path.
+        public static func tickConstruction(pool: inout StructurePool) {
+            let step = defaultBuildSpeed
+            for idx in pool.findArray {
+                let slot = pool[idx]
+                guard slot.isUsed, slot.isAllocated else { continue }
+                guard slot.state == StructureState.busy.rawValue else { continue }
+                var updated = slot
+                if updated.countDown > step {
+                    updated.countDown &-= step
+                } else {
+                    updated.countDown = 0
+                    updated.state = StructureState.ready.rawValue
+                }
+                pool[idx] = updated
+            }
+        }
+
         /// Walks the non-reserved structure pool and returns the
         /// houseID of the structure whose footprint covers `(tileX,
         /// tileY)`, or nil when none does. Used by the adjacency gate
