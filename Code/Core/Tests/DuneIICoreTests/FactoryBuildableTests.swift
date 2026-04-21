@@ -596,7 +596,7 @@ struct FactoryBuildableTests {
 
     // MARK: Simulation.Structures.completeConstruction
 
-    @Test("completeConstruction on READY BARRACKS spawns a SOLDIER at factory anchor; yard flips IDLE")
+    @Test("completeConstruction on READY BARRACKS spawns a SOLDIER south of factory; yard flips IDLE")
     func completeBarracksSoldier() {
         var structures = Simulation.StructurePool()
         var units = Simulation.UnitPool()
@@ -620,9 +620,11 @@ struct FactoryBuildableTests {
         if let ui = unitIdx {
             #expect(units[ui].type == SOLDIER)
             #expect(units[ui].houseID == Simulation.House.atreides)
-            // Anchor tile (5, 5) → pos32 (5 * 256 + 128, 5 * 256 + 128).
+            // Slice 5c: spawn tile is south of footprint. BARRACKS is
+            // 2x2 at (5, 5) → spawn tile (5, 7) → pos32 (5*256+128,
+            // 7*256+128) = (1408, 1920).
             #expect(units[ui].positionX == 5 * 256 + 128)
-            #expect(units[ui].positionY == 5 * 256 + 128)
+            #expect(units[ui].positionY == 7 * 256 + 128)
         }
         #expect(structures[0].state == Simulation.StructureState.idle.rawValue)
         #expect(structures[0].objectType == 0xFFFF)
@@ -696,5 +698,126 @@ struct FactoryBuildableTests {
             yardIndex: 0, pool: &structures, unitPool: &units
         )
         #expect(result == nil)
+    }
+
+    // MARK: Slice 5c — cancelConstruction
+
+    @Test("cancelConstruction on BUSY yard → true, state → IDLE, objectType/countDown reset")
+    func cancelBusy() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: BARRACKS,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        var slot = pool[0]
+        slot.state = Simulation.StructureState.busy.rawValue
+        slot.objectType = UInt16(SOLDIER)
+        slot.countDown = 5000
+        pool[0] = slot
+
+        let ok = Simulation.Structures.cancelConstruction(yardIndex: 0, pool: &pool)
+        #expect(ok)
+        #expect(pool[0].state == Simulation.StructureState.idle.rawValue)
+        #expect(pool[0].objectType == 0xFFFF)
+        #expect(pool[0].countDown == 0)
+    }
+
+    @Test("cancelConstruction on READY yard → true, reset (OpenDUNE parity — cancels pre-completed item)")
+    func cancelReady() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: LIGHT_VEHICLE,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 10 * 256, y: 10 * 256),
+            pool: &pool
+        )
+        var slot = pool[0]
+        slot.state = Simulation.StructureState.ready.rawValue
+        slot.objectType = UInt16(TRIKE)
+        slot.countDown = 0
+        pool[0] = slot
+
+        let ok = Simulation.Structures.cancelConstruction(yardIndex: 0, pool: &pool)
+        #expect(ok)
+        #expect(pool[0].state == Simulation.StructureState.idle.rawValue)
+        #expect(pool[0].objectType == 0xFFFF)
+    }
+
+    @Test("cancelConstruction on IDLE yard → false, no mutation")
+    func cancelIdleRejected() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: BARRACKS,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        var slot = pool[0]
+        slot.state = Simulation.StructureState.idle.rawValue
+        pool[0] = slot
+        let before = pool[0]
+
+        let ok = Simulation.Structures.cancelConstruction(yardIndex: 0, pool: &pool)
+        #expect(!ok)
+        #expect(pool[0] == before)
+    }
+
+    // MARK: Slice 5c — factorySpawnTile
+
+    @Test("factorySpawnTile for BARRACKS (2x2) at (5, 5) → (5, 7) south of footprint")
+    func spawnTileBarracks() {
+        let t = Simulation.Structures.factorySpawnTile(
+            yardType: BARRACKS, anchorX: 5, anchorY: 5
+        )
+        #expect(t.x == 5)
+        #expect(t.y == 7)
+    }
+
+    @Test("factorySpawnTile for HEAVY_VEHICLE (3x2) at (10, 10) → (10, 12)")
+    func spawnTileHV() {
+        let t = Simulation.Structures.factorySpawnTile(
+            yardType: HEAVY_VEHICLE, anchorX: 10, anchorY: 10
+        )
+        #expect(t.x == 10)
+        #expect(t.y == 12)
+    }
+
+    @Test("factorySpawnTile fallback to anchor when south is out of bounds")
+    func spawnTileFallback() {
+        // HV (3x2) at (10, 62) → exit y = 64 out of range → anchor.
+        let t = Simulation.Structures.factorySpawnTile(
+            yardType: HEAVY_VEHICLE, anchorX: 10, anchorY: 62
+        )
+        #expect(t.x == 10)
+        #expect(t.y == 62)
+    }
+
+    @Test("completeConstruction spawns unit at factorySpawnTile (south of factory), not anchor")
+    func completeAtSpawnTile() {
+        var structures = Simulation.StructurePool()
+        var units = Simulation.UnitPool()
+        _ = Simulation.Structures.create(
+            type: BARRACKS,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &structures
+        )
+        var slot = structures[0]
+        slot.state = Simulation.StructureState.ready.rawValue
+        slot.objectType = UInt16(SOLDIER)
+        structures[0] = slot
+
+        guard let unitIdx = Simulation.Structures.completeConstruction(
+            yardIndex: 0, pool: &structures, unitPool: &units
+        ) else {
+            Issue.record("completeConstruction returned nil")
+            return
+        }
+        // Anchor = (5, 5), 2x2 footprint → spawn at (5, 7)
+        // → pos32 (5*256+128, 7*256+128) = (1408, 1920).
+        #expect(units[unitIdx].positionX == 5 * 256 + 128)
+        #expect(units[unitIdx].positionY == 7 * 256 + 128)
     }
 }

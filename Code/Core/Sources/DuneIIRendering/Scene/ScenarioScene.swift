@@ -180,6 +180,8 @@ public final class ScenarioScene: SKScene {
             }
         case .commitPlacement(let type, let tileX, let tileY):
             commitPlacement(type: type, tileX: tileX, tileY: tileY)
+        case .cancelConstruction(let type):
+            cancelConstructionOnYard(type: type)
         case .none:
             // Sidebar click on empty row / outside click → fall back to
             // the pre-slice-3 "return to main menu" behaviour, but only
@@ -653,6 +655,24 @@ public final class ScenarioScene: SKScene {
             buildTime: buildTime
         )
         renderSidebar()
+    }
+
+    /// Slice 5c: cancel the BUSY / READY item on the selected yard.
+    /// Credit refund deferred with `House` economy subsystem.
+    private func cancelConstructionOnYard(type: UInt8) {
+        guard let host = scheduler?.host,
+              let yardIdx = buildController.selectedYardIndex
+        else { return }
+        var pool = host.structures
+        let ok = Simulation.Structures.cancelConstruction(
+            yardIndex: yardIdx, pool: &pool
+        )
+        host.structures = pool
+        Log.info(
+            "build-panel: cancel yard=\(yardIdx) type=\(type) ok=\(ok)",
+            tracer: .label("build-panel")
+        )
+        refreshBuildSidebar()
     }
 
     /// Slice 5b-build: flush a READY factory — spawn the queued unit

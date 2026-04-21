@@ -107,15 +107,13 @@ struct BuildPanelTests {
         #expect(action == .enqueue(type: 9))
     }
 
-    @Test("BUSY yard + sidebar click → .none")
+    @Test("BUSY yard + sidebar click on different type → .none (slice-5c cancel-on-queued covered separately)")
     func controllerBusyNoOp() {
         var controller = BuildPanelController()
         controller.refreshAvailableTypes([9, 12])
         controller.refreshYardState(.busy, queuedType: 9, countDown: 6000, buildTime: 48)
-        let action = controller.handle(click: .sidebarSlot(index: 0))
+        let action = controller.handle(click: .sidebarSlot(index: 1))  // type 12 — different
         #expect(action == .none)
-        let action2 = controller.handle(click: .sidebarSlot(index: 1))
-        #expect(action2 == .none)
     }
 
     @Test("READY yard + click on queued type → .enterPlacement")
@@ -128,15 +126,8 @@ struct BuildPanelTests {
         #expect(controller.placementType == 9)
     }
 
-    @Test("READY yard + click on different type → .none (no queue-swap in 4d-ui)")
-    func controllerReadyOtherTypeNoOp() {
-        var controller = BuildPanelController()
-        controller.refreshAvailableTypes([9, 12])
-        controller.refreshYardState(.ready, queuedType: 9, countDown: 0, buildTime: 48)
-        let action = controller.handle(click: .sidebarSlot(index: 1))  // type 12
-        #expect(action == .none)
-        #expect(controller.placementType == nil)
-    }
+    // (Prior slice-4d-ui "READY + different type = no-op" test removed.
+    // Slice 5c replaces that semantics with queue-swap via `.enqueue`.)
 
     @Test("READY + .enterPlacement + map click commits as before")
     func controllerReadyThenCommit() {
@@ -147,6 +138,44 @@ struct BuildPanelTests {
         let action = controller.handle(click: .mapTile(x: 7, y: 7))
         #expect(action == .commitPlacement(type: 9, tileX: 7, tileY: 7))
         #expect(controller.placementType == nil)
+    }
+
+    // MARK: Slice 5c — cancel + queue-swap transitions
+
+    @Test("BUSY + click on queuedType → .cancelConstruction(type:)")
+    func controllerBusyCancels() {
+        var controller = BuildPanelController()
+        controller.refreshAvailableTypes([9, 12])
+        controller.refreshYardState(.busy, queuedType: 9, countDown: 5000, buildTime: 48)
+        let action = controller.handle(click: .sidebarSlot(index: 0))
+        #expect(action == .cancelConstruction(type: 9))
+    }
+
+    @Test("BUSY + click on different type → .none (can't swap during BUSY)")
+    func controllerBusyNoSwap() {
+        var controller = BuildPanelController()
+        controller.refreshAvailableTypes([9, 12])
+        controller.refreshYardState(.busy, queuedType: 9, countDown: 5000, buildTime: 48)
+        let action = controller.handle(click: .sidebarSlot(index: 1))  // type 12
+        #expect(action == .none)
+    }
+
+    @Test("READY + click on different type → .enqueue(type:) — queue-swap")
+    func controllerReadySwaps() {
+        var controller = BuildPanelController()
+        controller.refreshAvailableTypes([9, 12])
+        controller.refreshYardState(.ready, queuedType: 9, countDown: 0, buildTime: 48)
+        let action = controller.handle(click: .sidebarSlot(index: 1))  // type 12
+        #expect(action == .enqueue(type: 12))
+    }
+
+    @Test("READY + click on queued type still enters placement (unchanged)")
+    func controllerReadySameTypeStillEntersPlacement() {
+        var controller = BuildPanelController()
+        controller.refreshAvailableTypes([9, 12])
+        controller.refreshYardState(.ready, queuedType: 9, countDown: 0, buildTime: 48)
+        let action = controller.handle(click: .sidebarSlot(index: 0))
+        #expect(action == .enterPlacement(type: 9))
     }
 
     @Test("progress math: countDown == buildTime<<8 → 0.0; countDown == 0 → 1.0; halfway → 0.5")

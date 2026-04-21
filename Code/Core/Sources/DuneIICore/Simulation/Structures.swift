@@ -484,6 +484,55 @@ extension Simulation {
             return true
         }
 
+        /// Slice 5c: tile a factory should spawn its produced unit at.
+        /// Heuristic: the tile directly south of the footprint's
+        /// south-west corner (`anchorY + height`). On out-of-bounds
+        /// falls back to the anchor, which visually overlaps the
+        /// building — acceptable for corner-of-map factories (rare).
+        /// Unknown yard type falls back to the anchor too.
+        ///
+        /// Deliberate approximation of OpenDUNE's richer rally logic
+        /// (collision-aware exit + player-set rally point); slice 5c
+        /// doesn't yet surface rally-point clicks.
+        public static func factorySpawnTile(
+            yardType: UInt8, anchorX: Int, anchorY: Int
+        ) -> (x: Int, y: Int) {
+            guard let info = StructureInfo.lookup(yardType) else {
+                return (anchorX, anchorY)
+            }
+            let exitY = anchorY + info.layout.dimensions.height
+            if exitY >= 0, exitY < 64 {
+                return (anchorX, exitY)
+            }
+            return (anchorX, anchorY)
+        }
+
+        /// Slice 5c: cancel a BUSY or READY yard's construction.
+        /// Resets `state` to IDLE, clears `objectType` and `countDown`.
+        /// Returns `false` on IDLE yards / out-of-range / freed slots.
+        ///
+        /// Matches OpenDUNE's `Structure_CancelBuild` for state reset.
+        /// The credit refund (proportional to remaining `buildTime`)
+        /// is deferred with the `House` credits subsystem.
+        @discardableResult
+        public static func cancelConstruction(
+            yardIndex: Int,
+            pool: inout StructurePool
+        ) -> Bool {
+            guard yardIndex >= 0, yardIndex < StructurePool.capacitySoft else { return false }
+            let slot = pool[yardIndex]
+            guard slot.isUsed, slot.isAllocated else { return false }
+            guard slot.state == StructureState.busy.rawValue
+                || slot.state == StructureState.ready.rawValue
+            else { return false }
+            var updated = slot
+            updated.state = StructureState.idle.rawValue
+            updated.objectType = 0xFFFF
+            updated.countDown = 0
+            pool[yardIndex] = updated
+            return true
+        }
+
         /// Slice 5b-build: flushes a READY factory — spawns the
         /// queued unit at the yard's anchor tile and returns the yard
         /// to IDLE. CY completion stays on the click-map-to-place path
@@ -523,9 +572,10 @@ extension Simulation {
 
             let ax = Int(slot.positionX) / 256
             let ay = Int(slot.positionY) / 256
+            let exit = factorySpawnTile(yardType: slot.type, anchorX: ax, anchorY: ay)
             guard let unitIdx = Units.createUnit(
                 type: unitType, houseID: slot.houseID,
-                tileX: ax, tileY: ay, pool: &unitPool
+                tileX: exit.x, tileY: exit.y, pool: &unitPool
             ) else {
                 return nil  // pool full; leave yard READY for retry
             }

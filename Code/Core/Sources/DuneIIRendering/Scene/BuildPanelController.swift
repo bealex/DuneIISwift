@@ -76,6 +76,10 @@ public struct BuildPanelController: Equatable, Sendable {
         /// Commit a placement at the given tile. Scene should call
         /// `Simulation.Structures.create(...)`.
         case commitPlacement(type: UInt8, tileX: Int, tileY: Int)
+        /// Cancel the current BUSY / READY construction. Scene should
+        /// call `Simulation.Structures.cancelConstruction(...)`.
+        /// Slice 5c.
+        case cancelConstruction(type: UInt8)
     }
 
     /// 0.0 at build start, 1.0 at READY. Returns `nil` when either
@@ -116,18 +120,24 @@ public struct BuildPanelController: Equatable, Sendable {
             let type = availableTypes[index]
             switch yardState {
             case .busy:
-                // Re-clicking during construction — no-op for now.
-                // Cancel is a later slice.
+                // Slice 5c: click on the queued type cancels the
+                // current build. Click on a different type during
+                // BUSY is a no-op (no mid-build swap — OpenDUNE
+                // matches this).
+                if let queuedType, type == queuedType {
+                    return .cancelConstruction(type: type)
+                }
                 return .none
             case .ready:
-                // Only committing the queued type enters placement;
-                // a different type would need a queue-swap which
-                // slice 4d-ui deliberately doesn't do.
                 if let queuedType, type == queuedType {
                     placementType = type
                     return .enterPlacement(type: type)
                 }
-                return .none
+                // Slice 5c: READY + different type → queue-swap.
+                // `startConstruction` accepts a non-BUSY yard so
+                // routing through `.enqueue` replaces the queue.
+                placementType = nil
+                return .enqueue(type: type)
             case nil, .idle, .justBuilt, .detect:
                 // Idle (or not-yet-populated) yard → start construction.
                 placementType = nil
