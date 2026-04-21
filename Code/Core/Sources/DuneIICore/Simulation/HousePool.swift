@@ -6,15 +6,33 @@ extension Simulation {
         public var index: UInt8
         /// `0xFFFF` when no starport-linked unit (mirrors OpenDUNE).
         public var starportLinkedID: UInt16
+        /// Spending cash on hand. Drained per tick by BUSY yards
+        /// (slice 6b); refunded on cancel. Seeded from
+        /// `Scenario.HouseLayout.credits` or the save's `PLYR` record.
+        /// Slice 6a.
+        public var credits: UInt16
+        /// Cap on storable credits — sum of refinery + silo capacities.
+        /// Stored so save round-trips survive; live refreshes come
+        /// with the HUD / economy slice.
+        public var creditsStorage: UInt16
+        /// Scenario win-condition target (harvester revenue needed).
+        /// Pure read — never written by the engine.
+        public var creditsQuota: UInt16
 
         public init(
             isUsed: Bool = false,
             index: UInt8 = 0,
-            starportLinkedID: UInt16 = 0
+            starportLinkedID: UInt16 = 0,
+            credits: UInt16 = 0,
+            creditsStorage: UInt16 = 0,
+            creditsQuota: UInt16 = 0
         ) {
             self.isUsed = isUsed
             self.index = index
             self.starportLinkedID = starportLinkedID
+            self.credits = credits
+            self.creditsStorage = creditsStorage
+            self.creditsQuota = creditsQuota
         }
     }
 

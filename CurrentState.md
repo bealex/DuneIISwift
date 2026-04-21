@@ -11,7 +11,11 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**P5 closure candidates — economy / STARPORT / save round-trip / tick-parity harness.** Every build-panel UX gap from slices 1 through 5c is closed: click a yard, queue a build, watch progress, cancel if needed, swap queue on READY, and see the produced unit spawn south of the factory. The remaining P5 work is about systems outside the panel (credits, trade, saves) or verification (tick parity).
+**P5 — slice 6b: credit drain during BUSY + cancel refund.** Slice 6a landed: `Simulation.HouseSlot` now carries `credits` / `creditsStorage` / `creditsQuota`; both `WorldSnapshot` init paths seed them. No drain, no UI, no refund yet.
+
+Slice 6b plan: (a) `Structures.tickConstruction` (or a new per-tick pass) deducts `buildCredits / buildTime` per tick from the owning house's `credits` on each BUSY yard; if the house runs out of cash, construction pauses (state stays BUSY, countDown doesn't tick down). (b) `Structures.cancelConstruction` refunds `(buildTime - remainingTicks) × buildCredits / buildTime` to the house. (c) Extend `Scheduler` to own the `HousePool` (or pass it through) so credit state is reachable from the tick pass. Tests cover the math and the out-of-credits pause. Pure sim; no UI changes.
+
+Slice 6c wires a "Credits: N" label on `ScenarioScene` after 6b lands.
 
 **Visual verification pending** — `swift run duneii` against mission 1 Atreides:
 
@@ -59,10 +63,10 @@ After visual verification, next productive directions:
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → failing test → implement → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **P5 HUD — credits, unit info, minimap.** Per-tick credit drain on BUSY yards, cancel refund, HUD display. Closes the economy gap.
-2. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state.
-3. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal.
-4. **Save round-trip test** — `_SAVE001.DAT` save/load now covers `degrades` / `hitpointsMax` / `upgradeLevel` / `objectType`; fuzz-check the round-trip invariants as sim fields grow.
+1. **P5 slice 6b — credit drain during BUSY + cancel refund.** Per-tick drain; pauses BUSY when house runs out; proportional refund on cancel.
+2. **P5 slice 6c — HUD credits label.** "Credits: N" on `ScenarioScene`, refreshed per tick.
+3. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state.
+4. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal.
 3. **P5 — real HUD** — resource counters, unit info, minimap. Cosmetic but high impact.
 4. **Tick-parity golden harness** — record OpenDUNE for N ticks, replay in our sim, diff pool state. Closes §6 Initial-plan sim-parity goal.
 5. **EMC `BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; running the real script would give proper flight frames + sonic-beam propagation. Cosmetic.
@@ -78,6 +82,7 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-21 — P5 slice 6a: HouseSlot credits plumbing.** `credits` / `creditsStorage` / `creditsQuota` added to `Simulation.HouseSlot`; both `WorldSnapshot` init paths seed from `Scenario.HouseLayout` / `Formats.Save.Players.Slot`. Pure-sim groundwork for 6b's drain + 6c's HUD. 3 new tests. 620 green / 63 suites / zero warnings. Design: `Algorithms/HouseCredits.md`.
 - **2026-04-21 — P5 slice 5c: cancel + queue-swap + rally tile.** `Structures.cancelConstruction` flips BUSY/READY back to IDLE. `Structures.factorySpawnTile` returns south-of-footprint for unit spawn; `completeConstruction` routes through it. Controller gains `.cancelConstruction(type:)` action; BUSY + queued-type cancels; READY + different type queue-swaps via `.enqueue`. 11 new tests. 617 green / 63 suites / zero warnings. Design: `Algorithms/BuildPanelTightening.md`.
 - **2026-04-21 — P5 slice 5b-build: UnitInfo.buildTime + unit spawn on factory completion.** Factory loop closes end-to-end. `UnitInfo.buildTime` 27 rows pinned. `startConstruction` dispatches countdown by yard kind (CY→structure, factory→unit). New `Simulation.Units.createUnit` + `Simulation.Structures.completeConstruction`. Scene routes READY factory clicks to unit spawn. 11 new tests. 607 green / 63 suites / zero warnings. Design: `Algorithms/FactoryUnitSpawn.md`.
 - **2026-04-21 — P5 slice 5b-select+units: factory UI + yard switching.** Click player-owned CY/factory on map → selectedYardIndex switches → sidebar re-populates. Factory rows show unit icons via `UnitSpriteAtlas.texture` + abbreviated labels. `Structures.selectableYardAt` pure helper; `startConstruction` relaxed to accept factories. `UnitInfo.buildableUnitTypes(from:)` helper. READY factory clicks gate placement (unit spawn deferred to 5b-build). 13 new tests. 596 green / 63 suites / zero warnings. Design: `Algorithms/BuildPanelFactoryUI.md`.
@@ -143,7 +148,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **617 tests across 63 suites, all green** as of 2026-04-21 (post-P5-slice-5c). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
+`cd Code/Core && swift test` — **620 tests across 63 suites, all green** as of 2026-04-21 (post-P5-slice-6a). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
 
 ## Open questions / risks (pointers)
 

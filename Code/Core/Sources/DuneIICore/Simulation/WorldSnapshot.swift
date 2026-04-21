@@ -61,12 +61,20 @@ extension Simulation {
             let baseline = Map.Generator.generate(seed: scenario.mapField.seed, resolver: resolver)
 
             var houses = HousePool()
-            for (house, _) in scenario.houses {
+            for (house, layout) in scenario.houses {
                 let idx = Int(house.typeID)
                 guard idx >= 0, idx < HousePool.capacity else { continue }
                 if !houses.slots[idx].isUsed {
                     houses.allocate(at: idx)
                 }
+                // Slice 6a: seed credits + quota from the scenario's
+                // HouseLayout. `creditsStorage` stays 0 — scenarios
+                // don't specify it; derived at runtime from refinery
+                // count.
+                var h = houses[idx]
+                h.credits = UInt16(clamping: layout.credits)
+                h.creditsQuota = UInt16(clamping: layout.quota)
+                houses[idx] = h
             }
 
             Log.info(
@@ -202,6 +210,10 @@ extension Simulation {
                 houses.allocate(at: idx)
                 var h = houses[idx]
                 h.starportLinkedID = slot.starportLinkedID
+                // Slice 6a: plumb credit state from the save record.
+                h.credits = slot.credits
+                h.creditsStorage = slot.creditsStorage
+                h.creditsQuota = slot.creditsQuota
                 houses[idx] = h
             }
 
