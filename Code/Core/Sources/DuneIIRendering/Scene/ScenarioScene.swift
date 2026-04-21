@@ -115,6 +115,9 @@ public final class ScenarioScene: SKScene {
             tickCounter += 1
             syncVisualsFromPool()
             refreshHud()
+            // Progress bar + READY highlight animate at tick cadence
+            // (~12 Hz) — cheap rebuild of a handful of SKNodes.
+            refreshBuildSidebar()
             // Every 60 ticks (≈5 seconds at 12 Hz), sample the first
             // few unit slots so we can see whether position /
             // orientation are actually changing run-over-run.
@@ -134,6 +137,8 @@ public final class ScenarioScene: SKScene {
         let click = classifyClick(at: location)
         let action = buildController.handle(click: click)
         switch action {
+        case .enqueue(let type):
+            enqueueConstruction(type: type)
         case .enterPlacement(let type):
             Log.info(
                 "build-panel: enter placement type=\(type)",
@@ -539,8 +544,10 @@ public final class ScenarioScene: SKScene {
     }
 
     /// Recomputes the buildable bitmask from the selected yard + current
-    /// pool state, updates the controller, and rebuilds sidebar sprites.
-    /// Called once at scene build and after every commit.
+    /// pool state, updates the controller's `availableTypes` and
+    /// `yardState`, and rebuilds sidebar sprites. Called at scene build,
+    /// after every commit, and every scheduler tick so the progress bar
+    /// animates.
     private func refreshBuildSidebar() {
         guard let host = scheduler?.host,
               let yardIdx = buildController.selectedYardIndex,
@@ -548,6 +555,7 @@ public final class ScenarioScene: SKScene {
               host.structures.slots[yardIdx].isUsed
         else {
             buildController.refreshAvailableTypes([])
+            buildController.refreshYardState(nil, queuedType: nil, countDown: nil, buildTime: nil)
             renderSidebar()
             return
         }
@@ -567,7 +575,48 @@ public final class ScenarioScene: SKScene {
         )
         let types = Simulation.StructureInfo.buildableTypesByPriority(from: mask)
         buildController.refreshAvailableTypes(types)
+
+        // Surface the yard's state so the controller branches on it.
+        let state = Simulation.StructureState(rawValue: yard.state)
+        let queued: UInt8?
+        let buildTime: UInt16?
+        if yard.objectType == 0xFFFF {
+            queued = nil
+            buildTime = nil
+        } else if let info = Simulation.StructureInfo.lookup(UInt8(truncatingIfNeeded: yard.objectType)) {
+            queued = UInt8(truncatingIfNeeded: yard.objectType)
+            buildTime = info.buildTime
+        } else {
+            queued = nil
+            buildTime = nil
+        }
+        buildController.refreshYardState(
+            state,
+            queuedType: queued,
+            countDown: yard.countDown,
+            buildTime: buildTime
+        )
         renderSidebar()
+    }
+
+    /// Slice 4d-ui: queue a construction on the currently-selected
+    /// yard. Called from the `.enqueue` action. Delegates to the sim
+    /// layer; refreshes the sidebar so the progress bar appears
+    /// immediately.
+    private func enqueueConstruction(type: UInt8) {
+        guard let host = scheduler?.host,
+              let yardIdx = buildController.selectedYardIndex
+        else { return }
+        var pool = host.structures
+        let ok = Simulation.Structures.startConstruction(
+            yardIndex: yardIdx, objectType: type, pool: &pool
+        )
+        host.structures = pool
+        Log.info(
+            "build-panel: enqueue type=\(type) yard=\(yardIdx) ok=\(ok)",
+            tracer: .label("build-panel")
+        )
+        refreshBuildSidebar()
     }
 
     /// Tears down + rebuilds the sidebar node stack. Each slot is a
@@ -613,12 +662,38 @@ public final class ScenarioScene: SKScene {
             )
             let slotNode = SKShapeNode(rect: slotFrame)
             slotNode.fillColor = NSColor(calibratedWhite: 0.18, alpha: 1.0)
-            let isSelected = (buildController.placementType == type)
-            slotNode.strokeColor = isSelected
-                ? NSColor(calibratedRed: 1, green: 0.85, blue: 0.2, alpha: 1)
-                : NSColor(calibratedWhite: 0.35, alpha: 1.0)
-            slotNode.lineWidth = isSelected ? 2 : 1
+            // Highlight priority: READY > placement-picked > idle.
+            let isQueuedReady = (buildController.yardState == .ready
+                                 && buildController.queuedType == type)
+            let isPlacing = (buildController.placementType == type)
+            if isQueuedReady {
+                slotNode.strokeColor = NSColor(calibratedRed: 0.3, green: 1.0, blue: 0.35, alpha: 1)
+                slotNode.lineWidth = 2
+            } else if isPlacing {
+                slotNode.strokeColor = NSColor(calibratedRed: 1, green: 0.85, blue: 0.2, alpha: 1)
+                slotNode.lineWidth = 2
+            } else {
+                slotNode.strokeColor = NSColor(calibratedWhite: 0.35, alpha: 1.0)
+                slotNode.lineWidth = 1
+            }
             container.addChild(slotNode)
+
+            // Progress bar for BUSY construction.
+            if buildController.yardState == .busy,
+               buildController.queuedType == type,
+               let progress = buildController.progress
+            {
+                let fillWidth = slotFrame.width * CGFloat(progress)
+                let bar = SKShapeNode(rect: CGRect(
+                    x: slotFrame.minX,
+                    y: slotFrame.minY,
+                    width: fillWidth,
+                    height: 3
+                ))
+                bar.fillColor = NSColor(calibratedRed: 1.0, green: 0.8, blue: 0.2, alpha: 0.9)
+                bar.strokeColor = .clear
+                container.addChild(bar)
+            }
 
             // Icon — last tile of the iconGroup (fully-built frame).
             if let groupRaw = Simulation.StructureInfo.iconGroupRawValue(for: type),

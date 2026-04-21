@@ -11,22 +11,35 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**P5 kickoff — build panel. Slice 4d-ui: sidebar progress indicator + gate map-click commits on READY.** Slices 1 through 4d-sim all landed. 4d-sim just finished: yards flip BUSY, tick drains `countDown`, flip to READY at zero. Currently the UI ignores these transitions — clicks still instantly place. Slice 4d-ui makes the player actually experience construction.
+**P5 closure — build panel end-to-end. Next: slice 5 (factory/starport buildable case) OR cancel + queue-swap + HP/economy tightening on the existing panel.** All of P5 slice 4 landed in this session. The construction loop is now end-to-end: click an IDLE yard → yard goes BUSY with a progress bar → scheduler drains countdown → yard flips READY with a green highlight → click the READY slot to enter placement → click a valid tile to commit. Validation has bounds, landscape, slab-count, overlap, adjacency, and HP-degradation on placement. The sidebar matches OpenDUNE's factory-window ordering.
 
-Slice 4d-ui plan: (a) `BuildPanelController` gains `selectedYardState: StructureState?` and `queuedType: UInt8?` fields, surfaced to the scene; the controller's existing `handle(click:)` gets a state parameter so sidebar clicks on an IDLE yard call `startConstruction` (emit `.enqueue(type:)` action), sidebar clicks on a BUSY yard are no-ops, sidebar clicks on a READY yard re-commit the objectType as the "ready slot". Map-clicks are only valid when the yard is READY. (b) Sidebar renders a progress bar (`SKShapeNode` fill width = `(buildTime*256 - countDown) / (buildTime*256)`) on the slot whose type matches `yard.objectType`. READY slot gets a distinct highlight. (c) `ScenarioScene.mouseDown` re-routes through the extended controller; `refreshBuildSidebar` reads the selected yard's live state + `objectType` each tick.
+**Before continuing, user should run `swift run duneii` for visual verification.** Mission-1 Atreides expected behaviour:
 
-Slice 4d-ui is mostly UI — the simulation layer is already done. Manual verification via `swift run duneii` after slice 4d-ui lands.
+1. Launch, get to scenario scene.
+2. Sidebar on right lists WINDTRAP + SLAB_1x1 (maybe REFINERY depending on starting windtrap).
+3. Click WINDTRAP row — slot border was grey, now slot turns BUSY (grey with yellow progress bar filling left-to-right over ~4 s).
+4. Wait for the progress bar to fill. Slot border turns green.
+5. Click the slot again to enter placement mode (slot border turns yellow).
+6. Click an empty rock tile adjacent to the construction yard — log `commit type=9 tile=(X,Y) slot=N`. Structure outline appears.
+7. Sidebar refreshes. If the WINDTRAP unlocks REFINERY, a new row appears.
+8. Clicks on sand / off-map / non-adjacent to base → rejection log, nothing happens.
 
-**Before continuing to 4d-ui, user should run `swift run duneii`** for visual verification against slices 3 through 4c. Mission-1 Atreides expected behaviour: click sidebar → click empty rock adjacent to existing base → structure lands immediately (slice 4d-sim hasn't changed the UX yet). Log shows `commit degraded slabs_needed=N` for non-concrete placements. Click on sand → rejection log. Click on empty rock not adjacent to any player structure → rejection log.
+If any step fails, it's a regression from that specific slice.
 
-**Older active task (now done this session)**: slice 1 (buildable-structure logic), slice 2 (`Structure_Create` + three new `StructureSlot` fields), slice 3 (build panel UI — sidebar + click-to-place + pure `BuildPanelController`), slice 4a (sortPriority + bounds/overlap validation), slice 4b (landscape gate + slab count + `isValidForStructure2` + `notOnConcrete` + `LandscapeInfo` misport fixes), slice 4c (HP degradation + adjacent-to-player-base gate + `adjacentOffsets` table + `degrades` flag), slice 4d-sim (construction state machine + scheduler tick pass + `buildTime` table + `StructureState` enum), + worktree adaptation.
+After visual verification, next productive directions:
+
+- **Slice 5 — factory / starport buildable case.** Extend `Structure_GetBuildable` to LIGHT_VEHICLE / HEAVY_VEHICLE / HIGH_TECH / WOR_TROOPER / BARRACKS (unit production) + STARPORT (`return -1` sentinel). Needs `UnitInfo.availableHouse / structuresRequired / upgradeLevelRequired` + per-factory `buildableUnits[8]` table. Turns construction yards into the first of many factories.
+- **Slice 4e — cancel + queue-swap.** `Structure_CancelBuild` + the READY-click-different-type-replaces-queue path.
+- **P5 HUD** — resource counters + credit drain on BUSY yards + unit info panel + minimap.
+
+**Older active task (now done this session)**: every P5 build-panel slice from 1 through 4d-ui, + worktree adaptation.
 
 ## Next up (queued)
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → failing test → implement → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **P5 slice 4d-ui — build-panel UI reflects BUSY/READY state.** Sidebar shows progress bar on the BUSY slot; READY state gates the map-click commit flow; idle sidebar clicks call `startConstruction` instead of entering placement mode directly.
-2. **P5 slice 5 — factory/starport buildable case.** Extend `Structure_GetBuildable` to LIGHT_VEHICLE / HEAVY_VEHICLE / HIGH_TECH / WOR_TROOPER / BARRACKS (unit production) + STARPORT (`return -1` sentinel). Needs `UnitInfo.availableHouse / structuresRequired / upgradeLevelRequired` + per-factory `buildableUnits[8]` table.
+1. **P5 slice 5 — factory/starport buildable case.** Extend `Structure_GetBuildable` to LIGHT_VEHICLE / HEAVY_VEHICLE / HIGH_TECH / WOR_TROOPER / BARRACKS (unit production) + STARPORT (`return -1` sentinel). Needs `UnitInfo.availableHouse / structuresRequired / upgradeLevelRequired` + per-factory `buildableUnits[8]` table.
+2. **P5 slice 4e — cancel + queue-swap.** `Structure_CancelBuild` + READY-click-different-type-replaces-queue path.
 3. **P5 — real HUD** — resource counters, unit info, minimap. Cosmetic but high impact.
 4. **Tick-parity golden harness** — record OpenDUNE for N ticks, replay in our sim, diff pool state. Closes §6 Initial-plan sim-parity goal.
 5. **EMC `BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; running the real script would give proper flight frames + sonic-beam propagation. Cosmetic.
@@ -42,6 +55,7 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-21 — P5 slice 4d-ui: build-panel surfaces BUSY/READY + progress bar + gates clicks.** Controller gains yardState / queuedType / countDown / buildTime / progress; handle(click:) branches on yardState (IDLE → enqueue, BUSY → no-op, READY on queued → enterPlacement). Sidebar renders yellow progress bar on BUSY + green outline on READY. Scene refreshes every tick so progress animates. 7 new tests + 3 slice-3 tests removed (superseded semantics). 561 green / 62 suites / zero warnings. Design: `Algorithms/BuildPanelProgress.md`.
 - **2026-04-21 — P5 slice 4d-sim: construction countdown state machine.** `StructureInfo.buildTime` added (19 rows, OpenDUNE values). `Simulation.StructureState` enum mirrors the 5 OpenDUNE state constants. `Structures.startConstruction` ports `Structure_BuildObject` tail (IDLE yard → BUSY + countDown set). `Structures.tickConstruction` drains countdown by 256 per tick; flips READY at zero. `Scheduler.tick` runs the pass. No UI changes yet — yards go BUSY invisibly. 14 new tests. 557 green / 62 suites / zero warnings. Design: `Algorithms/StructureConstruction.md`.
 - **2026-04-21 — P5 slice 4c: HP degradation + adjacent-to-player-base gate.** `StructureSlot.degrades: Bool` added + plumbed from save's ObjectFlags.degrades. `Structures.create(..., tilesWithoutSlab:)` applies the OpenDUNE HP math + sets degrades=true on negative validity. `StructureLayout.adjacentOffsets` ports the 7-layout × up-to-16 tile ring. `Structures.isValidBuildLocation` gained `playerHouseID` + `tileHouseIDAt` parameters; runs the adjacency gate for non-CY placements when both are non-nil. Scene wires both. 13 new tests. 543 green / 61 suites / zero warnings. Design: `Algorithms/BuildValidationAdjacency.md`.
 - **2026-04-21 — P5 slice 4b (landscape): landscape gate + slab count + `isValidForStructure2` + `notOnConcrete`.** `LandscapeInfo.isValidForStructure2` added (rock-family only). `StructureInfo.notOnConcrete` added (CYARD only). `isValidBuildLocation` gained optional `landscapeAt` closure; non-nil enables gate + slab count. `ScenarioScene.commitPlacement` wires closure from snapshot tileGrid + resolver. Return `-neededSlabs` logged as degraded; HP still max (4c applies degradation). Fixed 3 misports in `LandscapeInfo` (`5 MOSTLY_ROCK`, `13 DESTROYED_WALL`, `letUnitWobble` on rows 4/5/9). 10 new tests. 530 green / 61 suites / zero warnings. Design: `Algorithms/BuildValidationLandscape.md`.
@@ -102,7 +116,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **557 tests across 62 suites, all green** as of 2026-04-21 (post-P5-slice-4d-sim). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
+`cd Code/Core && swift test` — **561 tests across 62 suites, all green** as of 2026-04-21 (post-P5-slice-4d-ui). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
 
 ## Open questions / risks (pointers)
 
