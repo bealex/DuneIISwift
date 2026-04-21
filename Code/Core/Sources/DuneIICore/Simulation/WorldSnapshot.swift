@@ -156,6 +156,12 @@ extension Simulation {
                 s.positionX = pos.x
                 s.positionY = pos.y
                 s.hitpoints = UInt16(clamping: spawn.hitPoints)
+                // Max HP always comes from the type table — the scenario
+                // INI may spawn a pre-damaged structure, but the repair
+                // ceiling is fixed by the type.
+                if let info = Simulation.StructureInfo.lookup(spawn.structureType.typeID) {
+                    s.hitpointsMax = info.hitpoints
+                }
                 structures[structureIndex] = s
                 structureIndex &+= 1
             }
@@ -255,6 +261,9 @@ extension Simulation {
                     s.positionX = slot.object.positionX
                     s.positionY = slot.object.positionY
                     s.hitpoints = slot.object.hitpoints
+                    s.hitpointsMax = slot.hitpointsMax
+                    s.upgradeLevel = slot.upgradeLevel
+                    s.objectType = slot.objectType
                     // Saved as u16 but fits in u8 (rotation 0..7 in vanilla).
                     s.rotationSpriteDiff = UInt8(truncatingIfNeeded: slot.rotationSpriteDiff)
                     structures[idx] = s

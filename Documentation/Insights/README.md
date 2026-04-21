@@ -93,6 +93,7 @@ OpenDUNE `src/...` or dunepak `src/...` or the raw bytes of
 - [simulation-house-free-leaves-used](simulation-house-free-leaves-used.md) — `House_Free` removes from the find-array but never clears `flags.used`; re-allocating the same slot afterwards fails.
 - [simulation-findbesttarget-stamps-origin](simulation-findbesttarget-stamps-origin.md) — `Unit_FindBestTargetUnit` mutates the attacker's `originEncoded` on first call; priority also uses the *target's* fireDistance off-map (not the attacker's).
 - [simulation-unitpool-bullets-share-slots](simulation-unitpool-bullets-share-slots.md) — bullets / missiles live in the same `UnitPool` as units; per-type `indexStart..indexEnd` ranges prevent collisions and cap concurrent bullets at 4.
+- [simulation-getbuildable-signed-int-campaign-gate](simulation-getbuildable-signed-int-campaign-gate.md) — `Structure_GetBuildable`'s `availableCampaign - 1` promotes to signed int; ROCKET_TURRET's `availableCampaign = 0` passes the gate, and the upgrade-level requirement is what actually keeps it locked.
 
 ### Audio
 

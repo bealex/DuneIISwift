@@ -21,6 +21,23 @@ extension Simulation {
         public var positionY: UInt16
         /// Current hitpoints; `0` means destroyed.
         public var hitpoints: UInt16
+        /// Max hitpoints. Seeded on `Structure_Create` from the type's
+        /// table value; damage reduces `hitpoints` but never touches
+        /// this. Needed separately because some structures degrade
+        /// (missing concrete slab) and spawn with `hitpoints <
+        /// hitpointsMax`.
+        public var hitpointsMax: UInt16
+        /// Factory upgrade level, 0..3. Seeded on `Structure_Create`
+        /// (Harkonnen LIGHT_VEHICLE → 1; else 0). Read by the
+        /// buildable-structure / buildable-unit logic. AI houses get
+        /// their max campaign-gated level via an auto-upgrade loop in
+        /// `Structure_Create` that we haven't ported yet.
+        public var upgradeLevel: UInt8
+        /// Current production queue item for factory structures;
+        /// `0xFFFF` = nothing being built. Seeded to `0xFFFF` on
+        /// `Structure_Create`. Written by `Structure_BuildObject`
+        /// (deferred).
+        public var objectType: UInt16
         /// Current 8-step turret rotation `0..7` (N, NE, E, SE, S, SW, W, NW).
         /// Read by `Script_Structure_RotateTurret` / `GetDirection` and
         /// written on each turret-rotate tick. Non-turret structures
@@ -39,6 +56,9 @@ extension Simulation {
             positionX: UInt16 = 0,
             positionY: UInt16 = 0,
             hitpoints: UInt16 = 0,
+            hitpointsMax: UInt16 = 0,
+            upgradeLevel: UInt8 = 0,
+            objectType: UInt16 = 0xFFFF,
             rotationSpriteDiff: UInt8 = 0
         ) {
             self.isUsed = isUsed
@@ -52,6 +72,9 @@ extension Simulation {
             self.positionX = positionX
             self.positionY = positionY
             self.hitpoints = hitpoints
+            self.hitpointsMax = hitpointsMax
+            self.upgradeLevel = upgradeLevel
+            self.objectType = objectType
             self.rotationSpriteDiff = rotationSpriteDiff
         }
     }
