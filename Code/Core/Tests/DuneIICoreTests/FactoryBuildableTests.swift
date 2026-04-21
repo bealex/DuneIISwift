@@ -481,4 +481,220 @@ struct FactoryBuildableTests {
         let all: [UInt8] = Array(0...26)
         #expect(Simulation.UnitInfo.buildableUnitTypes(from: mask) == all)
     }
+
+    // MARK: Slice 5b-build — UnitInfo.buildTime + dispatch + completion
+
+    @Test("UnitInfo.buildTime pinned for Carryall=64, Soldier=32, Siege Tank=96, projectiles=0")
+    func unitBuildTimePinned() {
+        #expect(Simulation.UnitInfo.table[Int(CARRYALL)].buildTime == 64)
+        #expect(Simulation.UnitInfo.table[Int(SOLDIER)].buildTime == 32)
+        #expect(Simulation.UnitInfo.table[Int(SIEGE_TANK)].buildTime == 96)
+        #expect(Simulation.UnitInfo.table[Int(TRIKE)].buildTime == 40)
+        // Projectiles (18+) all zero.
+        for i in 18...26 {
+            #expect(Simulation.UnitInfo.table[i].buildTime == 0, "unit \(i)")
+        }
+    }
+
+    @Test("LV factory startConstruction with TRIKE uses unit buildTime (40<<8 = 10240), not yard")
+    func startConstructionDispatchesUnitBuildTime() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: LIGHT_VEHICLE,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 10 * 256, y: 10 * 256),
+            pool: &pool
+        )
+        var slot = pool[0]
+        slot.state = Simulation.StructureState.idle.rawValue
+        pool[0] = slot
+        _ = Simulation.Structures.startConstruction(
+            yardIndex: 0, objectType: TRIKE, pool: &pool
+        )
+        // TRIKE buildTime = 40 → countDown = 40 << 8 = 10240.
+        #expect(pool[0].countDown == 10240)
+    }
+
+    @Test("BARRACKS startConstruction with SOLDIER uses unit buildTime (32<<8 = 8192)")
+    func startConstructionBarracksSoldierUnitBuildTime() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: BARRACKS,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        var slot = pool[0]
+        slot.state = Simulation.StructureState.idle.rawValue
+        pool[0] = slot
+        _ = Simulation.Structures.startConstruction(
+            yardIndex: 0, objectType: SOLDIER, pool: &pool
+        )
+        #expect(pool[0].countDown == 8192)
+    }
+
+    @Test("CY startConstruction still uses produced-structure buildTime (WINDTRAP = 48<<8 = 12288)")
+    func startConstructionCYUnchanged() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: CYARD,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        var slot = pool[0]
+        slot.state = Simulation.StructureState.idle.rawValue
+        pool[0] = slot
+        _ = Simulation.Structures.startConstruction(
+            yardIndex: 0, objectType: 9 /* WINDTRAP */, pool: &pool
+        )
+        // WINDTRAP buildTime = 48 → 12288.
+        #expect(pool[0].countDown == 12288)
+    }
+
+    // MARK: Simulation.Units.createUnit
+
+    @Test("Units.createUnit valid input returns non-nil index + seeds slot")
+    func createUnitValid() {
+        var units = Simulation.UnitPool()
+        let idx = Simulation.Units.createUnit(
+            type: SOLDIER,
+            houseID: Simulation.House.atreides,
+            tileX: 10, tileY: 10,
+            pool: &units
+        )
+        #expect(idx != nil)
+        guard let index = idx else { return }
+        let slot = units[index]
+        #expect(slot.isUsed)
+        #expect(slot.type == SOLDIER)
+        #expect(slot.houseID == Simulation.House.atreides)
+        #expect(slot.positionX == 10 * 256 + 128)  // centered pos32
+        #expect(slot.positionY == 10 * 256 + 128)
+        #expect(slot.hitpoints == Simulation.UnitInfo.table[Int(SOLDIER)].hitpoints)
+        #expect(slot.seenByHouses == 0xFF)
+    }
+
+    @Test("Units.createUnit out-of-range houseID → nil")
+    func createUnitBadHouse() {
+        var units = Simulation.UnitPool()
+        let idx = Simulation.Units.createUnit(
+            type: SOLDIER, houseID: 6, tileX: 10, tileY: 10, pool: &units
+        )
+        #expect(idx == nil)
+    }
+
+    @Test("Units.createUnit out-of-range type → nil")
+    func createUnitBadType() {
+        var units = Simulation.UnitPool()
+        let idx = Simulation.Units.createUnit(
+            type: 27, houseID: Simulation.House.atreides,
+            tileX: 10, tileY: 10, pool: &units
+        )
+        #expect(idx == nil)
+    }
+
+    // MARK: Simulation.Structures.completeConstruction
+
+    @Test("completeConstruction on READY BARRACKS spawns a SOLDIER at factory anchor; yard flips IDLE")
+    func completeBarracksSoldier() {
+        var structures = Simulation.StructurePool()
+        var units = Simulation.UnitPool()
+        _ = Simulation.Structures.create(
+            type: BARRACKS,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &structures
+        )
+        // Manually flip yard to READY with SOLDIER queued.
+        var slot = structures[0]
+        slot.state = Simulation.StructureState.ready.rawValue
+        slot.objectType = UInt16(SOLDIER)
+        slot.countDown = 0
+        structures[0] = slot
+
+        let unitIdx = Simulation.Structures.completeConstruction(
+            yardIndex: 0, pool: &structures, unitPool: &units
+        )
+        #expect(unitIdx != nil)
+        if let ui = unitIdx {
+            #expect(units[ui].type == SOLDIER)
+            #expect(units[ui].houseID == Simulation.House.atreides)
+            // Anchor tile (5, 5) → pos32 (5 * 256 + 128, 5 * 256 + 128).
+            #expect(units[ui].positionX == 5 * 256 + 128)
+            #expect(units[ui].positionY == 5 * 256 + 128)
+        }
+        #expect(structures[0].state == Simulation.StructureState.idle.rawValue)
+        #expect(structures[0].objectType == 0xFFFF)
+        #expect(structures[0].countDown == 0)
+    }
+
+    @Test("completeConstruction on BUSY factory returns nil without mutation")
+    func completeBusyNoOp() {
+        var structures = Simulation.StructurePool()
+        var units = Simulation.UnitPool()
+        _ = Simulation.Structures.create(
+            type: BARRACKS,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &structures
+        )
+        var slot = structures[0]
+        slot.state = Simulation.StructureState.busy.rawValue
+        slot.objectType = UInt16(SOLDIER)
+        slot.countDown = 5000
+        structures[0] = slot
+        let before = structures[0]
+
+        let result = Simulation.Structures.completeConstruction(
+            yardIndex: 0, pool: &structures, unitPool: &units
+        )
+        #expect(result == nil)
+        #expect(structures[0] == before)
+        #expect(units.findArray.isEmpty)
+    }
+
+    @Test("completeConstruction on READY CYARD returns nil (CY completion is click-to-place)")
+    func completeCYReturnsNil() {
+        var structures = Simulation.StructurePool()
+        var units = Simulation.UnitPool()
+        _ = Simulation.Structures.create(
+            type: CYARD,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &structures
+        )
+        var slot = structures[0]
+        slot.state = Simulation.StructureState.ready.rawValue
+        slot.objectType = 9 /* WINDTRAP */
+        structures[0] = slot
+
+        let result = Simulation.Structures.completeConstruction(
+            yardIndex: 0, pool: &structures, unitPool: &units
+        )
+        #expect(result == nil)
+        // Yard state untouched (CY completion doesn't reset here).
+        #expect(structures[0].state == Simulation.StructureState.ready.rawValue)
+    }
+
+    @Test("completeConstruction on REFINERY returns nil")
+    func completeRefineryReturnsNil() {
+        var structures = Simulation.StructurePool()
+        var units = Simulation.UnitPool()
+        _ = Simulation.Structures.create(
+            type: REFINERY,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &structures
+        )
+        var slot = structures[0]
+        slot.state = Simulation.StructureState.ready.rawValue
+        slot.objectType = UInt16(SOLDIER)
+        structures[0] = slot
+
+        let result = Simulation.Structures.completeConstruction(
+            yardIndex: 0, pool: &structures, unitPool: &units
+        )
+        #expect(result == nil)
+    }
 }

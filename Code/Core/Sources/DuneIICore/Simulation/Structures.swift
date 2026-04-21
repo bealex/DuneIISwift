@@ -462,10 +462,9 @@ extension Simulation {
             // Countdown source — dispatch by yard kind:
             // - CYARD (8): produced structure's `buildTime`, matching
             //   OpenDUNE's `oi = &g_table_structureInfo[objectType].o`.
-            // - Factory (3, 4, 5, 7, 10): OpenDUNE uses the produced
-            //   *unit's* buildTime; we don't have `UnitInfo.buildTime`
-            //   wired yet, so fall back to the yard's own buildTime
-            //   as a placeholder. Slice 5b-build adds the unit lookup.
+            // - Factory (3, 4, 5, 7, 10): produced unit's `buildTime`
+            //   (slice 5b-build). E.g. BARRACKS building SOLDIER gets
+            //   SOLDIER's 32, not BARRACKS's 72.
             let buildTime: UInt16
             if slot.type == 8 {
                 guard objectType < 19 else { return false }
@@ -473,7 +472,7 @@ extension Simulation {
                 buildTime = info.buildTime
             } else {
                 guard objectType < 27 else { return false }
-                guard let info = StructureInfo.lookup(slot.type) else { return false }
+                guard let info = UnitInfo.lookup(objectType) else { return false }
                 buildTime = info.buildTime
             }
 
@@ -483,6 +482,60 @@ extension Simulation {
             updated.state = StructureState.busy.rawValue
             pool[yardIndex] = updated
             return true
+        }
+
+        /// Slice 5b-build: flushes a READY factory — spawns the
+        /// queued unit at the yard's anchor tile and returns the yard
+        /// to IDLE. CY completion stays on the click-map-to-place path
+        /// (see `commitPlacement` in `ScenarioScene`), so this function
+        /// returns `nil` for CY yards.
+        ///
+        /// Returns the new unit's pool index on success, or `nil`
+        /// when the yard isn't a READY factory or the unit pool is
+        /// full. On failure the yard is left untouched so the player
+        /// can retry later.
+        ///
+        /// Deferred:
+        /// - Rally-point / south-of-footprint exit tile — the unit
+        ///   currently spawns at the factory anchor and visually
+        ///   overlaps the building.
+        /// - `Structure_BuildObject`'s linkedID dance.
+        /// - Credit payment / deduction.
+        /// - Audio cues, text display.
+        @discardableResult
+        public static func completeConstruction(
+            yardIndex: Int,
+            pool: inout StructurePool,
+            unitPool: inout UnitPool
+        ) -> Int? {
+            guard yardIndex >= 0, yardIndex < StructurePool.capacitySoft else { return nil }
+            let slot = pool[yardIndex]
+            guard slot.isUsed, slot.isAllocated else { return nil }
+            // CY completion goes through the scene's click-to-place
+            // path, not here.
+            switch slot.type {
+            case 3, 4, 5, 7, 10: break
+            default: return nil
+            }
+            guard slot.state == StructureState.ready.rawValue else { return nil }
+            let unitType = UInt8(truncatingIfNeeded: slot.objectType)
+            guard unitType < 27 else { return nil }
+
+            let ax = Int(slot.positionX) / 256
+            let ay = Int(slot.positionY) / 256
+            guard let unitIdx = Units.createUnit(
+                type: unitType, houseID: slot.houseID,
+                tileX: ax, tileY: ay, pool: &unitPool
+            ) else {
+                return nil  // pool full; leave yard READY for retry
+            }
+
+            var updated = slot
+            updated.state = StructureState.idle.rawValue
+            updated.objectType = 0xFFFF
+            updated.countDown = 0
+            pool[yardIndex] = updated
+            return unitIdx
         }
 
         /// Port of OpenDUNE's `GUI_Widget_SelectStructure` click handler

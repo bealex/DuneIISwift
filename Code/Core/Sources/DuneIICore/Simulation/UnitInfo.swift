@@ -126,6 +126,12 @@ extension Simulation {
         /// rows (Thopter / Infantry / Troopers / Launcher / Siege Tank /
         /// Quad / MCV).
         public let upgradeLevelRequired: UInt8
+        /// `ObjectInfo.buildTime`. Produced unit's build time in game
+        /// ticks at standard buildSpeed = 256. Factory `startConstruction`
+        /// uses this for `countDown = buildTime << 8`. Zero for
+        /// projectiles / misc units that never appear in a factory's
+        /// `buildableUnits` array. Slice 5b-build.
+        public let buildTime: UInt16
 
         public init(
             hitpoints: UInt16,
@@ -152,7 +158,8 @@ extension Simulation {
             explosionType: UInt16?,
             availableHouse: UInt8 = 0b0011_1111,
             structuresRequired: UInt32 = 0,
-            upgradeLevelRequired: UInt8 = 0
+            upgradeLevelRequired: UInt8 = 0,
+            buildTime: UInt16 = 0
         ) {
             self.hitpoints = hitpoints
             self.fireDistance = fireDistance
@@ -179,6 +186,7 @@ extension Simulation {
             self.availableHouse = availableHouse
             self.structuresRequired = structuresRequired
             self.upgradeLevelRequired = upgradeLevelRequired
+            self.buildTime = buildTime
         }
 
         public static let table: [UnitInfo] = [
@@ -191,7 +199,8 @@ extension Simulation {
                      groundSpriteID: 283, displayMode: .unit,
                      priority: true, targetAir: false, priorityBuild: 20, priorityTarget: 16,
                      indexStart: 0, indexEnd: 10, bulletType: nil, firesTwice: false,
-                     explosionType: nil),
+                     explosionType: nil,
+                     buildTime: 64),
             // 1 ORNITHOPTER
             UnitInfo(hitpoints: 25, fireDistance: 50, fireDelay: 50, damage: 50,
                      movementType: .winger, hasTurret: false, explodeOnDeath: true,
@@ -202,7 +211,8 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 75, priorityTarget: 30,
                      indexStart: 0, indexEnd: 10, bulletType: 22, firesTwice: true,
                      explosionType: 0,
-                     availableHouse: 62, structuresRequired: 1 << 6, upgradeLevelRequired: 1),
+                     availableHouse: 62, structuresRequired: 1 << 6, upgradeLevelRequired: 1,
+                     buildTime: 96),
             // 2 INFANTRY (squad)
             UnitInfo(hitpoints: 50, fireDistance: 2, fireDelay: 45, damage: 3,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
@@ -213,7 +223,8 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 20, priorityTarget: 20,
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 0,
-                     availableHouse: 62, upgradeLevelRequired: 1),
+                     availableHouse: 62, upgradeLevelRequired: 1,
+                     buildTime: 32),
             // 3 TROOPERS (squad)
             UnitInfo(hitpoints: 110, fireDistance: 5, fireDelay: 50, damage: 5,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
@@ -224,7 +235,8 @@ extension Simulation {
                      priority: true, targetAir: true, priorityBuild: 50, priorityTarget: 50,
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 0,
-                     availableHouse: 61, upgradeLevelRequired: 1),
+                     availableHouse: 61, upgradeLevelRequired: 1,
+                     buildTime: 56),
             // 4 SOLDIER
             UnitInfo(hitpoints: 20, fireDistance: 2, fireDelay: 45, damage: 3,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
@@ -235,7 +247,8 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 10, priorityTarget: 10,
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: false,
                      explosionType: 0,
-                     availableHouse: 62),
+                     availableHouse: 62,
+                     buildTime: 32),
             // 5 TROOPER
             UnitInfo(hitpoints: 45, fireDistance: 5, fireDelay: 50, damage: 5,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
@@ -246,7 +259,8 @@ extension Simulation {
                      priority: true, targetAir: true, priorityBuild: 20, priorityTarget: 30,
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: false,
                      explosionType: 0,
-                     availableHouse: 61),
+                     availableHouse: 61,
+                     buildTime: 56),
             // 6 SABOTEUR
             UnitInfo(hitpoints: 10, fireDistance: 2, fireDelay: 45, damage: 2,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
@@ -257,7 +271,8 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 0, priorityTarget: 700,
                      indexStart: 20, indexEnd: 21, bulletType: 23, firesTwice: false,
                      explosionType: 0,
-                     availableHouse: 4),
+                     availableHouse: 4,
+                     buildTime: 48),
             // 7 LAUNCHER
             UnitInfo(hitpoints: 100, fireDistance: 9, fireDelay: 120, damage: 75,
                      movementType: .tracked, hasTurret: false, explodeOnDeath: true,
@@ -268,7 +283,8 @@ extension Simulation {
                      priority: true, targetAir: true, priorityBuild: 100, priorityTarget: 150,
                      indexStart: 22, indexEnd: 101, bulletType: 19, firesTwice: true,
                      explosionType: 3,
-                     availableHouse: 59, upgradeLevelRequired: 2),
+                     availableHouse: 59, upgradeLevelRequired: 2,
+                     buildTime: 72),
             // 8 DEVIATOR
             UnitInfo(hitpoints: 120, fireDistance: 7, fireDelay: 180, damage: 0,
                      movementType: .tracked, hasTurret: false, explodeOnDeath: true,
@@ -279,7 +295,8 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 50, priorityTarget: 175,
                      indexStart: 22, indexEnd: 101, bulletType: 21, firesTwice: false,
                      explosionType: 3,
-                     availableHouse: 4, structuresRequired: 1 << 6),
+                     availableHouse: 4, structuresRequired: 1 << 6,
+                     buildTime: 80),
             // 9 TANK
             UnitInfo(hitpoints: 200, fireDistance: 4, fireDelay: 80, damage: 25,
                      movementType: .tracked, hasTurret: true, explodeOnDeath: true,
@@ -289,7 +306,8 @@ extension Simulation {
                      groundSpriteID: 111, displayMode: .unit,
                      priority: true, targetAir: false, priorityBuild: 80, priorityTarget: 100,
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: false,
-                     explosionType: 1),
+                     explosionType: 1,
+                     buildTime: 64),
             // 10 SIEGE_TANK
             UnitInfo(hitpoints: 300, fireDistance: 5, fireDelay: 90, damage: 30,
                      movementType: .tracked, hasTurret: true, explodeOnDeath: true,
@@ -300,7 +318,8 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 130, priorityTarget: 150,
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 1,
-                     upgradeLevelRequired: 3),
+                     upgradeLevelRequired: 3,
+                     buildTime: 96),
             // 11 DEVASTATOR
             UnitInfo(hitpoints: 400, fireDistance: 5, fireDelay: 100, damage: 40,
                      movementType: .tracked, hasTurret: false, explodeOnDeath: true,
@@ -311,7 +330,8 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 175, priorityTarget: 180,
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 1,
-                     availableHouse: 57, structuresRequired: 1 << 6),
+                     availableHouse: 57, structuresRequired: 1 << 6,
+                     buildTime: 104),
             // 12 SONIC_TANK
             UnitInfo(hitpoints: 110, fireDistance: 8, fireDelay: 80, damage: 60,
                      movementType: .tracked, hasTurret: false, explodeOnDeath: true,
@@ -322,7 +342,8 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 80, priorityTarget: 110,
                      indexStart: 22, indexEnd: 101, bulletType: 24, firesTwice: false,
                      explosionType: nil,
-                     availableHouse: 58, structuresRequired: 1 << 6),
+                     availableHouse: 58, structuresRequired: 1 << 6,
+                     buildTime: 104),
             // 13 TRIKE
             UnitInfo(hitpoints: 100, fireDistance: 3, fireDelay: 50, damage: 5,
                      movementType: .wheeled, hasTurret: false, explodeOnDeath: true,
@@ -333,7 +354,8 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 50, priorityTarget: 50,
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 0,
-                     availableHouse: 58),
+                     availableHouse: 58,
+                     buildTime: 40),
             // 14 RAIDER_TRIKE
             UnitInfo(hitpoints: 80, fireDistance: 3, fireDelay: 50, damage: 5,
                      movementType: .wheeled, hasTurret: false, explodeOnDeath: true,
@@ -344,7 +366,8 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 55, priorityTarget: 60,
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 0,
-                     availableHouse: 60),
+                     availableHouse: 60,
+                     buildTime: 40),
             // 15 QUAD
             UnitInfo(hitpoints: 130, fireDistance: 3, fireDelay: 50, damage: 7,
                      movementType: .wheeled, hasTurret: false, explodeOnDeath: true,
@@ -355,7 +378,8 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 60, priorityTarget: 60,
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 0,
-                     upgradeLevelRequired: 1),
+                     upgradeLevelRequired: 1,
+                     buildTime: 48),
             // 16 HARVESTER
             UnitInfo(hitpoints: 150, fireDistance: 0, fireDelay: 0, damage: 0,
                      movementType: .harvester, hasTurret: false, explodeOnDeath: true,
@@ -365,7 +389,8 @@ extension Simulation {
                      groundSpriteID: 248, displayMode: .unit,
                      priority: true, targetAir: false, priorityBuild: 10, priorityTarget: 150,
                      indexStart: 22, indexEnd: 101, bulletType: nil, firesTwice: false,
-                     explosionType: nil),
+                     explosionType: nil,
+                     buildTime: 64),
             // 17 MCV
             UnitInfo(hitpoints: 150, fireDistance: 0, fireDelay: 0, damage: 0,
                      movementType: .tracked, hasTurret: false, explodeOnDeath: true,
@@ -376,7 +401,8 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 10, priorityTarget: 150,
                      indexStart: 22, indexEnd: 101, bulletType: nil, firesTwice: false,
                      explosionType: nil,
-                     upgradeLevelRequired: 1),
+                     upgradeLevelRequired: 1,
+                     buildTime: 80),
             // 18 MISSILE_HOUSE
             UnitInfo(hitpoints: 70, fireDistance: 15, fireDelay: 0, damage: 100,
                      movementType: .winger, hasTurret: false, explodeOnDeath: false,

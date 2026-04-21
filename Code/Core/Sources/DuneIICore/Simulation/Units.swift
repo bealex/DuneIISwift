@@ -7,6 +7,53 @@ extension Simulation {
     /// without reaching into `UnitPool` internals.
     public enum Units {
 
+        /// Narrow port of `Unit_Create` covering the factory-completion
+        /// spawn path (slice 5b-build): allocate a unit of `type` owned
+        /// by `houseID` at `(tileX, tileY)`. Returns the pool slot
+        /// index, or `nil` when inputs are out of range or the pool is
+        /// full.
+        ///
+        /// Position is centred in the target tile (pos32 `tile * 256 + 128`).
+        /// `seenByHouses = 0xFF` matches the scenario-spawn shortcut —
+        /// new factory-spawned units are immediately visible to every
+        /// house (no fog reveal yet).
+        /// Wingers get `speed = 255` (cruise-in behaviour identical to
+        /// `Unit_CreateBullet`'s pattern); ground units leave `speed`
+        /// at the pool default.
+        ///
+        /// Deferred vs OpenDUNE `Unit_Create`:
+        /// - `Script_Load` — scheduler picks up new slots on next tick.
+        /// - Fog-of-war / `Tile_RemoveFogInRadius`.
+        /// - MCV-specific deploy logic.
+        /// - Per-house `linkedID` / transport initialisation beyond pool
+        ///   defaults.
+        /// - Orientation — defaults to north-facing (`0`).
+        @discardableResult
+        public static func createUnit(
+            type: UInt8,
+            houseID: UInt8,
+            tileX: Int,
+            tileY: Int,
+            pool: inout UnitPool
+        ) -> Int? {
+            guard houseID < 6 else { return nil }
+            guard type < 27 else { return nil }
+            guard let info = UnitInfo.lookup(type) else { return nil }
+            guard let idx = pool.allocateForType(type: type, houseID: houseID) else {
+                return nil
+            }
+            var slot = pool[idx]
+            slot.hitpoints = info.hitpoints
+            slot.positionX = UInt16(clamping: tileX * 256 + 128)
+            slot.positionY = UInt16(clamping: tileY * 256 + 128)
+            slot.seenByHouses = 0xFF
+            if info.movementType == .winger {
+                slot.speed = 255
+            }
+            pool[idx] = slot
+            return idx
+        }
+
         /// Port of `Unit_CreateBullet` (`src/unit.c:1954`). Allocates a
         /// projectile-type unit in the pool's bullet range (12..15),
         /// sets its position / orientation / target / hitpoints.

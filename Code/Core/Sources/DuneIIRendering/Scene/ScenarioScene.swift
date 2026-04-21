@@ -168,19 +168,9 @@ public final class ScenarioScene: SKScene {
             enqueueConstruction(type: type)
         case .enterPlacement(let type):
             if currentYardKind == .unit {
-                // Factory READY clicks don't enter map-placement —
-                // the produced object is a unit that spawns at the
-                // factory exit, not at a player-picked tile. Slice
-                // 5b-build wires the actual spawn; for now we clear
-                // the controller's placement flag so a subsequent
-                // map click doesn't try to `Structures.create` a
-                // unit-type as a structure.
-                buildController.placementType = nil
-                Log.info(
-                    "build-panel: READY factory — unit spawn deferred to slice 5b-build (type=\(type))",
-                    tracer: .label("build-panel")
-                )
-                refreshBuildSidebar()
+                // Factory READY clicks spawn the queued unit at the
+                // factory anchor tile. Yard flips back to IDLE.
+                completeFactoryProduction(type: type)
             } else {
                 Log.info(
                     "build-panel: enter placement type=\(type)",
@@ -663,6 +653,38 @@ public final class ScenarioScene: SKScene {
             buildTime: buildTime
         )
         renderSidebar()
+    }
+
+    /// Slice 5b-build: flush a READY factory — spawn the queued unit
+    /// at the factory anchor and return the yard to IDLE.
+    /// Clears `placementType` so the scene doesn't enter map-placement
+    /// mode (which is the CY path).
+    private func completeFactoryProduction(type: UInt8) {
+        guard let host = scheduler?.host,
+              let yardIdx = buildController.selectedYardIndex
+        else { return }
+        var structures = host.structures
+        var units = host.units
+        let unitIdx = Simulation.Structures.completeConstruction(
+            yardIndex: yardIdx,
+            pool: &structures,
+            unitPool: &units
+        )
+        host.structures = structures
+        host.units = units
+        if let unitIdx {
+            Log.info(
+                "build-panel: factory yard=\(yardIdx) completed type=\(type) → unit slot=\(unitIdx)",
+                tracer: .label("build-panel")
+            )
+        } else {
+            Log.info(
+                "build-panel: factory yard=\(yardIdx) completion FAILED (unit pool full?)",
+                tracer: .label("build-panel")
+            )
+        }
+        buildController.placementType = nil
+        refreshBuildSidebar()
     }
 
     /// Slice 4d-ui: queue a construction on the currently-selected
