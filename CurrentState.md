@@ -11,27 +11,65 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**P4 closure — tick-parity golden harness OR P5 kickoff.** P4 combat gameplay is feature-complete. Motion works; enemy teams (missions 2+) now run TEAM.EMC with real state; all remaining script slots default to NoOp so unwired opcodes don't halt. What's left in P4 is the tick-parity golden harness (§6 Initial-plan goal: record OpenDUNE for N ticks, replay in our sim, diff). That's infrastructure without immediate gameplay payoff. P5 (HUD, build panel, orders, economy, victory) is unblocked and has higher user-visible impact.
+**P5 — slice 6b: credit drain during BUSY + cancel refund.** Slice 6a landed: `Simulation.HouseSlot` now carries `credits` / `creditsStorage` / `creditsQuota`; both `WorldSnapshot` init paths seed them. No drain, no UI, no refund yet.
 
-Recommend P5 next. Immediate step: build panel. That's the UI edge that turns "watching a sim" into "playing a game". Pull the `CHOAM` sprite catalogue + the per-house production list + wire clicks to structure-ID-keyed build queues. Requires porting `Structure_Create`, `Structure_QueueBuildable`, and the construction-state machine — sizeable but unlocks real gameplay.
+Slice 6b plan: (a) `Structures.tickConstruction` (or a new per-tick pass) deducts `buildCredits / buildTime` per tick from the owning house's `credits` on each BUSY yard; if the house runs out of cash, construction pauses (state stays BUSY, countDown doesn't tick down). (b) `Structures.cancelConstruction` refunds `(buildTime - remainingTicks) × buildCredits / buildTime` to the house. (c) Extend `Scheduler` to own the `HousePool` (or pass it through) so credit state is reachable from the tick pass. Tests cover the math and the out-of-credits pause. Pure sim; no UI changes.
 
-**Older active task (now done)**: "Run again + confirm units now move." Third diagnostic pass on the user's second log uncovered two real bugs: (1) `VM.load` reset `engine.pc` but didn't set `engine.variables[0] = typeID` — OpenDUNE's `Script_Load` does, and every action's EMC entry starts by reading it to decide which handler to run. Without the seed, every unit fell into ACTION_ATTACK regardless of its requested action. (2) Scenario-spawned units had `seenByHouses = 0`, so `FindBestTarget` always returned 0 (priority gated on attacker's house seeing the target). Fixed both. Expect the next run to show IdleAction fires, FindBestTarget returning real targets, and visible unit motion.
+Slice 6c wires a "Credits: N" label on `ScenarioScene` after 6b lands.
 
-**Also unfinished**: Team AI live hookup — TEAMS INI section + load TEAM.EMC in ScenarioScene.** Visual fidelity sweep is done: scheduler loads correct EMC entry point per action so idle units fidget; `loadShp(houseID:)` applies per-house palette remap so units show their owner's colours; structures render via real iconGroup tiles from `ICON.ICN`. Back to closing the last P4 gameplay gap. Team AI is now feature-complete at the infrastructure layer: 11 script slots wired, membership helpers, scheduler tick pass. Missing two integration points before mission-1 enemies actually coordinate:
+**Visual verification pending** — `swift run duneii` against mission 1 Atreides:
 
-1. `Scenario` doesn't parse the `TEAMS=` INI section. Scenarios like `SCENA001.INI` have `[TEAMS]` rows with `"1=Harkonnen,Kamikaze,Tracked,2,4"` shape — need to decode these into `TeamSlot` allocations at scenario-world build time.
-2. `ScenarioScene.setUpScheduler` doesn't load `TEAM.EMC`. Once loaded + wired, the scheduler's `tickTeams` will drive the real team behavior script (`AddClosestUnit`, `FindBestTarget`, `Load2`, etc.) each tick.
+1. Start scenario. Sidebar auto-selects first CY. Shows WINDTRAP, SLAB_1x1, maybe REFINERY.
+2. Click WINDTRAP → yard BUSY → yellow progress bar fills ~4s → green READY.
+3. Click READY slot → enter placement → click rock tile adjacent to CY → WINDTRAP appears.
+4. Build REFINERY + LIGHT_VEHICLE factory similarly.
+5. Click the LV factory on the map → sidebar switches to units (TRIKE present, QUAD gated on upgrade).
+6. Click TRIKE → progress bar ~3.3s (40 ticks × 256 ÷ 12 Hz) → READY.
+7. Click READY → trike unit spawns at the LV factory's anchor tile (visually overlapping the building). Yard returns to IDLE.
+8. Sidebar can be selected back to CY by clicking CY on the map.
 
-Immediate next step: port the `[TEAMS]` INI parser — add `Scenario.teams: [TeamSpawn]` with fields `house, action, movementType, minMembers, maxMembers`. Extend `Simulation.WorldSnapshot.init(scenario:resolver:)` to allocate a `TeamSlot` per spawn, placing each team at the centre of its house's starting unit cluster. Then wire `loadEmc("TEAM.EMC")` + a `teamFunctions = teamTable(...)` in `ScenarioScene.setUpScheduler` and pass a real `teamVM` to the Scheduler. When that lands, mission 1 should feel meaningfully more hostile.
+If any step fails, that's a regression in the associated slice.
+
+Candidates for next slice (in rough priority order):
+
+- **Slice 5c — rally-point + cancel + queue-swap.** Unit spawns at south-of-factory; BUSY click cancels; READY click on a different type swaps queue. These are 3 small changes; may split.
+- **P5 HUD — credits, unit info, minimap.** Per-tick credit drain on BUSY yards, HUD display. Economy closure.
+- **Slice 5d — STARPORT.** `Structure_GetBuildable` `-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
+- **Save compat** (P6 work) — the build-panel state (objectType, countDown, state, degrades) all round-trips through existing save decoders.
+- **Tick-parity golden harness** — §6 goal; compare our sim to OpenDUNE on a recorded scenario.
+
+**Before continuing, user should run `swift run duneii` for visual verification.** Mission-1 Atreides expected behaviour:
+
+1. Launch, get to scenario scene.
+2. Sidebar on right lists WINDTRAP + SLAB_1x1 (maybe REFINERY depending on starting windtrap).
+3. Click WINDTRAP row — slot border was grey, now slot turns BUSY (grey with yellow progress bar filling left-to-right over ~4 s).
+4. Wait for the progress bar to fill. Slot border turns green.
+5. Click the slot again to enter placement mode (slot border turns yellow).
+6. Click an empty rock tile adjacent to the construction yard — log `commit type=9 tile=(X,Y) slot=N`. Structure outline appears.
+7. Sidebar refreshes. If the WINDTRAP unlocks REFINERY, a new row appears.
+8. Clicks on sand / off-map / non-adjacent to base → rejection log, nothing happens.
+
+If any step fails, it's a regression from that specific slice.
+
+After visual verification, next productive directions:
+
+- **Slice 5 — factory / starport buildable case.** Extend `Structure_GetBuildable` to LIGHT_VEHICLE / HEAVY_VEHICLE / HIGH_TECH / WOR_TROOPER / BARRACKS (unit production) + STARPORT (`return -1` sentinel). Needs `UnitInfo.availableHouse / structuresRequired / upgradeLevelRequired` + per-factory `buildableUnits[8]` table. Turns construction yards into the first of many factories.
+- **Slice 4e — cancel + queue-swap.** `Structure_CancelBuild` + the READY-click-different-type-replaces-queue path.
+- **P5 HUD** — resource counters + credit drain on BUSY yards + unit info panel + minimap.
+
+**Older active task (now done this session)**: every P5 build-panel slice from 1 through 4d-ui, + worktree adaptation.
 
 ## Next up (queued)
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → failing test → implement → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **P5 kickoff — build panel + structure production.** The biggest next gameplay gap. Pull the CHOAM sprite catalogue, wire per-house build options, port `Structure_Create` + `Structure_QueueBuildable` + construction-state machine.
-2. **P5 — real HUD** — resource counters, unit info, minimap. Cosmetic but high impact.
-3. **Tick-parity golden harness** — record OpenDUNE for N ticks, replay in our sim, diff pool state. Closes §6 Initial-plan sim-parity goal.
-4. **EMC `BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; running the real script would give proper flight frames + sonic-beam propagation. Cosmetic.
+1. **P5 slice 6b — credit drain during BUSY + cancel refund.** Per-tick drain; pauses BUSY when house runs out; proportional refund on cancel.
+2. **P5 slice 6c — HUD credits label.** "Credits: N" on `ScenarioScene`, refreshed per tick.
+3. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state.
+4. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal.
+3. **P5 — real HUD** — resource counters, unit info, minimap. Cosmetic but high impact.
+4. **Tick-parity golden harness** — record OpenDUNE for N ticks, replay in our sim, diff pool state. Closes §6 Initial-plan sim-parity goal.
+5. **EMC `BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; running the real script would give proper flight frames + sonic-beam propagation. Cosmetic.
 5. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder. Optional in OpenDUNE saves.
 4. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority` (sand-only, movement-state weighted); slot 0x36.
 5. **Team AI + TeamPool** — port `Script_Team_*` + `teamaction.c` weighted-action table. Mission 1 triggers enemy waves via teams.
@@ -44,6 +82,20 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-21 — P5 slice 6a: HouseSlot credits plumbing.** `credits` / `creditsStorage` / `creditsQuota` added to `Simulation.HouseSlot`; both `WorldSnapshot` init paths seed from `Scenario.HouseLayout` / `Formats.Save.Players.Slot`. Pure-sim groundwork for 6b's drain + 6c's HUD. 3 new tests. 620 green / 63 suites / zero warnings. Design: `Algorithms/HouseCredits.md`.
+- **2026-04-21 — P5 slice 5c: cancel + queue-swap + rally tile.** `Structures.cancelConstruction` flips BUSY/READY back to IDLE. `Structures.factorySpawnTile` returns south-of-footprint for unit spawn; `completeConstruction` routes through it. Controller gains `.cancelConstruction(type:)` action; BUSY + queued-type cancels; READY + different type queue-swaps via `.enqueue`. 11 new tests. 617 green / 63 suites / zero warnings. Design: `Algorithms/BuildPanelTightening.md`.
+- **2026-04-21 — P5 slice 5b-build: UnitInfo.buildTime + unit spawn on factory completion.** Factory loop closes end-to-end. `UnitInfo.buildTime` 27 rows pinned. `startConstruction` dispatches countdown by yard kind (CY→structure, factory→unit). New `Simulation.Units.createUnit` + `Simulation.Structures.completeConstruction`. Scene routes READY factory clicks to unit spawn. 11 new tests. 607 green / 63 suites / zero warnings. Design: `Algorithms/FactoryUnitSpawn.md`.
+- **2026-04-21 — P5 slice 5b-select+units: factory UI + yard switching.** Click player-owned CY/factory on map → selectedYardIndex switches → sidebar re-populates. Factory rows show unit icons via `UnitSpriteAtlas.texture` + abbreviated labels. `Structures.selectableYardAt` pure helper; `startConstruction` relaxed to accept factories. `UnitInfo.buildableUnitTypes(from:)` helper. READY factory clicks gate placement (unit spawn deferred to 5b-build). 13 new tests. 596 green / 63 suites / zero warnings. Design: `Algorithms/BuildPanelFactoryUI.md`.
+- **2026-04-21 — P5 slice 5a: factory buildable units (pure sim).** `UnitInfo` gained availableHouse / structuresRequired / upgradeLevelRequired (17 of 27 rows customised). `StructureInfo.buildableUnits[8]` populated for 5 factory rows. New `Structures.buildableUnitsFromFactory` dispatcher with Ordos TRIKE→RAIDER_TRIKE + SIEGE_TANK upgrade-1 quirks. 22 new tests. 583 green / 63 suites / zero warnings. Design: `Algorithms/FactoryBuildable.md`.
+- **2026-04-21 — P5 slice 4d-ui: build-panel surfaces BUSY/READY + progress bar + gates clicks.** Controller gains yardState / queuedType / countDown / buildTime / progress; handle(click:) branches on yardState (IDLE → enqueue, BUSY → no-op, READY on queued → enterPlacement). Sidebar renders yellow progress bar on BUSY + green outline on READY. Scene refreshes every tick so progress animates. 7 new tests + 3 slice-3 tests removed (superseded semantics). 561 green / 62 suites / zero warnings. Design: `Algorithms/BuildPanelProgress.md`.
+- **2026-04-21 — P5 slice 4d-sim: construction countdown state machine.** `StructureInfo.buildTime` added (19 rows, OpenDUNE values). `Simulation.StructureState` enum mirrors the 5 OpenDUNE state constants. `Structures.startConstruction` ports `Structure_BuildObject` tail (IDLE yard → BUSY + countDown set). `Structures.tickConstruction` drains countdown by 256 per tick; flips READY at zero. `Scheduler.tick` runs the pass. No UI changes yet — yards go BUSY invisibly. 14 new tests. 557 green / 62 suites / zero warnings. Design: `Algorithms/StructureConstruction.md`.
+- **2026-04-21 — P5 slice 4c: HP degradation + adjacent-to-player-base gate.** `StructureSlot.degrades: Bool` added + plumbed from save's ObjectFlags.degrades. `Structures.create(..., tilesWithoutSlab:)` applies the OpenDUNE HP math + sets degrades=true on negative validity. `StructureLayout.adjacentOffsets` ports the 7-layout × up-to-16 tile ring. `Structures.isValidBuildLocation` gained `playerHouseID` + `tileHouseIDAt` parameters; runs the adjacency gate for non-CY placements when both are non-nil. Scene wires both. 13 new tests. 543 green / 61 suites / zero warnings. Design: `Algorithms/BuildValidationAdjacency.md`.
+- **2026-04-21 — P5 slice 4b (landscape): landscape gate + slab count + `isValidForStructure2` + `notOnConcrete`.** `LandscapeInfo.isValidForStructure2` added (rock-family only). `StructureInfo.notOnConcrete` added (CYARD only). `isValidBuildLocation` gained optional `landscapeAt` closure; non-nil enables gate + slab count. `ScenarioScene.commitPlacement` wires closure from snapshot tileGrid + resolver. Return `-neededSlabs` logged as degraded; HP still max (4c applies degradation). Fixed 3 misports in `LandscapeInfo` (`5 MOSTLY_ROCK`, `13 DESTROYED_WALL`, `letUnitWobble` on rows 4/5/9). 10 new tests. 530 green / 61 suites / zero warnings. Design: `Algorithms/BuildValidationLandscape.md`.
+- **2026-04-21 — P5 slice 4a: `sortPriority` ordering + minimal `isValidBuildLocation`.** 19 sortPriority values populated. `buildableTypesByPriority(from:)` helper. `StructureLayout.footprintOffsets` + `Structures.footprintTiles`. `Structures.isValidBuildLocation` checks bounds + no overlap with existing pool structures + no unit on footprint tile. Commit path in `ScenarioScene` gated on validity; invalid clicks log + reset placement state. Landscape/slab/adjacency gates deferred to 4b. 18 new tests. 520 green / 61 suites / zero warnings. Design: `Algorithms/BuildValidation.md`.
+- **2026-04-21 — P5 slice 3: build panel UI on `ScenarioScene` + click → instant `Structure_Create`.** First user-visible P5 slice. New `DuneIIRendering.BuildPanelController` is a pure state machine (testable without SpriteKit); `Simulation.StructureInfo.buildableTypes(from:)` decodes the slice-1 bitmask. `ScenarioScene` widened by 128 pt for a right-hand sidebar listing buildable types (last ICN tile of each iconGroup + short label); `mouseDown` translates clicks via controller. Auto-selects the player's first construction yard. 13 new tests. 502 green / 60 suites / zero warnings. Manual-verification checklist in `Algorithms/BuildPanel.md` §8 (sandbox can't drive SpriteKit, so the user must visually confirm via `swift run duneii`).
+- **2026-04-21 — P5 slice 2: `Structure_Create` + `Structure_Allocate` (pure-sim allocator + field seed).** Three new `StructureSlot` fields (`hitpointsMax`, `upgradeLevel`, `objectType`) plumbed through both `WorldSnapshot` init paths. `Simulation.Structures.allocate` routes slabs/walls to reserved slots 81/80/79 and normal structures to the first free in `[0, 79)`. `Simulation.Structures.create` seeds `state=JUSTBUILT`, `hitpoints=hitpointsMax=StructureInfo.hitpoints`, tile-aligns position via `& 0xFF00`, sets `upgradeLevel=1` for Harkonnen LIGHT_VEHICLE. AI auto-upgrade loop + `Structure_BuildObject` + wall/slab placement deferred. 17 new tests. 489 green / 59 suites / zero warnings. Design: `Algorithms/StructureCreate.md`.
+- **2026-04-21 — P5 kickoff slice 1: `Structure_GetBuildable` (yard case) + `Structure_GetStructuresBuilt`.** Four new fields on `Simulation.StructureInfo` (availableCampaign / availableHouse / structuresRequired / upgradeLevelRequired), three new house bitmask constants, new `Simulation.Structures` namespace with the two pure functions. Harkonnen WOR exception + non-Harkonnen LIGHT_VEHICLE pin ported verbatim. Signed-int campaign gate (ROCKET_TURRET's `availableCampaign=0` passes the gate; upgrade-level is what locks it). 18 new tests. 472 green / 58 suites / zero warnings. Factory/starport cases deferred to slice 5. Design: `Algorithms/StructureBuildable.md`. Insight: `simulation-getbuildable-signed-int-campaign-gate.md`.
+- **2026-04-21 — Worktree adaptation.** Updated hardcoded log path for project rename (`DuneIIRemake` → `DuneIISwift`). Dropped stale Fixtures resource declaration in `Package.swift`. `TestInstall.locate()` now gates on directory readability so install-gated tests skip cleanly when the sandbox can't reach main-repo `Repositories/`.
 - **2026-04-21 — Team AI live hookup + log filter + INI robustness.** `Scenario.[TEAMS]` parser + `TeamAction` enum. `WorldSnapshot.teams` exposes a populated `TeamPool`. `ScenarioScene.setUpScheduler` loads `TEAM.EMC` + passes a real `teamVM` to Scheduler. Fixed INI loader to accept 2-field generated structure rows + `Concrete` / `Spice Silo` aliases. `FilteringMemoir` drops VM verbose spam by default; `DUNEII_LOG_VERBOSE=1` widens. 7 new tests. 454 green / 57 suites / zero warnings. Mission 2+ enemies now have real team AI.
 - **2026-04-21 — Motion bug: `VM.load` seeds `variables[0] = typeID` + `seenByHouses = 0xFF` at scenario spawn.** Units now reach IdleAction and FindBestTarget returns real targets. User confirmed visible motion.
 - **2026-04-20 — Logging (memoirs-ios + rotating file).** New `Log` facade wraps any `Memoirs.Memoir`, gated at compile time by `#if DEBUG` so release builds compile every call to a no-op. `FileMemoir` writes line-formatted items through a serial queue; `LogRotator` keeps `Logs/run-*.log` under the repo root, trimming to 10 newest. `duneii` executable installs both on boot. Log sites wired at install open, WorldSnapshot spawn, Scheduler action-load + halt + bullet arrival, Fire bullet creation, applyUnitDamage death, makeExplosion, ScenarioScene.build. 5 new tests. 447 green / 56 suites / zero warnings. memoirs-ios 2.1.2 added as SwiftPM dep.
@@ -96,7 +148,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **454 tests across 57 suites, all green** as of 2026-04-21. `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
+`cd Code/Core && swift test` — **620 tests across 63 suites, all green** as of 2026-04-21 (post-P5-slice-6a). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
 
 ## Open questions / risks (pointers)
 

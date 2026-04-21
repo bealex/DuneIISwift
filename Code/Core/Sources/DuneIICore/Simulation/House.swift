@@ -15,6 +15,19 @@ extension Simulation {
         public static let sardaukar: UInt8 = 4
         public static let mercenary: UInt8 = 5
 
+        /// `1 << houseID`. OpenDUNE uses the shifted value directly in
+        /// `availableHouse` bitmasks (`src/house.h:FLAG_HOUSE_*`).
+        public static func flag(for houseID: UInt8) -> UInt8 { 1 << houseID }
+
+        /// `FLAG_HOUSE_ALL` — all six houses selected (bits 0..5).
+        public static let flagAll: UInt8 = 0b0011_1111
+
+        /// BARRACKS `availableHouse` — every house *except* Harkonnen.
+        public static let flagBarracksHouses: UInt8 = 0b0011_1110
+
+        /// WOR_TROOPER `availableHouse` — every house *except* Atreides.
+        public static let flagWorHouses: UInt8 = 0b0011_1101
+
         /// Port of OpenDUNE `House_AreAllied` (`src/house.c:353`). When
         /// `playerHouseID` is nil, we degrade to "allied iff `a == b`",
         /// which is the conservative default for tests that haven't set

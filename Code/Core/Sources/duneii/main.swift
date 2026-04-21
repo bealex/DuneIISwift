@@ -50,7 +50,7 @@ directory's parent folders. Run `duneii` from within the project tree.
     private static func setupLogging() {
         #if DEBUG
         let logsRoot = URL(fileURLWithPath:
-            "/Users/alex/Programming/LonelyBytes/DuneIIRemake/Logs",
+            "/Users/alex/Programming/LonelyBytes/DuneIISwift/Logs",
             isDirectory: true
         )
         do {

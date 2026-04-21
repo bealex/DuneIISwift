@@ -22,6 +22,14 @@ public final class ScenarioScene: SKScene {
     /// 1 tick per 5 `update(_:)` calls. Matches OpenDUNE's main-loop
     /// script cadence.
     public static let framesPerTick = 5
+    /// 64 tiles × tileSize = map extent; also the left boundary of the
+    /// build-panel sidebar.
+    public static let mapSize: CGFloat = tileSize * 64
+    /// Right-hand sidebar for the build panel (P5 slice 3).
+    public static let sidebarWidth: CGFloat = 128
+    /// One row per buildable option; fits a 32×32 icon + 1pt outline.
+    public static let sidebarRowHeight: CGFloat = 32
+    public static let sidebarPadding: CGFloat = 4
 
     public weak var coordinator: SceneCoordinator?
     private let assets: AssetLoader
@@ -51,10 +59,30 @@ public final class ScenarioScene: SKScene {
     /// the atlas range (e.g. `displayMode == .singleFrame`).
     private var fallbackMarkerTexture: SKTexture?
 
+    // P5 slice 3 — build panel.
+    private var buildController = BuildPanelController()
+    /// Container for sidebar slot nodes. Always parented to the scene;
+    /// children are rebuilt on every `refreshBuildSidebar()`.
+    private var sidebarNode: SKNode?
+    /// Whether the currently-selected yard produces structures (CYARD)
+    /// or units (factory). Drives sidebar sprite + label lookup.
+    /// Slice 5b.
+    private enum YardKind: Sendable { case structure, unit }
+    private var currentYardKind: YardKind = .structure
+    /// Player identity — also drives `Scripting.Host.playerHouseID`.
+    /// Hardcoded to Atreides for P3/P5; wired through the controller
+    /// once campaign select exists.
+    private let playerHouseID: UInt8 = Simulation.House.atreides
+    /// Snapshot-time tile grid captured at scene build; consulted by
+    /// the landscape gate inside `commitPlacement`. Doesn't track
+    /// placements made during play — pool overlap is authoritative for
+    /// newly-built structures. Slice 4b.
+    private var tileGrid: [Simulation.WorldSnapshot.Tile] = []
+
     public init(assets: AssetLoader, scenarioName: String) {
         self.assets = assets
         self.scenarioName = scenarioName
-        let size = CGSize(width: Self.tileSize * 64, height: Self.tileSize * 64)
+        let size = CGSize(width: Self.mapSize + Self.sidebarWidth, height: Self.mapSize)
         super.init(size: size)
         scaleMode = .aspectFit
         backgroundColor = .black
@@ -92,6 +120,9 @@ public final class ScenarioScene: SKScene {
             tickCounter += 1
             syncVisualsFromPool()
             refreshHud()
+            // Progress bar + READY highlight animate at tick cadence
+            // (~12 Hz) — cheap rebuild of a handful of SKNodes.
+            refreshBuildSidebar()
             // Every 60 ticks (≈5 seconds at 12 Hz), sample the first
             // few unit slots so we can see whether position /
             // orientation are actually changing run-over-run.
@@ -107,7 +138,76 @@ public final class ScenarioScene: SKScene {
     }
 
     public override func mouseDown(with event: NSEvent) {
-        coordinator?.route(to: .mainMenu)
+        let location = event.location(in: self)
+        let click = classifyClick(at: location)
+
+        // Slice 5b: map click on a player-owned yard/factory → switch
+        // `selectedYardIndex`. Only when not in placement mode so we
+        // don't interrupt a commit. The controller sees nothing;
+        // sidebar refreshes with the new yard's buildable.
+        if buildController.placementType == nil,
+           case .mapTile(let x, let y) = click,
+           let host = scheduler?.host,
+           let newYardIdx = Simulation.Structures.selectableYardAt(
+               tileX: x, tileY: y, pool: host.structures, playerHouseID: playerHouseID
+           ),
+           newYardIdx != buildController.selectedYardIndex
+        {
+            buildController.selectedYardIndex = newYardIdx
+            Log.info(
+                "build-panel: selected yard=\(newYardIdx) type=\(host.structures.slots[newYardIdx].type)",
+                tracer: .label("build-panel")
+            )
+            refreshBuildSidebar()
+            return
+        }
+
+        let action = buildController.handle(click: click)
+        switch action {
+        case .enqueue(let type):
+            enqueueConstruction(type: type)
+        case .enterPlacement(let type):
+            if currentYardKind == .unit {
+                // Factory READY clicks spawn the queued unit at the
+                // factory anchor tile. Yard flips back to IDLE.
+                completeFactoryProduction(type: type)
+            } else {
+                Log.info(
+                    "build-panel: enter placement type=\(type)",
+                    tracer: .label("build-panel")
+                )
+                refreshBuildSidebar()
+            }
+        case .commitPlacement(let type, let tileX, let tileY):
+            commitPlacement(type: type, tileX: tileX, tileY: tileY)
+        case .cancelConstruction(let type):
+            cancelConstructionOnYard(type: type)
+        case .none:
+            // Sidebar click on empty row / outside click → fall back to
+            // the pre-slice-3 "return to main menu" behaviour, but only
+            // when we're *not* mid-placement (otherwise a misclick
+            // outside the sidebar would bail out of placement silently).
+            if buildController.placementType == nil {
+                coordinator?.route(to: .mainMenu)
+            }
+        }
+    }
+
+    /// Pure translation from a scene-local point to a controller click.
+    private func classifyClick(at p: CGPoint) -> BuildPanelController.Click {
+        if p.x >= Self.mapSize {
+            if let index = sidebarSlotIndex(atY: p.y) {
+                return .sidebarSlot(index: index)
+            }
+            return .outside
+        }
+        let tileX = Int(p.x / Self.tileSize)
+        // Scene origin is bottom-left; our map indexing is top-left.
+        let tileY = 63 - Int(p.y / Self.tileSize)
+        guard (0..<64).contains(tileX), (0..<64).contains(tileY) else {
+            return .outside
+        }
+        return .mapTile(x: tileX, y: tileY)
     }
 
     // MARK: - Private helpers
@@ -150,15 +250,17 @@ public final class ScenarioScene: SKScene {
         // visuals without pre-seeding. See `syncVisualsFromPool`.
         syncVisualsFromPool()
 
-        let banner = SKLabelNode(text: "\(scenarioName) · click to return")
+        let banner = SKLabelNode(text: "\(scenarioName) · click elsewhere to return")
         banner.fontColor = .white
         banner.fontSize = 14
-        banner.position = CGPoint(x: size.width / 2, y: size.height - 16)
+        banner.position = CGPoint(x: Self.mapSize / 2, y: size.height - 16)
         banner.horizontalAlignmentMode = .center
         banner.zPosition = 10
         addChild(banner)
 
         addHud()
+        autoSelectPlayerYard()
+        refreshBuildSidebar()
     }
 
     /// Builds a live `Simulation.WorldSnapshot` from the scenario spawns,
@@ -167,6 +269,7 @@ public final class ScenarioScene: SKScene {
     /// tables — scripts halt on first `FUNCTION` opcode; that's expected).
     private func setUpScheduler(scenario: Scenario, resolver: TileResolver) throws {
         let snapshot = try Simulation.WorldSnapshot(scenario: scenario, resolver: resolver)
+        tileGrid = snapshot.tiles
         let scorer = Self.makeTileEnterScorer(snapshot: snapshot, resolver: resolver)
         let host = Scripting.Host(
             units: snapshot.units,
@@ -453,6 +556,462 @@ public final class ScenarioScene: SKScene {
         let tx = SKTexture(image: image)
         tx.filteringMode = .nearest
         return tx
+    }
+
+    // MARK: - Build panel (P5 slice 3)
+
+    /// Scans the structure pool for the first CONSTRUCTION_YARD (type 8)
+    /// owned by the player. Called once after scene build; slice 4 adds
+    /// click-to-switch between multiple yards.
+    private func autoSelectPlayerYard() {
+        guard let host = scheduler?.host else { return }
+        for idx in host.structures.findArray {
+            let slot = host.structures.slots[idx]
+            if slot.type == 8, slot.houseID == playerHouseID {
+                buildController.selectedYardIndex = idx
+                Log.info(
+                    "build-panel: auto-selected player construction yard slot=\(idx)",
+                    tracer: .label("build-panel")
+                )
+                return
+            }
+        }
+    }
+
+    /// Recomputes the buildable bitmask from the selected yard + current
+    /// pool state, updates the controller's `availableTypes` and
+    /// `yardState`, and rebuilds sidebar sprites. Called at scene build,
+    /// after every commit, and every scheduler tick so the progress bar
+    /// animates.
+    private func refreshBuildSidebar() {
+        guard let host = scheduler?.host,
+              let yardIdx = buildController.selectedYardIndex,
+              yardIdx < host.structures.slots.count,
+              host.structures.slots[yardIdx].isUsed
+        else {
+            buildController.refreshAvailableTypes([])
+            buildController.refreshYardState(nil, queuedType: nil, countDown: nil, buildTime: nil)
+            renderSidebar()
+            return
+        }
+        let yard = host.structures.slots[yardIdx]
+        let built = Simulation.Structures.structuresBuilt(
+            houseID: yard.houseID, pool: host.structures
+        )
+        // campaignID is 0-indexed for OpenDUNE; hardcode to 0 (mission 1)
+        // until a campaign-progress field exists on ScenarioScene.
+        let campaignID: UInt16 = 0
+
+        // Slice 5b: dispatch by yard kind.
+        let types: [UInt8]
+        if yard.type == 8 /* CYARD */ {
+            currentYardKind = .structure
+            let mask = Simulation.Structures.buildableStructuresFromYard(
+                yardHouseID: yard.houseID,
+                yardUpgradeLevel: yard.upgradeLevel,
+                structuresBuilt: built,
+                campaignID: campaignID,
+                playerHouseID: playerHouseID
+            )
+            types = Simulation.StructureInfo.buildableTypesByPriority(from: mask)
+        } else {
+            currentYardKind = .unit
+            let mask = Simulation.Structures.buildableUnitsFromFactory(
+                factoryType: yard.type,
+                factoryHouseID: yard.houseID,
+                factoryUpgradeLevel: yard.upgradeLevel,
+                structuresBuilt: built
+            )
+            types = Simulation.UnitInfo.buildableUnitTypes(from: mask)
+        }
+        buildController.refreshAvailableTypes(types)
+
+        // Surface the yard's state so the controller branches on it.
+        let state = Simulation.StructureState(rawValue: yard.state)
+        let queued: UInt8?
+        let buildTime: UInt16?
+        if yard.objectType == 0xFFFF {
+            queued = nil
+            buildTime = nil
+        } else {
+            queued = UInt8(truncatingIfNeeded: yard.objectType)
+            // Slice 5b uses the yard's own buildTime as the progress
+            // denominator for factories (matches the placeholder
+            // countdown source in `startConstruction`).
+            if currentYardKind == .structure,
+               let info = Simulation.StructureInfo.lookup(queued!)
+            {
+                buildTime = info.buildTime
+            } else if let yardInfo = Simulation.StructureInfo.lookup(yard.type) {
+                buildTime = yardInfo.buildTime
+            } else {
+                buildTime = nil
+            }
+        }
+        buildController.refreshYardState(
+            state,
+            queuedType: queued,
+            countDown: yard.countDown,
+            buildTime: buildTime
+        )
+        renderSidebar()
+    }
+
+    /// Slice 5c: cancel the BUSY / READY item on the selected yard.
+    /// Credit refund deferred with `House` economy subsystem.
+    private func cancelConstructionOnYard(type: UInt8) {
+        guard let host = scheduler?.host,
+              let yardIdx = buildController.selectedYardIndex
+        else { return }
+        var pool = host.structures
+        let ok = Simulation.Structures.cancelConstruction(
+            yardIndex: yardIdx, pool: &pool
+        )
+        host.structures = pool
+        Log.info(
+            "build-panel: cancel yard=\(yardIdx) type=\(type) ok=\(ok)",
+            tracer: .label("build-panel")
+        )
+        refreshBuildSidebar()
+    }
+
+    /// Slice 5b-build: flush a READY factory — spawn the queued unit
+    /// at the factory anchor and return the yard to IDLE.
+    /// Clears `placementType` so the scene doesn't enter map-placement
+    /// mode (which is the CY path).
+    private func completeFactoryProduction(type: UInt8) {
+        guard let host = scheduler?.host,
+              let yardIdx = buildController.selectedYardIndex
+        else { return }
+        var structures = host.structures
+        var units = host.units
+        let unitIdx = Simulation.Structures.completeConstruction(
+            yardIndex: yardIdx,
+            pool: &structures,
+            unitPool: &units
+        )
+        host.structures = structures
+        host.units = units
+        if let unitIdx {
+            Log.info(
+                "build-panel: factory yard=\(yardIdx) completed type=\(type) → unit slot=\(unitIdx)",
+                tracer: .label("build-panel")
+            )
+        } else {
+            Log.info(
+                "build-panel: factory yard=\(yardIdx) completion FAILED (unit pool full?)",
+                tracer: .label("build-panel")
+            )
+        }
+        buildController.placementType = nil
+        refreshBuildSidebar()
+    }
+
+    /// Slice 4d-ui: queue a construction on the currently-selected
+    /// yard. Called from the `.enqueue` action. Delegates to the sim
+    /// layer; refreshes the sidebar so the progress bar appears
+    /// immediately.
+    private func enqueueConstruction(type: UInt8) {
+        guard let host = scheduler?.host,
+              let yardIdx = buildController.selectedYardIndex
+        else { return }
+        var pool = host.structures
+        let ok = Simulation.Structures.startConstruction(
+            yardIndex: yardIdx, objectType: type, pool: &pool
+        )
+        host.structures = pool
+        Log.info(
+            "build-panel: enqueue type=\(type) yard=\(yardIdx) ok=\(ok)",
+            tracer: .label("build-panel")
+        )
+        refreshBuildSidebar()
+    }
+
+    /// Tears down + rebuilds the sidebar node stack. Each slot is a
+    /// 32×32 icon from the structure's iconGroup, with a 1pt outline.
+    /// The slot currently being placed gets a brighter outline.
+    private func renderSidebar() {
+        sidebarNode?.removeFromParent()
+        let container = SKNode()
+        container.zPosition = 20
+        addChild(container)
+        sidebarNode = container
+
+        // Background panel so the sidebar reads as a distinct region.
+        let bgSize = CGSize(width: Self.sidebarWidth, height: Self.mapSize)
+        let bg = SKShapeNode(rect: CGRect(
+            x: Self.mapSize, y: 0,
+            width: bgSize.width, height: bgSize.height
+        ))
+        bg.fillColor = NSColor(calibratedWhite: 0.12, alpha: 1.0)
+        bg.strokeColor = NSColor(calibratedWhite: 0.25, alpha: 1.0)
+        bg.lineWidth = 1
+        container.addChild(bg)
+
+        let header = SKLabelNode(text: "BUILD")
+        header.fontColor = .white
+        header.fontSize = 11
+        header.fontName = "Menlo-Bold"
+        header.horizontalAlignmentMode = .center
+        header.position = CGPoint(
+            x: Self.mapSize + Self.sidebarWidth / 2,
+            y: Self.mapSize - 18
+        )
+        container.addChild(header)
+
+        let iconMap = assets.iconMap
+        for (row, type) in buildController.availableTypes.enumerated() {
+            let slotY = sidebarSlotY(forIndex: row)
+            let slotFrame = CGRect(
+                x: Self.mapSize + Self.sidebarPadding,
+                y: slotY,
+                width: Self.sidebarWidth - 2 * Self.sidebarPadding,
+                height: Self.sidebarRowHeight - Self.sidebarPadding
+            )
+            let slotNode = SKShapeNode(rect: slotFrame)
+            slotNode.fillColor = NSColor(calibratedWhite: 0.18, alpha: 1.0)
+            // Highlight priority: READY > placement-picked > idle.
+            let isQueuedReady = (buildController.yardState == .ready
+                                 && buildController.queuedType == type)
+            let isPlacing = (buildController.placementType == type)
+            if isQueuedReady {
+                slotNode.strokeColor = NSColor(calibratedRed: 0.3, green: 1.0, blue: 0.35, alpha: 1)
+                slotNode.lineWidth = 2
+            } else if isPlacing {
+                slotNode.strokeColor = NSColor(calibratedRed: 1, green: 0.85, blue: 0.2, alpha: 1)
+                slotNode.lineWidth = 2
+            } else {
+                slotNode.strokeColor = NSColor(calibratedWhite: 0.35, alpha: 1.0)
+                slotNode.lineWidth = 1
+            }
+            container.addChild(slotNode)
+
+            // Progress bar for BUSY construction.
+            if buildController.yardState == .busy,
+               buildController.queuedType == type,
+               let progress = buildController.progress
+            {
+                let fillWidth = slotFrame.width * CGFloat(progress)
+                let bar = SKShapeNode(rect: CGRect(
+                    x: slotFrame.minX,
+                    y: slotFrame.minY,
+                    width: fillWidth,
+                    height: 3
+                ))
+                bar.fillColor = NSColor(calibratedRed: 1.0, green: 0.8, blue: 0.2, alpha: 0.9)
+                bar.strokeColor = .clear
+                container.addChild(bar)
+            }
+
+            // Icon — branches by yard kind.
+            //   .structure → last tile of the structure's iconGroup
+            //   .unit      → unit atlas texture at the unit's
+            //               groundSpriteID (idle/north-facing frame)
+            switch currentYardKind {
+            case .structure:
+                if let groupRaw = Simulation.StructureInfo.iconGroupRawValue(for: type),
+                   let group = Formats.IconMap.Group(rawValue: groupRaw) {
+                    let tileIds = iconMap.tileIds(in: group)
+                    if let chosenTileID = tileIds.last, Int(chosenTileID) < tileTextures.count {
+                        let texture = tileTextures[Int(chosenTileID)]
+                        let icon = SKSpriteNode(texture: texture)
+                        icon.size = CGSize(width: 24, height: 24)
+                        icon.position = CGPoint(
+                            x: slotFrame.minX + 16,
+                            y: slotFrame.midY
+                        )
+                        container.addChild(icon)
+                    }
+                }
+            case .unit:
+                if let info = Simulation.UnitInfo.lookup(type),
+                   let texture = unitAtlas?.texture(
+                       at: Int(info.groundSpriteID), houseID: playerHouseID
+                   )
+                {
+                    let icon = SKSpriteNode(texture: texture)
+                    icon.size = CGSize(width: 24, height: 24)
+                    icon.position = CGPoint(
+                        x: slotFrame.minX + 16,
+                        y: slotFrame.midY
+                    )
+                    container.addChild(icon)
+                }
+            }
+
+            // Label: abbreviated type name. Helps when the icon is tiny.
+            let label = SKLabelNode(text: currentYardKind == .structure
+                                    ? Self.shortName(for: type)
+                                    : Self.shortUnitName(for: type))
+            label.fontColor = .white
+            label.fontSize = 10
+            label.fontName = "Menlo"
+            label.horizontalAlignmentMode = .left
+            label.verticalAlignmentMode = .center
+            label.position = CGPoint(
+                x: slotFrame.minX + 34,
+                y: slotFrame.midY
+            )
+            container.addChild(label)
+        }
+    }
+
+    /// Top-to-bottom sidebar row placement. Row 0 lives just below the
+    /// "BUILD" header; each subsequent row is `sidebarRowHeight` lower.
+    private func sidebarSlotY(forIndex row: Int) -> CGFloat {
+        let topMargin: CGFloat = 36
+        let topY = Self.mapSize - topMargin
+        return topY - CGFloat(row + 1) * Self.sidebarRowHeight
+    }
+
+    /// Inverse of `sidebarSlotY`: given a scene-local Y, returns the
+    /// row index that contains it, or nil when outside any row.
+    private func sidebarSlotIndex(atY y: CGFloat) -> Int? {
+        let topMargin: CGFloat = 36
+        let topY = Self.mapSize - topMargin
+        let rawRow = (topY - y) / Self.sidebarRowHeight
+        let row = Int(rawRow) - 1
+        guard row >= 0, row < buildController.availableTypes.count else { return nil }
+        return row
+    }
+
+    /// Commits a placement: validates via `isValidBuildLocation`, then
+    /// maps tile coords to pos32, invokes `Simulation.Structures.create`,
+    /// refreshes the sidebar, and logs the outcome. Slice 4a rejects
+    /// out-of-bounds + overlapping placements; slice 4b adds the
+    /// landscape gate + slab-deficit count; slice 4c adds the
+    /// adjacent-to-player-base gate and applies HP degradation from
+    /// `-neededSlabs` on the create path.
+    private func commitPlacement(type: UInt8, tileX: Int, tileY: Int) {
+        guard let host = scheduler?.host else { return }
+        let resolver = assets.tileResolver
+        let tiles = tileGrid
+        let landscapeAt: (Int, Int) -> LandscapeType = { x, y in
+            guard x >= 0, x < 64, y >= 0, y < 64 else { return .entirelyMountain }
+            let idx = y * 64 + x
+            guard idx < tiles.count else { return .entirelyMountain }
+            let cell = tiles[idx]
+            return resolver.landscapeType(
+                groundTileID: cell.groundTileID,
+                overlayTileID: cell.overlayTileID,
+                hasStructure: cell.hasStructure
+            )
+        }
+        let tileHouseIDAt: (Int, Int) -> UInt8 = { x, y in
+            guard x >= 0, x < 64, y >= 0, y < 64 else { return 0 }
+            let idx = y * 64 + x
+            guard idx < tiles.count else { return 0 }
+            return tiles[idx].houseID
+        }
+        let validity = Simulation.Structures.isValidBuildLocation(
+            tileX: tileX, tileY: tileY, type: type,
+            structures: host.structures, units: host.units,
+            landscapeAt: landscapeAt,
+            playerHouseID: playerHouseID,
+            tileHouseIDAt: tileHouseIDAt
+        )
+        guard validity != 0 else {
+            Log.info(
+                "build-panel: commit rejected — invalid tile=(\(tileX),\(tileY)) type=\(type)",
+                tracer: .label("build-panel")
+            )
+            // Reset placement state on rejection so a re-pick starts
+            // cleanly. Sidebar refresh clears the highlight.
+            buildController.placementType = nil
+            refreshBuildSidebar()
+            return
+        }
+        let tilesWithoutSlab: Int
+        if validity < 0 {
+            // Valid but degraded — slab deficit = -validity. Apply HP
+            // damage on the create path via tilesWithoutSlab.
+            tilesWithoutSlab = Int(-validity)
+            Log.info(
+                "build-panel: commit degraded tile=(\(tileX),\(tileY)) type=\(type) slabs_needed=\(tilesWithoutSlab)",
+                tracer: .label("build-panel")
+            )
+        } else {
+            tilesWithoutSlab = 0
+        }
+        let px = UInt16(clamping: tileX * 256)
+        let py = UInt16(clamping: tileY * 256)
+        var pool = host.structures
+        let idx = Simulation.Structures.create(
+            type: type,
+            houseID: playerHouseID,
+            position: Pos32(x: px, y: py),
+            pool: &pool,
+            tilesWithoutSlab: tilesWithoutSlab
+        )
+        host.structures = pool
+        if let idx {
+            Log.info(
+                "build-panel: commit type=\(type) tile=(\(tileX),\(tileY)) → slot=\(idx)",
+                tracer: .label("build-panel")
+            )
+        } else {
+            Log.info(
+                "build-panel: commit type=\(type) tile=(\(tileX),\(tileY)) FAILED (pool full)",
+                tracer: .label("build-panel")
+            )
+        }
+        refreshBuildSidebar()
+    }
+
+    /// Short name for unit-type sidebar labels. Mirrors in-game
+    /// abbreviations without pulling in the string-table assets.
+    private static func shortUnitName(for type: UInt8) -> String {
+        switch type {
+        case 0:  return "Carry"
+        case 1:  return "Thopt"
+        case 2:  return "Infant"
+        case 3:  return "Troops"
+        case 4:  return "Soldr"
+        case 5:  return "Trper"
+        case 6:  return "Sabot"
+        case 7:  return "Launch"
+        case 8:  return "Devi."
+        case 9:  return "Tank"
+        case 10: return "Siege"
+        case 11: return "Devst"
+        case 12: return "Sonic"
+        case 13: return "Trike"
+        case 14: return "Raider"
+        case 15: return "Quad"
+        case 16: return "Harv"
+        case 17: return "MCV"
+        case 18: return "D.Hand"
+        case 25: return "Worm"
+        case 26: return "Frigt"
+        default: return "?"
+        }
+    }
+
+    /// Short name for sidebar labels. Mirrors in-game abbreviations
+    /// without depending on the string-table assets.
+    private static func shortName(for type: UInt8) -> String {
+        switch type {
+        case 0:  return "Slab 1"
+        case 1:  return "Slab 4"
+        case 2:  return "Palace"
+        case 3:  return "Light"
+        case 4:  return "Heavy"
+        case 5:  return "Hi-Tech"
+        case 6:  return "IX"
+        case 7:  return "WOR"
+        case 8:  return "C-Yard"
+        case 9:  return "Wndtrp"
+        case 10: return "Barr."
+        case 11: return "Spcprt"
+        case 12: return "Refin."
+        case 13: return "Repair"
+        case 14: return "Wall"
+        case 15: return "Turret"
+        case 16: return "R-Turr"
+        case 17: return "Silo"
+        case 18: return "Outpst"
+        default: return "?"
+        }
     }
 
     /// House ID → colour; falls back to white for unknown IDs.

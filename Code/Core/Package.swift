@@ -56,8 +56,7 @@ let package = Package(
         .testTarget(
             name: "DuneIICoreTests",
             dependencies: ["DuneIICore", "AssetExport", "DuneIIRendering"],
-            path: "Tests/DuneIICoreTests",
-            resources: [.copy("Fixtures")]
+            path: "Tests/DuneIICoreTests"
         )
     ]
 )

@@ -274,6 +274,55 @@ struct SimulationWorldSnapshotTests {
         // (non-zero), distinguishing this from `Map.empty()` baselines.
         #expect(convenience.tiles[0].groundTileID != 0)
     }
+
+    // MARK: Slice 6a — HouseSlot credits plumbing
+
+    @Test("default HouseSlot has credits / creditsStorage / creditsQuota == 0")
+    func houseSlotCreditsDefaults() {
+        let slot = Simulation.HouseSlot()
+        #expect(slot.credits == 0)
+        #expect(slot.creditsStorage == 0)
+        #expect(slot.creditsQuota == 0)
+    }
+
+    @Test("scenario init seeds credits + quota from HouseLayout")
+    func scenarioCreditsSeeded() throws {
+        var scenario = Scenario()
+        scenario.mapField.seed = 0x2345
+        scenario.houses[.atreides] = Scenario.HouseLayout(
+            quota: 5000, credits: 2000, brain: .human, maxUnits: 20
+        )
+        scenario.houses[.harkonnen] = Scenario.HouseLayout(
+            quota: 0, credits: 1500, brain: .cpu, maxUnits: 20
+        )
+        let resolver = TileResolver(iconMap: try syntheticIconMap())
+        let snap = try Simulation.WorldSnapshot(scenario: scenario, resolver: resolver)
+        // Atreides typeID == 1
+        #expect(snap.houses[1].credits == 2000)
+        #expect(snap.houses[1].creditsQuota == 5000)
+        // Harkonnen typeID == 0
+        #expect(snap.houses[0].credits == 1500)
+        #expect(snap.houses[0].creditsQuota == 0)
+        // creditsStorage stays 0 on scenario path — it's computed from
+        // refinery count at runtime.
+        #expect(snap.houses[1].creditsStorage == 0)
+    }
+
+    @Test("save init copies credits / storage / quota from the save record")
+    func saveCreditsRoundTrip() throws {
+        guard let url = TestInstall.locate()?.appendingPathComponent("_SAVE001.DAT"),
+              FileManager.default.fileExists(atPath: url.path) else { return }
+        let data = try Data(contentsOf: url)
+        let game = try Formats.Save.Game.decode(data)
+        let snap = try Simulation.WorldSnapshot(loading: game, baseline: Map.empty())
+        for savedSlot in game.houses.slots {
+            let idx = Int(savedSlot.index)
+            guard idx < Simulation.HousePool.capacity else { continue }
+            #expect(snap.houses[idx].credits == savedSlot.credits)
+            #expect(snap.houses[idx].creditsStorage == savedSlot.creditsStorage)
+            #expect(snap.houses[idx].creditsQuota == savedSlot.creditsQuota)
+        }
+    }
 }
 
 // MARK: - Save.Game builders (pure composition over decoded values)
