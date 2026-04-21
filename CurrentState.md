@@ -11,7 +11,13 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**P5 closure — build panel end-to-end. Next: slice 5 (factory/starport buildable case) OR cancel + queue-swap + HP/economy tightening on the existing panel.** All of P5 slice 4 landed in this session. The construction loop is now end-to-end: click an IDLE yard → yard goes BUSY with a progress bar → scheduler drains countdown → yard flips READY with a green highlight → click the READY slot to enter placement → click a valid tile to commit. Validation has bounds, landscape, slab-count, overlap, adjacency, and HP-degradation on placement. The sidebar matches OpenDUNE's factory-window ordering.
+**P5 — slice 5b: sidebar UI for factories (units) + yard selection UX.** Slice 5a landed: `Simulation.Structures.buildableUnitsFromFactory` returns the per-factory unit bitmask; per-unit `availableHouse / structuresRequired / upgradeLevelRequired`; per-factory `buildableUnits[8]`. But the UI is still CY-only — clicking on a barracks or LV factory does nothing. Slice 5b wires the sidebar + yard-switch flow.
+
+Slice 5b plan: (a) `ScenarioScene` click handler distinguishes map tile under a *factory* structure vs. construction yard vs. other. Click on a player-owned factory → switch selected yard to that pool slot. (b) `refreshBuildSidebar` dispatches to the right buildable query based on `yard.type`: CY → `buildableStructuresFromYard`, factory → `buildableUnitsFromFactory`. (c) Sidebar sprite lookup needs to resolve unit iconIDs (not structure iconGroups) — small helper mapping unit type → CHOAM sprite (or some reasonable fallback in the short term). (d) Controller + enqueue flow: unit production enqueues into the same `objectType` field on the factory but creates a UNIT on completion instead of a STRUCTURE on placement. Ports `Structure_CreateUnit` or equivalent.
+
+Slice 5b is the biggest UI slice yet — CY vs factory divergence, sprite indirection, unit spawn placement. May split into: 5b-select (yard switching), 5b-units (sidebar renders units, no spawn yet), 5b-spawn (unit creation on completion).
+
+**P5 closure progress**: the construction loop is end-to-end for yards. The build panel now matches OpenDUNE's panel ordering, validates all gates, and animates BUSY → READY. User verification via `swift run duneii` is worth doing before slice 5b's larger restructure.
 
 **Before continuing, user should run `swift run duneii` for visual verification.** Mission-1 Atreides expected behaviour:
 
@@ -38,8 +44,9 @@ After visual verification, next productive directions:
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → failing test → implement → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **P5 slice 5 — factory/starport buildable case.** Extend `Structure_GetBuildable` to LIGHT_VEHICLE / HEAVY_VEHICLE / HIGH_TECH / WOR_TROOPER / BARRACKS (unit production) + STARPORT (`return -1` sentinel). Needs `UnitInfo.availableHouse / structuresRequired / upgradeLevelRequired` + per-factory `buildableUnits[8]` table.
+1. **P5 slice 5b — factory sidebar UI + yard switching + unit spawn.** Scene distinguishes CY vs factory yards; map-click on a player-owned factory selects it; sidebar dispatches to structure vs unit buildable; commit path spawns a UNIT for factories. Likely splits into 5b-select / 5b-units / 5b-spawn.
 2. **P5 slice 4e — cancel + queue-swap.** `Structure_CancelBuild` + READY-click-different-type-replaces-queue path.
+3. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state.
 3. **P5 — real HUD** — resource counters, unit info, minimap. Cosmetic but high impact.
 4. **Tick-parity golden harness** — record OpenDUNE for N ticks, replay in our sim, diff pool state. Closes §6 Initial-plan sim-parity goal.
 5. **EMC `BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; running the real script would give proper flight frames + sonic-beam propagation. Cosmetic.
@@ -55,6 +62,7 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-21 — P5 slice 5a: factory buildable units (pure sim).** `UnitInfo` gained availableHouse / structuresRequired / upgradeLevelRequired (17 of 27 rows customised). `StructureInfo.buildableUnits[8]` populated for 5 factory rows. New `Structures.buildableUnitsFromFactory` dispatcher with Ordos TRIKE→RAIDER_TRIKE + SIEGE_TANK upgrade-1 quirks. 22 new tests. 583 green / 63 suites / zero warnings. Design: `Algorithms/FactoryBuildable.md`.
 - **2026-04-21 — P5 slice 4d-ui: build-panel surfaces BUSY/READY + progress bar + gates clicks.** Controller gains yardState / queuedType / countDown / buildTime / progress; handle(click:) branches on yardState (IDLE → enqueue, BUSY → no-op, READY on queued → enterPlacement). Sidebar renders yellow progress bar on BUSY + green outline on READY. Scene refreshes every tick so progress animates. 7 new tests + 3 slice-3 tests removed (superseded semantics). 561 green / 62 suites / zero warnings. Design: `Algorithms/BuildPanelProgress.md`.
 - **2026-04-21 — P5 slice 4d-sim: construction countdown state machine.** `StructureInfo.buildTime` added (19 rows, OpenDUNE values). `Simulation.StructureState` enum mirrors the 5 OpenDUNE state constants. `Structures.startConstruction` ports `Structure_BuildObject` tail (IDLE yard → BUSY + countDown set). `Structures.tickConstruction` drains countdown by 256 per tick; flips READY at zero. `Scheduler.tick` runs the pass. No UI changes yet — yards go BUSY invisibly. 14 new tests. 557 green / 62 suites / zero warnings. Design: `Algorithms/StructureConstruction.md`.
 - **2026-04-21 — P5 slice 4c: HP degradation + adjacent-to-player-base gate.** `StructureSlot.degrades: Bool` added + plumbed from save's ObjectFlags.degrades. `Structures.create(..., tilesWithoutSlab:)` applies the OpenDUNE HP math + sets degrades=true on negative validity. `StructureLayout.adjacentOffsets` ports the 7-layout × up-to-16 tile ring. `Structures.isValidBuildLocation` gained `playerHouseID` + `tileHouseIDAt` parameters; runs the adjacency gate for non-CY placements when both are non-nil. Scene wires both. 13 new tests. 543 green / 61 suites / zero warnings. Design: `Algorithms/BuildValidationAdjacency.md`.
@@ -116,7 +124,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **561 tests across 62 suites, all green** as of 2026-04-21 (post-P5-slice-4d-ui). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
+`cd Code/Core && swift test` — **583 tests across 63 suites, all green** as of 2026-04-21 (post-P5-slice-5a). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
 
 ## Open questions / risks (pointers)
 

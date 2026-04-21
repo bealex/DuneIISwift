@@ -124,6 +124,12 @@ extension Simulation {
         /// `buildTime` ticks (~4 seconds for a WINDTRAP at the
         /// scheduler's 12 Hz cadence).
         public let buildTime: UInt16
+        /// `StructureInfo.buildableUnits[8]`. Per-factory list of unit
+        /// type IDs producible here; `0xFF` entries are empty slots.
+        /// Populated only for LIGHT_VEHICLE (3), HEAVY_VEHICLE (4),
+        /// HIGH_TECH (5), WOR_TROOPER (7), BARRACKS (10). Default is
+        /// an all-`0xFF` array — non-factory rows inherit it. Slice 5a.
+        public let buildableUnits: [UInt8]
 
         public init(
             hitpoints: UInt16,
@@ -138,7 +144,8 @@ extension Simulation {
             upgradeLevelRequired: UInt8,
             sortPriority: UInt16,
             buildTime: UInt16,
-            notOnConcrete: Bool = false
+            notOnConcrete: Bool = false,
+            buildableUnits: [UInt8] = Array(repeating: 0xFF, count: 8)
         ) {
             self.hitpoints = hitpoints
             self.buildCredits = buildCredits
@@ -153,6 +160,7 @@ extension Simulation {
             self.sortPriority = sortPriority
             self.buildTime = buildTime
             self.notOnConcrete = notOnConcrete
+            self.buildableUnits = buildableUnits
         }
 
         /// `FLAG_STRUCTURE_NEVER` sentinel. Used for CONSTRUCTION_YARD:
@@ -185,19 +193,22 @@ extension Simulation {
                           priorityBuild: 0, priorityTarget: 200,
                           availableCampaign: 3,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 12) | (1 << 9), upgradeLevelRequired: 0,
-                          sortPriority: 14, buildTime: 96),
+                          sortPriority: 14, buildTime: 96,
+                          buildableUnits: [13, 15, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
             // 4 HEAVY_VEHICLE (Heavy Fctry) — needs OUTPOST|WINDTRAP|LIGHT_VEHICLE
             StructureInfo(hitpoints: 200, buildCredits: 600, fogUncoverRadius: 3, layout: .s3x2,
                           priorityBuild: 0, priorityTarget: 600,
                           availableCampaign: 4,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 18) | (1 << 9) | (1 << 3), upgradeLevelRequired: 0,
-                          sortPriority: 28, buildTime: 144),
+                          sortPriority: 28, buildTime: 144,
+                          buildableUnits: [10, 7, 16, 9, 11, 8, 17, 12]),
             // 5 HIGH_TECH (Hi-Tech) — needs OUTPOST|WINDTRAP|LIGHT_VEHICLE
             StructureInfo(hitpoints: 400, buildCredits: 500, fogUncoverRadius: 3, layout: .s3x2,
                           priorityBuild: 0, priorityTarget: 200,
                           availableCampaign: 5,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 18) | (1 << 9) | (1 << 3), upgradeLevelRequired: 0,
-                          sortPriority: 30, buildTime: 120),
+                          sortPriority: 30, buildTime: 120,
+                          buildableUnits: [0, 1, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
             // 6 HOUSE_OF_IX — needs REFINERY|STARPORT|WINDTRAP
             StructureInfo(hitpoints: 400, buildCredits: 500, fogUncoverRadius: 3, layout: .s2x2,
                           priorityBuild: 0, priorityTarget: 100,
@@ -209,7 +220,8 @@ extension Simulation {
                           priorityBuild: 0, priorityTarget: 175,
                           availableCampaign: 5,  availableHouse: House.flagWorHouses,
                           structuresRequired: (1 << 18) | (1 << 10) | (1 << 9), upgradeLevelRequired: 0,
-                          sortPriority: 20, buildTime: 104),
+                          sortPriority: 20, buildTime: 104,
+                          buildableUnits: [5, 3, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
             // 8 CONSTRUCTION_YARD — FLAG_STRUCTURE_NEVER + availableCampaign=99
             //   + notOnConcrete=true (the only structure with this flag).
             StructureInfo(hitpoints: 400, buildCredits: 400, fogUncoverRadius: 3, layout: .s2x2,
@@ -228,7 +240,8 @@ extension Simulation {
                           priorityBuild: 0, priorityTarget: 100,
                           availableCampaign: 2,  availableHouse: House.flagBarracksHouses,
                           structuresRequired: (1 << 18) | (1 << 9), upgradeLevelRequired: 0,
-                          sortPriority: 18, buildTime: 72),
+                          sortPriority: 18, buildTime: 72,
+                          buildableUnits: [4, 2, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
             // 11 STARPORT — needs REFINERY|WINDTRAP
             StructureInfo(hitpoints: 500, buildCredits: 500, fogUncoverRadius: 6, layout: .s3x3,
                           priorityBuild: 0, priorityTarget: 250,

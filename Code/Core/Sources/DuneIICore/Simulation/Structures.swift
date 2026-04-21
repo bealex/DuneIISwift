@@ -35,6 +35,73 @@ extension Simulation {
             return result
         }
 
+        /// Port of the factory cases of `Structure_GetBuildable`
+        /// (`src/structure.c`): LIGHT_VEHICLE (3), HEAVY_VEHICLE (4),
+        /// HIGH_TECH (5), WOR_TROOPER (7), BARRACKS (10). Returns a
+        /// bitmask `(1 << unitType)` over every UNIT this factory may
+        /// currently produce.
+        ///
+        /// Gates:
+        /// - `StructureInfo.buildableUnits[i]` must name a valid unit.
+        /// - Unit's `structuresRequired` must be satisfied by
+        ///   `structuresBuilt`.
+        /// - Unit's `availableHouse` bitmask must include the factory
+        ///   house.
+        /// - Factory `upgradeLevel` must meet `unit.upgradeLevelRequired`.
+        ///
+        /// Two Ordos quirks ported verbatim:
+        /// - TRIKE → RAIDER_TRIKE substitution for Ordos-owned LV
+        ///   factories.
+        /// - SIEGE_TANK `upgradeLevelRequired -= 1` (so 3 → 2) for
+        ///   Ordos-owned HV factories.
+        ///
+        /// CONSTRUCTION_YARD (8), STARPORT (11), and non-factory types
+        /// return 0. STARPORT in OpenDUNE returns `-1` as an
+        /// "everything available" sentinel backed by `g_starportAvailable`;
+        /// deferred to a later slice.
+        public static func buildableUnitsFromFactory(
+            factoryType: UInt8,
+            factoryHouseID: UInt8,
+            factoryUpgradeLevel: UInt8,
+            structuresBuilt: UInt32
+        ) -> UInt32 {
+            switch factoryType {
+            case 3, 4, 5, 7, 10: break
+            default: return 0
+            }
+            guard let info = StructureInfo.lookup(factoryType) else { return 0 }
+
+            var result: UInt32 = 0
+            for slotIndex in 0..<8 {
+                var unitType = info.buildableUnits[slotIndex]
+                if unitType == 0xFF { continue }
+
+                // Ordos TRIKE → RAIDER_TRIKE substitution.
+                if unitType == 13 /* TRIKE */ && factoryHouseID == House.ordos {
+                    unitType = 14 /* RAIDER_TRIKE */
+                }
+
+                guard let unitInfo = UnitInfo.lookup(unitType) else { continue }
+                var upgradeLevelRequired = unitInfo.upgradeLevelRequired
+
+                // Ordos SIEGE_TANK gets upgradeLevelRequired -= 1.
+                if unitType == 10 /* SIEGE_TANK */ && factoryHouseID == House.ordos
+                    && upgradeLevelRequired > 0
+                {
+                    upgradeLevelRequired -= 1
+                }
+
+                if (structuresBuilt & unitInfo.structuresRequired) != unitInfo.structuresRequired {
+                    continue
+                }
+                if (unitInfo.availableHouse & (UInt8(1) << factoryHouseID)) == 0 { continue }
+                if factoryUpgradeLevel < upgradeLevelRequired { continue }
+
+                result |= UInt32(1) << UInt32(unitType)
+            }
+            return result
+        }
+
         /// Port of the `STRUCTURE_CONSTRUCTION_YARD` case of
         /// `Structure_GetBuildable` (`src/structure.c`). Returns a
         /// bitmask `(1 << structureType)` over every type the given
