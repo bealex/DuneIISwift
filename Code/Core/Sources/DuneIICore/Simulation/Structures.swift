@@ -507,17 +507,21 @@ extension Simulation {
             return (anchorX, anchorY)
         }
 
-        /// Slice 5c: cancel a BUSY or READY yard's construction.
+        /// Slice 5c + 6b: cancel a BUSY / READY yard's construction.
         /// Resets `state` to IDLE, clears `objectType` and `countDown`.
         /// Returns `false` on IDLE yards / out-of-range / freed slots.
         ///
-        /// Matches OpenDUNE's `Structure_CancelBuild` for state reset.
-        /// The credit refund (proportional to remaining `buildTime`)
-        /// is deferred with the `House` credits subsystem.
+        /// Slice 6b: on CY cancel (yard type 8), refunds credits
+        /// proportional to progress. Port of OpenDUNE's
+        /// `Structure_CancelBuild` formula:
+        /// `refund = (buildTime - countDown >> 8) × buildCredits / buildTime`.
+        /// Factory refund requires `UnitInfo.buildCredits` — deferred
+        /// to slice 6c.
         @discardableResult
         public static func cancelConstruction(
             yardIndex: Int,
-            pool: inout StructurePool
+            pool: inout StructurePool,
+            houses: inout HousePool
         ) -> Bool {
             guard yardIndex >= 0, yardIndex < StructurePool.capacitySoft else { return false }
             let slot = pool[yardIndex]
@@ -525,6 +529,26 @@ extension Simulation {
             guard slot.state == StructureState.busy.rawValue
                 || slot.state == StructureState.ready.rawValue
             else { return false }
+
+            // Refund — dispatch by yard kind. Slice 6b handled CY via
+            // StructureInfo; slice 6c extends to factories via UnitInfo.
+            // Formula from `Structure_CancelBuild`:
+            // refund = ticksSpent × buildCredits / buildTime.
+            if let (buildCredits, buildTime) = producedCost(slot: slot),
+               buildTime > 0
+            {
+                let houseIdx = Int(slot.houseID)
+                if houseIdx >= 0, houseIdx < HousePool.capacity,
+                   houses.slots[houseIdx].isUsed
+                {
+                    let ticksSpent = Int(buildTime) - Int(slot.countDown >> 8)
+                    let refund = max(0, ticksSpent) * Int(buildCredits) / Int(buildTime)
+                    var h = houses[houseIdx]
+                    h.credits = UInt16(clamping: Int(h.credits) + refund)
+                    houses[houseIdx] = h
+                }
+            }
+
             var updated = slot
             updated.state = StructureState.idle.rawValue
             updated.objectType = 0xFFFF
@@ -620,18 +644,54 @@ extension Simulation {
 
         /// Port of the `countDown` decrement from OpenDUNE's
         /// `GameLoop_Structure`. For every BUSY yard in the pool's
-        /// `findArray`: subtract `defaultBuildSpeed` from `countDown`;
-        /// when `countDown` would reach zero, clamp + flip `state` to
-        /// `READY`. IDLE / JUSTBUILT / READY slots are untouched.
+        /// `findArray`: if the owning house can pay `costPerTick`
+        /// (slice 6b: CY path only), deduct + advance countdown by
+        /// `defaultBuildSpeed`; when `countDown` hits zero, flip
+        /// `state` to `READY`. If the house can't pay, the yard
+        /// stays BUSY without advancing (paused).
         ///
-        /// Deferred: credit drain (per-tick house spend), game-speed
-        /// scaling, and the `Structure_CancelBuild` path.
-        public static func tickConstruction(pool: inout StructurePool) {
+        /// IDLE / JUSTBUILT / READY slots are untouched.
+        ///
+        /// Factory drain (HV / LV / HIGH_TECH / WOR / BARRACKS) is
+        /// deferred to slice 6c — requires `UnitInfo.buildCredits`.
+        /// For now factory yards drain 0 credits and always advance.
+        public static func tickConstruction(
+            pool: inout StructurePool,
+            houses: inout HousePool
+        ) {
             let step = defaultBuildSpeed
             for idx in pool.findArray {
                 let slot = pool[idx]
                 guard slot.isUsed, slot.isAllocated else { continue }
                 guard slot.state == StructureState.busy.rawValue else { continue }
+
+                // Credit drain — dispatch by yard kind. Slice 6b handles
+                // CY via StructureInfo; slice 6c extends to factories
+                // via UnitInfo. Skip when objectType is unset
+                // (synthetic-test sentinel).
+                var canAdvance = true
+                if let (buildCredits, buildTime) = producedCost(slot: slot),
+                   buildTime > 0
+                {
+                    let costPerTick = UInt16(max(1, Int(buildCredits) / Int(buildTime)))
+                    let houseIdx = Int(slot.houseID)
+                    if houseIdx >= 0, houseIdx < HousePool.capacity,
+                       houses.slots[houseIdx].isUsed
+                    {
+                        var h = houses[houseIdx]
+                        if h.credits >= costPerTick {
+                            h.credits &-= costPerTick
+                            houses[houseIdx] = h
+                        } else {
+                            // House can't pay — pause for this tick.
+                            canAdvance = false
+                        }
+                    }
+                    // No house allocated → treat as free (keep advancing).
+                }
+
+                guard canAdvance else { continue }
+
                 var updated = slot
                 if updated.countDown > step {
                     updated.countDown &-= step
@@ -641,6 +701,31 @@ extension Simulation {
                 }
                 pool[idx] = updated
             }
+        }
+
+        /// Resolves `(buildCredits, buildTime)` for the object a
+        /// yard is currently producing. CY yards look up via
+        /// `StructureInfo` (produced structure type); factory yards
+        /// look up via `UnitInfo`. Returns `nil` for `objectType ==
+        /// 0xFFFF`, non-production yards, or unknown types — which
+        /// the drain/refund paths treat as "no cost tracking" (used
+        /// by synthetic tests and mid-state migrations).
+        private static func producedCost(
+            slot: StructureSlot
+        ) -> (buildCredits: UInt16, buildTime: UInt16)? {
+            guard slot.objectType != 0xFFFF else { return nil }
+            let objectType = UInt8(truncatingIfNeeded: slot.objectType)
+            if slot.type == 8 /* CYARD */ {
+                guard let info = StructureInfo.lookup(objectType) else { return nil }
+                return (info.buildCredits, info.buildTime)
+            }
+            // Factory yards (3/4/5/7/10) — use UnitInfo.
+            switch slot.type {
+            case 3, 4, 5, 7, 10: break
+            default: return nil
+            }
+            guard let info = UnitInfo.lookup(objectType) else { return nil }
+            return (info.buildCredits, info.buildTime)
         }
 
         /// Walks the non-reserved structure pool and returns the

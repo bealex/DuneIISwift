@@ -132,6 +132,12 @@ extension Simulation {
         /// projectiles / misc units that never appear in a factory's
         /// `buildableUnits` array. Slice 5b-build.
         public let buildTime: UInt16
+        /// `ObjectInfo.buildCredits`. Total credit cost to produce this
+        /// unit. Drained across `buildTime` ticks at
+        /// `costPerTick = buildCredits / buildTime` (slice 6c).
+        /// Zero for projectiles / misc. Refunded proportionally on
+        /// `cancelConstruction`.
+        public let buildCredits: UInt16
 
         public init(
             hitpoints: UInt16,
@@ -159,7 +165,8 @@ extension Simulation {
             availableHouse: UInt8 = 0b0011_1111,
             structuresRequired: UInt32 = 0,
             upgradeLevelRequired: UInt8 = 0,
-            buildTime: UInt16 = 0
+            buildTime: UInt16 = 0,
+            buildCredits: UInt16 = 0
         ) {
             self.hitpoints = hitpoints
             self.fireDistance = fireDistance
@@ -187,6 +194,7 @@ extension Simulation {
             self.structuresRequired = structuresRequired
             self.upgradeLevelRequired = upgradeLevelRequired
             self.buildTime = buildTime
+            self.buildCredits = buildCredits
         }
 
         public static let table: [UnitInfo] = [
@@ -200,7 +208,7 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 20, priorityTarget: 16,
                      indexStart: 0, indexEnd: 10, bulletType: nil, firesTwice: false,
                      explosionType: nil,
-                     buildTime: 64),
+                     buildTime: 64, buildCredits: 800),
             // 1 ORNITHOPTER
             UnitInfo(hitpoints: 25, fireDistance: 50, fireDelay: 50, damage: 50,
                      movementType: .winger, hasTurret: false, explodeOnDeath: true,
@@ -212,7 +220,7 @@ extension Simulation {
                      indexStart: 0, indexEnd: 10, bulletType: 22, firesTwice: true,
                      explosionType: 0,
                      availableHouse: 62, structuresRequired: 1 << 6, upgradeLevelRequired: 1,
-                     buildTime: 96),
+                     buildTime: 96, buildCredits: 600),
             // 2 INFANTRY (squad)
             UnitInfo(hitpoints: 50, fireDistance: 2, fireDelay: 45, damage: 3,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
@@ -224,7 +232,7 @@ extension Simulation {
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 0,
                      availableHouse: 62, upgradeLevelRequired: 1,
-                     buildTime: 32),
+                     buildTime: 32, buildCredits: 100),
             // 3 TROOPERS (squad)
             UnitInfo(hitpoints: 110, fireDistance: 5, fireDelay: 50, damage: 5,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
@@ -236,7 +244,7 @@ extension Simulation {
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 0,
                      availableHouse: 61, upgradeLevelRequired: 1,
-                     buildTime: 56),
+                     buildTime: 56, buildCredits: 200),
             // 4 SOLDIER
             UnitInfo(hitpoints: 20, fireDistance: 2, fireDelay: 45, damage: 3,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
@@ -248,7 +256,7 @@ extension Simulation {
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: false,
                      explosionType: 0,
                      availableHouse: 62,
-                     buildTime: 32),
+                     buildTime: 32, buildCredits: 60),
             // 5 TROOPER
             UnitInfo(hitpoints: 45, fireDistance: 5, fireDelay: 50, damage: 5,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
@@ -260,7 +268,7 @@ extension Simulation {
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: false,
                      explosionType: 0,
                      availableHouse: 61,
-                     buildTime: 56),
+                     buildTime: 56, buildCredits: 100),
             // 6 SABOTEUR
             UnitInfo(hitpoints: 10, fireDistance: 2, fireDelay: 45, damage: 2,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
@@ -272,7 +280,7 @@ extension Simulation {
                      indexStart: 20, indexEnd: 21, bulletType: 23, firesTwice: false,
                      explosionType: 0,
                      availableHouse: 4,
-                     buildTime: 48),
+                     buildTime: 48, buildCredits: 120),
             // 7 LAUNCHER
             UnitInfo(hitpoints: 100, fireDistance: 9, fireDelay: 120, damage: 75,
                      movementType: .tracked, hasTurret: false, explodeOnDeath: true,
@@ -284,7 +292,7 @@ extension Simulation {
                      indexStart: 22, indexEnd: 101, bulletType: 19, firesTwice: true,
                      explosionType: 3,
                      availableHouse: 59, upgradeLevelRequired: 2,
-                     buildTime: 72),
+                     buildTime: 72, buildCredits: 450),
             // 8 DEVIATOR
             UnitInfo(hitpoints: 120, fireDistance: 7, fireDelay: 180, damage: 0,
                      movementType: .tracked, hasTurret: false, explodeOnDeath: true,
@@ -296,7 +304,7 @@ extension Simulation {
                      indexStart: 22, indexEnd: 101, bulletType: 21, firesTwice: false,
                      explosionType: 3,
                      availableHouse: 4, structuresRequired: 1 << 6,
-                     buildTime: 80),
+                     buildTime: 80, buildCredits: 750),
             // 9 TANK
             UnitInfo(hitpoints: 200, fireDistance: 4, fireDelay: 80, damage: 25,
                      movementType: .tracked, hasTurret: true, explodeOnDeath: true,
@@ -307,7 +315,7 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 80, priorityTarget: 100,
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: false,
                      explosionType: 1,
-                     buildTime: 64),
+                     buildTime: 64, buildCredits: 300),
             // 10 SIEGE_TANK
             UnitInfo(hitpoints: 300, fireDistance: 5, fireDelay: 90, damage: 30,
                      movementType: .tracked, hasTurret: true, explodeOnDeath: true,
@@ -319,7 +327,7 @@ extension Simulation {
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 1,
                      upgradeLevelRequired: 3,
-                     buildTime: 96),
+                     buildTime: 96, buildCredits: 600),
             // 11 DEVASTATOR
             UnitInfo(hitpoints: 400, fireDistance: 5, fireDelay: 100, damage: 40,
                      movementType: .tracked, hasTurret: false, explodeOnDeath: true,
@@ -331,7 +339,7 @@ extension Simulation {
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 1,
                      availableHouse: 57, structuresRequired: 1 << 6,
-                     buildTime: 104),
+                     buildTime: 104, buildCredits: 800),
             // 12 SONIC_TANK
             UnitInfo(hitpoints: 110, fireDistance: 8, fireDelay: 80, damage: 60,
                      movementType: .tracked, hasTurret: false, explodeOnDeath: true,
@@ -343,7 +351,7 @@ extension Simulation {
                      indexStart: 22, indexEnd: 101, bulletType: 24, firesTwice: false,
                      explosionType: nil,
                      availableHouse: 58, structuresRequired: 1 << 6,
-                     buildTime: 104),
+                     buildTime: 104, buildCredits: 600),
             // 13 TRIKE
             UnitInfo(hitpoints: 100, fireDistance: 3, fireDelay: 50, damage: 5,
                      movementType: .wheeled, hasTurret: false, explodeOnDeath: true,
@@ -355,7 +363,7 @@ extension Simulation {
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 0,
                      availableHouse: 58,
-                     buildTime: 40),
+                     buildTime: 40, buildCredits: 150),
             // 14 RAIDER_TRIKE
             UnitInfo(hitpoints: 80, fireDistance: 3, fireDelay: 50, damage: 5,
                      movementType: .wheeled, hasTurret: false, explodeOnDeath: true,
@@ -367,7 +375,7 @@ extension Simulation {
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 0,
                      availableHouse: 60,
-                     buildTime: 40),
+                     buildTime: 40, buildCredits: 150),
             // 15 QUAD
             UnitInfo(hitpoints: 130, fireDistance: 3, fireDelay: 50, damage: 7,
                      movementType: .wheeled, hasTurret: false, explodeOnDeath: true,
@@ -379,7 +387,7 @@ extension Simulation {
                      indexStart: 22, indexEnd: 101, bulletType: 23, firesTwice: true,
                      explosionType: 0,
                      upgradeLevelRequired: 1,
-                     buildTime: 48),
+                     buildTime: 48, buildCredits: 200),
             // 16 HARVESTER
             UnitInfo(hitpoints: 150, fireDistance: 0, fireDelay: 0, damage: 0,
                      movementType: .harvester, hasTurret: false, explodeOnDeath: true,
@@ -390,7 +398,7 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 10, priorityTarget: 150,
                      indexStart: 22, indexEnd: 101, bulletType: nil, firesTwice: false,
                      explosionType: nil,
-                     buildTime: 64),
+                     buildTime: 64, buildCredits: 300),
             // 17 MCV
             UnitInfo(hitpoints: 150, fireDistance: 0, fireDelay: 0, damage: 0,
                      movementType: .tracked, hasTurret: false, explodeOnDeath: true,
@@ -402,7 +410,7 @@ extension Simulation {
                      indexStart: 22, indexEnd: 101, bulletType: nil, firesTwice: false,
                      explosionType: nil,
                      upgradeLevelRequired: 1,
-                     buildTime: 80),
+                     buildTime: 80, buildCredits: 900),
             // 18 MISSILE_HOUSE
             UnitInfo(hitpoints: 70, fireDistance: 15, fireDelay: 0, damage: 100,
                      movementType: .winger, hasTurret: false, explodeOnDeath: false,
