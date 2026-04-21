@@ -530,19 +530,19 @@ extension Simulation {
                 || slot.state == StructureState.ready.rawValue
             else { return false }
 
-            // Refund on CY cancel (slice 6b). Factory case skipped
-            // until `UnitInfo.buildCredits` lands in slice 6c.
-            if slot.type == 8 /* CYARD */,
-               slot.objectType != 0xFFFF,
-               let info = StructureInfo.lookup(UInt8(truncatingIfNeeded: slot.objectType)),
-               info.buildTime > 0
+            // Refund — dispatch by yard kind. Slice 6b handled CY via
+            // StructureInfo; slice 6c extends to factories via UnitInfo.
+            // Formula from `Structure_CancelBuild`:
+            // refund = ticksSpent × buildCredits / buildTime.
+            if let (buildCredits, buildTime) = producedCost(slot: slot),
+               buildTime > 0
             {
                 let houseIdx = Int(slot.houseID)
                 if houseIdx >= 0, houseIdx < HousePool.capacity,
                    houses.slots[houseIdx].isUsed
                 {
-                    let ticksSpent = Int(info.buildTime) - Int(slot.countDown >> 8)
-                    let refund = max(0, ticksSpent) * Int(info.buildCredits) / Int(info.buildTime)
+                    let ticksSpent = Int(buildTime) - Int(slot.countDown >> 8)
+                    let refund = max(0, ticksSpent) * Int(buildCredits) / Int(buildTime)
                     var h = houses[houseIdx]
                     h.credits = UInt16(clamping: Int(h.credits) + refund)
                     houses[houseIdx] = h
@@ -665,16 +665,15 @@ extension Simulation {
                 guard slot.isUsed, slot.isAllocated else { continue }
                 guard slot.state == StructureState.busy.rawValue else { continue }
 
-                // Credit drain — CY path only in slice 6b. Skip when
-                // objectType is unset (sentinel for synthetic tests +
-                // the "no object linked" path from OpenDUNE).
+                // Credit drain — dispatch by yard kind. Slice 6b handles
+                // CY via StructureInfo; slice 6c extends to factories
+                // via UnitInfo. Skip when objectType is unset
+                // (synthetic-test sentinel).
                 var canAdvance = true
-                if slot.type == 8 /* CYARD */,
-                   slot.objectType != 0xFFFF,
-                   let info = StructureInfo.lookup(UInt8(truncatingIfNeeded: slot.objectType)),
-                   info.buildTime > 0
+                if let (buildCredits, buildTime) = producedCost(slot: slot),
+                   buildTime > 0
                 {
-                    let costPerTick = UInt16(max(1, Int(info.buildCredits) / Int(info.buildTime)))
+                    let costPerTick = UInt16(max(1, Int(buildCredits) / Int(buildTime)))
                     let houseIdx = Int(slot.houseID)
                     if houseIdx >= 0, houseIdx < HousePool.capacity,
                        houses.slots[houseIdx].isUsed
@@ -702,6 +701,31 @@ extension Simulation {
                 }
                 pool[idx] = updated
             }
+        }
+
+        /// Resolves `(buildCredits, buildTime)` for the object a
+        /// yard is currently producing. CY yards look up via
+        /// `StructureInfo` (produced structure type); factory yards
+        /// look up via `UnitInfo`. Returns `nil` for `objectType ==
+        /// 0xFFFF`, non-production yards, or unknown types — which
+        /// the drain/refund paths treat as "no cost tracking" (used
+        /// by synthetic tests and mid-state migrations).
+        private static func producedCost(
+            slot: StructureSlot
+        ) -> (buildCredits: UInt16, buildTime: UInt16)? {
+            guard slot.objectType != 0xFFFF else { return nil }
+            let objectType = UInt8(truncatingIfNeeded: slot.objectType)
+            if slot.type == 8 /* CYARD */ {
+                guard let info = StructureInfo.lookup(objectType) else { return nil }
+                return (info.buildCredits, info.buildTime)
+            }
+            // Factory yards (3/4/5/7/10) — use UnitInfo.
+            switch slot.type {
+            case 3, 4, 5, 7, 10: break
+            default: return nil
+            }
+            guard let info = UnitInfo.lookup(objectType) else { return nil }
+            return (info.buildCredits, info.buildTime)
         }
 
         /// Walks the non-reserved structure pool and returns the
