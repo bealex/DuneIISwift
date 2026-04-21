@@ -450,16 +450,69 @@ extension Simulation {
             guard yardIndex >= 0, yardIndex < StructurePool.capacitySoft else { return false }
             let slot = pool[yardIndex]
             guard slot.isUsed, slot.isAllocated else { return false }
-            guard slot.type == 8 /* CONSTRUCTION_YARD */ else { return false }
+            // Slice 5b: CYARD (8) OR any of the 5 factories (3, 4, 5, 7, 10).
+            // STARPORT (11) deferred; refinery / palace / turret etc. not
+            // production facilities.
+            switch slot.type {
+            case 3, 4, 5, 7, 8, 10: break
+            default: return false
+            }
             guard slot.state != StructureState.busy.rawValue else { return false }
-            guard let info = StructureInfo.lookup(objectType) else { return false }
+
+            // Countdown source — dispatch by yard kind:
+            // - CYARD (8): produced structure's `buildTime`, matching
+            //   OpenDUNE's `oi = &g_table_structureInfo[objectType].o`.
+            // - Factory (3, 4, 5, 7, 10): OpenDUNE uses the produced
+            //   *unit's* buildTime; we don't have `UnitInfo.buildTime`
+            //   wired yet, so fall back to the yard's own buildTime
+            //   as a placeholder. Slice 5b-build adds the unit lookup.
+            let buildTime: UInt16
+            if slot.type == 8 {
+                guard objectType < 19 else { return false }
+                guard let info = StructureInfo.lookup(objectType) else { return false }
+                buildTime = info.buildTime
+            } else {
+                guard objectType < 27 else { return false }
+                guard let info = StructureInfo.lookup(slot.type) else { return false }
+                buildTime = info.buildTime
+            }
 
             var updated = slot
             updated.objectType = UInt16(objectType)
-            updated.countDown = info.buildTime &<< 8
+            updated.countDown = buildTime &<< 8
             updated.state = StructureState.busy.rawValue
             pool[yardIndex] = updated
             return true
+        }
+
+        /// Port of OpenDUNE's `GUI_Widget_SelectStructure` click handler
+        /// narrowed to "yard that should surface a buildable sidebar":
+        /// player-owned CONSTRUCTION_YARD or one of the 5 factories.
+        /// Walks `findArray`, returns the first slot whose footprint
+        /// covers `(tileX, tileY)`. STARPORT is NOT selectable in this
+        /// slice — its buildable path (`g_starportAvailable`) is
+        /// deferred. REFINERY / PALACE / TURRET / etc. also excluded.
+        public static func selectableYardAt(
+            tileX: Int, tileY: Int,
+            pool: StructurePool,
+            playerHouseID: UInt8
+        ) -> Int? {
+            for idx in pool.findArray {
+                let slot = pool[idx]
+                guard slot.isUsed, slot.isAllocated else { continue }
+                guard slot.houseID == playerHouseID else { continue }
+                switch slot.type {
+                case 3, 4, 5, 7, 8, 10: break
+                default: continue
+                }
+                let ax = Int(slot.positionX) / 256
+                let ay = Int(slot.positionY) / 256
+                let footprint = footprintTiles(type: slot.type, anchorX: ax, anchorY: ay)
+                for (fx, fy) in footprint where fx == tileX && fy == tileY {
+                    return idx
+                }
+            }
+            return nil
         }
 
         /// Port of the `countDown` decrement from OpenDUNE's

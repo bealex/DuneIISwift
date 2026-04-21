@@ -476,5 +476,17 @@ extension Simulation {
             guard i >= 0, i < table.count else { return nil }
             return table[i]
         }
+
+        /// Decodes a bitmask (from `Structures.buildableUnitsFromFactory`)
+        /// into an ordered list of UNIT type IDs. Ascending order; bits
+        /// 27..31 are ignored (only IDs 0..26 are valid unit types).
+        /// Mirrors `StructureInfo.buildableTypes` but for the unit side.
+        public static func buildableUnitTypes(from mask: UInt32) -> [UInt8] {
+            var result: [UInt8] = []
+            for typeID in UInt8(0)..<UInt8(27) where (mask & (UInt32(1) << UInt32(typeID))) != 0 {
+                result.append(typeID)
+            }
+            return result
+        }
     }
 }

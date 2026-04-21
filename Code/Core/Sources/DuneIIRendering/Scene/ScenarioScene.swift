@@ -64,6 +64,11 @@ public final class ScenarioScene: SKScene {
     /// Container for sidebar slot nodes. Always parented to the scene;
     /// children are rebuilt on every `refreshBuildSidebar()`.
     private var sidebarNode: SKNode?
+    /// Whether the currently-selected yard produces structures (CYARD)
+    /// or units (factory). Drives sidebar sprite + label lookup.
+    /// Slice 5b.
+    private enum YardKind: Sendable { case structure, unit }
+    private var currentYardKind: YardKind = .structure
     /// Player identity — also drives `Scripting.Host.playerHouseID`.
     /// Hardcoded to Atreides for P3/P5; wired through the controller
     /// once campaign select exists.
@@ -135,16 +140,54 @@ public final class ScenarioScene: SKScene {
     public override func mouseDown(with event: NSEvent) {
         let location = event.location(in: self)
         let click = classifyClick(at: location)
+
+        // Slice 5b: map click on a player-owned yard/factory → switch
+        // `selectedYardIndex`. Only when not in placement mode so we
+        // don't interrupt a commit. The controller sees nothing;
+        // sidebar refreshes with the new yard's buildable.
+        if buildController.placementType == nil,
+           case .mapTile(let x, let y) = click,
+           let host = scheduler?.host,
+           let newYardIdx = Simulation.Structures.selectableYardAt(
+               tileX: x, tileY: y, pool: host.structures, playerHouseID: playerHouseID
+           ),
+           newYardIdx != buildController.selectedYardIndex
+        {
+            buildController.selectedYardIndex = newYardIdx
+            Log.info(
+                "build-panel: selected yard=\(newYardIdx) type=\(host.structures.slots[newYardIdx].type)",
+                tracer: .label("build-panel")
+            )
+            refreshBuildSidebar()
+            return
+        }
+
         let action = buildController.handle(click: click)
         switch action {
         case .enqueue(let type):
             enqueueConstruction(type: type)
         case .enterPlacement(let type):
-            Log.info(
-                "build-panel: enter placement type=\(type)",
-                tracer: .label("build-panel")
-            )
-            refreshBuildSidebar()
+            if currentYardKind == .unit {
+                // Factory READY clicks don't enter map-placement —
+                // the produced object is a unit that spawns at the
+                // factory exit, not at a player-picked tile. Slice
+                // 5b-build wires the actual spawn; for now we clear
+                // the controller's placement flag so a subsequent
+                // map click doesn't try to `Structures.create` a
+                // unit-type as a structure.
+                buildController.placementType = nil
+                Log.info(
+                    "build-panel: READY factory — unit spawn deferred to slice 5b-build (type=\(type))",
+                    tracer: .label("build-panel")
+                )
+                refreshBuildSidebar()
+            } else {
+                Log.info(
+                    "build-panel: enter placement type=\(type)",
+                    tracer: .label("build-panel")
+                )
+                refreshBuildSidebar()
+            }
         case .commitPlacement(let type, let tileX, let tileY):
             commitPlacement(type: type, tileX: tileX, tileY: tileY)
         case .none:
@@ -566,14 +609,29 @@ public final class ScenarioScene: SKScene {
         // campaignID is 0-indexed for OpenDUNE; hardcode to 0 (mission 1)
         // until a campaign-progress field exists on ScenarioScene.
         let campaignID: UInt16 = 0
-        let mask = Simulation.Structures.buildableStructuresFromYard(
-            yardHouseID: yard.houseID,
-            yardUpgradeLevel: yard.upgradeLevel,
-            structuresBuilt: built,
-            campaignID: campaignID,
-            playerHouseID: playerHouseID
-        )
-        let types = Simulation.StructureInfo.buildableTypesByPriority(from: mask)
+
+        // Slice 5b: dispatch by yard kind.
+        let types: [UInt8]
+        if yard.type == 8 /* CYARD */ {
+            currentYardKind = .structure
+            let mask = Simulation.Structures.buildableStructuresFromYard(
+                yardHouseID: yard.houseID,
+                yardUpgradeLevel: yard.upgradeLevel,
+                structuresBuilt: built,
+                campaignID: campaignID,
+                playerHouseID: playerHouseID
+            )
+            types = Simulation.StructureInfo.buildableTypesByPriority(from: mask)
+        } else {
+            currentYardKind = .unit
+            let mask = Simulation.Structures.buildableUnitsFromFactory(
+                factoryType: yard.type,
+                factoryHouseID: yard.houseID,
+                factoryUpgradeLevel: yard.upgradeLevel,
+                structuresBuilt: built
+            )
+            types = Simulation.UnitInfo.buildableUnitTypes(from: mask)
+        }
         buildController.refreshAvailableTypes(types)
 
         // Surface the yard's state so the controller branches on it.
@@ -583,12 +641,20 @@ public final class ScenarioScene: SKScene {
         if yard.objectType == 0xFFFF {
             queued = nil
             buildTime = nil
-        } else if let info = Simulation.StructureInfo.lookup(UInt8(truncatingIfNeeded: yard.objectType)) {
-            queued = UInt8(truncatingIfNeeded: yard.objectType)
-            buildTime = info.buildTime
         } else {
-            queued = nil
-            buildTime = nil
+            queued = UInt8(truncatingIfNeeded: yard.objectType)
+            // Slice 5b uses the yard's own buildTime as the progress
+            // denominator for factories (matches the placeholder
+            // countdown source in `startConstruction`).
+            if currentYardKind == .structure,
+               let info = Simulation.StructureInfo.lookup(queued!)
+            {
+                buildTime = info.buildTime
+            } else if let yardInfo = Simulation.StructureInfo.lookup(yard.type) {
+                buildTime = yardInfo.buildTime
+            } else {
+                buildTime = nil
+            }
         }
         buildController.refreshYardState(
             state,
@@ -695,12 +761,32 @@ public final class ScenarioScene: SKScene {
                 container.addChild(bar)
             }
 
-            // Icon — last tile of the iconGroup (fully-built frame).
-            if let groupRaw = Simulation.StructureInfo.iconGroupRawValue(for: type),
-               let group = Formats.IconMap.Group(rawValue: groupRaw) {
-                let tileIds = iconMap.tileIds(in: group)
-                if let chosenTileID = tileIds.last, Int(chosenTileID) < tileTextures.count {
-                    let texture = tileTextures[Int(chosenTileID)]
+            // Icon — branches by yard kind.
+            //   .structure → last tile of the structure's iconGroup
+            //   .unit      → unit atlas texture at the unit's
+            //               groundSpriteID (idle/north-facing frame)
+            switch currentYardKind {
+            case .structure:
+                if let groupRaw = Simulation.StructureInfo.iconGroupRawValue(for: type),
+                   let group = Formats.IconMap.Group(rawValue: groupRaw) {
+                    let tileIds = iconMap.tileIds(in: group)
+                    if let chosenTileID = tileIds.last, Int(chosenTileID) < tileTextures.count {
+                        let texture = tileTextures[Int(chosenTileID)]
+                        let icon = SKSpriteNode(texture: texture)
+                        icon.size = CGSize(width: 24, height: 24)
+                        icon.position = CGPoint(
+                            x: slotFrame.minX + 16,
+                            y: slotFrame.midY
+                        )
+                        container.addChild(icon)
+                    }
+                }
+            case .unit:
+                if let info = Simulation.UnitInfo.lookup(type),
+                   let texture = unitAtlas?.texture(
+                       at: Int(info.groundSpriteID), houseID: playerHouseID
+                   )
+                {
                     let icon = SKSpriteNode(texture: texture)
                     icon.size = CGSize(width: 24, height: 24)
                     icon.position = CGPoint(
@@ -712,7 +798,9 @@ public final class ScenarioScene: SKScene {
             }
 
             // Label: abbreviated type name. Helps when the icon is tiny.
-            let label = SKLabelNode(text: Self.shortName(for: type))
+            let label = SKLabelNode(text: currentYardKind == .structure
+                                    ? Self.shortName(for: type)
+                                    : Self.shortUnitName(for: type))
             label.fontColor = .white
             label.fontSize = 10
             label.fontName = "Menlo"
@@ -826,6 +914,35 @@ public final class ScenarioScene: SKScene {
             )
         }
         refreshBuildSidebar()
+    }
+
+    /// Short name for unit-type sidebar labels. Mirrors in-game
+    /// abbreviations without pulling in the string-table assets.
+    private static func shortUnitName(for type: UInt8) -> String {
+        switch type {
+        case 0:  return "Carry"
+        case 1:  return "Thopt"
+        case 2:  return "Infant"
+        case 3:  return "Troops"
+        case 4:  return "Soldr"
+        case 5:  return "Trper"
+        case 6:  return "Sabot"
+        case 7:  return "Launch"
+        case 8:  return "Devi."
+        case 9:  return "Tank"
+        case 10: return "Siege"
+        case 11: return "Devst"
+        case 12: return "Sonic"
+        case 13: return "Trike"
+        case 14: return "Raider"
+        case 15: return "Quad"
+        case 16: return "Harv"
+        case 17: return "MCV"
+        case 18: return "D.Hand"
+        case 25: return "Worm"
+        case 26: return "Frigt"
+        default: return "?"
+        }
     }
 
     /// Short name for sidebar labels. Mirrors in-game abbreviations

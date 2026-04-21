@@ -11,13 +11,17 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**P5 — slice 5b: sidebar UI for factories (units) + yard selection UX.** Slice 5a landed: `Simulation.Structures.buildableUnitsFromFactory` returns the per-factory unit bitmask; per-unit `availableHouse / structuresRequired / upgradeLevelRequired`; per-factory `buildableUnits[8]`. But the UI is still CY-only — clicking on a barracks or LV factory does nothing. Slice 5b wires the sidebar + yard-switch flow.
+**P5 — slice 5b-build: `UnitInfo.buildTime` + unit spawn on completion.** Slice 5b-select landed: yard switching on map click works (CY/factory); sidebar dispatches correctly; factories show their unit buildable lists with sprite icons + labels. Remaining: (a) port `UnitInfo.buildTime` (27 rows from OpenDUNE) and dispatch countdown source by yard kind in `startConstruction` (currently uses yard's buildTime as a placeholder for factories); (b) port `Unit_Create` path from `Simulation.Units` or equivalent to spawn a new unit at the factory's exit tile when the yard hits READY; (c) scene plumbing: on factory READY click, instead of the "unit spawn deferred" log, trigger the unit spawn + return yard to IDLE.
 
-Slice 5b plan: (a) `ScenarioScene` click handler distinguishes map tile under a *factory* structure vs. construction yard vs. other. Click on a player-owned factory → switch selected yard to that pool slot. (b) `refreshBuildSidebar` dispatches to the right buildable query based on `yard.type`: CY → `buildableStructuresFromYard`, factory → `buildableUnitsFromFactory`. (c) Sidebar sprite lookup needs to resolve unit iconIDs (not structure iconGroups) — small helper mapping unit type → CHOAM sprite (or some reasonable fallback in the short term). (d) Controller + enqueue flow: unit production enqueues into the same `objectType` field on the factory but creates a UNIT on completion instead of a STRUCTURE on placement. Ports `Structure_CreateUnit` or equivalent.
+Slice 5b-build closes the factory loop end-to-end — clicking a BARRACKS, waiting, then clicking READY yields a new soldier on the map. Credit drain still deferred (HUD work).
 
-Slice 5b is the biggest UI slice yet — CY vs factory divergence, sprite indirection, unit spawn placement. May split into: 5b-select (yard switching), 5b-units (sidebar renders units, no spawn yet), 5b-spawn (unit creation on completion).
-
-**P5 closure progress**: the construction loop is end-to-end for yards. The build panel now matches OpenDUNE's panel ordering, validates all gates, and animates BUSY → READY. User verification via `swift run duneii` is worth doing before slice 5b's larger restructure.
+**User verification checklist** via `swift run duneii` before slice 5b-build:
+1. Click construction yard → sidebar shows CY buildable (WINDTRAP, SLAB_1x1, …).
+2. Click WINDTRAP → wait → READY highlight → click map → new structure lands. (Slice 4d loop.)
+3. Build a REFINERY next, then a LIGHT_VEHICLE factory.
+4. Click LIGHT_VEHICLE factory on map → sidebar switches to units (Trike + Quad at upgrade ≥ 1).
+5. Click TRIKE → progress bar animates → slot turns green READY.
+6. Click READY slot → log `unit spawn deferred to slice 5b-build`. Yard stays READY. (No unit spawn yet — that's 5b-build.)
 
 **Before continuing, user should run `swift run duneii` for visual verification.** Mission-1 Atreides expected behaviour:
 
@@ -44,7 +48,7 @@ After visual verification, next productive directions:
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → failing test → implement → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **P5 slice 5b — factory sidebar UI + yard switching + unit spawn.** Scene distinguishes CY vs factory yards; map-click on a player-owned factory selects it; sidebar dispatches to structure vs unit buildable; commit path spawns a UNIT for factories. Likely splits into 5b-select / 5b-units / 5b-spawn.
+1. **P5 slice 5b-build — `UnitInfo.buildTime` + unit spawn on completion.** Closes the factory loop: correct countdown source + unit spawns at factory exit on READY click.
 2. **P5 slice 4e — cancel + queue-swap.** `Structure_CancelBuild` + READY-click-different-type-replaces-queue path.
 3. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state.
 3. **P5 — real HUD** — resource counters, unit info, minimap. Cosmetic but high impact.
@@ -62,6 +66,7 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-21 — P5 slice 5b-select+units: factory UI + yard switching.** Click player-owned CY/factory on map → selectedYardIndex switches → sidebar re-populates. Factory rows show unit icons via `UnitSpriteAtlas.texture` + abbreviated labels. `Structures.selectableYardAt` pure helper; `startConstruction` relaxed to accept factories. `UnitInfo.buildableUnitTypes(from:)` helper. READY factory clicks gate placement (unit spawn deferred to 5b-build). 13 new tests. 596 green / 63 suites / zero warnings. Design: `Algorithms/BuildPanelFactoryUI.md`.
 - **2026-04-21 — P5 slice 5a: factory buildable units (pure sim).** `UnitInfo` gained availableHouse / structuresRequired / upgradeLevelRequired (17 of 27 rows customised). `StructureInfo.buildableUnits[8]` populated for 5 factory rows. New `Structures.buildableUnitsFromFactory` dispatcher with Ordos TRIKE→RAIDER_TRIKE + SIEGE_TANK upgrade-1 quirks. 22 new tests. 583 green / 63 suites / zero warnings. Design: `Algorithms/FactoryBuildable.md`.
 - **2026-04-21 — P5 slice 4d-ui: build-panel surfaces BUSY/READY + progress bar + gates clicks.** Controller gains yardState / queuedType / countDown / buildTime / progress; handle(click:) branches on yardState (IDLE → enqueue, BUSY → no-op, READY on queued → enterPlacement). Sidebar renders yellow progress bar on BUSY + green outline on READY. Scene refreshes every tick so progress animates. 7 new tests + 3 slice-3 tests removed (superseded semantics). 561 green / 62 suites / zero warnings. Design: `Algorithms/BuildPanelProgress.md`.
 - **2026-04-21 — P5 slice 4d-sim: construction countdown state machine.** `StructureInfo.buildTime` added (19 rows, OpenDUNE values). `Simulation.StructureState` enum mirrors the 5 OpenDUNE state constants. `Structures.startConstruction` ports `Structure_BuildObject` tail (IDLE yard → BUSY + countDown set). `Structures.tickConstruction` drains countdown by 256 per tick; flips READY at zero. `Scheduler.tick` runs the pass. No UI changes yet — yards go BUSY invisibly. 14 new tests. 557 green / 62 suites / zero warnings. Design: `Algorithms/StructureConstruction.md`.
@@ -124,7 +129,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **583 tests across 63 suites, all green** as of 2026-04-21 (post-P5-slice-5a). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
+`cd Code/Core && swift test` — **596 tests across 63 suites, all green** as of 2026-04-21 (post-P5-slice-5b-select+units). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
 
 ## Open questions / risks (pointers)
 

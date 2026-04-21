@@ -292,4 +292,193 @@ struct FactoryBuildableTests {
         )
         #expect(mask == 0)
     }
+
+    // MARK: Slice 5b — selectableYardAt + relaxed startConstruction
+
+    @Test("selectableYardAt: empty pool → nil")
+    func selectableEmpty() {
+        let pool = Simulation.StructurePool()
+        let idx = Simulation.Structures.selectableYardAt(
+            tileX: 5, tileY: 5, pool: pool,
+            playerHouseID: Simulation.House.atreides
+        )
+        #expect(idx == nil)
+    }
+
+    @Test("selectableYardAt: player-owned CYARD covers tile → returns slot index")
+    func selectableCyardHit() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: CYARD,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        // CY is 2x2: covers (5,5), (6,5), (5,6), (6,6).
+        let hit = Simulation.Structures.selectableYardAt(
+            tileX: 6, tileY: 5, pool: pool,
+            playerHouseID: Simulation.House.atreides
+        )
+        #expect(hit == 0)
+    }
+
+    @Test("selectableYardAt: player-owned LIGHT_VEHICLE factory covers tile → returns slot index")
+    func selectableLVHit() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: LIGHT_VEHICLE,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 10 * 256, y: 10 * 256),
+            pool: &pool
+        )
+        let hit = Simulation.Structures.selectableYardAt(
+            tileX: 11, tileY: 11, pool: pool,
+            playerHouseID: Simulation.House.atreides
+        )
+        #expect(hit == 0)
+    }
+
+    @Test("selectableYardAt: REFINERY is not a selectable yard → nil")
+    func selectableRefineryMiss() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: REFINERY,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 10 * 256, y: 10 * 256),
+            pool: &pool
+        )
+        let hit = Simulation.Structures.selectableYardAt(
+            tileX: 10, tileY: 10, pool: pool,
+            playerHouseID: Simulation.House.atreides
+        )
+        #expect(hit == nil)
+    }
+
+    @Test("selectableYardAt: enemy-owned CYARD → nil (not player-owned)")
+    func selectableEnemyCyardMiss() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: CYARD,
+            houseID: Simulation.House.harkonnen,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        let hit = Simulation.Structures.selectableYardAt(
+            tileX: 5, tileY: 5, pool: pool,
+            playerHouseID: Simulation.House.atreides
+        )
+        #expect(hit == nil)
+    }
+
+    @Test("selectableYardAt: click outside any footprint → nil")
+    func selectableOutsideMiss() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: CYARD,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        let hit = Simulation.Structures.selectableYardAt(
+            tileX: 20, tileY: 20, pool: pool,
+            playerHouseID: Simulation.House.atreides
+        )
+        #expect(hit == nil)
+    }
+
+    @Test("selectableYardAt: STARPORT is NOT selectable in slice 5b")
+    func selectableStarportMiss() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: STARPORT,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 10 * 256, y: 10 * 256),
+            pool: &pool
+        )
+        let hit = Simulation.Structures.selectableYardAt(
+            tileX: 10, tileY: 10, pool: pool,
+            playerHouseID: Simulation.House.atreides
+        )
+        #expect(hit == nil)
+    }
+
+    // MARK: Slice 5b — startConstruction relaxed to factory yards
+
+    @Test("startConstruction on LIGHT_VEHICLE factory with TRIKE unit type: returns true, flips BUSY")
+    func startConstructionFactoryTrike() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: LIGHT_VEHICLE,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 10 * 256, y: 10 * 256),
+            pool: &pool
+        )
+        var slot = pool[0]
+        slot.state = Simulation.StructureState.idle.rawValue
+        pool[0] = slot
+        let ok = Simulation.Structures.startConstruction(
+            yardIndex: 0, objectType: 13 /* TRIKE */, pool: &pool
+        )
+        #expect(ok)
+        #expect(pool[0].state == Simulation.StructureState.busy.rawValue)
+        #expect(pool[0].objectType == 13)
+    }
+
+    @Test("startConstruction on BARRACKS with SOLDIER: returns true, flips BUSY")
+    func startConstructionBarracksSoldier() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: BARRACKS,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        var slot = pool[0]
+        slot.state = Simulation.StructureState.idle.rawValue
+        pool[0] = slot
+        let ok = Simulation.Structures.startConstruction(
+            yardIndex: 0, objectType: 4 /* SOLDIER */, pool: &pool
+        )
+        #expect(ok)
+        #expect(pool[0].state == Simulation.StructureState.busy.rawValue)
+    }
+
+    @Test("startConstruction on REFINERY (not a factory or CY): returns false")
+    func startConstructionRefineryRejected() {
+        var pool = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: REFINERY,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 10 * 256, y: 10 * 256),
+            pool: &pool
+        )
+        var slot = pool[0]
+        slot.state = Simulation.StructureState.idle.rawValue
+        pool[0] = slot
+        let ok = Simulation.Structures.startConstruction(
+            yardIndex: 0, objectType: 4, pool: &pool
+        )
+        #expect(!ok)
+    }
+
+    // MARK: UnitInfo.buildableUnitTypes helper
+
+    @Test("UnitInfo.buildableUnitTypes on empty mask → []")
+    func unitBuildableEmpty() {
+        #expect(Simulation.UnitInfo.buildableUnitTypes(from: 0) == [])
+    }
+
+    @Test("UnitInfo.buildableUnitTypes in ascending type-ID order")
+    func unitBuildableAscending() {
+        // SOLDIER=4, INFANTRY=2 → [2, 4] ascending.
+        let mask: UInt32 = (1 << 4) | (1 << 2)
+        #expect(Simulation.UnitInfo.buildableUnitTypes(from: mask) == [2, 4])
+    }
+
+    @Test("UnitInfo.buildableUnitTypes ignores bits 27..31")
+    func unitBuildableIgnoresHighBits() {
+        let mask: UInt32 = 0xFFFF_FFFF
+        let all: [UInt8] = Array(0...26)
+        #expect(Simulation.UnitInfo.buildableUnitTypes(from: mask) == all)
+    }
 }
