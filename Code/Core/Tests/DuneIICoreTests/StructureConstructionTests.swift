@@ -124,13 +124,15 @@ struct StructureConstructionTests {
     @Test("tickConstruction on empty pool is a no-op")
     func tickEmpty() {
         var pool = Simulation.StructurePool()
-        Simulation.Structures.tickConstruction(pool: &pool)
+        var houses = Simulation.HousePool()
+        Simulation.Structures.tickConstruction(pool: &pool, houses: &houses)
         // Nothing to assert — no allocation, no crash.
     }
 
     @Test("tickConstruction leaves IDLE yards untouched")
     func tickIdle() {
         var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
         _ = Simulation.Structures.create(
             type: CYARD,
             houseID: Simulation.House.atreides,
@@ -141,14 +143,15 @@ struct StructureConstructionTests {
         slot.state = Simulation.StructureState.idle.rawValue
         pool[0] = slot
 
-        Simulation.Structures.tickConstruction(pool: &pool)
+        Simulation.Structures.tickConstruction(pool: &pool, houses: &houses)
         #expect(pool[0].state == Simulation.StructureState.idle.rawValue)
         #expect(pool[0].countDown == 0)
     }
 
-    @Test("tickConstruction decrements BUSY yard countDown by 256")
+    @Test("tickConstruction decrements BUSY yard countDown by 256 when objectType is unset (no drain)")
     func tickBusyDecrement() {
         var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
         _ = Simulation.Structures.create(
             type: CYARD,
             houseID: Simulation.House.atreides,
@@ -158,16 +161,18 @@ struct StructureConstructionTests {
         var slot = pool[0]
         slot.state = Simulation.StructureState.busy.rawValue
         slot.countDown = 12288
+        // objectType stays 0xFFFF (unset) — drain path treats as free.
         pool[0] = slot
 
-        Simulation.Structures.tickConstruction(pool: &pool)
+        Simulation.Structures.tickConstruction(pool: &pool, houses: &houses)
         #expect(pool[0].state == Simulation.StructureState.busy.rawValue)
         #expect(pool[0].countDown == 12032)
     }
 
-    @Test("tickConstruction flips BUSY→READY when countDown ≤ 256")
+    @Test("tickConstruction flips BUSY→READY when countDown ≤ 256 (objectType unset, no drain)")
     func tickBusyFlipsReady() {
         var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
         _ = Simulation.Structures.create(
             type: CYARD,
             houseID: Simulation.House.atreides,
@@ -179,14 +184,15 @@ struct StructureConstructionTests {
         slot.countDown = 256
         pool[0] = slot
 
-        Simulation.Structures.tickConstruction(pool: &pool)
+        Simulation.Structures.tickConstruction(pool: &pool, houses: &houses)
         #expect(pool[0].state == Simulation.StructureState.ready.rawValue)
         #expect(pool[0].countDown == 0)
     }
 
-    @Test("tickConstruction: countDown small but positive → READY")
+    @Test("tickConstruction: countDown small but positive → READY (objectType unset)")
     func tickBusyFlipsReadyBelowStep() {
         var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
         _ = Simulation.Structures.create(
             type: CYARD,
             houseID: Simulation.House.atreides,
@@ -198,7 +204,7 @@ struct StructureConstructionTests {
         slot.countDown = 100
         pool[0] = slot
 
-        Simulation.Structures.tickConstruction(pool: &pool)
+        Simulation.Structures.tickConstruction(pool: &pool, houses: &houses)
         #expect(pool[0].state == Simulation.StructureState.ready.rawValue)
         #expect(pool[0].countDown == 0)
     }
@@ -206,6 +212,7 @@ struct StructureConstructionTests {
     @Test("tickConstruction leaves READY yards untouched (doesn't re-arm)")
     func tickReadyIdempotent() {
         var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
         _ = Simulation.Structures.create(
             type: CYARD,
             houseID: Simulation.House.atreides,
@@ -218,14 +225,20 @@ struct StructureConstructionTests {
         slot.objectType = 9
         pool[0] = slot
 
-        Simulation.Structures.tickConstruction(pool: &pool)
+        Simulation.Structures.tickConstruction(pool: &pool, houses: &houses)
         #expect(pool[0].state == Simulation.StructureState.ready.rawValue)
         #expect(pool[0].countDown == 0)
     }
 
-    @Test("full 48-tick WINDTRAP build takes the yard IDLE → BUSY → READY")
+    @Test("full 48-tick WINDTRAP build takes the yard IDLE → BUSY → READY with credit drain")
     func fullWindtrapBuild() {
         var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
+        houses.allocate(at: Int(Simulation.House.atreides))
+        var atreides = houses[Int(Simulation.House.atreides)]
+        atreides.credits = 1000
+        houses[Int(Simulation.House.atreides)] = atreides
+
         _ = Simulation.Structures.create(
             type: CYARD,
             houseID: Simulation.House.atreides,
@@ -243,10 +256,61 @@ struct StructureConstructionTests {
         #expect(pool[0].countDown == 12288)
 
         // 48 ticks × 256 per tick = 12288 — exactly drains.
+        // costPerTick = 300 / 48 = 6. Total drain over 48 ticks = 288.
         for _ in 0..<48 {
-            Simulation.Structures.tickConstruction(pool: &pool)
+            Simulation.Structures.tickConstruction(pool: &pool, houses: &houses)
         }
         #expect(pool[0].state == Simulation.StructureState.ready.rawValue)
         #expect(pool[0].countDown == 0)
+        #expect(houses[Int(Simulation.House.atreides)].credits == 712)  // 1000 - 288
+    }
+
+    // MARK: Slice 6b — credit drain + pause
+
+    @Test("tickConstruction drains costPerTick (WINDTRAP: 6) from house.credits on BUSY yard")
+    func tickDrainsCredits() {
+        var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
+        houses.allocate(at: Int(Simulation.House.atreides))
+        var atreides = houses[Int(Simulation.House.atreides)]
+        atreides.credits = 1000
+        houses[Int(Simulation.House.atreides)] = atreides
+
+        _ = Simulation.Structures.create(
+            type: CYARD,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        _ = Simulation.Structures.startConstruction(
+            yardIndex: 0, objectType: WINDTRAP, pool: &pool
+        )
+        // One tick: credits -= 6, countDown -= 256
+        Simulation.Structures.tickConstruction(pool: &pool, houses: &houses)
+        #expect(houses[Int(Simulation.House.atreides)].credits == 994)
+        #expect(pool[0].countDown == 12032)
+    }
+
+    @Test("tickConstruction pauses (no countdown advance) when house has insufficient credits")
+    func tickPausesOnNoCredits() {
+        var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
+        houses.allocate(at: Int(Simulation.House.atreides))
+        // Atreides default: credits = 0 after allocate.
+        _ = Simulation.Structures.create(
+            type: CYARD,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        _ = Simulation.Structures.startConstruction(
+            yardIndex: 0, objectType: WINDTRAP, pool: &pool
+        )
+        let countDownBefore = pool[0].countDown
+        Simulation.Structures.tickConstruction(pool: &pool, houses: &houses)
+        // No credits → no drain, countdown frozen.
+        #expect(houses[Int(Simulation.House.atreides)].credits == 0)
+        #expect(pool[0].countDown == countDownBefore)
+        #expect(pool[0].state == Simulation.StructureState.busy.rawValue)
     }
 }

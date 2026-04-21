@@ -92,10 +92,14 @@ extension Simulation {
             // `CalculateRoute`) observe the updated position when deciding
             // whether to pop the next step or re-plan.
             tickMovement()
-            // Construction countdown pass. Drains `countDown` on BUSY
-            // yards and flips to `READY` at zero — port of the relevant
-            // section of OpenDUNE's `GameLoop_Structure`. Slice 4d-sim.
-            Simulation.Structures.tickConstruction(pool: &host.structures)
+            // Construction countdown + credit drain pass. Drains
+            // `countDown` on BUSY yards (paused when the owning house
+            // can't pay the per-tick cost) and flips to `READY` at
+            // zero. Port of the relevant section of OpenDUNE's
+            // `GameLoop_Structure`. Slice 4d-sim + 6b.
+            Simulation.Structures.tickConstruction(
+                pool: &host.structures, houses: &host.houses
+            )
             // Units first, then structures, then teams — matches OpenDUNE's
             // main loop in `Server_Main.c`.
             tickUnits()

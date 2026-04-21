@@ -11,11 +11,11 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**P5 — slice 6b: credit drain during BUSY + cancel refund.** Slice 6a landed: `Simulation.HouseSlot` now carries `credits` / `creditsStorage` / `creditsQuota`; both `WorldSnapshot` init paths seed them. No drain, no UI, no refund yet.
+**P5 — slice 6c: factory credit drain + refund (needs `UnitInfo.buildCredits`) OR slice 6d: HUD credits label.** Slice 6b landed: CY construction drains `buildCredits / buildTime` per tick; pauses when the house runs out; cancel refunds proportional to progress. But factories (LV, HV, HIGH_TECH, WOR, BARRACKS) still don't drain — their cost source is `UnitInfo.buildCredits` which isn't ported yet.
 
-Slice 6b plan: (a) `Structures.tickConstruction` (or a new per-tick pass) deducts `buildCredits / buildTime` per tick from the owning house's `credits` on each BUSY yard; if the house runs out of cash, construction pauses (state stays BUSY, countDown doesn't tick down). (b) `Structures.cancelConstruction` refunds `(buildTime - remainingTicks) × buildCredits / buildTime` to the house. (c) Extend `Scheduler` to own the `HousePool` (or pass it through) so credit state is reachable from the tick pass. Tests cover the math and the out-of-credits pause. Pure sim; no UI changes.
+Slice 6c plan: port `UnitInfo.buildCredits` (27 rows from `src/table/unitinfo.c`) + extend `tickConstruction` / `cancelConstruction` to look up factory cost via `UnitInfo` when `slot.type` is in the factory set. Straightforward extension of 6b's math.
 
-Slice 6c wires a "Credits: N" label on `ScenarioScene` after 6b lands.
+Slice 6d plan: add a `Credits: N` HUD label to `ScenarioScene` refreshed per tick (12 Hz), reading the player's `house.credits`. Separately, wire a starting-credits value for the player — scenarios don't always specify it, so mission 1 may need a default. Also consider showing per-house credits in the corner for debugging (or at least log on change).
 
 **Visual verification pending** — `swift run duneii` against mission 1 Atreides:
 
@@ -63,8 +63,8 @@ After visual verification, next productive directions:
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → failing test → implement → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **P5 slice 6b — credit drain during BUSY + cancel refund.** Per-tick drain; pauses BUSY when house runs out; proportional refund on cancel.
-2. **P5 slice 6c — HUD credits label.** "Credits: N" on `ScenarioScene`, refreshed per tick.
+1. **P5 slice 6c — factory drain + refund.** Port `UnitInfo.buildCredits`; extend `tickConstruction` / `cancelConstruction` to look up cost via `UnitInfo` for factory yards.
+2. **P5 slice 6d — HUD credits label.** "Credits: N" on `ScenarioScene`, refreshed per tick.
 3. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state.
 4. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal.
 3. **P5 — real HUD** — resource counters, unit info, minimap. Cosmetic but high impact.
@@ -82,6 +82,7 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-21 — P5 slice 6b: credit drain + cancel refund (CY path).** `tickConstruction` and `cancelConstruction` gained `houses: inout HousePool`. CY drain = `buildCredits/buildTime` per tick; pauses when house can't pay. Cancel refunds proportional to progress. `Scripting.Host` grew `houses`. Factory drain deferred to 6c. 6 new tests. 626 green / 63 suites / zero warnings. Design: `Algorithms/CreditDrainAndRefund.md`.
 - **2026-04-21 — P5 slice 6a: HouseSlot credits plumbing.** `credits` / `creditsStorage` / `creditsQuota` added to `Simulation.HouseSlot`; both `WorldSnapshot` init paths seed from `Scenario.HouseLayout` / `Formats.Save.Players.Slot`. Pure-sim groundwork for 6b's drain + 6c's HUD. 3 new tests. 620 green / 63 suites / zero warnings. Design: `Algorithms/HouseCredits.md`.
 - **2026-04-21 — P5 slice 5c: cancel + queue-swap + rally tile.** `Structures.cancelConstruction` flips BUSY/READY back to IDLE. `Structures.factorySpawnTile` returns south-of-footprint for unit spawn; `completeConstruction` routes through it. Controller gains `.cancelConstruction(type:)` action; BUSY + queued-type cancels; READY + different type queue-swaps via `.enqueue`. 11 new tests. 617 green / 63 suites / zero warnings. Design: `Algorithms/BuildPanelTightening.md`.
 - **2026-04-21 — P5 slice 5b-build: UnitInfo.buildTime + unit spawn on factory completion.** Factory loop closes end-to-end. `UnitInfo.buildTime` 27 rows pinned. `startConstruction` dispatches countdown by yard kind (CY→structure, factory→unit). New `Simulation.Units.createUnit` + `Simulation.Structures.completeConstruction`. Scene routes READY factory clicks to unit spawn. 11 new tests. 607 green / 63 suites / zero warnings. Design: `Algorithms/FactoryUnitSpawn.md`.
@@ -148,7 +149,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **620 tests across 63 suites, all green** as of 2026-04-21 (post-P5-slice-6a). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
+`cd Code/Core && swift test` — **626 tests across 63 suites, all green** as of 2026-04-21 (post-P5-slice-6b). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
 
 ## Open questions / risks (pointers)
 

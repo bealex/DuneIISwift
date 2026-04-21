@@ -276,6 +276,7 @@ public final class ScenarioScene: SKScene {
             structures: snapshot.structures,
             explosions: Simulation.ExplosionPool(),
             teams: snapshot.teams,
+            houses: snapshot.houses,
             currentObject: nil,
             texts: [],
             textLog: [],
@@ -657,17 +658,21 @@ public final class ScenarioScene: SKScene {
         renderSidebar()
     }
 
-    /// Slice 5c: cancel the BUSY / READY item on the selected yard.
-    /// Credit refund deferred with `House` economy subsystem.
+    /// Slice 5c + 6b: cancel the BUSY / READY item on the selected
+    /// yard. CY cancel triggers a credit refund proportional to
+    /// progress (slice 6b); factory cancel skips the refund until
+    /// slice 6c wires `UnitInfo.buildCredits`.
     private func cancelConstructionOnYard(type: UInt8) {
         guard let host = scheduler?.host,
               let yardIdx = buildController.selectedYardIndex
         else { return }
         var pool = host.structures
+        var houses = host.houses
         let ok = Simulation.Structures.cancelConstruction(
-            yardIndex: yardIdx, pool: &pool
+            yardIndex: yardIdx, pool: &pool, houses: &houses
         )
         host.structures = pool
+        host.houses = houses
         Log.info(
             "build-panel: cancel yard=\(yardIdx) type=\(type) ok=\(ok)",
             tracer: .label("build-panel")

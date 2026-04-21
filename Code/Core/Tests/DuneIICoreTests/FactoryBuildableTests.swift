@@ -705,6 +705,7 @@ struct FactoryBuildableTests {
     @Test("cancelConstruction on BUSY yard → true, state → IDLE, objectType/countDown reset")
     func cancelBusy() {
         var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
         _ = Simulation.Structures.create(
             type: BARRACKS,
             houseID: Simulation.House.atreides,
@@ -717,7 +718,9 @@ struct FactoryBuildableTests {
         slot.countDown = 5000
         pool[0] = slot
 
-        let ok = Simulation.Structures.cancelConstruction(yardIndex: 0, pool: &pool)
+        let ok = Simulation.Structures.cancelConstruction(
+            yardIndex: 0, pool: &pool, houses: &houses
+        )
         #expect(ok)
         #expect(pool[0].state == Simulation.StructureState.idle.rawValue)
         #expect(pool[0].objectType == 0xFFFF)
@@ -727,6 +730,7 @@ struct FactoryBuildableTests {
     @Test("cancelConstruction on READY yard → true, reset (OpenDUNE parity — cancels pre-completed item)")
     func cancelReady() {
         var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
         _ = Simulation.Structures.create(
             type: LIGHT_VEHICLE,
             houseID: Simulation.House.atreides,
@@ -739,7 +743,9 @@ struct FactoryBuildableTests {
         slot.countDown = 0
         pool[0] = slot
 
-        let ok = Simulation.Structures.cancelConstruction(yardIndex: 0, pool: &pool)
+        let ok = Simulation.Structures.cancelConstruction(
+            yardIndex: 0, pool: &pool, houses: &houses
+        )
         #expect(ok)
         #expect(pool[0].state == Simulation.StructureState.idle.rawValue)
         #expect(pool[0].objectType == 0xFFFF)
@@ -748,6 +754,7 @@ struct FactoryBuildableTests {
     @Test("cancelConstruction on IDLE yard → false, no mutation")
     func cancelIdleRejected() {
         var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
         _ = Simulation.Structures.create(
             type: BARRACKS,
             houseID: Simulation.House.atreides,
@@ -759,9 +766,127 @@ struct FactoryBuildableTests {
         pool[0] = slot
         let before = pool[0]
 
-        let ok = Simulation.Structures.cancelConstruction(yardIndex: 0, pool: &pool)
+        let ok = Simulation.Structures.cancelConstruction(
+            yardIndex: 0, pool: &pool, houses: &houses
+        )
         #expect(!ok)
         #expect(pool[0] == before)
+    }
+
+    // MARK: Slice 6b — cancel refund
+
+    @Test("cancel refund: fresh BUSY WINDTRAP (no ticks spent) → 0 refund")
+    func cancelRefundFresh() {
+        var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
+        houses.allocate(at: Int(Simulation.House.atreides))
+        var atreides = houses[Int(Simulation.House.atreides)]
+        atreides.credits = 500
+        houses[Int(Simulation.House.atreides)] = atreides
+
+        _ = Simulation.Structures.create(
+            type: 8 /* CYARD */,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        var slot = pool[0]
+        slot.state = Simulation.StructureState.busy.rawValue
+        slot.objectType = 9 /* WINDTRAP */
+        slot.countDown = 12288  // fresh — 48 << 8, no ticks spent
+        pool[0] = slot
+
+        _ = Simulation.Structures.cancelConstruction(
+            yardIndex: 0, pool: &pool, houses: &houses
+        )
+        // Refund = 0 on fresh cancel.
+        #expect(houses[Int(Simulation.House.atreides)].credits == 500)
+    }
+
+    @Test("cancel refund: half-built WINDTRAP (countDown=6144) → 150 refund")
+    func cancelRefundHalf() {
+        var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
+        houses.allocate(at: Int(Simulation.House.atreides))
+        var atreides = houses[Int(Simulation.House.atreides)]
+        atreides.credits = 500
+        houses[Int(Simulation.House.atreides)] = atreides
+
+        _ = Simulation.Structures.create(
+            type: 8 /* CYARD */,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        var slot = pool[0]
+        slot.state = Simulation.StructureState.busy.rawValue
+        slot.objectType = 9 /* WINDTRAP */
+        slot.countDown = 6144  // halfway (24 << 8)
+        pool[0] = slot
+
+        _ = Simulation.Structures.cancelConstruction(
+            yardIndex: 0, pool: &pool, houses: &houses
+        )
+        // ticksSpent = 48 - 24 = 24; refund = 24 * 300 / 48 = 150.
+        #expect(houses[Int(Simulation.House.atreides)].credits == 650)
+    }
+
+    @Test("cancel refund: READY WINDTRAP (countDown=0) → full 300 refund")
+    func cancelRefundReady() {
+        var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
+        houses.allocate(at: Int(Simulation.House.atreides))
+        var atreides = houses[Int(Simulation.House.atreides)]
+        atreides.credits = 500
+        houses[Int(Simulation.House.atreides)] = atreides
+
+        _ = Simulation.Structures.create(
+            type: 8 /* CYARD */,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        var slot = pool[0]
+        slot.state = Simulation.StructureState.ready.rawValue
+        slot.objectType = 9 /* WINDTRAP */
+        slot.countDown = 0
+        pool[0] = slot
+
+        _ = Simulation.Structures.cancelConstruction(
+            yardIndex: 0, pool: &pool, houses: &houses
+        )
+        // ticksSpent = 48; refund = 48 * 300 / 48 = 300.
+        #expect(houses[Int(Simulation.House.atreides)].credits == 800)
+    }
+
+    @Test("cancel refund: objectType=0xFFFF → no refund math (safe no-op on credits)")
+    func cancelRefundUnsetObjectType() {
+        var pool = Simulation.StructurePool()
+        var houses = Simulation.HousePool()
+        houses.allocate(at: Int(Simulation.House.atreides))
+        var atreides = houses[Int(Simulation.House.atreides)]
+        atreides.credits = 500
+        houses[Int(Simulation.House.atreides)] = atreides
+
+        _ = Simulation.Structures.create(
+            type: BARRACKS,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &pool
+        )
+        var slot = pool[0]
+        slot.state = Simulation.StructureState.busy.rawValue
+        // objectType stays 0xFFFF
+        slot.countDown = 5000
+        pool[0] = slot
+
+        _ = Simulation.Structures.cancelConstruction(
+            yardIndex: 0, pool: &pool, houses: &houses
+        )
+        // No refund math with objectType unset.
+        #expect(houses[Int(Simulation.House.atreides)].credits == 500)
+        // State still resets.
+        #expect(pool[0].state == Simulation.StructureState.idle.rawValue)
     }
 
     // MARK: Slice 5c — factorySpawnTile

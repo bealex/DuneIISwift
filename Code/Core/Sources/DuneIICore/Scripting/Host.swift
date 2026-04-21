@@ -12,6 +12,11 @@ extension Scripting {
         public var structures: Simulation.StructurePool
         public var explosions: Simulation.ExplosionPool
         public var teams: Simulation.TeamPool
+        /// Per-house credit + starport state. Slice 6a plumbed the
+        /// fields onto `HouseSlot`; slice 6b makes them reachable at
+        /// runtime for the scheduler's credit-drain pass and the
+        /// scene's cancel-refund.
+        public var houses: Simulation.HousePool
         /// The "current object" for the running script tick. `nil` when no
         /// object is selected (host functions that depend on it return
         /// their "no current object" path).
@@ -68,6 +73,7 @@ extension Scripting {
             structures: Simulation.StructurePool = Simulation.StructurePool(),
             explosions: Simulation.ExplosionPool = Simulation.ExplosionPool(),
             teams: Simulation.TeamPool = Simulation.TeamPool(),
+            houses: Simulation.HousePool = Simulation.HousePool(),
             currentObject: ObjectRef? = nil,
             texts: [String] = [],
             textLog: [DisplayedText] = [],
@@ -81,6 +87,7 @@ extension Scripting {
             self.structures = structures
             self.explosions = explosions
             self.teams = teams
+            self.houses = houses
             self.currentObject = currentObject
             self.texts = texts
             self.textLog = textLog
