@@ -260,6 +260,85 @@ struct StructureCreateTests {
 
     // MARK: WorldSnapshot plumbing round-trip
 
+    // MARK: Slice 4c — HP degradation + degrades flag
+
+    @Test("create with tilesWithoutSlab=0 → full HP + degrades=false")
+    func createNoSlabDeficit() {
+        var pool = Simulation.StructurePool()
+        let idx = Simulation.Structures.create(
+            type: WINDTRAP,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 256, y: 256),
+            pool: &pool,
+            tilesWithoutSlab: 0
+        )
+        guard let index = idx else {
+            Issue.record("create returned nil")
+            return
+        }
+        #expect(pool[index].hitpoints == pool[index].hitpointsMax)
+        #expect(pool[index].degrades == false)
+    }
+
+    @Test("create with full slab deficit for WINDTRAP (4 tiles) → half HP + degrades=true")
+    func createFullSlabDeficit() {
+        var pool = Simulation.StructurePool()
+        let idx = Simulation.Structures.create(
+            type: WINDTRAP,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 256, y: 256),
+            pool: &pool,
+            tilesWithoutSlab: 4
+        )
+        guard let index = idx else {
+            Issue.record("create returned nil")
+            return
+        }
+        // hp = 200; damage = (200/2) * 4 / 4 = 100; hitpoints = 100
+        #expect(pool[index].hitpoints == 100)
+        #expect(pool[index].hitpointsMax == 200)
+        #expect(pool[index].degrades)
+    }
+
+    @Test("create with half slab deficit for WINDTRAP (2 of 4 tiles) → 75% HP + degrades=true")
+    func createHalfSlabDeficit() {
+        var pool = Simulation.StructurePool()
+        let idx = Simulation.Structures.create(
+            type: WINDTRAP,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 256, y: 256),
+            pool: &pool,
+            tilesWithoutSlab: 2
+        )
+        guard let index = idx else {
+            Issue.record("create returned nil")
+            return
+        }
+        // damage = (200/2) * 2 / 4 = 50; hitpoints = 200 - 50 = 150
+        #expect(pool[index].hitpoints == 150)
+        #expect(pool[index].degrades)
+    }
+
+    @Test("create with full slab deficit for REFINERY (6 tiles) → half HP")
+    func createRefineryFullDeficit() {
+        var pool = Simulation.StructurePool()
+        let idx = Simulation.Structures.create(
+            type: REFINERY,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 256, y: 256),
+            pool: &pool,
+            tilesWithoutSlab: 6
+        )
+        guard let index = idx else {
+            Issue.record("create returned nil")
+            return
+        }
+        // REFINERY hp=450; damage = (450/2) * 6 / 6 = 225
+        #expect(pool[index].hitpoints == 225)
+        #expect(pool[index].hitpointsMax == 450)
+        #expect(pool[index].degrades)
+    }
+
     @Test("WorldSnapshot loads hitpointsMax / upgradeLevel / objectType from _SAVE001.DAT")
     func saveRoundTripNewFields() throws {
         guard let install = TestInstall.locate() else { return }

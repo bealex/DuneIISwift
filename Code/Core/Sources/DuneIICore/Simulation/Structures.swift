@@ -163,7 +163,8 @@ extension Simulation {
             type: UInt8,
             houseID: UInt8,
             position: Pos32,
-            pool: inout StructurePool
+            pool: inout StructurePool,
+            tilesWithoutSlab: Int = 0
         ) -> Int? {
             guard houseID < 6 else { return nil }
             guard type < 19 else { return nil }
@@ -185,6 +186,7 @@ extension Simulation {
             slot.objectType    = 0xFFFF
             slot.countDown     = 0
             slot.upgradeLevel  = 0
+            slot.degrades      = false
 
             // Harkonnen LIGHT_VEHICLE upgradeLevel pin.
             if houseID == House.harkonnen && type == 3 /* LIGHT_VEHICLE */ {
@@ -195,6 +197,20 @@ extension Simulation {
             // to the containing tile before writing the slot.
             slot.positionX = position.x & 0xFF00
             slot.positionY = position.y & 0xFF00
+
+            // HP degradation when placed without a full concrete slab.
+            // OpenDUNE `Structure_Place` divide-order (integer arithmetic):
+            //   hitpoints -= (hitpointsMax / 2) * tilesWithoutSlab / footprintCount
+            // `footprintCount` comes from the layout's tile count.
+            if tilesWithoutSlab > 0 {
+                let footprintCount = info.layout.footprintOffsets.count
+                if footprintCount > 0 {
+                    let halfMax = Int(info.hitpoints) / 2
+                    let damage = halfMax * tilesWithoutSlab / footprintCount
+                    slot.hitpoints = UInt16(max(0, Int(slot.hitpoints) - damage))
+                    slot.degrades = true
+                }
+            }
 
             pool[idx] = slot
             return idx
@@ -242,7 +258,9 @@ extension Simulation {
             type: UInt8,
             structures: StructurePool,
             units: UnitPool,
-            landscapeAt: ((Int, Int) -> LandscapeType)? = nil
+            landscapeAt: ((Int, Int) -> LandscapeType)? = nil,
+            playerHouseID: UInt8? = nil,
+            tileHouseIDAt: ((Int, Int) -> UInt8)? = nil
         ) -> Int16 {
             let footprint = footprintTiles(type: type, anchorX: tileX, anchorY: tileY)
             if footprint.isEmpty { return 0 }
@@ -300,8 +318,60 @@ extension Simulation {
                 }
             }
 
+            // Adjacent-to-player-base gate (4c). Only applies to
+            // non-CY placements when the caller knows which house the
+            // player is. Needs the landscape closure for the
+            // slab/wall fallback. See `BuildValidationAdjacency.md`.
+            if let playerHouseID, type != 8 /* CYARD */, let landscapeAt {
+                var adjacencyOK = false
+                for (dx, dy) in structureInfo.layout.adjacentOffsets {
+                    let nx = tileX + dx
+                    let ny = tileY + dy
+                    guard (0..<64).contains(nx), (0..<64).contains(ny) else { continue }
+
+                    // Player-owned structure at the tile?
+                    if let owner = structureOwnerAt(pool: structures, tileX: nx, tileY: ny),
+                       owner == playerHouseID
+                    {
+                        adjacencyOK = true
+                        break
+                    }
+
+                    // Player-owned concrete slab or wall via tile houseID?
+                    let lst = landscapeAt(nx, ny)
+                    if (lst == .concreteSlab || lst == .wall),
+                       let tileHouseIDAt,
+                       tileHouseIDAt(nx, ny) == playerHouseID
+                    {
+                        adjacencyOK = true
+                        break
+                    }
+                }
+                if !adjacencyOK { return 0 }
+            }
+
             if neededSlabs == 0 { return 1 }
             return -Int16(neededSlabs)
+        }
+
+        /// Walks the non-reserved structure pool and returns the
+        /// houseID of the structure whose footprint covers `(tileX,
+        /// tileY)`, or nil when none does. Used by the adjacency gate
+        /// and by tests.
+        private static func structureOwnerAt(
+            pool: StructurePool, tileX: Int, tileY: Int
+        ) -> UInt8? {
+            for idx in pool.findArray {
+                let slot = pool[idx]
+                guard slot.isUsed, slot.isAllocated else { continue }
+                let ax = Int(slot.positionX) / 256
+                let ay = Int(slot.positionY) / 256
+                let existing = footprintTiles(type: slot.type, anchorX: ax, anchorY: ay)
+                for (ex, ey) in existing where ex == tileX && ey == tileY {
+                    return slot.houseID
+                }
+            }
+            return nil
         }
     }
 }

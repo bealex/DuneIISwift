@@ -38,6 +38,38 @@ extension Simulation {
             }
             return result
         }
+
+        /// `(dx, dy)` offsets for the ring of tiles surrounding a
+        /// structure of this layout — used by the adjacency gate in
+        /// `Structure_IsValidBuildLocation`. Port of OpenDUNE's
+        /// `g_table_structure_layoutTilesAround`; trailing `0`
+        /// terminators in the C source are dropped (Swift emits only
+        /// the valid entries).
+        ///
+        /// Clockwise walk matching OpenDUNE byte-for-byte:
+        /// N-edge (including NE corner) → E-edge → S-edge (including SE
+        /// and SW corners) → W-edge → NW corner. Total entries are
+        /// `2*(width + height) + 4` (8 for s1x1 up to 16 for s3x3).
+        public var adjacentOffsets: [(x: Int, y: Int)] {
+            let (w, h) = dimensions
+            var result: [(x: Int, y: Int)] = []
+            result.reserveCapacity(2 * (w + h) + 4)
+            // N edge including NE corner: (0..w, -1)
+            for dx in 0...w { result.append((x: dx, y: -1)) }
+            // E edge below NE corner: (w, 0..h-1)
+            for dy in 0..<h { result.append((x: w, y: dy)) }
+            // S edge including SE and SW corners: (w..-1, h)
+            for dx in stride(from: w, through: -1, by: -1) {
+                result.append((x: dx, y: h))
+            }
+            // W edge below SW corner: (-1, h-1..0)
+            for dy in stride(from: h - 1, through: 0, by: -1) {
+                result.append((x: -1, y: dy))
+            }
+            // NW corner closes the ring.
+            result.append((x: -1, y: -1))
+            return result
+        }
     }
 
     /// Per-structure-type stats, trimmed to what our wired host functions

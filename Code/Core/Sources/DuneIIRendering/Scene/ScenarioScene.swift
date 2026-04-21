@@ -674,8 +674,9 @@ public final class ScenarioScene: SKScene {
     /// maps tile coords to pos32, invokes `Simulation.Structures.create`,
     /// refreshes the sidebar, and logs the outcome. Slice 4a rejects
     /// out-of-bounds + overlapping placements; slice 4b adds the
-    /// landscape gate + slab-deficit count. Slice 4c will apply HP
-    /// degradation for `-neededSlabs` returns.
+    /// landscape gate + slab-deficit count; slice 4c adds the
+    /// adjacent-to-player-base gate and applies HP degradation from
+    /// `-neededSlabs` on the create path.
     private func commitPlacement(type: UInt8, tileX: Int, tileY: Int) {
         guard let host = scheduler?.host else { return }
         let resolver = assets.tileResolver
@@ -691,10 +692,18 @@ public final class ScenarioScene: SKScene {
                 hasStructure: cell.hasStructure
             )
         }
+        let tileHouseIDAt: (Int, Int) -> UInt8 = { x, y in
+            guard x >= 0, x < 64, y >= 0, y < 64 else { return 0 }
+            let idx = y * 64 + x
+            guard idx < tiles.count else { return 0 }
+            return tiles[idx].houseID
+        }
         let validity = Simulation.Structures.isValidBuildLocation(
             tileX: tileX, tileY: tileY, type: type,
             structures: host.structures, units: host.units,
-            landscapeAt: landscapeAt
+            landscapeAt: landscapeAt,
+            playerHouseID: playerHouseID,
+            tileHouseIDAt: tileHouseIDAt
         )
         guard validity != 0 else {
             Log.info(
@@ -707,14 +716,17 @@ public final class ScenarioScene: SKScene {
             refreshBuildSidebar()
             return
         }
+        let tilesWithoutSlab: Int
         if validity < 0 {
-            // Valid but degraded — slab deficit = -validity. Logged so
-            // the user (and slice 4c) can see it; HP stays at max for
-            // now.
+            // Valid but degraded — slab deficit = -validity. Apply HP
+            // damage on the create path via tilesWithoutSlab.
+            tilesWithoutSlab = Int(-validity)
             Log.info(
-                "build-panel: commit degraded tile=(\(tileX),\(tileY)) type=\(type) slabs_needed=\(-validity)",
+                "build-panel: commit degraded tile=(\(tileX),\(tileY)) type=\(type) slabs_needed=\(tilesWithoutSlab)",
                 tracer: .label("build-panel")
             )
+        } else {
+            tilesWithoutSlab = 0
         }
         let px = UInt16(clamping: tileX * 256)
         let py = UInt16(clamping: tileY * 256)
@@ -723,7 +735,8 @@ public final class ScenarioScene: SKScene {
             type: type,
             houseID: playerHouseID,
             position: Pos32(x: px, y: py),
-            pool: &pool
+            pool: &pool,
+            tilesWithoutSlab: tilesWithoutSlab
         )
         host.structures = pool
         if let idx {

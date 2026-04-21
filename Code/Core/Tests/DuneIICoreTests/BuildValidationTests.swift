@@ -357,4 +357,148 @@ struct BuildValidationTests {
         )
         #expect(r == 1)
     }
+
+    // MARK: Slice 4c — layoutTilesAround + adjacency gate
+
+    @Test("layout s1x1 adjacentOffsets has exactly 8 entries (8-neighbourhood)")
+    func adjacentS1x1() {
+        let o = Simulation.StructureLayout.s1x1.adjacentOffsets
+        #expect(o.count == 8)
+        let set = Set(o.map { "\($0.x),\($0.y)" })
+        #expect(set == [
+            "0,-1", "1,-1", "1,0", "1,1", "0,1", "-1,1", "-1,0", "-1,-1"
+        ])
+    }
+
+    @Test("layout s3x3 adjacentOffsets has exactly 16 entries around the 3x3 ring")
+    func adjacentS3x3() {
+        let o = Simulation.StructureLayout.s3x3.adjacentOffsets
+        #expect(o.count == 16)
+    }
+
+    @Test("adjacency: no existing player structure → WINDTRAP invalid on rock")
+    func adjacencyNoBaseInvalid() {
+        // Rock everywhere, no player structures, player yard placement attempt.
+        let r = Simulation.Structures.isValidBuildLocation(
+            tileX: 5, tileY: 5, type: WINDTRAP,
+            structures: Simulation.StructurePool(),
+            units: Simulation.UnitPool(),
+            landscapeAt: { _, _ in .entirelyRock },
+            playerHouseID: Simulation.House.atreides,
+            tileHouseIDAt: { _, _ in 0 }
+        )
+        #expect(r == 0)
+    }
+
+    @Test("adjacency: player-owned windtrap at (5,5); new windtrap at (7,5) → valid (east edge adjacent)")
+    func adjacencyPlayerWindtrapAdjacent() {
+        var structures = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: WINDTRAP,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &structures
+        )
+        // WINDTRAP at (7,5) covers (7..8, 5..6). The existing (5..6, 5..6)
+        // touches via tile (6,5) being in the adjacency ring of (7,5).
+        let r = Simulation.Structures.isValidBuildLocation(
+            tileX: 7, tileY: 5, type: WINDTRAP,
+            structures: structures,
+            units: Simulation.UnitPool(),
+            landscapeAt: { _, _ in .entirelyRock },
+            playerHouseID: Simulation.House.atreides,
+            tileHouseIDAt: { _, _ in 0 }
+        )
+        // slab count = 4 rock tiles → -4 (valid, degraded).
+        #expect(r == -4)
+    }
+
+    @Test("adjacency: player-owned windtrap at (5,5); new windtrap at (20,20) not adjacent → invalid")
+    func adjacencyTooFar() {
+        var structures = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: WINDTRAP,
+            houseID: Simulation.House.atreides,
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &structures
+        )
+        let r = Simulation.Structures.isValidBuildLocation(
+            tileX: 20, tileY: 20, type: WINDTRAP,
+            structures: structures,
+            units: Simulation.UnitPool(),
+            landscapeAt: { _, _ in .entirelyRock },
+            playerHouseID: Simulation.House.atreides,
+            tileHouseIDAt: { _, _ in 0 }
+        )
+        #expect(r == 0)
+    }
+
+    @Test("adjacency: enemy structure adjacent does NOT satisfy player adjacency")
+    func adjacencyEnemyDoesntCount() {
+        var structures = Simulation.StructurePool()
+        _ = Simulation.Structures.create(
+            type: WINDTRAP,
+            houseID: Simulation.House.harkonnen,  // enemy
+            position: Pos32(x: 5 * 256, y: 5 * 256),
+            pool: &structures
+        )
+        let r = Simulation.Structures.isValidBuildLocation(
+            tileX: 7, tileY: 5, type: WINDTRAP,
+            structures: structures,
+            units: Simulation.UnitPool(),
+            landscapeAt: { _, _ in .entirelyRock },
+            playerHouseID: Simulation.House.atreides,
+            tileHouseIDAt: { _, _ in 0 }
+        )
+        #expect(r == 0)
+    }
+
+    @Test("adjacency: concrete slab adjacent + player-owned tileHouseID satisfies adjacency")
+    func adjacencyPlayerSlabFallback() {
+        // No pool structures, but a concrete slab at (6,5) owned by player.
+        let r = Simulation.Structures.isValidBuildLocation(
+            tileX: 7, tileY: 5, type: WINDTRAP,
+            structures: Simulation.StructurePool(),
+            units: Simulation.UnitPool(),
+            landscapeAt: { x, y in
+                x == 6 && y == 5 ? .concreteSlab : .entirelyRock
+            },
+            playerHouseID: Simulation.House.atreides,
+            tileHouseIDAt: { x, y in
+                x == 6 && y == 5 ? Simulation.House.atreides : 0
+            }
+        )
+        // slab count = 4 rock tiles (WINDTRAP footprint is 7..8 × 5..6, all rock)
+        #expect(r == -4)
+    }
+
+    @Test("adjacency: CONSTRUCTION_YARD placement skips the adjacency gate")
+    func adjacencyCYSkipsGate() {
+        let CYARD: UInt8 = 8
+        // Rock everywhere, no player base, no adjacent player anything.
+        // CY placement should still succeed (the gate only applies to non-CY).
+        let r = Simulation.Structures.isValidBuildLocation(
+            tileX: 20, tileY: 20, type: CYARD,
+            structures: Simulation.StructurePool(),
+            units: Simulation.UnitPool(),
+            landscapeAt: { _, _ in .entirelyRock },
+            playerHouseID: Simulation.House.atreides,
+            tileHouseIDAt: { _, _ in 0 }
+        )
+        #expect(r == 1)
+    }
+
+    @Test("playerHouseID = nil preserves slice-4b semantics — no adjacency check")
+    func playerHouseIDNilPreservesSlice4b() {
+        // Rock everywhere, no base, WINDTRAP — with playerHouseID=nil, no
+        // adjacency gate runs; returns -4 for the slab deficit.
+        let r = Simulation.Structures.isValidBuildLocation(
+            tileX: 20, tileY: 20, type: WINDTRAP,
+            structures: Simulation.StructurePool(),
+            units: Simulation.UnitPool(),
+            landscapeAt: { _, _ in .entirelyRock },
+            playerHouseID: nil
+        )
+        #expect(r == -4)
+    }
 }

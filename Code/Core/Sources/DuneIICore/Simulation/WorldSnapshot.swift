@@ -264,6 +264,7 @@ extension Simulation {
                     s.hitpointsMax = slot.hitpointsMax
                     s.upgradeLevel = slot.upgradeLevel
                     s.objectType = slot.objectType
+                    s.degrades = slot.object.flags.degrades
                     // Saved as u16 but fits in u8 (rotation 0..7 in vanilla).
                     s.rotationSpriteDiff = UInt8(truncatingIfNeeded: slot.rotationSpriteDiff)
                     structures[idx] = s

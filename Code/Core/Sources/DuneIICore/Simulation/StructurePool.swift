@@ -43,6 +43,12 @@ extension Simulation {
         /// written on each turret-rotate tick. Non-turret structures
         /// leave this at 0.
         public var rotationSpriteDiff: UInt8
+        /// Mirror of `ObjectFlags.degrades` (save bit `0x0400`). Set
+        /// when a structure spawns without full slab support (slice 4c
+        /// HP-degradation path) or is otherwise marked to lose HP over
+        /// time. Slice 4c sets it on degraded placements; the per-tick
+        /// decay consumer is a later slice.
+        public var degrades: Bool
 
         public init(
             isUsed: Bool = false,
@@ -59,7 +65,8 @@ extension Simulation {
             hitpointsMax: UInt16 = 0,
             upgradeLevel: UInt8 = 0,
             objectType: UInt16 = 0xFFFF,
-            rotationSpriteDiff: UInt8 = 0
+            rotationSpriteDiff: UInt8 = 0,
+            degrades: Bool = false
         ) {
             self.isUsed = isUsed
             self.isAllocated = isAllocated
@@ -76,6 +83,7 @@ extension Simulation {
             self.upgradeLevel = upgradeLevel
             self.objectType = objectType
             self.rotationSpriteDiff = rotationSpriteDiff
+            self.degrades = degrades
         }
     }
 
