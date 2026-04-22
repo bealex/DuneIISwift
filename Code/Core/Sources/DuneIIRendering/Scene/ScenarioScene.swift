@@ -76,6 +76,21 @@ public final class ScenarioScene: SKScene {
     private var sidebarNode: SKNode?
     private var minimapNode: SKSpriteNode?
 
+    /// Map content (tiles, unit / structure markers, explosions,
+    /// halos, rally marker, placement ghost) lives under this
+    /// node so we can zoom + pan the map independently of the
+    /// sidebar and HUD, which stay direct children of the scene.
+    /// Applied scale is `mapZoom`; applied offset is `mapPan`.
+    private var mapContainer = SKNode()
+    /// Map zoom factor. 4× is the default requested by the user;
+    /// the old behaviour was 1× (`.aspectFit` on the whole scene).
+    /// Bound to `=` / `-` keys; clamped to [1, 16].
+    private var mapZoom: CGFloat = 4
+    /// Current pan offset of `mapContainer`. Arrow keys shift it by
+    /// `panStep` per press.
+    private var mapPan: CGPoint = .zero
+    private static let panStep: CGFloat = 128
+
     // Convenience accessors — delegate to runtime.
     private var scheduler: Simulation.Scheduler? { runtime.scheduler }
     private var tickCounter: Int { runtime.tickCounter }
@@ -123,6 +138,12 @@ public final class ScenarioScene: SKScene {
         unitMarkers.removeAll(keepingCapacity: true)
         structureMarkers.removeAll(keepingCapacity: true)
         explosionMarkers.removeAll(keepingCapacity: true)
+        // Fresh map-content container for every didMove — removing
+        // children on the old one is unnecessary since we drop the
+        // reference wholesale.
+        mapContainer = SKNode()
+        mapContainer.zPosition = 0
+        addChild(mapContainer)
         frameCounter = 0
         do {
             try build()
@@ -222,6 +243,28 @@ public final class ScenarioScene: SKScene {
                 refreshSelectionHalo()
                 refreshBuildSidebar()
             }
+        case 123: // left arrow — pan camera left (content scrolls right)
+            mapPan.x += Self.panStep
+            applyMapTransform()
+        case 124: // right arrow
+            mapPan.x -= Self.panStep
+            applyMapTransform()
+        case 125: // down arrow
+            mapPan.y += Self.panStep
+            applyMapTransform()
+        case 126: // up arrow
+            mapPan.y -= Self.panStep
+            applyMapTransform()
+        case 24: // = / + — zoom in
+            let before = mapZoom
+            mapZoom = min(mapZoom * 2, 16)
+            adjustPanForZoom(from: before, to: mapZoom)
+            applyMapTransform()
+        case 27: // - / _ — zoom out
+            let before = mapZoom
+            mapZoom = max(mapZoom / 2, 1)
+            adjustPanForZoom(from: before, to: mapZoom)
+            applyMapTransform()
         case 47: // . (period) — double speed
             let before = speedMultiplier
             speedMultiplier = min(speedMultiplier * 2, 16)
@@ -351,7 +394,7 @@ public final class ScenarioScene: SKScene {
             x: CGFloat(rx) * Self.tileSize + Self.tileSize / 2,
             y: CGFloat(63 - ry) * Self.tileSize + Self.tileSize / 2
         )
-        addChild(marker)
+        mapContainer.addChild(marker)
         rallyMarker = marker
     }
 
@@ -411,9 +454,64 @@ public final class ScenarioScene: SKScene {
             halo.lineWidth = 2
             halo.fillColor = .clear
             halo.zPosition = 5
-            addChild(halo)
+            mapContainer.addChild(halo)
             selectionHalo = halo
         }
+    }
+
+    /// Applies the current `mapZoom` + `mapPan` to the mapContainer.
+    /// Called after any zoom / pan change. Cheap — SpriteKit handles
+    /// the transform on next draw without repositioning children.
+    private func applyMapTransform() {
+        mapContainer.setScale(mapZoom)
+        mapContainer.position = mapPan
+    }
+
+    /// Keeps the centre of the visible map area stable across a zoom
+    /// change. Given centre point `c` in scene-local coords (here
+    /// `(mapSize/2, mapSize/2)` — the middle of the map area) and
+    /// the content point `p` currently under that centre
+    /// (`p = (c - pan_before) / zoom_before`), the new pan is
+    /// `c - p * zoom_after`.
+    private func adjustPanForZoom(from oldZoom: CGFloat, to newZoom: CGFloat) {
+        guard oldZoom != newZoom else { return }
+        let centre = CGPoint(x: Self.mapSize / 2, y: Self.mapSize / 2)
+        let contentX = (centre.x - mapPan.x) / oldZoom
+        let contentY = (centre.y - mapPan.y) / oldZoom
+        mapPan.x = centre.x - contentX * newZoom
+        mapPan.y = centre.y - contentY * newZoom
+    }
+
+    /// Centres the map container on the player's CYARD (or the
+    /// first player-owned structure) so a freshly-loaded scenario
+    /// presents the base at a glance. Runs right after `build()`.
+    private func centerCameraOnPlayerYard() {
+        guard let host = scheduler?.host else { return }
+        var target: (x: Int, y: Int)? = nil
+        if let yardIdx = buildController.selectedYardIndex,
+           yardIdx < host.structures.slots.count,
+           host.structures.slots[yardIdx].isUsed
+        {
+            let s = host.structures.slots[yardIdx]
+            target = (Int(s.positionX) / 256, Int(s.positionY) / 256)
+        }
+        guard let t = target else {
+            applyMapTransform()
+            return
+        }
+        // Desired: tile t centred in the [0, mapSize) horizontal
+        // window + the full vertical window.
+        let centreScreenX = Self.mapSize / 2
+        let centreScreenY = Self.mapSize / 2
+        let contentX = (CGFloat(t.x) + 0.5) * Self.tileSize
+        let contentY = (CGFloat(63 - t.y) + 0.5) * Self.tileSize
+        mapPan.x = centreScreenX - contentX * mapZoom
+        mapPan.y = centreScreenY - contentY * mapZoom
+        applyMapTransform()
+        Log.info(
+            "camera centered on yard tile=(\(t.x),\(t.y)) pan=(\(Int(mapPan.x)),\(Int(mapPan.y))) zoom=\(mapZoom)",
+            tracer: .label("camera")
+        )
     }
 
     /// Pure translation from a scene-local point to a controller click.
@@ -424,9 +522,14 @@ public final class ScenarioScene: SKScene {
             }
             return .outside
         }
-        let tileX = Int(p.x / Self.tileSize)
+        // The click comes in scene-local coords. `mapContainer` is
+        // scaled + panned, so we need to inverse-transform the point
+        // into map-content coords before computing the tile.
+        let mapX = (p.x - mapPan.x) / mapZoom
+        let mapY = (p.y - mapPan.y) / mapZoom
+        let tileX = Int(mapX / Self.tileSize)
         // Scene origin is bottom-left; our map indexing is top-left.
-        let tileY = 63 - Int(p.y / Self.tileSize)
+        let tileY = 63 - Int(mapY / Self.tileSize)
         guard (0..<64).contains(tileX), (0..<64).contains(tileY) else {
             return .outside
         }
@@ -488,6 +591,9 @@ public final class ScenarioScene: SKScene {
         refreshBuildSidebar()
         refreshRallyMarker()
         refreshMinimap()
+        // Apply default 4× zoom + centre the camera on the player's
+        // CYARD so fresh scenarios present the base at a glance.
+        centerCameraOnPlayerYard()
     }
 
     private func addHud() {
@@ -625,7 +731,7 @@ public final class ScenarioScene: SKScene {
                 node.anchorPoint = .zero
                 node.position = screenPosition(x: x, y: y)
                 node.zPosition = 0
-                addChild(node)
+                mapContainer.addChild(node)
                 tileNodes.append(node)
                 // Record an impossible-looking key so `syncGroundTiles`
                 // sees a mismatch on its first pass and repaints any
@@ -766,7 +872,7 @@ public final class ScenarioScene: SKScene {
         marker.size = CGSize(width: Self.tileSize, height: Self.tileSize)
         marker.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         marker.zPosition = 2
-        addChild(marker)
+        mapContainer.addChild(marker)
         return marker
     }
 
@@ -795,7 +901,7 @@ public final class ScenarioScene: SKScene {
                 marker.fillColor = .clear
                 marker.lineWidth = 1
                 marker.zPosition = 1
-                addChild(marker)
+                mapContainer.addChild(marker)
                 structureMarkers[idx] = marker
             }
             marker.strokeColor = houseColorFor(houseID: slot.houseID).withAlphaComponent(0.8)
@@ -828,7 +934,7 @@ public final class ScenarioScene: SKScene {
             let marker = explosionMarkers[idx] ?? makeExplosionMarker(for: slot)
             if explosionMarkers[idx] == nil {
                 explosionMarkers[idx] = marker
-                addChild(marker)
+                mapContainer.addChild(marker)
             }
             marker.position = screenPositionPos32(x: slot.positionX, y: slot.positionY)
             // Simple lifetime fade: alpha falls as `remainingFrames → 0`.
@@ -1431,7 +1537,7 @@ public final class ScenarioScene: SKScene {
         node.fillColor = color.withAlphaComponent(0.2)
         node.lineWidth = 2
         node.zPosition = 8
-        addChild(node)
+        mapContainer.addChild(node)
         placementGhost = node
     }
 
