@@ -33,6 +33,20 @@ extension Simulation {
         /// which is the conservative default for tests that haven't set
         /// up a player. Fremen are always allied to Atreides. All
         /// non-player houses are implicit allies of each other.
+        /// Spending-cash lookup for HUD readouts. Returns `nil` for an
+        /// out-of-range houseID or an unallocated slot — distinct from
+        /// "house has 0 credits" (returns `0`). Note that
+        /// `HousePool.free` leaves `isUsed == true` (matches OpenDUNE's
+        /// `House_Free` quirk), so a freed house still answers its
+        /// credits — see `Documentation/Insights/simulation-house-free-leaves-used.md`.
+        public static func credits(for houseID: UInt8, in pool: HousePool) -> UInt16? {
+            let idx = Int(houseID)
+            guard idx >= 0, idx < HousePool.capacity else { return nil }
+            let slot = pool.slots[idx]
+            guard slot.isUsed else { return nil }
+            return slot.credits
+        }
+
         public static func areAllied(_ a: UInt8, _ b: UInt8, playerHouseID: UInt8? = nil) -> Bool {
             if a == invalidID || b == invalidID { return false }
             if a == b { return true }

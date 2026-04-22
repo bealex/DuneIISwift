@@ -28,13 +28,14 @@ public struct UnitCommandController: Equatable, Sendable {
 
     /// Scene-observable result. `selectUnit` / `deselect` are
     /// selection-state changes the scene renders as a halo; `orderMove`
-    /// is a pool mutation the scene applies via
-    /// `Simulation.Units.orderMove`.
+    /// and `orderAttack` are pool mutations the scene applies via
+    /// `Simulation.Units.orderMove` / `Simulation.Units.orderAttack`.
     public enum Action: Equatable, Sendable {
         case none
         case selectUnit(poolIndex: Int)
         case deselect
         case orderMove(poolIndex: Int, tileX: Int, tileY: Int)
+        case orderAttack(attackerIndex: Int, targetIndex: Int)
     }
 
     public mutating func handle(
@@ -68,6 +69,14 @@ public struct UnitCommandController: Equatable, Sendable {
 
         case .rightMapTile(let x, let y):
             guard let sel = selectedUnitIndex else { return .none }
+            // Enemy under the click → attack order. Self-tile guarded so
+            // a unit standing on its own tile doesn't issue an attack
+            // against itself in the rare case the pool scan returns it.
+            if let enemy = Self.enemyUnitAtTile(
+                x: x, y: y, pool: pool, playerHouseID: playerHouseID
+            ), enemy != sel {
+                return .orderAttack(attackerIndex: sel, targetIndex: enemy)
+            }
             return .orderMove(poolIndex: sel, tileX: x, tileY: y)
         }
     }
@@ -76,7 +85,7 @@ public struct UnitCommandController: Equatable, Sendable {
     /// tile matches `(x, y)`. Returns the pool slot index, or `nil`.
     /// Enemy units are deliberately invisible to this query — left-click
     /// on an enemy tile collapses to the "empty terrain" path in slice
-    /// 1 (attack orders land in a later slice).
+    /// 1 (attack orders land in slice 2 via `enemyUnitAtTile`).
     private static func friendlyUnitAtTile(
         x: Int, y: Int, pool: Simulation.UnitPool, playerHouseID: UInt8
     ) -> Int? {
@@ -85,6 +94,28 @@ public struct UnitCommandController: Equatable, Sendable {
             let slot = pool.slots[idx]
             if !slot.isUsed { continue }
             if slot.houseID != playerHouseID { continue }
+            let tx = Int(slot.positionX) / 256
+            let ty = Int(slot.positionY) / 256
+            if tx == x && ty == y { return idx }
+        }
+        return nil
+    }
+
+    /// Mirror of `friendlyUnitAtTile` — returns the pool slot of any
+    /// non-player unit on `(x, y)`. Used by the right-click branch to
+    /// promote a move order into an attack order when the click lands
+    /// on an enemy. Allies-of-player are not enemies; OpenDUNE's
+    /// `House_AreAllied` distinction (Fremen↔Atreides) is not modelled
+    /// here yet — the next slice can swap this for an alliance check
+    /// if it matters.
+    private static func enemyUnitAtTile(
+        x: Int, y: Int, pool: Simulation.UnitPool, playerHouseID: UInt8
+    ) -> Int? {
+        guard (0..<64).contains(x), (0..<64).contains(y) else { return nil }
+        for idx in pool.findArray {
+            let slot = pool.slots[idx]
+            if !slot.isUsed { continue }
+            if slot.houseID == playerHouseID { continue }
             let tx = Int(slot.positionX) / 256
             let ty = Int(slot.positionY) / 256
             if tx == x && ty == y { return idx }

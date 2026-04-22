@@ -44,6 +44,10 @@ public final class ScenarioScene: SKScene {
     private var frameCounter: Int = 0
     private var tickCounter: Int = 0
     private var hud: SKLabelNode?
+    /// "Credits: N" readout pinned above the BUILD sidebar header.
+    /// Refreshed each tick from the player house's `HouseSlot.credits`
+    /// via `Simulation.House.credits(for:in:)`. Slice 6d.
+    private var creditsLabel: SKLabelNode?
     /// Per-unit-pool-slot marker nodes, keyed by pool index. `nil` slots
     /// are unallocated (or freed). Rebuilt at scene build; positions /
     /// textures are refreshed every tick by `syncVisualsFromPool()`.
@@ -264,6 +268,14 @@ public final class ScenarioScene: SKScene {
                 "unit-order-move unit=\(idx) tile=(\(tx),\(ty)) ok=\(ok)",
                 tracer: .label("unit-cmd")
             )
+        case .orderAttack(let attacker, let target):
+            let ok = Simulation.Units.orderAttack(
+                poolIndex: attacker, targetUnitIndex: target, units: &host.units
+            )
+            Log.info(
+                "unit-order-attack unit=\(attacker) target=\(target) ok=\(ok)",
+                tracer: .label("unit-cmd")
+            )
         case .none:
             break
         }
@@ -435,6 +447,19 @@ public final class ScenarioScene: SKScene {
         label.zPosition = 10
         addChild(label)
         hud = label
+
+        let credits = SKLabelNode(text: "Credits: —")
+        credits.fontColor = .white
+        credits.fontSize = 14
+        credits.position = CGPoint(
+            x: Self.mapSize + Self.sidebarWidth / 2,
+            y: size.height - 16
+        )
+        credits.horizontalAlignmentMode = .center
+        credits.zPosition = 10
+        addChild(credits)
+        creditsLabel = credits
+
         refreshHud()
     }
 
@@ -443,6 +468,17 @@ public final class ScenarioScene: SKScene {
         let units = scheduler?.host.units.findArray.count ?? 0
         let structures = scheduler?.host.structures.findArray.count ?? 0
         hud.text = "Tick \(tickCounter) · units \(units) · structures \(structures)"
+
+        if let creditsLabel {
+            let value = scheduler.flatMap {
+                Simulation.House.credits(for: playerHouseID, in: $0.host.houses)
+            }
+            if let value {
+                creditsLabel.text = "Credits: \(value)"
+            } else {
+                creditsLabel.text = "Credits: —"
+            }
+        }
     }
 
     private func addGroundTiles(world: ScenarioWorld) {
