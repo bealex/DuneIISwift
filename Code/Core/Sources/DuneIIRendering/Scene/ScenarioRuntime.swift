@@ -113,6 +113,40 @@ public final class ScenarioRuntime {
         let resolver = assets.tileResolver
         let snapshot = try Simulation.WorldSnapshot(scenario: scenario, resolver: resolver)
         tileGridRef.tiles = snapshot.tiles
+        // Trim the rendered tile grid to the scenario's playable
+        // rect — port of OpenDUNE's `g_mapInfos[mapScale]` bounding
+        // box. Tiles outside the rect get the veiled (fog-of-war
+        // offset 16) sprite so the scene, minimap, and screenshot
+        // renderer all show a black border matching the in-game look.
+        let rect = scenario.playableRect
+        let veiled = resolver.veiledTileID
+        var trimmedCount = 0
+        for y in 0..<64 {
+            for x in 0..<64 {
+                let inside = x >= rect.originX && x < rect.originX + rect.width
+                    && y >= rect.originY && y < rect.originY + rect.height
+                if inside { continue }
+                let cellIdx = y * 64 + x
+                let old = tileGridRef.tiles[cellIdx]
+                if old.groundTileID == veiled { continue }
+                tileGridRef.tiles[cellIdx] = Simulation.WorldSnapshot.Tile(
+                    groundTileID: veiled,
+                    overlayTileID: old.overlayTileID,
+                    houseID: 0,
+                    isUnveiled: false,
+                    hasUnit: old.hasUnit,
+                    hasStructure: old.hasStructure,
+                    hasAnimation: old.hasAnimation,
+                    hasExplosion: old.hasExplosion,
+                    objectRef: old.objectRef
+                )
+                trimmedCount &+= 1
+            }
+        }
+        Log.info(
+            "runtime playable rect=(\(rect.originX),\(rect.originY),\(rect.width),\(rect.height)) trimmed=\(trimmedCount) veiledTileID=\(veiled)",
+            tracer: .label("runtime")
+        )
         // Stamp every scenario-spawned structure's footprint with
         // `hasStructure = true` + the owner's houseID so the
         // pathfinder + passability gate see them as impassable. The

@@ -352,6 +352,23 @@ public struct Scenario: Sendable {
     public var structures: [StructureSpawn] = []
     public var teams: [TeamSpawn] = []
 
+    /// Playable tile rect for the scenario's `MapScale`. Port of
+    /// OpenDUNE `g_mapInfos[3]` (`src/map.c:57`):
+    ///   scale 0 → 62×62 at (1,1)   (large — campaign end-game)
+    ///   scale 1 → 32×32 at (16,16) (medium — mission 1 etc.)
+    ///   scale 2 → 21×21 at (21,21) (small — early briefings)
+    /// Unknown scales fall back to the medium preset. Tiles outside
+    /// this rect should render as `TileResolver.veiledTileID` — the
+    /// off-map shadow that OpenDUNE paints around every playable
+    /// area.
+    public var playableRect: (originX: Int, originY: Int, width: Int, height: Int) {
+        switch briefing.mapScale {
+        case 0: return (1, 1, 62, 62)
+        case 2: return (21, 21, 21, 21)
+        default: return (16, 16, 32, 32)
+        }
+    }
+
     /// Zero-valued scenario: empty houses / units / structures, no map
     /// features, seed = 0. Used by tests and by callers that compose a
     /// scenario by hand rather than decoding INI.
