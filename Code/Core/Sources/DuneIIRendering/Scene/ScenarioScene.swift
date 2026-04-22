@@ -395,6 +395,7 @@ public final class ScenarioScene: SKScene {
         let snapshot = try Simulation.WorldSnapshot(scenario: scenario, resolver: resolver)
         tileGrid = snapshot.tiles
         let scorer = Self.makeTileEnterScorer(snapshot: snapshot, resolver: resolver)
+        let landscapeLookup = Self.makeLandscapeLookup(snapshot: snapshot, resolver: resolver)
         let host = Scripting.Host(
             units: snapshot.units,
             structures: snapshot.structures,
@@ -406,7 +407,10 @@ public final class ScenarioScene: SKScene {
             textLog: [],
             voiceLog: [],
             tileEnterScore: scorer,
-            playerHouseID: Simulation.House.atreides
+            playerHouseID: Simulation.House.atreides,
+            isValidPosition: nil,
+            isPositionUnveiled: nil,
+            landscapeAt: landscapeLookup
         )
 
         // RNG stream shared between host-function closures (mirrors
@@ -689,6 +693,28 @@ public final class ScenarioScene: SKScene {
             }
             // Invert: higher speed ⇒ lower cost.
             return Int32(UInt8(truncatingIfNeeded: UInt32(speed) ^ 0xFF))
+        }
+    }
+
+    /// Map-backed `landscapeAt` closure. Returns the raw
+    /// `LandscapeType` byte for a packed tile so `Script_Unit_CalculateRoute`
+    /// can look up `LandscapeInfo.movementSpeed[movementType]` and set
+    /// `slot.speed` — mirrors the speed-selection slice of
+    /// `Unit_StartMovement` (`src/unit.c:1088`).
+    private static func makeLandscapeLookup(
+        snapshot: Simulation.WorldSnapshot,
+        resolver: TileResolver
+    ) -> (UInt16) -> UInt8 {
+        let tiles = snapshot.tiles
+        return { packed in
+            guard Int(packed) < tiles.count else { return 0 }
+            let cell = tiles[Int(packed)]
+            let landscape = resolver.landscapeType(
+                groundTileID: cell.groundTileID,
+                overlayTileID: cell.overlayTileID,
+                hasStructure: cell.hasStructure
+            )
+            return UInt8(truncatingIfNeeded: landscape.rawValue)
         }
     }
 

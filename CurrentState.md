@@ -11,20 +11,19 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**None — P5 slice 6d (HUD credits label) done. Pick from "Next up" below.**
+**None — EMC-driven SetSpeed wired for ground units (2026-04-21 follow-up). Pick from "Next up" below.**
 
-Slice 6d shipped today (2026-04-21): "Credits: N" label pinned to the top of the sidebar, refreshed every tick from `Simulation.House.credits(for:in:)`. Mission 1 Atreides starts at 1000 and ticks down as BUSY yards drain. Pure-sim helper returns `nil` for unallocated / out-of-range house IDs (label shows "—") and `0` for allocated-but-empty (label shows "0"). 5 new tests; 671 green / 67 suites / zero warnings on clean build.
+Two-part fix shipped today (2026-04-21, post-6d): (1) `Script_Unit_GetInfo` subcase `0x0B` now reads `slot.currentDestinationX/Y` instead of `slot.targetMove` (misport — OpenDUNE's `src/script/unit.c:968` checks the per-step pixel destination, a different field). Before the fix, the UNIT.EMC MOVE handler at word 637 saw "already moving" on tick 1 of a fresh order and looped forever on the wait, so `Script_Unit_CalculateRoute` was never reached. (2) Our `makeCalculateRouteUnit` now ports the landscape-speed slice of `Unit_StartMovement` (`src/unit.c:1088..1105`): it looks up the landscape at the tile we're about to enter, reads `LandscapeInfo.movementSpeed[movementType]`, applies the HP<half 1/4 slowdown (non-winger only), and writes `slot.speed`. New `Scripting.Host.landscapeAt` closure plumbs the map-backed lookup from `ScenarioScene` via `TileResolver.landscapeType`. Simplifications: we bypass `Unit_SetSpeed`'s `movingSpeedFactor` / gameSpeed / speed-vs-speedPerTick split (our scheduler's step math is already a coarse approximation — sub-pixel parity is queued for the tick-parity golden harness). 4 new tests; 675 green / 67 suites / zero warnings on clean build. Design: `Algorithms/EmcDrivenSetSpeed.md`. Insight: `scripting-unit-getinfo-0b-is-currentdestination.md`.
 
-**Known limitation flagged by the user (2026-04-21)**: ground units move very slowly because `slot.speed` defaults to `0` and our scheduler's `step = max(4, slot.speed/4)` degrades to 4 px/tick (≈48 px/sec, ~5 sec/tile). Attack animations are technically working (bullets render as colored shapes, explosions as discs) but units rarely close to fire range. Root cause: scenario-spawn doesn't seed ground-unit `slot.speed`, and the EMC `MOVE` handler's `Script_Unit_SetSpeed` call evidently isn't firing reliably. **User opted to wait for proper `SetSpeed` wiring rather than a stop-gap seed.** Track this when designing the next sim-side slice.
-
-**Visual verification pending** for the last two slices (sandbox can't drive SpriteKit). `swift run duneii`, mission-1 Atreides:
+**Visual verification pending** for the SetSpeed slice + the two slices before it (sandbox can't drive SpriteKit). `swift run duneii`, mission-1 Atreides:
 
 1. Scenario loads; "Credits: 1000" reads in the top-right above BUILD.
 2. Click WINDTRAP row → BUSY → credits tick down by `buildCredits/buildTime` (300/24 = ~12 per sim-tick at 12 Hz). Visible drain.
 3. Cancel the BUSY yard → credits refund proportional to remaining countdown.
-4. Click a friendly unit → green halo. Right-click an enemy → `unit-order-attack` log; with patient observation, non-turret units close + fire (slow until SetSpeed lands).
-5. Right-click empty sand → move order (slice-1 regression guard).
-6. Build panel + yard switching unaffected.
+4. Click a friendly unit → green halo. Right-click empty sand → the unit now moves visibly at ≈0.5-1 tile/sec (faster on dune/sand, slower on rough rock), *not* the previous 5-sec-per-tile crawl.
+5. Right-click an enemy → `unit-order-attack` log; non-turret units should now actually close + fire thanks to proper speed.
+6. Damage a unit (take hits in combat). Below 50% HP, movement should visibly slow — HP<half 1/4 reduction.
+7. Build panel + yard switching unaffected.
 
 If any step fails it's a regression in the associated slice.
 
@@ -32,22 +31,22 @@ If any step fails it's a regression in the associated slice.
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → failing test → implement → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **Wire EMC-driven SetSpeed properly.** Ground units currently spawn with `speed = 0` and stay there — see "Known limitation" above. Either trace which UNIT.EMC path was *supposed* to call SetSpeed for player-issued MOVE/ATTACK, fix the breakage, or seed `slot.speed` from `UnitInfo.movingSpeedFactor` at scenario-spawn / `orderMove` / `orderAttack` as a stop-gap. The user explicitly wants the former.
-2. **Rally-point click on factories.** Lets player place where freshly-built units exit. Small slice.
-3. **Harvester / spice income (P4→P5 bridge).** Biggest remaining gameplay hole — economy is one-way right now. Requires harvester AI loop + refinery deposit + per-house credit accumulation.
-4. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
-5. **P5 — real HUD remainder** — unit info panel + minimap (credits already covered by slice 6d).
-6. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal.
-7. **EMC `BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; running the real script would give proper flight frames + sonic-beam propagation. Cosmetic.
-8. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder. Optional in OpenDUNE saves.
-9. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority` (sand-only, movement-state weighted); slot 0x36.
-10. **Slice 2.1 polish** — mentat briefing text, scenario pan/zoom (intro/jukebox/voice already shipped).
-11. **Right-click-attack on enemy structures (slice 3).** Same shape as slice 2; encode `IT_STRUCTURE` instead of `IT_UNIT`. Add an `enemyStructureAtTile` scan + a structure variant of `orderAttack` (or generalise the existing one).
+1. **Rally-point click on factories.** Lets player place where freshly-built units exit. Small slice.
+2. **Harvester / spice income (P4→P5 bridge).** Biggest remaining gameplay hole — economy is one-way right now. Requires harvester AI loop + refinery deposit + per-house credit accumulation.
+3. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
+4. **P5 — real HUD remainder** — unit info panel + minimap (credits already covered by slice 6d).
+5. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline (`movingSpeedFactor` + gameSpeed + speed-vs-speedPerTick split) for sub-pixel parity — SetSpeed slice took a simpler shortcut.
+6. **EMC `BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; running the real script would give proper flight frames + sonic-beam propagation. Cosmetic.
+7. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder. Optional in OpenDUNE saves.
+8. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority` (sand-only, movement-state weighted); slot 0x36.
+9. **Slice 2.1 polish** — mentat briefing text, scenario pan/zoom (intro/jukebox/voice already shipped).
+10. **Right-click-attack on enemy structures (slice 3).** Same shape as slice 2; encode `IT_STRUCTURE` instead of `IT_UNIT`. Add an `enemyStructureAtTile` scan + a structure variant of `orderAttack` (or generalise the existing one).
 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-21 — Wire EMC-driven SetSpeed for ground units.** Two-part port fix. (1) `Script_Unit_GetInfo` subcase `0x0B` now reads `currentDestinationX/Y` instead of `targetMove` (OpenDUNE `src/script/unit.c:968`) — the misport made UNIT.EMC's MOVE handler loop at the "already moving" wait on tick 1 and never reach `CalculateRoute`. (2) `makeCalculateRouteUnit` now ports the landscape-speed slice of `Unit_StartMovement` (`src/unit.c:1088..1105`): looks up landscape via the new `Scripting.Host.landscapeAt` closure, reads `LandscapeInfo.movementSpeed[movementType]`, applies HP<half 1/4 slowdown (non-winger only), scales by `byScenario`, writes `slot.speed`. `ScenarioScene.setUpScheduler` wires the closure from the snapshot tile grid. We bypass `Unit_SetSpeed`'s `movingSpeedFactor` / gameSpeed / speed-vs-speedPerTick split — sub-pixel parity is queued for the tick-parity golden harness. 4 new tests (GetInfo 0x0B + 3 on CalcRoute: landscape-set, HP<half, nil-closure guard). 675 green / 67 suites / zero warnings on clean build. Design: `Algorithms/EmcDrivenSetSpeed.md`. Insight: `scripting-unit-getinfo-0b-is-currentdestination.md`.
 - **2026-04-21 — P5 slice 6d: HUD credits label.** "Credits: N" SKLabelNode pinned at top of the right-hand sidebar; refreshed every tick from new pure-sim helper `Simulation.House.credits(for:in:)` (returns `UInt16?` — `nil` for unallocated / out-of-range house IDs, `0` for allocated-but-empty, distinguishing "—" from "0" in the label). Mission 1 Atreides starts at 1000 and ticks down as BUSY yards drain. 5 new tests in `HouseCreditsLookupTests`. 671 green / 67 suites / zero warnings on clean build. Design: `Algorithms/HudCreditsLabel.md`.
 - **2026-04-21 — Right-click-attack on enemy units (slice 2).** New `Simulation.Units.orderAttack(poolIndex:targetUnitIndex:units:)` composes `Unit_SetAction(ACTION_ATTACK)` + `Unit_SetTarget` (`src/unit.c:497, 1131`) into one pure-sim write. Always: `targetAttack = EncodedIndex.unit(targetUnitIndex)`, `actionID = attack` (0), `currentDestination{X,Y} = 0`. Non-turret attackers (TROOPER, TRIKE, QUAD, DEVASTATOR) also get `targetMove = targetAttack` + `route[0] = 0xFF` so the chassis chases; turreted units leave move state alone (rotates turret in place — `unit.c:1161`). Controller side: new `Action.orderAttack` + `enemyUnitAtTile` scan; the right-click handler discriminates empty / friendly / enemy under the click and promotes to attack on enemy. Slice-1 right-click semantics regression-guarded. `ScenarioScene.applyCommandAction` gets the new case; logs `unit-order-attack unit=N target=M ok=true`. 14 new tests (8 in `UnitOrderAttackTests`, 6 added to `UnitCommandControllerTests`). 666 green / 66 suites / zero warnings on clean build. Design: `Algorithms/UnitOrderAttack.md`. Deferred: enemy-structure attack (slice 3), target blink + voice cue, alliance check.
 - **2026-04-21 — Movement bug triage: fix scheduler entry-point, port SetActionDefault, fix IdleAction turret-skip.** Three pre-existing bugs surfaced by player-ordered MOVE actions. Scheduler now loads `unitVM` at `entryPoints[slot.type]` and sets `variables[0] = actionID` separately (OpenDUNE's split: `src/unit.c:520`). `Script_Unit_SetActionDefault` (slot 0x0A) ported so MOVE→GUARD transition works on arrival. `IdleAction` split restored: 50% body, 50% turret — non-turret units stop excess rotation. 3 new tests + 1 rewrite. 652 green / 65 suites / zero warnings on clean build. Insight: `scripting-unit-entry-point-by-type-not-action.md`.
@@ -121,7 +120,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **671 tests across 67 suites, all green** as of 2026-04-21 (post-HUD-credits-slice-6d). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **675 tests across 67 suites, all green** as of 2026-04-21 (post-SetSpeed slice). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 

@@ -170,9 +170,14 @@ extension Scripting {
                 case 0x08:
                     return Scripting.EncodedIndex.unit(slot.index).raw
                 case 0x0B:
-                    // "has current destination" — we track this via targetMove
-                    // until we add the explicit currentDestination field.
-                    return slot.targetMove != 0 ? 1 : 0
+                    // `(u->currentDestination.x == 0 && u->currentDestination.y == 0) ? 0 : 1`
+                    // — `currentDestination` is the pixel-level per-step goal
+                    // the route-follower is walking toward RIGHT NOW.
+                    // `targetMove` is the player's ultimate goal and is a
+                    // different field; reading targetMove here made the MOVE
+                    // handler (UNIT.EMC word 637) decide "already moving" on
+                    // tick 1 of a fresh order and loop forever at the wait.
+                    return (slot.currentDestinationX == 0 && slot.currentDestinationY == 0) ? 0 : 1
                 case 0x0D:
                     // `ui->flags.explodeOnDeath`.
                     return (info?.explodeOnDeath ?? false) ? 1 : 0
@@ -840,10 +845,48 @@ extension Scripting {
                     return 1
                 }
 
-                // Consume one step (memmove route[1..] down by one). We don't
-                // call `Unit_StartMovement` here — the naive-movement
-                // successor (`tickRouteMovement`) handles advancing the
-                // per-tile position.
+                // Port the SetSpeed slice of `Unit_StartMovement`
+                // (`src/unit.c:1088..1105`): look up the landscape at the
+                // tile we're about to enter, read `movementSpeed[type]`,
+                // reduce by 1/4 if HP<half for non-winger units, write to
+                // `slot.speed`. Without this, ground units stay at
+                // speed=0 and the scheduler's `max(4, speed/4)` clamp
+                // produces a 5-sec-per-tile crawl.
+                if let landscapeAt = host.landscapeAt,
+                   let info = Simulation.UnitInfo.lookup(slot.type) {
+                    let stepDir = Int(updated.route[0])
+                    let delta = Simulation.Pathfinder.mapDirection[stepDir]
+                    let currentPacked = Simulation.Pathfinder.packedTile(
+                        x: updated.positionX, y: updated.positionY
+                    )
+                    let nextPacked = UInt16(truncatingIfNeeded: Int32(currentPacked) + delta)
+                    let lst = landscapeAt(nextPacked)
+                    let landscapeIndex = Int(lst)
+                    if landscapeIndex >= 0, landscapeIndex < Simulation.LandscapeInfo.table.count {
+                        let land = Simulation.LandscapeInfo.table[landscapeIndex]
+                        let mIndex = Int(info.movementType.rawValue)
+                        if mIndex < land.movementSpeed.count {
+                            var speed = UInt16(land.movementSpeed[mIndex])
+                            // HP<half slowdown — non-winger only
+                            // (src/unit.c:1103). hitpointsMax == info.hitpoints.
+                            if info.movementType != .winger,
+                               info.hitpoints != 0,
+                               Int(updated.hitpoints) * 2 < Int(info.hitpoints) {
+                                speed &-= speed / 4
+                            }
+                            // byScenario scaling mirrors `makeSetSpeedUnit`
+                            // (Functions.swift's SetSpeed path).
+                            if !updated.byScenario {
+                                speed = (speed &* 192) / 256
+                            }
+                            updated.speed = UInt8(truncatingIfNeeded: speed)
+                        }
+                    }
+                }
+
+                // Consume one step (memmove route[1..] down by one). The
+                // scheduler's `tickMovement` advances per-tile position
+                // using the speed we just wrote.
                 for i in 0..<13 { updated.route[i] = updated.route[i + 1] }
                 updated.route[13] = 0xFF
                 host.units[poolIndex] = updated

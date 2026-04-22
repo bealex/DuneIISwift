@@ -46,6 +46,12 @@ extension Scripting {
         /// has been cleared at a packed tile. `nil` defaults to
         /// "always unveiled" (matches OpenDUNE's `g_debugScenario`).
         public var isPositionUnveiled: ((_ packed: UInt16) -> Bool)?
+        /// `Map_GetLandscapeType` analogue — returns the `LandscapeType`
+        /// raw value for a packed tile. `nil` means "unknown" — callers
+        /// that use this for speed selection (`CalculateRoute` → the
+        /// `Unit_StartMovement` speed path) skip the update and leave
+        /// `slot.speed` alone so install-less tests keep working.
+        public var landscapeAt: ((_ packed: UInt16) -> UInt8)?
 
         public enum ObjectRef: Sendable, Equatable {
             case unit(poolIndex: Int)
@@ -81,7 +87,8 @@ extension Scripting {
             tileEnterScore: ((_ packed: UInt16, _ orient8: UInt8, _ movementType: Simulation.MovementType) -> Int32)? = nil,
             playerHouseID: UInt8? = nil,
             isValidPosition: ((_ packed: UInt16) -> Bool)? = nil,
-            isPositionUnveiled: ((_ packed: UInt16) -> Bool)? = nil
+            isPositionUnveiled: ((_ packed: UInt16) -> Bool)? = nil,
+            landscapeAt: ((_ packed: UInt16) -> UInt8)? = nil
         ) {
             self.units = units
             self.structures = structures
@@ -96,6 +103,7 @@ extension Scripting {
             self.playerHouseID = playerHouseID
             self.isValidPosition = isValidPosition
             self.isPositionUnveiled = isPositionUnveiled
+            self.landscapeAt = landscapeAt
         }
 
         // MARK: Convenience queries
