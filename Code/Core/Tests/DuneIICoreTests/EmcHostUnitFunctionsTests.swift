@@ -70,6 +70,43 @@ struct EmcHostUnitFunctionsTests {
         #expect(runGetInfo(host: host, which: 0x01) == Scripting.EncodedIndex.unit(7).raw)
     }
 
+    @Test("GetInfo 0x0B — 0 when currentDestination is zero even with targetMove set")
+    func getInfoSubcase0BChecksCurrentDestination() throws {
+        // OpenDUNE src/script/unit.c:968 —
+        //   case 0x0B: (u->currentDestination.x == 0 && u->currentDestination.y == 0) ? 0 : 1;
+        // The MOVE handler in UNIT.EMC reads this to decide whether to set
+        // up a move (0) or wait for an in-flight one (1). targetMove is a
+        // DIFFERENT field (the ultimate goal); misreading it here is what
+        // made player-ordered MOVEs loop forever at the "already moving"
+        // stall and never reach CalculateRoute.
+        var units = Simulation.UnitPool()
+        units.allocate(at: 5, type: 13, houseID: 0)
+        var slot = units[5]
+        slot.targetMove = 0x4010               // a valid ultimate goal
+        slot.currentDestinationX = 0
+        slot.currentDestinationY = 0
+        units[5] = slot
+
+        let host = Scripting.Host(
+            units: units, structures: .init(),
+            currentObject: .unit(poolIndex: 5),
+            texts: [], textLog: []
+        )
+        #expect(runGetInfo(host: host, which: 0x0B) == 0,
+                "targetMove != 0 but currentDestination == (0,0) — must return 0")
+
+        // Now set currentDestination; expect 1.
+        slot.currentDestinationX = 1234
+        slot.currentDestinationY = 0
+        host.units[5] = slot
+        #expect(runGetInfo(host: host, which: 0x0B) == 1)
+
+        slot.currentDestinationX = 0
+        slot.currentDestinationY = 5678
+        host.units[5] = slot
+        #expect(runGetInfo(host: host, which: 0x0B) == 1)
+    }
+
     // MARK: SetAction
 
     @Test("SetAction writes peek(1) & 0xFF to the current unit and returns 0")

@@ -88,6 +88,7 @@ OpenDUNE `src/...` or dunepak `src/...` or the raw bytes of
 - [scripting-emc-saved-location-plus-one](scripting-emc-saved-location-plus-one.md) — `PUSH_RETURN_OR_LOCATION 1` saves `pc + 1` because the EMC compiler always emits a `JUMP` immediately after the call setup.
 - [scripting-host-fn-peek-not-pop](scripting-host-fn-peek-not-pop.md) — host functions must read args via `peek`, never pop; the EMC compiler emits a `STACK_REWIND` after every call to clean up.
 - [scripting-unit-entry-point-by-type-not-action](scripting-unit-entry-point-by-type-not-action.md) — `UNIT.EMC` entry points are indexed by unit TYPE (27 entries); the dispatch branches on `variables[0] = action`. Loading by action lands the PC inside another type's prologue — silent but visibly broken motion.
+- [scripting-unit-getinfo-0b-is-currentdestination](scripting-unit-getinfo-0b-is-currentdestination.md) — `Script_Unit_GetInfo` subcase `0x0B` checks the per-step pixel `currentDestination`, not the ultimate `targetMove`. Misreading it makes MOVE handlers loop forever on the "already moving" wait.
 
 ### Simulation
 
