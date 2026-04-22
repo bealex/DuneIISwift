@@ -157,7 +157,7 @@ extension Simulation {
         /// harvester. Uses squared-distance over the structure anchor
         /// tiles (close enough for routing; route cost lives in the
         /// pathfinder). Returns `nil` when the house owns no refinery.
-        static func findNearestRefinery(
+        public static func findNearestRefinery(
             forHarvester harvester: UnitSlot,
             structures: StructurePool
         ) -> Int? {
@@ -190,7 +190,7 @@ extension Simulation {
         /// Returns nil when every refinery already has a docked
         /// harvester (or the house owns none); callers fall back to
         /// `findNearestRefinery` in that case.
-        static func findFreeRefinery(
+        public static func findFreeRefinery(
             forHarvester harvester: UnitSlot,
             structures: StructurePool
         ) -> Int? {

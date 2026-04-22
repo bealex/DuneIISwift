@@ -234,6 +234,14 @@ public final class ScenarioScene: SKScene {
             if before != speedMultiplier {
                 Log.info("speed \(before)× → \(speedMultiplier)×", tracer: .label("scene"))
             }
+        case 0: // A — stage attack
+            handleOutcome(runtime.stageAction(.attack))
+        case 46: // M — stage move
+            handleOutcome(runtime.stageAction(.move))
+        case 4: // H — stage harvest (harvester-only)
+            handleOutcome(runtime.stageAction(.harvest))
+        case 15: // R — stage return (harvester-only)
+            handleOutcome(runtime.stageAction(.returnAction))
         default:
             super.keyDown(with: event)
         }
@@ -287,6 +295,11 @@ public final class ScenarioScene: SKScene {
             refreshBuildSidebar()
         case .rallySet, .rallyCleared:
             refreshRallyMarker()
+        case .orderHarvest, .orderReturn:
+            refreshSelectionHalo()
+            refreshHud()
+        case .actionStaged, .actionStageRejected:
+            refreshHud()
         case .none:
             break
         }
@@ -505,6 +518,9 @@ public final class ScenarioScene: SKScene {
         var hudText = "Tick \(tickCounter) · units \(units) · structures \(structures)"
         if speedMultiplier != 1 {
             hudText += " · \(speedMultiplier)×"
+        }
+        if let staged = commandController.stagedAction {
+            hudText += " · STAGE \(Self.stagedActionLabel(staged)) (click target)"
         }
         if let type = buildController.placementType {
             hudText += " · PLACING \(Self.shortName(for: type)) (click map)"
@@ -1467,6 +1483,15 @@ public final class ScenarioScene: SKScene {
 
     /// Short name for sidebar labels. Mirrors in-game abbreviations
     /// without depending on the string-table assets.
+    private static func stagedActionLabel(_ s: UnitCommandController.StagedAction) -> String {
+        switch s {
+        case .attack: return "ATTACK"
+        case .move: return "MOVE"
+        case .harvest: return "HARVEST"
+        case .returnAction: return "RETURN"
+        }
+    }
+
     private static func shortName(for type: UInt8) -> String {
         switch type {
         case 0:  return "Slab 1"

@@ -130,6 +130,23 @@ final class Harness {
             }
             let v = runtime.placementValidity(type: type, tileX: x, tileY: y)
             writeLine("ok validity type=\(type) x=\(x) y=\(y) → \(v.map(String.init) ?? "nil")")
+        case "stage":
+            guard let name = args.first else {
+                writeLine("! usage: stage <attack|move|harvest|return>"); return
+            }
+            let action: UnitCommandController.StagedAction?
+            switch name.lowercased() {
+            case "attack": action = .attack
+            case "move": action = .move
+            case "harvest": action = .harvest
+            case "return": action = .returnAction
+            default: action = nil
+            }
+            guard let action else {
+                writeLine("! unknown staged action: \(name)"); return
+            }
+            let outcome = runtime.stageAction(action)
+            writeLine("ok stage \(name) → \(Self.describe(outcome))")
         case "screenshot":
             // `screenshot <x> <y> <w> <h> <path>` — render the tile
             // region to a PNG. Pure ground-layer snapshot: reads each
@@ -395,6 +412,10 @@ final class Harness {
         case .factoryPoolFull(let y, let t): return "factoryPoolFull(yard=\(y) type=\(t))"
         case .rallySet(let y, let x, let ty): return "rallySet(yard=\(y) tile=(\(x),\(ty)))"
         case .rallyCleared(let y): return "rallyCleared(yard=\(y))"
+        case .orderHarvest(let u, let x, let y, let ok): return "orderHarvest(unit=\(u) tile=(\(x),\(y)) ok=\(ok))"
+        case .orderReturn(let u, let r, let ok): return "orderReturn(unit=\(u) refinery=\(r.map(String.init) ?? "nil") ok=\(ok))"
+        case .actionStaged(let a): return "actionStaged(\(a))"
+        case .actionStageRejected: return "actionStageRejected"
         }
     }
 

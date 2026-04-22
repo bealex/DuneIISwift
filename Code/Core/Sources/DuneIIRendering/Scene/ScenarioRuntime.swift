@@ -57,6 +57,15 @@ public final class ScenarioRuntime {
         case factoryPoolFull(yardIdx: Int, type: UInt8)
         case rallySet(yardIdx: Int, tileX: Int, tileY: Int)
         case rallyCleared(yardIdx: Int)
+        /// Keyboard-staged harvest order resolved on a map click.
+        case orderHarvest(unitIdx: Int, tileX: Int, tileY: Int, ok: Bool)
+        /// Keyboard-staged return order — runtime picked the nearest
+        /// same-house refinery and issued a move + action=RETURN.
+        case orderReturn(unitIdx: Int, refineryIdx: Int?, ok: Bool)
+        /// Shortcut was primed (key pressed) or was rejected for the
+        /// current selection.
+        case actionStaged(UnitCommandController.StagedAction)
+        case actionStageRejected
     }
 
     public let assets: AssetLoader
@@ -265,7 +274,8 @@ public final class ScenarioRuntime {
             let action = commandController.handle(
                 click: .leftMapTile(x: tileX, y: tileY),
                 pool: host.units,
-                playerHouseID: playerHouseID
+                playerHouseID: playerHouseID,
+                structures: host.structures
             )
             switch action {
             case .selectUnit(let idx, let isFriendly):
@@ -301,10 +311,66 @@ public final class ScenarioRuntime {
                     tracer: .label("unit-cmd")
                 )
                 return .orderAttack(attacker: attacker, target: target, ok: ok)
-            case .orderAttackStructure:
-                // Left-click never produces this case (structure
-                // attacks are right-click only); handle defensively.
-                break
+            case .orderAttackStructure(let attacker, let structIdx):
+                // Left-click can now produce this case via the `A`
+                // keyboard shortcut — stagedAction=.attack + click on
+                // an enemy structure.
+                let ok = Simulation.Units.orderAttackStructure(
+                    poolIndex: attacker,
+                    targetStructureIndex: structIdx,
+                    units: &host.units,
+                    structures: host.structures
+                )
+                Log.info(
+                    "unit-order-attack-structure unit=\(attacker) target=s\(structIdx) ok=\(ok) (via shortcut)",
+                    tracer: .label("unit-cmd")
+                )
+                return .orderAttackStructure(
+                    attacker: attacker, targetStructureIndex: structIdx, ok: ok
+                )
+            case .orderHarvest(let idx, let tx, let ty):
+                // Harvester shortcut: move to target + pin action to
+                // HARVEST so tickHarvesting's seek-spice / drain path
+                // takes over on arrival.
+                let ok = Simulation.Units.orderMove(
+                    poolIndex: idx, tileX: tx, tileY: ty, units: &host.units
+                )
+                var u = host.units[idx]
+                u.actionID = Simulation.ActionID.harvest
+                host.units[idx] = u
+                Log.info(
+                    "unit-order-harvest unit=\(idx) tile=(\(tx),\(ty)) ok=\(ok)",
+                    tracer: .label("unit-cmd")
+                )
+                return .orderHarvest(unitIdx: idx, tileX: tx, tileY: ty, ok: ok)
+            case .orderReturn(let idx):
+                // Harvester shortcut: find nearest same-house refinery
+                // (prefers unoccupied via 8a's findFreeRefinery) and
+                // route there in RETURN action.
+                let harvester = host.units.slots[idx]
+                let freeIdx = Simulation.Scheduler.findFreeRefinery(
+                    forHarvester: harvester, structures: host.structures
+                )
+                let refIdx = freeIdx ?? Simulation.Scheduler.findNearestRefinery(
+                    forHarvester: harvester, structures: host.structures
+                )
+                var ok = false
+                if let refIdx {
+                    let r = host.structures.slots[refIdx]
+                    let rx = Int(r.positionX) / 256
+                    let ry = Int(r.positionY) / 256
+                    ok = Simulation.Units.orderMove(
+                        poolIndex: idx, tileX: rx, tileY: ry, units: &host.units
+                    )
+                    var u = host.units[idx]
+                    u.actionID = Simulation.ActionID.returnAction
+                    host.units[idx] = u
+                }
+                Log.info(
+                    "unit-order-return unit=\(idx) refinery=\(refIdx.map(String.init) ?? "nil") ok=\(ok)",
+                    tracer: .label("unit-cmd")
+                )
+                return .orderReturn(unitIdx: idx, refineryIdx: refIdx, ok: ok)
             case .none:
                 break
             }
@@ -447,6 +513,23 @@ public final class ScenarioRuntime {
         return applyBuildAction(action)
     }
 
+    /// Keyboard shortcut — primes the next left-click to resolve as
+    /// the given order instead of triggering selection. Harvest /
+    /// Return require a harvester. Returns `.actionStaged` on
+    /// success; `.actionStageRejected` when no friendly unit is
+    /// selected or the action doesn't fit the selection.
+    @discardableResult
+    public func stageAction(_ action: UnitCommandController.StagedAction) -> ClickOutcome {
+        guard let host else { return .actionStageRejected }
+        let ok = commandController.stage(action: action, pool: host.units)
+        if ok {
+            Log.info("unit-stage action=\(action)", tracer: .label("unit-cmd"))
+            return .actionStaged(action)
+        }
+        Log.info("unit-stage rejected action=\(action)", tracer: .label("unit-cmd"))
+        return .actionStageRejected
+    }
+
     /// Drops all current selections (unit + structure + yard
     /// placement). Called from the Escape-key shortcut and tests.
     public func deselect() {
@@ -455,6 +538,7 @@ public final class ScenarioRuntime {
         let hadPlacement = buildController.placementType != nil
         commandController.selectedUnitIndex = nil
         commandController.isFriendlySelection = false
+        commandController.stagedAction = nil
         selectedStructureIndex = nil
         buildController.placementType = nil
         if hadUnit || hadStructure || hadPlacement {

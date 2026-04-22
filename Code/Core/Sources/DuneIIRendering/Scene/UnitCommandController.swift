@@ -21,12 +21,53 @@ public struct UnitCommandController: Equatable, Sendable {
     /// dropped when this is `false` — enemy selections are info-only.
     public var isFriendlySelection: Bool
 
+    /// Staged action primed by a keyboard shortcut (A/M/H/R on the
+    /// scene). The next left-click on the map resolves it as an
+    /// order targeting the clicked tile, then clears the stage.
+    /// `nil` means "normal left-click behaviour" (select / deselect).
+    public enum StagedAction: Equatable, Sendable {
+        case attack
+        case move
+        case harvest
+        case returnAction
+    }
+    public var stagedAction: StagedAction?
+
     public init(
         selectedUnitIndex: Int? = nil,
-        isFriendlySelection: Bool = false
+        isFriendlySelection: Bool = false,
+        stagedAction: StagedAction? = nil
     ) {
         self.selectedUnitIndex = selectedUnitIndex
         self.isFriendlySelection = isFriendlySelection
+        self.stagedAction = stagedAction
+    }
+
+    /// Primes a keyboard-staged action. Returns `true` when the
+    /// shortcut is valid for the current selection (friendly unit
+    /// selected; harvest/return additionally require a HARVESTER).
+    /// Invalid presses clear any existing stage so stray keys don't
+    /// leave the controller in a confusing state.
+    @discardableResult
+    public mutating func stage(
+        action: StagedAction, pool: Simulation.UnitPool
+    ) -> Bool {
+        guard let sel = selectedUnitIndex,
+              isFriendlySelection,
+              sel < pool.slots.count, pool.slots[sel].isUsed else {
+            stagedAction = nil
+            return false
+        }
+        let unit = pool.slots[sel]
+        if action == .harvest || action == .returnAction {
+            // Only harvesters can do harvest/return (type 16).
+            guard unit.type == 16 else {
+                stagedAction = nil
+                return false
+            }
+        }
+        stagedAction = action
+        return true
     }
 
     /// Mouse events the scene forwards. Bound to `mouseDown` /
@@ -49,6 +90,12 @@ public struct UnitCommandController: Equatable, Sendable {
         /// Attack order against an enemy structure. Runtime calls
         /// `Simulation.Units.orderAttackStructure(...)`.
         case orderAttackStructure(attackerIndex: Int, targetStructureIndex: Int)
+        /// Harvest order: harvester will seek/drain spice starting at
+        /// the staged tile (harvester-only shortcut).
+        case orderHarvest(poolIndex: Int, tileX: Int, tileY: Int)
+        /// Return order: harvester heads home to its nearest refinery
+        /// (harvester-only shortcut; runtime picks the destination).
+        case orderReturn(poolIndex: Int)
     }
 
     public mutating func handle(
@@ -71,6 +118,45 @@ public struct UnitCommandController: Equatable, Sendable {
 
         switch click {
         case .leftMapTile(let x, let y):
+            // If a shortcut is staged, resolve it against the clicked
+            // tile instead of running the select/deselect machinery.
+            // Staged actions are keyboard-driven (`ScenarioScene`
+            // keyDown → `stage(action:pool:)`); they only survive when
+            // a friendly unit is still selected (the stage call
+            // validates that — but guard again in case the selection
+            // died between stage and click).
+            if let staged = stagedAction,
+               let sel = selectedUnitIndex, isFriendlySelection
+            {
+                // Always clear the stage after one click, whether it
+                // produced an order or not.
+                stagedAction = nil
+                switch staged {
+                case .move:
+                    return .orderMove(poolIndex: sel, tileX: x, tileY: y)
+                case .attack:
+                    if let enemy = Self.unitAtTile(
+                        x: x, y: y, pool: pool,
+                        matching: { $0.houseID != playerHouseID }
+                    ), enemy != sel {
+                        return .orderAttack(attackerIndex: sel, targetIndex: enemy)
+                    }
+                    if let structIdx = Self.enemyStructureAtTile(
+                        x: x, y: y, pool: structures, playerHouseID: playerHouseID
+                    ) {
+                        return .orderAttackStructure(
+                            attackerIndex: sel, targetStructureIndex: structIdx
+                        )
+                    }
+                    // Force-attack on empty tile falls back to move.
+                    return .orderMove(poolIndex: sel, tileX: x, tileY: y)
+                case .harvest:
+                    return .orderHarvest(poolIndex: sel, tileX: x, tileY: y)
+                case .returnAction:
+                    return .orderReturn(poolIndex: sel)
+                }
+            }
+
             // Prefer friendly under the click so right-click commands
             // work without needing a second click; fall back to any
             // unit for info-only enemy selection.
