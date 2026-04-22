@@ -35,15 +35,23 @@ public final class ScenarioScene: SKScene {
     public let runtime: ScenarioRuntime
     private let scenarioName: String
     private var tileNodes: [SKSpriteNode] = []
-    /// Parallel cache of the `groundTileID` currently rendered on
-    /// each `tileNodes[i]`. Lets `syncGroundTiles` skip unchanged
-    /// tiles cheaply and update only the cells where
-    /// `runtime.tileGrid` diverged (placements, slabs, damage
-    /// eventually).
-    private var renderedGroundTileIDs: [UInt16] = []
+    /// Parallel cache of the `(groundTileID, houseIDForStructure)`
+    /// currently rendered on each `tileNodes[i]`, packed as
+    /// `(tileID << 8) | ownerHouseOr0`. Lets `syncGroundTiles` skip
+    /// unchanged tiles cheaply + repaint when ownership or ID changes
+    /// (structure placed, slab stamped, house switch).
+    private var renderedGroundKeys: [UInt32] = []
 
-    /// Cached ICN tile → `SKTexture`. Built lazily from `assets.loadIcn()`.
+    /// Cached ICN tile → `SKTexture` (base palette). Built lazily
+    /// from `assets.loadIcn()`.
     private var tileTextures: [SKTexture] = []
+    /// Raw ICN tile-set, kept so we can render house-remapped
+    /// variants on demand (structure cells with houseID != 0).
+    private var icnTileSet: Formats.Icn.TileSet?
+    /// Lazy cache of house-remapped tile textures, keyed by
+    /// `(tileID << 8) | houseID`. Matches the scheme used in
+    /// `ScreenshotRenderer` so both code paths render byte-exact.
+    private var houseRemappedTextures: [UInt32: SKTexture] = [:]
 
     private var frameCounter: Int = 0
     /// Debug speed multiplier. 1 = normal (1 tick per `framesPerTick`
@@ -430,6 +438,7 @@ public final class ScenarioScene: SKScene {
             t.filteringMode = .nearest
             return t
         }
+        icnTileSet = try? assets.loadIcnTileSet()
 
         let resolver = assets.tileResolver
         let world = ScenarioWorld(
@@ -443,6 +452,11 @@ public final class ScenarioScene: SKScene {
 
         addGroundTiles(world: world)
         try runtime.load(scenarioName: scenarioName)
+        // runtime.tileGrid now carries houseIDs on scenario-placed
+        // structure footprints; flush them into the SKNode textures
+        // before the first frame so the player sees Atreides-coloured
+        // CY art on load rather than the default palette.
+        syncGroundTiles()
         syncVisualsFromPool()
 
         let banner = SKLabelNode(text: "\(scenarioName) · click elsewhere to return")
@@ -573,22 +587,67 @@ public final class ScenarioScene: SKScene {
     }
 
     private func addGroundTiles(world: ScenarioWorld) {
-        renderedGroundTileIDs.reserveCapacity(64 * 64)
+        // Initial pass uses the scene's `ScenarioWorld` (no houseID
+        // on `Map.Cell`), so every node gets the default-palette
+        // texture. The first `syncGroundTiles()` after `runtime.load`
+        // populates `tileGrid` with per-cell houseIDs and repaints
+        // structure cells through the house-remap cache. The caller
+        // (`build()`) triggers that sync before `didMove` returns so
+        // the player never sees a default-palette CYARD flash.
+        renderedGroundKeys.reserveCapacity(64 * 64)
         for y in 0..<64 {
             for x in 0..<64 {
                 let cell = world.map[x, y]
-                let tileID = cell.groundTileID
-                let clampedID = Int(tileID) < tileTextures.count ? tileID : 0
-                let node = SKSpriteNode(texture: tileTextures[Int(clampedID)])
+                let tileID = Int(cell.groundTileID)
+                let clampedID = tileID < tileTextures.count ? tileID : 0
+                let node = SKSpriteNode(texture: tileTextures[clampedID])
                 node.size = CGSize(width: Self.tileSize, height: Self.tileSize)
                 node.anchorPoint = .zero
                 node.position = screenPosition(x: x, y: y)
                 node.zPosition = 0
                 addChild(node)
                 tileNodes.append(node)
-                renderedGroundTileIDs.append(clampedID)
+                // Record an impossible-looking key so `syncGroundTiles`
+                // sees a mismatch on its first pass and repaints any
+                // structure cell with its house-remapped variant.
+                renderedGroundKeys.append(UInt32.max)
             }
         }
+    }
+
+    /// Packed `(tileID, owningHouseIfStructure)` cache key.
+    /// Non-structure cells always use houseID=0 so ownership changes
+    /// on the same tileID trigger a repaint.
+    private func groundKey(tileID: Int, houseID: UInt8) -> UInt32 {
+        (UInt32(tileID) << 8) | UInt32(houseID)
+    }
+
+    /// Lazy per-(tileID, houseID) texture cache. Non-structure cells
+    /// (houseID == 0) use the shared `tileTextures` atlas; structure
+    /// cells build a house-remapped `SKTexture` on first use via the
+    /// same `pixels(forTile:houseID:)` path as `ScreenshotRenderer`.
+    private func textureFor(tileID: Int, houseID: UInt8) -> SKTexture? {
+        if houseID == 0 {
+            guard tileID >= 0, tileID < tileTextures.count else { return nil }
+            return tileTextures[tileID]
+        }
+        let key = groundKey(tileID: tileID, houseID: houseID)
+        if let cached = houseRemappedTextures[key] { return cached }
+        guard let tileSet = icnTileSet, tileID < tileSet.tileCount else {
+            return (tileID < tileTextures.count) ? tileTextures[tileID] : nil
+        }
+        let pixels = tileSet.pixels(forTile: tileID, houseID: houseID)
+        guard let cg = try? CGImageFactory.makeImage(
+            indices: pixels,
+            width: tileSet.tileWidth, height: tileSet.tileHeight,
+            palette: assets.palette, mode: .opaque
+        ) else {
+            return tileTextures.indices.contains(tileID) ? tileTextures[tileID] : nil
+        }
+        let tx = SKTexture(cgImage: cg)
+        tx.filteringMode = .nearest
+        houseRemappedTextures[key] = tx
+        return tx
     }
 
     /// Per-tick pass that re-textures any SKSpriteNode whose
@@ -605,11 +664,16 @@ public final class ScenarioScene: SKScene {
         guard tiles.count == tileNodes.count else { return }
         var updated = 0
         for i in 0..<tiles.count {
-            let want = tiles[i].groundTileID
-            if renderedGroundTileIDs[i] == want { continue }
-            guard Int(want) < tileTextures.count else { continue }
-            tileNodes[i].texture = tileTextures[Int(want)]
-            renderedGroundTileIDs[i] = want
+            let cell = tiles[i]
+            let tileID = Int(cell.groundTileID)
+            guard tileID < tileTextures.count else { continue }
+            let houseID: UInt8 = cell.hasStructure ? cell.houseID : 0
+            let key = groundKey(tileID: tileID, houseID: houseID)
+            if renderedGroundKeys[i] == key { continue }
+            if let tx = textureFor(tileID: tileID, houseID: houseID) {
+                tileNodes[i].texture = tx
+            }
+            renderedGroundKeys[i] = key
             updated &+= 1
         }
         if updated > 0 {
