@@ -182,6 +182,7 @@ public final class ScenarioRuntime {
         let landscapeLookup = Self.makeLandscapeLookup(ref: tileGridRef, resolver: resolver)
         let spiceMap = Self.makeSpiceMap(snapshot: snapshot, resolver: resolver)
         let repaint = Self.makeSpiceRepaint(ref: tileGridRef, resolver: resolver)
+        let override = Self.makeGroundTileOverride(ref: tileGridRef)
         Log.info(
             "runtime spicemap seeded thick=\(spiceMap.cells.filter { $0 == .thick }.count) thin=\(spiceMap.cells.filter { $0 == .thin }.count)",
             tracer: .label("runtime")
@@ -202,7 +203,8 @@ public final class ScenarioRuntime {
             isPositionUnveiled: nil,
             landscapeAt: landscapeLookup,
             spiceMap: spiceMap,
-            spiceLevelDidChange: repaint
+            spiceLevelDidChange: repaint,
+            groundTileOverride: override
         )
         let source = Scripting.RandomSource(
             lcgSeed: UInt16(truncatingIfNeeded: scenario.mapField.seed),
@@ -218,13 +220,15 @@ public final class ScenarioRuntime {
         let structureVM = Scripting.VM(program: structureProgram, functions: structureFunctions)
         let teamVM = Scripting.VM(program: teamProgram, functions: teamFunctions)
         let harvestRNG: () -> UInt8 = { source.tools.next() }
-        scheduler = Simulation.Scheduler(
+        var s = Simulation.Scheduler(
             host: host,
             unitVM: unitVM,
             structureVM: structureVM,
             teamVM: teamVM,
             harvestRNG: harvestRNG
         )
+        s.bloomSandTileID = resolver.landscapeTileID
+        scheduler = s
         tickCounter = 0
         scenarioName = name
         autoSelectPlayerYard()
@@ -1113,6 +1117,31 @@ public final class ScenarioRuntime {
             if old.groundTileID == newID { return }
             ref.tiles[idx] = Simulation.WorldSnapshot.Tile(
                 groundTileID: newID,
+                overlayTileID: old.overlayTileID,
+                houseID: old.houseID,
+                isUnveiled: old.isUnveiled,
+                hasUnit: old.hasUnit,
+                hasStructure: old.hasStructure,
+                hasAnimation: old.hasAnimation,
+                hasExplosion: old.hasExplosion,
+                objectRef: old.objectRef
+            )
+        }
+    }
+
+    /// Slice: spice-bloom. Hands the scheduler a writer into the
+    /// live tileGrid so `Bloom.explodeSpice` can reset the bloom
+    /// cell's `groundTileID` back to sand after detonation.
+    private static func makeGroundTileOverride(
+        ref: TileGridRef
+    ) -> (UInt16, UInt16) -> Void {
+        return { [ref] packed, tileID in
+            let idx = Int(packed)
+            guard idx < ref.tiles.count else { return }
+            let old = ref.tiles[idx]
+            if old.groundTileID == tileID { return }
+            ref.tiles[idx] = Simulation.WorldSnapshot.Tile(
+                groundTileID: tileID,
                 overlayTileID: old.overlayTileID,
                 houseID: old.houseID,
                 isUnveiled: old.isUnveiled,

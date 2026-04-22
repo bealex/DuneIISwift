@@ -70,6 +70,13 @@ extension Scripting {
         /// See `Documentation/Algorithms/SpiceRepaint.md`.
         public var spiceLevelDidChange: ((_ packed: UInt16, _ level: Simulation.SpiceMap.Level) -> Void)?
 
+        /// Direct override for a cell's `groundTileID`. Fired from the
+        /// bloom-detonation path to reset a spice-bloom tile back to
+        /// sand after it explodes (the bloom transition doesn't go
+        /// through `SpiceMap.apply`). `nil` disables repaint — the
+        /// sim state still mutates; only the view surface stays stale.
+        public var groundTileOverride: ((_ packed: UInt16, _ tileID: UInt16) -> Void)?
+
         public enum ObjectRef: Sendable, Equatable {
             case unit(poolIndex: Int)
             case structure(poolIndex: Int)
@@ -107,7 +114,8 @@ extension Scripting {
             isPositionUnveiled: ((_ packed: UInt16) -> Bool)? = nil,
             landscapeAt: ((_ packed: UInt16) -> UInt8)? = nil,
             spiceMap: Simulation.SpiceMap? = nil,
-            spiceLevelDidChange: ((_ packed: UInt16, _ level: Simulation.SpiceMap.Level) -> Void)? = nil
+            spiceLevelDidChange: ((_ packed: UInt16, _ level: Simulation.SpiceMap.Level) -> Void)? = nil,
+            groundTileOverride: ((_ packed: UInt16, _ tileID: UInt16) -> Void)? = nil
         ) {
             self.units = units
             self.structures = structures
@@ -125,6 +133,7 @@ extension Scripting {
             self.landscapeAt = landscapeAt
             self.spiceMap = spiceMap
             self.spiceLevelDidChange = spiceLevelDidChange
+            self.groundTileOverride = groundTileOverride
         }
 
         // MARK: Convenience queries

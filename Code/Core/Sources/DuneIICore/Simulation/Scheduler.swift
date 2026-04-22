@@ -44,6 +44,13 @@ extension Simulation {
         public let harvestRNG: (() -> UInt8)?
         private var harvestTickCounter: Int = 0
 
+        /// Landscape-iconGroup sprite used to reset a spice-bloom
+        /// tile's `groundTileID` after detonation (OpenDUNE
+        /// `Map_Bloom_ExplodeSpice` at `src/map.c:675`). `0` disables
+        /// the bloom-detonation pass entirely — tests + trivial
+        /// schedulers leave it unset.
+        public var bloomSandTileID: UInt16 = 0
+
         /// Structure type IDs that have no script and are skipped during
         /// dispatch. Mirrors OpenDUNE's `STRUCTURE_SLAB_1x1`,
         /// `STRUCTURE_SLAB_2x2`, `STRUCTURE_WALL`.
@@ -309,6 +316,13 @@ extension Simulation {
             // harvester so its RETURN action can dock on the next
             // tickHarvesting pass.
             tickCarryallFerry()
+            // Spice-bloom detonation — walks the unit pool once,
+            // detonating any non-sandworm non-projectile unit standing
+            // on a bloom tile. Port of OpenDUNE's `Unit_Move` bloom
+            // check (`src/unit.c:1503`) without the per-step edge
+            // walker: catches both "ordered to walk onto a bloom" and
+            // "crossed a bloom mid-route" when the unit stops on it.
+            tickBloomDetonation()
             // Construction countdown + credit drain pass. Drains
             // `countDown` on BUSY yards (paused when the owning house
             // can't pay the per-tick cost) and flips to `READY` at
@@ -333,6 +347,47 @@ extension Simulation {
                 tickHarvesting()
             }
             host.currentObject = nil
+        }
+
+        /// Spice-bloom detonation pass. For every used unit that is
+        /// not a SANDWORM or projectile and whose current tile's
+        /// landscape is `.bloomField`, triggers
+        /// `Simulation.Bloom.explodeSpice` — spawns a tremor
+        /// explosion, fills a radius-5 spice circle, resets the cell
+        /// to sand, and frees the walking unit. Requires
+        /// `host.landscapeAt` + `host.groundTileOverride` + a cached
+        /// `sandTileID` (the first sprite in the landscape iconGroup)
+        /// from the scheduler's `bloomSandTileID` field.
+        ///
+        /// `bloomSandTileID == 0` disables the pass entirely — tests
+        /// that don't care about blooms can leave it zero.
+        public mutating func tickBloomDetonation() {
+            guard bloomSandTileID != 0 else { return }
+            guard let landscapeAt = host.landscapeAt else { return }
+            let rng: () -> UInt8 = harvestRNG ?? { 0 }
+            let bloomByte = UInt8(LandscapeType.bloomField.rawValue)
+            // Snapshot findArray — Bloom.explodeSpice frees the unit
+            // in-place, which mutates findArray mid-iteration.
+            let snapshot = host.units.findArray
+            for idx in snapshot {
+                guard idx < host.units.slots.count else { continue }
+                let u = host.units.slots[idx]
+                guard u.isUsed else { continue }
+                if u.type == 25 /* SANDWORM */ { continue }
+                if Self.isProjectileType(u.type) { continue }
+                let tx = Int(u.positionX) / 256
+                let ty = Int(u.positionY) / 256
+                guard (0..<64).contains(tx), (0..<64).contains(ty) else { continue }
+                let packed = UInt16(ty * 64 + tx)
+                if landscapeAt(packed) != bloomByte { continue }
+                Simulation.Bloom.explodeSpice(
+                    packed: packed,
+                    unitIndex: idx,
+                    sandTileID: bloomSandTileID,
+                    host: host,
+                    rng: rng
+                )
+            }
         }
 
         /// Carryall arrival pass (slice 8c). Walks the unit pool once
