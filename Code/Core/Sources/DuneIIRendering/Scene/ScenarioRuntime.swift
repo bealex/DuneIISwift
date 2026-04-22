@@ -1,0 +1,599 @@
+import Foundation
+import DuneIICore
+import Memoirs
+
+/// Non-visual game runtime. Owns the full simulation state + the two
+/// input state-machines (`BuildPanelController`, `UnitCommandController`)
+/// that translate player intent into sim mutations. Exposes clean
+/// `leftClick`/`rightClick`/`sidebarClick`/`tick` intent methods that
+/// both `ScenarioScene` (SpriteKit renderer) and `duneii-headless`
+/// (stdin REPL) drive.
+///
+/// Concurrency: `@MainActor` — the scheduler, host, and pools are all
+/// main-actor-bound, matching the scene's isolation.
+///
+/// Design note: a previous iteration buried this logic inside
+/// `ScenarioScene`, making it untestable without an `SKView` and
+/// unreachable from a headless harness. This type is the non-visual
+/// core; the scene is a thin renderer on top.
+@MainActor
+public final class ScenarioRuntime {
+
+    public enum RuntimeError: Error, CustomStringConvertible {
+        case scenarioNotFound(String)
+        case notLoaded
+
+        public var description: String {
+            switch self {
+            case .scenarioNotFound(let n): return "scenario \(n) not in install"
+            case .notLoaded: return "no scenario loaded"
+            }
+        }
+    }
+
+    public enum YardKind: Sendable, Equatable { case structure, unit }
+
+    /// Structured result of a click. The scene uses it to drive visual
+    /// refresh; the harness prints it as JSON. Every non-`.none` value
+    /// represents one sim-side change.
+    public enum ClickOutcome: Equatable, Sendable {
+        case none
+        case unitSelected(Int)
+        case unitDeselected
+        case orderMove(unitIdx: Int, tileX: Int, tileY: Int, ok: Bool)
+        case orderAttack(attacker: Int, target: Int, ok: Bool)
+        case yardSelected(Int)
+        case placementStarted(type: UInt8)
+        case placementCommitted(type: UInt8, slot: Int, tileX: Int, tileY: Int, degraded: Bool)
+        case placementRejected(type: UInt8, tileX: Int, tileY: Int)
+        case placementPoolFull(type: UInt8, tileX: Int, tileY: Int)
+        case constructionEnqueued(yardIdx: Int, type: UInt8, ok: Bool)
+        case constructionCancelled(yardIdx: Int, type: UInt8)
+        case factorySpawned(yardIdx: Int, unitIdx: Int, type: UInt8)
+        case factoryPoolFull(yardIdx: Int, type: UInt8)
+        case rallySet(yardIdx: Int, tileX: Int, tileY: Int)
+        case rallyCleared(yardIdx: Int)
+    }
+
+    public let assets: AssetLoader
+    public let playerHouseID: UInt8
+    public private(set) var scheduler: Simulation.Scheduler?
+    public var buildController = BuildPanelController()
+    public var commandController = UnitCommandController()
+    public private(set) var tileGrid: [Simulation.WorldSnapshot.Tile] = []
+    public private(set) var tickCounter: Int = 0
+    public private(set) var currentYardKind: YardKind = .structure
+    public private(set) var scenarioName: String?
+
+    public init(
+        assets: AssetLoader,
+        playerHouseID: UInt8 = Simulation.House.atreides
+    ) {
+        self.assets = assets
+        self.playerHouseID = playerHouseID
+    }
+
+    public var host: Scripting.Host? { scheduler?.host }
+
+    // MARK: Scenario load + tick
+
+    public func load(scenarioName name: String) throws {
+        guard let scenario = try assets.loadScenario(named: name) else {
+            throw RuntimeError.scenarioNotFound(name)
+        }
+        let resolver = assets.tileResolver
+        let snapshot = try Simulation.WorldSnapshot(scenario: scenario, resolver: resolver)
+        tileGrid = snapshot.tiles
+        let scorer = Self.makeTileEnterScorer(snapshot: snapshot, resolver: resolver)
+        let landscapeLookup = Self.makeLandscapeLookup(snapshot: snapshot, resolver: resolver)
+        let spiceMap = Self.makeSpiceMap(snapshot: snapshot, resolver: resolver)
+        Log.info(
+            "runtime spicemap seeded thick=\(spiceMap.cells.filter { $0 == .thick }.count) thin=\(spiceMap.cells.filter { $0 == .thin }.count)",
+            tracer: .label("runtime")
+        )
+        let host = Scripting.Host(
+            units: snapshot.units,
+            structures: snapshot.structures,
+            explosions: Simulation.ExplosionPool(),
+            teams: snapshot.teams,
+            houses: snapshot.houses,
+            currentObject: nil,
+            texts: [],
+            textLog: [],
+            voiceLog: [],
+            tileEnterScore: scorer,
+            playerHouseID: playerHouseID,
+            isValidPosition: nil,
+            isPositionUnveiled: nil,
+            landscapeAt: landscapeLookup,
+            spiceMap: spiceMap
+        )
+        let source = Scripting.RandomSource(
+            lcgSeed: UInt16(truncatingIfNeeded: scenario.mapField.seed),
+            toolsSeed: scenario.mapField.seed
+        )
+        let unitFunctions = Scripting.Functions.unitTable(host: host, source: source)
+        let structureFunctions = Scripting.Functions.structureTable(host: host, source: source)
+        let teamFunctions = Scripting.Functions.teamTable(host: host, source: source)
+        let unitProgram = ((try? assets.loadEmc(named: "UNIT.EMC")) ?? nil) ?? Formats.Emc.Program.empty
+        let structureProgram = ((try? assets.loadEmc(named: "BUILD.EMC")) ?? nil) ?? Formats.Emc.Program.empty
+        let teamProgram = ((try? assets.loadEmc(named: "TEAM.EMC")) ?? nil) ?? Formats.Emc.Program.empty
+        let unitVM = Scripting.VM(program: unitProgram, functions: unitFunctions)
+        let structureVM = Scripting.VM(program: structureProgram, functions: structureFunctions)
+        let teamVM = Scripting.VM(program: teamProgram, functions: teamFunctions)
+        let harvestRNG: () -> UInt8 = { source.tools.next() }
+        scheduler = Simulation.Scheduler(
+            host: host,
+            unitVM: unitVM,
+            structureVM: structureVM,
+            teamVM: teamVM,
+            harvestRNG: harvestRNG
+        )
+        tickCounter = 0
+        scenarioName = name
+        autoSelectPlayerYard()
+        refreshBuildState()
+        Log.info(
+            "runtime loaded scenario=\(name) units=\(snapshot.units.findArray.count) structures=\(snapshot.structures.findArray.count)",
+            tracer: .label("runtime")
+        )
+    }
+
+    public func tick(_ n: Int = 1) {
+        guard scheduler != nil else { return }
+        for _ in 0..<n {
+            scheduler?.tick()
+            tickCounter += 1
+        }
+        // Keep the build-panel controller's surface (yardState,
+        // countDown, queuedType, availableTypes) in sync with the
+        // live pool so subsequent clicks + dumps read fresh state.
+        // The scene's `update(_:)` does this per-frame; the headless
+        // harness ticks then reads state, so we do it here too.
+        refreshBuildState()
+    }
+
+    // MARK: Click intent
+
+    @discardableResult
+    public func leftClick(tileX: Int, tileY: Int) -> ClickOutcome {
+        guard let host else { return .none }
+
+        // 1. Unit-command first (when not mid-placement).
+        if buildController.placementType == nil {
+            let action = commandController.handle(
+                click: .leftMapTile(x: tileX, y: tileY),
+                pool: host.units,
+                playerHouseID: playerHouseID
+            )
+            switch action {
+            case .selectUnit(let idx):
+                Log.info("unit-select \(idx)", tracer: .label("unit-cmd"))
+                return .unitSelected(idx)
+            case .deselect:
+                Log.info("unit-deselect", tracer: .label("unit-cmd"))
+                return .unitDeselected
+            case .orderMove(let idx, let tx, let ty):
+                let ok = Simulation.Units.orderMove(
+                    poolIndex: idx, tileX: tx, tileY: ty, units: &host.units
+                )
+                Log.info(
+                    "unit-order-move unit=\(idx) tile=(\(tx),\(ty)) ok=\(ok)",
+                    tracer: .label("unit-cmd")
+                )
+                return .orderMove(unitIdx: idx, tileX: tx, tileY: ty, ok: ok)
+            case .orderAttack(let attacker, let target):
+                let ok = Simulation.Units.orderAttack(
+                    poolIndex: attacker, targetUnitIndex: target, units: &host.units
+                )
+                Log.info(
+                    "unit-order-attack unit=\(attacker) target=\(target) ok=\(ok)",
+                    tracer: .label("unit-cmd")
+                )
+                return .orderAttack(attacker: attacker, target: target, ok: ok)
+            case .none:
+                break
+            }
+        }
+
+        // 2. Yard select (when not mid-placement).
+        if buildController.placementType == nil,
+           let newYardIdx = Simulation.Structures.selectableYardAt(
+               tileX: tileX, tileY: tileY, pool: host.structures, playerHouseID: playerHouseID
+           ),
+           newYardIdx != buildController.selectedYardIndex
+        {
+            buildController.selectedYardIndex = newYardIdx
+            Log.info(
+                "build-panel selected yard=\(newYardIdx) type=\(host.structures.slots[newYardIdx].type)",
+                tracer: .label("build-panel")
+            )
+            refreshBuildState()
+            return .yardSelected(newYardIdx)
+        }
+
+        // 3. Build-panel click-through (placement commits).
+        let action = buildController.handle(click: .mapTile(x: tileX, y: tileY))
+        return applyBuildAction(action)
+    }
+
+    @discardableResult
+    public func rightClick(tileX: Int, tileY: Int) -> ClickOutcome {
+        guard let host else { return .none }
+
+        // Unit command takes priority when a unit is selected.
+        if commandController.selectedUnitIndex != nil {
+            let action = commandController.handle(
+                click: .rightMapTile(x: tileX, y: tileY),
+                pool: host.units,
+                playerHouseID: playerHouseID
+            )
+            switch action {
+            case .orderMove(let idx, let tx, let ty):
+                let ok = Simulation.Units.orderMove(
+                    poolIndex: idx, tileX: tx, tileY: ty, units: &host.units
+                )
+                Log.info(
+                    "unit-order-move unit=\(idx) tile=(\(tx),\(ty)) ok=\(ok)",
+                    tracer: .label("unit-cmd")
+                )
+                return .orderMove(unitIdx: idx, tileX: tx, tileY: ty, ok: ok)
+            case .orderAttack(let attacker, let target):
+                let ok = Simulation.Units.orderAttack(
+                    poolIndex: attacker, targetUnitIndex: target, units: &host.units
+                )
+                return .orderAttack(attacker: attacker, target: target, ok: ok)
+            default:
+                return .none
+            }
+        }
+
+        // Rally-point when a factory is selected and no unit.
+        if let yardIdx = buildController.selectedYardIndex,
+           yardIdx < host.structures.slots.count,
+           Self.isFactory(type: host.structures.slots[yardIdx].type)
+        {
+            _ = Simulation.Structures.setRallyPoint(
+                yardIndex: yardIdx, tile: (tileX, tileY), pool: &host.structures
+            )
+            return .rallySet(yardIdx: yardIdx, tileX: tileX, tileY: tileY)
+        }
+
+        return .none
+    }
+
+    @discardableResult
+    public func sidebarClick(row: Int) -> ClickOutcome {
+        let action = buildController.handle(click: .sidebarSlot(index: row))
+        return applyBuildAction(action)
+    }
+
+    /// Direct yard selection (bypasses click routing). Useful for tests
+    /// + harness.
+    public func selectYard(index: Int) {
+        guard let host else { return }
+        guard index >= 0, index < host.structures.slots.count,
+              host.structures.slots[index].isUsed else { return }
+        buildController.selectedYardIndex = index
+        refreshBuildState()
+    }
+
+    // MARK: Build-panel state refresh
+
+    /// Recomputes available types + yard state for the selected yard.
+    /// Pure state-machine update — no visual side effects. Called from
+    /// scene on every tick so the progress bar animates; harness calls
+    /// it after clicks that change yard state.
+    public func refreshBuildState() {
+        guard let host,
+              let yardIdx = buildController.selectedYardIndex,
+              yardIdx < host.structures.slots.count,
+              host.structures.slots[yardIdx].isUsed
+        else {
+            buildController.refreshAvailableTypes([])
+            buildController.refreshYardState(nil, queuedType: nil, countDown: nil, buildTime: nil)
+            return
+        }
+        let yard = host.structures.slots[yardIdx]
+        let built = Simulation.Structures.structuresBuilt(
+            houseID: yard.houseID, pool: host.structures
+        )
+        let campaignID: UInt16 = 0
+
+        let types: [UInt8]
+        if yard.type == 8 /* CYARD */ {
+            currentYardKind = .structure
+            let mask = Simulation.Structures.buildableStructuresFromYard(
+                yardHouseID: yard.houseID,
+                yardUpgradeLevel: yard.upgradeLevel,
+                structuresBuilt: built,
+                campaignID: campaignID,
+                playerHouseID: playerHouseID
+            )
+            types = Simulation.StructureInfo.buildableTypesByPriority(from: mask)
+        } else {
+            currentYardKind = .unit
+            let mask = Simulation.Structures.buildableUnitsFromFactory(
+                factoryType: yard.type,
+                factoryHouseID: yard.houseID,
+                factoryUpgradeLevel: yard.upgradeLevel,
+                structuresBuilt: built
+            )
+            types = Simulation.UnitInfo.buildableUnitTypes(from: mask)
+        }
+        buildController.refreshAvailableTypes(types)
+
+        let state = Simulation.StructureState(rawValue: yard.state)
+        let queued: UInt8?
+        let buildTime: UInt16?
+        if yard.objectType == 0xFFFF {
+            queued = nil
+            buildTime = nil
+        } else {
+            queued = UInt8(truncatingIfNeeded: yard.objectType)
+            if currentYardKind == .structure,
+               let info = Simulation.StructureInfo.lookup(queued!)
+            {
+                buildTime = info.buildTime
+            } else if let yardInfo = Simulation.StructureInfo.lookup(yard.type) {
+                buildTime = yardInfo.buildTime
+            } else {
+                buildTime = nil
+            }
+        }
+        buildController.refreshYardState(
+            state,
+            queuedType: queued,
+            countDown: yard.countDown,
+            buildTime: buildTime
+        )
+    }
+
+    /// Validity for a potential placement. Returns `nil` when no host
+    /// loaded; otherwise mirrors `isValidBuildLocation`: `0` invalid,
+    /// `>0` valid, `<0` valid-but-degraded (slab deficit = -value).
+    public func placementValidity(type: UInt8, tileX: Int, tileY: Int) -> Int? {
+        guard let host else { return nil }
+        let resolver = assets.tileResolver
+        let tiles = tileGrid
+        let landscapeAt: (Int, Int) -> LandscapeType = { x, y in
+            guard x >= 0, x < 64, y >= 0, y < 64 else { return .entirelyMountain }
+            let idx = y * 64 + x
+            guard idx < tiles.count else { return .entirelyMountain }
+            let cell = tiles[idx]
+            return resolver.landscapeType(
+                groundTileID: cell.groundTileID,
+                overlayTileID: cell.overlayTileID,
+                hasStructure: cell.hasStructure
+            )
+        }
+        let tileHouseIDAt: (Int, Int) -> UInt8 = { x, y in
+            guard x >= 0, x < 64, y >= 0, y < 64 else { return 0 }
+            let idx = y * 64 + x
+            guard idx < tiles.count else { return 0 }
+            return tiles[idx].houseID
+        }
+        return Int(Simulation.Structures.isValidBuildLocation(
+            tileX: tileX, tileY: tileY, type: type,
+            structures: host.structures, units: host.units,
+            landscapeAt: landscapeAt,
+            playerHouseID: playerHouseID,
+            tileHouseIDAt: tileHouseIDAt
+        ))
+    }
+
+    // MARK: Internal — build-panel action dispatch
+
+    private func applyBuildAction(_ action: BuildPanelController.Action) -> ClickOutcome {
+        switch action {
+        case .enqueue(let type):
+            let ok = enqueueConstruction(type: type)
+            let idx = buildController.selectedYardIndex ?? -1
+            return .constructionEnqueued(yardIdx: idx, type: type, ok: ok)
+        case .enterPlacement(let type):
+            if currentYardKind == .unit {
+                return completeFactoryProduction(type: type)
+            }
+            Log.info("build-panel enter placement type=\(type)", tracer: .label("build-panel"))
+            refreshBuildState()
+            return .placementStarted(type: type)
+        case .commitPlacement(let type, let tileX, let tileY):
+            return commitPlacement(type: type, tileX: tileX, tileY: tileY)
+        case .cancelConstruction(let type):
+            let idx = buildController.selectedYardIndex ?? -1
+            cancelConstructionOnYard(type: type)
+            return .constructionCancelled(yardIdx: idx, type: type)
+        case .none:
+            return .none
+        }
+    }
+
+    @discardableResult
+    private func enqueueConstruction(type: UInt8) -> Bool {
+        guard let host, let yardIdx = buildController.selectedYardIndex else { return false }
+        var pool = host.structures
+        let ok = Simulation.Structures.startConstruction(
+            yardIndex: yardIdx, objectType: type, pool: &pool
+        )
+        host.structures = pool
+        Log.info(
+            "build-panel enqueue type=\(type) yard=\(yardIdx) ok=\(ok)",
+            tracer: .label("build-panel")
+        )
+        refreshBuildState()
+        return ok
+    }
+
+    private func cancelConstructionOnYard(type: UInt8) {
+        guard let host, let yardIdx = buildController.selectedYardIndex else { return }
+        var pool = host.structures
+        var houses = host.houses
+        let ok = Simulation.Structures.cancelConstruction(
+            yardIndex: yardIdx, pool: &pool, houses: &houses
+        )
+        host.structures = pool
+        host.houses = houses
+        Log.info(
+            "build-panel cancel yard=\(yardIdx) type=\(type) ok=\(ok)",
+            tracer: .label("build-panel")
+        )
+        refreshBuildState()
+    }
+
+    private func completeFactoryProduction(type: UInt8) -> ClickOutcome {
+        guard let host, let yardIdx = buildController.selectedYardIndex else {
+            return .none
+        }
+        var structures = host.structures
+        var units = host.units
+        let unitIdx = Simulation.Structures.completeConstruction(
+            yardIndex: yardIdx, pool: &structures, unitPool: &units
+        )
+        host.structures = structures
+        host.units = units
+        buildController.placementType = nil
+        refreshBuildState()
+        if let unitIdx {
+            Log.info(
+                "build-panel factory yard=\(yardIdx) spawned unit=\(unitIdx) type=\(type)",
+                tracer: .label("build-panel")
+            )
+            return .factorySpawned(yardIdx: yardIdx, unitIdx: unitIdx, type: type)
+        } else {
+            Log.info(
+                "build-panel factory yard=\(yardIdx) FAILED (pool full) type=\(type)",
+                tracer: .label("build-panel")
+            )
+            return .factoryPoolFull(yardIdx: yardIdx, type: type)
+        }
+    }
+
+    private func commitPlacement(type: UInt8, tileX: Int, tileY: Int) -> ClickOutcome {
+        guard let host else { return .none }
+        let validityOpt = placementValidity(type: type, tileX: tileX, tileY: tileY)
+        guard let validity = validityOpt, validity != 0 else {
+            Log.info(
+                "build-panel commit rejected — invalid tile=(\(tileX),\(tileY)) type=\(type) validity=\(validityOpt ?? 0)",
+                tracer: .label("build-panel")
+            )
+            // Keep placement mode active so the caller can try again.
+            return .placementRejected(type: type, tileX: tileX, tileY: tileY)
+        }
+        let tilesWithoutSlab = validity < 0 ? Int(-validity) : 0
+        if validity < 0 {
+            Log.info(
+                "build-panel commit degraded tile=(\(tileX),\(tileY)) type=\(type) slabs_needed=\(tilesWithoutSlab)",
+                tracer: .label("build-panel")
+            )
+        }
+        let px = UInt16(clamping: tileX * 256)
+        let py = UInt16(clamping: tileY * 256)
+        var pool = host.structures
+        let idx = Simulation.Structures.create(
+            type: type,
+            houseID: playerHouseID,
+            position: Pos32(x: px, y: py),
+            pool: &pool,
+            tilesWithoutSlab: tilesWithoutSlab
+        )
+        host.structures = pool
+        if let idx {
+            Log.info(
+                "build-panel commit type=\(type) tile=(\(tileX),\(tileY)) → slot=\(idx)",
+                tracer: .label("build-panel")
+            )
+            buildController.placementType = nil
+            refreshBuildState()
+            return .placementCommitted(
+                type: type, slot: idx, tileX: tileX, tileY: tileY,
+                degraded: validity < 0
+            )
+        }
+        Log.info(
+            "build-panel commit type=\(type) tile=(\(tileX),\(tileY)) FAILED (pool full)",
+            tracer: .label("build-panel")
+        )
+        return .placementPoolFull(type: type, tileX: tileX, tileY: tileY)
+    }
+
+    private func autoSelectPlayerYard() {
+        guard let host else { return }
+        for idx in host.structures.findArray {
+            let slot = host.structures.slots[idx]
+            if slot.type == 8, slot.houseID == playerHouseID {
+                buildController.selectedYardIndex = idx
+                Log.info(
+                    "build-panel auto-selected player CY slot=\(idx)",
+                    tracer: .label("build-panel")
+                )
+                return
+            }
+        }
+    }
+
+    private static func isFactory(type: UInt8) -> Bool {
+        switch type {
+        case 3, 4, 5, 7, 10: return true
+        default: return false
+        }
+    }
+
+    // MARK: Static closure builders (shared with scene)
+
+    private static func makeTileEnterScorer(
+        snapshot: Simulation.WorldSnapshot,
+        resolver: TileResolver
+    ) -> (UInt16, UInt8, Simulation.MovementType) -> Int32 {
+        let tiles = snapshot.tiles
+        return { packed, orient8, movementType in
+            guard Int(packed) < tiles.count else { return 256 }
+            let cell = tiles[Int(packed)]
+            let landscape = resolver.landscapeType(
+                groundTileID: cell.groundTileID,
+                overlayTileID: cell.overlayTileID,
+                hasStructure: cell.hasStructure
+            )
+            let info = Simulation.LandscapeInfo.lookup(landscape)
+            let mtIndex = Int(movementType.rawValue)
+            guard mtIndex < info.movementSpeed.count else { return 256 }
+            var speed = Int32(info.movementSpeed[mtIndex])
+            if speed == 0 { return 256 }
+            if (orient8 & 1) != 0 {
+                speed -= speed / 4 + speed / 8
+            }
+            return Int32(UInt8(truncatingIfNeeded: UInt32(speed) ^ 0xFF))
+        }
+    }
+
+    private static func makeLandscapeLookup(
+        snapshot: Simulation.WorldSnapshot,
+        resolver: TileResolver
+    ) -> (UInt16) -> UInt8 {
+        let tiles = snapshot.tiles
+        return { packed in
+            guard Int(packed) < tiles.count else { return 0 }
+            let cell = tiles[Int(packed)]
+            let landscape = resolver.landscapeType(
+                groundTileID: cell.groundTileID,
+                overlayTileID: cell.overlayTileID,
+                hasStructure: cell.hasStructure
+            )
+            return UInt8(truncatingIfNeeded: landscape.rawValue)
+        }
+    }
+
+    private static func makeSpiceMap(
+        snapshot: Simulation.WorldSnapshot,
+        resolver: TileResolver
+    ) -> Simulation.SpiceMap {
+        let tiles = snapshot.tiles
+        return Simulation.SpiceMap { i in
+            let cell = tiles[i]
+            return resolver.landscapeType(
+                groundTileID: cell.groundTileID,
+                overlayTileID: cell.overlayTileID,
+                hasStructure: cell.hasStructure
+            )
+        }
+    }
+}

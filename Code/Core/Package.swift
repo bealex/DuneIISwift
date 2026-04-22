@@ -11,7 +11,8 @@ let package = Package(
         .library(name: "AssetExport", targets: ["AssetExport"]),
         .library(name: "DuneIIRendering", targets: ["DuneIIRendering"]),
         .executable(name: "assetgen", targets: ["assetgen"]),
-        .executable(name: "duneii", targets: ["duneii"])
+        .executable(name: "duneii", targets: ["duneii"]),
+        .executable(name: "duneii-headless", targets: ["duneii-headless"])
     ],
     dependencies: [
         .package(url: "https://github.com/bealex/memoirs-ios.git", from: "2.0.0")
@@ -57,6 +58,11 @@ let package = Package(
             dependencies: ["DuneIICore", "AssetExport", "DuneIIRendering"],
             path: "Sources/duneii",
             exclude: ["CLAUDE.md"]
+        ),
+        .executableTarget(
+            name: "duneii-headless",
+            dependencies: ["DuneIICore", "AssetExport", "DuneIIRendering"],
+            path: "Sources/duneii-headless"
         ),
         .testTarget(
             name: "DuneIICoreTests",

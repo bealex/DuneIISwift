@@ -32,78 +32,49 @@ public final class ScenarioScene: SKScene {
     public static let sidebarPadding: CGFloat = 4
 
     public weak var coordinator: SceneCoordinator?
-    private let assets: AssetLoader
+    public let runtime: ScenarioRuntime
     private let scenarioName: String
     private var tileNodes: [SKSpriteNode] = []
 
     /// Cached ICN tile → `SKTexture`. Built lazily from `assets.loadIcn()`.
     private var tileTextures: [SKTexture] = []
 
-    // P4 tick state.
-    private var scheduler: Simulation.Scheduler?
     private var frameCounter: Int = 0
-    private var tickCounter: Int = 0
     private var hud: SKLabelNode?
     /// "Credits: N" readout pinned above the BUILD sidebar header.
-    /// Refreshed each tick from the player house's `HouseSlot.credits`
-    /// via `Simulation.House.credits(for:in:)`. Slice 6d.
     private var creditsLabel: SKLabelNode?
-    /// Per-unit-pool-slot marker nodes, keyed by pool index. `nil` slots
-    /// are unallocated (or freed). Rebuilt at scene build; positions /
-    /// textures are refreshed every tick by `syncVisualsFromPool()`.
+    /// Per-unit-pool-slot marker nodes, keyed by pool index.
     private var unitMarkers: [Int: SKSpriteNode] = [:]
     private var structureMarkers: [Int: SKShapeNode] = [:]
-    /// Explosion visuals — one disc per active `ExplosionPool` slot.
-    /// Created lazily on first observation; removed when the slot frees.
     private var explosionMarkers: [Int: SKShapeNode] = [:]
-    /// Atlas mapping `groundSpriteID` → `SKTexture` for every unit frame
-    /// across UNITS2.SHP / UNITS1.SHP / UNITS.SHP. Loaded once per scene.
     private var unitAtlas: UnitSpriteAtlas?
-    /// Fallback texture used when a unit's resolved sprite ID is out of
-    /// the atlas range (e.g. `displayMode == .singleFrame`).
     private var fallbackMarkerTexture: SKTexture?
 
-    // P5 slice 3 — build panel.
-    private var buildController = BuildPanelController()
-    /// Pure state machine for player-issued unit orders: left-click to
-    /// select a friendly unit, right-click (with a selection) to issue
-    /// a move order. See `Algorithms/UnitSelectionAndOrders.md`.
-    private var commandController = UnitCommandController()
-    /// Selection halo parented to the selected unit's marker. Recreated
-    /// on selection change; removed on deselect.
     private var selectionHalo: SKShapeNode?
-    /// Yellow diamond marking the selected factory's rally tile. Nil
-    /// when no factory is selected or the selected factory has no
-    /// rally set. See `Algorithms/FactoryRallyPoint.md`.
     private var rallyMarker: SKShapeNode?
-    /// Ghost footprint rendered while the build panel is in placement
-    /// mode. Follows mouse hover; green when `isValidBuildLocation`
-    /// passes, red when it fails. Hidden otherwise. See commitPlacement.
     private var placementGhost: SKShapeNode?
-    /// Transient toast shown near the top of the map when a placement
-    /// commit rejects. Cleared on the next tick.
     private var placementToast: SKLabelNode?
     private var placementToastExpiryTick: Int = -1
-    /// Container for sidebar slot nodes. Always parented to the scene;
-    /// children are rebuilt on every `refreshBuildSidebar()`.
     private var sidebarNode: SKNode?
-    /// Whether the currently-selected yard produces structures (CYARD)
-    /// or units (factory). Drives sidebar sprite + label lookup.
-    /// Slice 5b.
-    private enum YardKind: Sendable { case structure, unit }
-    private var currentYardKind: YardKind = .structure
-    /// Player identity — also drives `Scripting.Host.playerHouseID`.
-    /// Hardcoded to Atreides for P3/P5; wired through the controller
-    /// once campaign select exists.
-    private let playerHouseID: UInt8 = Simulation.House.atreides
-    /// Snapshot-time tile grid captured at scene build; consulted by
-    /// the landscape gate inside `commitPlacement`. Doesn't track
-    /// placements made during play — pool overlap is authoritative for
-    /// newly-built structures. Slice 4b.
-    private var tileGrid: [Simulation.WorldSnapshot.Tile] = []
+
+    // Convenience accessors — delegate to runtime.
+    private var scheduler: Simulation.Scheduler? { runtime.scheduler }
+    private var tickCounter: Int { runtime.tickCounter }
+    private var playerHouseID: UInt8 { runtime.playerHouseID }
+    private var buildController: BuildPanelController {
+        get { runtime.buildController }
+        set { runtime.buildController = newValue }
+    }
+    private var commandController: UnitCommandController {
+        get { runtime.commandController }
+        set { runtime.commandController = newValue }
+    }
+    private var currentYardKind: ScenarioRuntime.YardKind { runtime.currentYardKind }
+
+    private var assets: AssetLoader { runtime.assets }
 
     public init(assets: AssetLoader, scenarioName: String) {
-        self.assets = assets
+        self.runtime = ScenarioRuntime(assets: assets)
         self.scenarioName = scenarioName
         let size = CGSize(width: Self.mapSize + Self.sidebarWidth, height: Self.mapSize)
         super.init(size: size)
@@ -131,9 +102,7 @@ public final class ScenarioScene: SKScene {
         unitMarkers.removeAll(keepingCapacity: true)
         structureMarkers.removeAll(keepingCapacity: true)
         explosionMarkers.removeAll(keepingCapacity: true)
-        scheduler = nil
         frameCounter = 0
-        tickCounter = 0
         do {
             try build()
         } catch {
@@ -150,13 +119,10 @@ public final class ScenarioScene: SKScene {
         frameCounter += 1
         if frameCounter >= Self.framesPerTick {
             frameCounter = 0
-            scheduler?.tick()
-            tickCounter += 1
+            runtime.tick()
             syncVisualsFromPool()
             validateSelectionHalo()
             refreshHud()
-            // Progress bar + READY highlight animate at tick cadence
-            // (~12 Hz) — cheap rebuild of a handful of SKNodes.
             refreshBuildSidebar()
             // Per-tick trace of the selected unit. Compact; lets the
             // developer follow a single unit across dozens of ticks
@@ -190,73 +156,14 @@ public final class ScenarioScene: SKScene {
     public override func mouseDown(with event: NSEvent) {
         let location = event.location(in: self)
         let click = classifyClick(at: location)
-
-        // Unit-command gets first crack at map clicks when we're not
-        // mid-placement. A landed selection (`.selectUnit`) consumes
-        // the event; `.deselect` / `.none` fall through so yard-select
-        // + build-panel still run when a player clicks past a halo.
-        if buildController.placementType == nil,
-           case .mapTile(let x, let y) = click,
-           let host = scheduler?.host {
-            let action = commandController.handle(
-                click: .leftMapTile(x: x, y: y),
-                pool: host.units,
-                playerHouseID: playerHouseID
-            )
-            applyCommandAction(action, host: host)
-            refreshSelectionHalo()
-            if case .selectUnit = action { return }
-        }
-
-        // Slice 5b: map click on a player-owned yard/factory → switch
-        // `selectedYardIndex`. Only when not in placement mode so we
-        // don't interrupt a commit. The controller sees nothing;
-        // sidebar refreshes with the new yard's buildable.
-        if buildController.placementType == nil,
-           case .mapTile(let x, let y) = click,
-           let host = scheduler?.host,
-           let newYardIdx = Simulation.Structures.selectableYardAt(
-               tileX: x, tileY: y, pool: host.structures, playerHouseID: playerHouseID
-           ),
-           newYardIdx != buildController.selectedYardIndex
-        {
-            buildController.selectedYardIndex = newYardIdx
-            Log.info(
-                "build-panel: selected yard=\(newYardIdx) type=\(host.structures.slots[newYardIdx].type)",
-                tracer: .label("build-panel")
-            )
-            refreshBuildSidebar()
-            refreshRallyMarker()
-            return
-        }
-
-        let action = buildController.handle(click: click)
-        switch action {
-        case .enqueue(let type):
-            enqueueConstruction(type: type)
-        case .enterPlacement(let type):
-            if currentYardKind == .unit {
-                // Factory READY clicks spawn the queued unit at the
-                // factory anchor tile. Yard flips back to IDLE.
-                completeFactoryProduction(type: type)
-            } else {
-                Log.info(
-                    "build-panel: enter placement type=\(type)",
-                    tracer: .label("build-panel")
-                )
-                refreshBuildSidebar()
-            }
-        case .commitPlacement(let type, let tileX, let tileY):
-            commitPlacement(type: type, tileX: tileX, tileY: tileY)
-        case .cancelConstruction(let type):
-            cancelConstructionOnYard(type: type)
-        case .none:
-            // Unclassified click (empty sidebar row, map tile with no
-            // yard, off-map). Do nothing — the scenario is the terminal
-            // scene during play; routing away on a stray click was a
-            // pre-slice-3 placeholder that cycled the user through
-            // mentat/mainmenu. Exiting is an explicit action (not yet
-            // wired).
+        switch click {
+        case .mapTile(let x, let y):
+            let outcome = runtime.leftClick(tileX: x, tileY: y)
+            handleOutcome(outcome)
+        case .sidebarSlot(let row):
+            let outcome = runtime.sidebarClick(row: row)
+            handleOutcome(outcome)
+        case .outside:
             break
         }
     }
@@ -276,78 +183,43 @@ public final class ScenarioScene: SKScene {
     }
 
     public override func rightMouseDown(with event: NSEvent) {
-        guard let host = scheduler?.host else { return }
         let location = event.location(in: self)
         let click = classifyClick(at: location)
         guard case .mapTile(let x, let y) = click else { return }
+        let outcome = runtime.rightClick(tileX: x, tileY: y)
+        handleOutcome(outcome)
+    }
 
-        // Unit commands take priority: if the player has a unit
-        // selected, right-click issues a move / attack order and
-        // rally-point writes are skipped. Rally lands on the fallback
-        // path when nothing is selected.
-        if commandController.selectedUnitIndex != nil {
-            let action = commandController.handle(
-                click: .rightMapTile(x: x, y: y),
-                pool: host.units,
-                playerHouseID: playerHouseID
-            )
-            applyCommandAction(action, host: host)
+    /// Reacts to a runtime click outcome with the appropriate visual
+    /// refresh. The runtime has already mutated sim state and logged
+    /// the decision; the scene only needs to rebuild SKNodes that
+    /// reflect the change.
+    private func handleOutcome(_ outcome: ScenarioRuntime.ClickOutcome) {
+        switch outcome {
+        case .unitSelected, .unitDeselected:
             refreshSelectionHalo()
-            return
-        }
-
-        if let yardIdx = buildController.selectedYardIndex,
-           yardIdx < host.structures.slots.count,
-           isFactory(type: host.structures.slots[yardIdx].type)
-        {
-            var pool = host.structures
-            let ok = Simulation.Structures.setRallyPoint(
-                yardIndex: yardIdx, tile: (x, y), pool: &pool
-            )
-            host.structures = pool
-            Log.info(
-                "rally yard=\(yardIdx) tile=(\(x),\(y)) ok=\(ok)",
-                tracer: .label("rally")
-            )
+        case .orderMove, .orderAttack:
+            refreshSelectionHalo()
+        case .yardSelected:
+            refreshBuildSidebar()
             refreshRallyMarker()
-        }
-    }
-
-    /// Factory yard types (LIGHT_VEHICLE, HEAVY_VEHICLE, HIGH_TECH,
-    /// WOR, BARRACKS) — the same set `completeConstruction` and
-    /// `setRallyPoint` accept.
-    private func isFactory(type: UInt8) -> Bool {
-        switch type {
-        case 3, 4, 5, 7, 10: return true
-        default: return false
-        }
-    }
-
-    private func applyCommandAction(
-        _ action: UnitCommandController.Action,
-        host: Scripting.Host
-    ) {
-        switch action {
-        case .selectUnit(let idx):
-            Log.info("unit-select \(idx)", tracer: .label("unit-cmd"))
-        case .deselect:
-            Log.info("unit-deselect", tracer: .label("unit-cmd"))
-        case .orderMove(let idx, let tx, let ty):
-            let ok = Simulation.Units.orderMove(
-                poolIndex: idx, tileX: tx, tileY: ty, units: &host.units
-            )
-            Log.info(
-                "unit-order-move unit=\(idx) tile=(\(tx),\(ty)) ok=\(ok)",
-                tracer: .label("unit-cmd")
-            )
-        case .orderAttack(let attacker, let target):
-            let ok = Simulation.Units.orderAttack(
-                poolIndex: attacker, targetUnitIndex: target, units: &host.units
-            )
-            Log.info(
-                "unit-order-attack unit=\(attacker) target=\(target) ok=\(ok)",
-                tracer: .label("unit-cmd")
-            )
+        case .placementStarted:
+            refreshBuildSidebar()
+        case .placementCommitted:
+            hidePlacementGhost()
+            refreshBuildSidebar()
+        case .placementRejected:
+            showPlacementToast("Can't build here — try concrete/adjacency")
+            refreshBuildSidebar()
+        case .placementPoolFull:
+            showPlacementToast("Structure pool full")
+            refreshBuildSidebar()
+        case .constructionEnqueued, .constructionCancelled:
+            refreshBuildSidebar()
+        case .factorySpawned, .factoryPoolFull:
+            refreshBuildSidebar()
+        case .rallySet, .rallyCleared:
+            refreshRallyMarker()
         case .none:
             break
         }
@@ -376,7 +248,9 @@ public final class ScenarioScene: SKScene {
               yardIdx < host.structures.slots.count
         else { return }
         let yard = host.structures.slots[yardIdx]
-        guard yard.isUsed, isFactory(type: yard.type) else { return }
+        // Factory yard types (LIGHT_VEHICLE, HEAVY_VEHICLE, HIGH_TECH, WOR, BARRACKS).
+        let isFactory: Bool = [3, 4, 5, 7, 10].contains(yard.type)
+        guard yard.isUsed, isFactory else { return }
         guard yard.rallyPointPacked != 0xFFFF else { return }
         let packed = Int(yard.rallyPointPacked)
         let rx = packed & 0x3F
@@ -476,10 +350,7 @@ public final class ScenarioScene: SKScene {
         fallbackMarkerTexture = Self.makeFallbackTexture()
 
         addGroundTiles(world: world)
-        try setUpScheduler(scenario: scenario, resolver: resolver)
-        // Markers are created lazily on observation of live pool slots,
-        // so dynamically-spawned bullets and post-spawn units get
-        // visuals without pre-seeding. See `syncVisualsFromPool`.
+        try runtime.load(scenarioName: scenarioName)
         syncVisualsFromPool()
 
         let banner = SKLabelNode(text: "\(scenarioName) · click elsewhere to return")
@@ -491,96 +362,8 @@ public final class ScenarioScene: SKScene {
         addChild(banner)
 
         addHud()
-        autoSelectPlayerYard()
         refreshBuildSidebar()
         refreshRallyMarker()
-    }
-
-    /// Builds a live `Simulation.WorldSnapshot` from the scenario spawns,
-    /// wraps the pools in a `Scripting.Host`, and wires a `Scheduler` with
-    /// the install's `UNIT.EMC` / `BUILD.EMC` programs (empty function
-    /// tables — scripts halt on first `FUNCTION` opcode; that's expected).
-    private func setUpScheduler(scenario: Scenario, resolver: TileResolver) throws {
-        let snapshot = try Simulation.WorldSnapshot(scenario: scenario, resolver: resolver)
-        tileGrid = snapshot.tiles
-        let scorer = Self.makeTileEnterScorer(snapshot: snapshot, resolver: resolver)
-        let landscapeLookup = Self.makeLandscapeLookup(snapshot: snapshot, resolver: resolver)
-        // Seed the runtime spice map from the baseline tile landscape.
-        // `harvestSpiceStep` will drain through this as harvesters work
-        // their spice fields. Slice 4 + 5 of the spice-income bridge.
-        let spiceMap = Self.makeSpiceMap(snapshot: snapshot, resolver: resolver)
-        Log.info(
-            "spicemap seeded tiles=\(snapshot.tiles.count) thick=\(spiceMap.cells.filter { $0 == .thick }.count) thin=\(spiceMap.cells.filter { $0 == .thin }.count)",
-            tracer: .label("scene")
-        )
-        let host = Scripting.Host(
-            units: snapshot.units,
-            structures: snapshot.structures,
-            explosions: Simulation.ExplosionPool(),
-            teams: snapshot.teams,
-            houses: snapshot.houses,
-            currentObject: nil,
-            texts: [],
-            textLog: [],
-            voiceLog: [],
-            tileEnterScore: scorer,
-            playerHouseID: Simulation.House.atreides,
-            isValidPosition: nil,
-            isPositionUnveiled: nil,
-            landscapeAt: landscapeLookup,
-            spiceMap: spiceMap
-        )
-
-        // RNG stream shared between host-function closures (mirrors
-        // OpenDUNE's one-global-LCG model). Seed by the scenario's map
-        // seed so runs are reproducible on replay.
-        let source = Scripting.RandomSource(
-            lcgSeed: UInt16(truncatingIfNeeded: scenario.mapField.seed),
-            toolsSeed: scenario.mapField.seed
-        )
-        let unitFunctions = Scripting.Functions.unitTable(host: host, source: source)
-        let structureFunctions = Scripting.Functions.structureTable(host: host, source: source)
-
-        let unitProgram = ((try? assets.loadEmc(named: "UNIT.EMC")) ?? nil) ?? Formats.Emc.Program.empty
-        let structureProgram = ((try? assets.loadEmc(named: "BUILD.EMC")) ?? nil) ?? Formats.Emc.Program.empty
-        let teamProgram = ((try? assets.loadEmc(named: "TEAM.EMC")) ?? nil) ?? Formats.Emc.Program.empty
-
-        Log.info(
-            "EMC loaded: UNIT.EMC code=\(unitProgram.code.count)w ep=\(unitProgram.entryPoints.count), BUILD.EMC code=\(structureProgram.code.count)w ep=\(structureProgram.entryPoints.count), TEAM.EMC code=\(teamProgram.code.count)w ep=\(teamProgram.entryPoints.count)",
-            tracer: .label("scene")
-        )
-
-        let teamFunctions = Scripting.Functions.teamTable(host: host, source: source)
-        let unitVM = Scripting.VM(program: unitProgram, functions: unitFunctions)
-        let structureVM = Scripting.VM(program: structureProgram, functions: structureFunctions)
-        let teamVM = Scripting.VM(program: teamProgram, functions: teamFunctions)
-
-        // Harvest/refine RNG — piggyback on the same Tools_Random_256
-        // stream the script functions share. One byte per harvest
-        // call; two per harvestSpiceStep inner call.
-        let harvestRNG: () -> UInt8 = { source.tools.next() }
-        scheduler = Simulation.Scheduler(
-            host: host, unitVM: unitVM, structureVM: structureVM, teamVM: teamVM,
-            harvestRNG: harvestRNG
-        )
-    }
-
-    /// Seeds a `Simulation.SpiceMap` from the snapshot's tile grid via
-    /// the live `TileResolver`. Skipping this (nil) would disable the
-    /// harvesting pass entirely.
-    private static func makeSpiceMap(
-        snapshot: Simulation.WorldSnapshot,
-        resolver: TileResolver
-    ) -> Simulation.SpiceMap {
-        let tiles = snapshot.tiles
-        return Simulation.SpiceMap { i in
-            let cell = tiles[i]
-            return resolver.landscapeType(
-                groundTileID: cell.groundTileID,
-                overlayTileID: cell.overlayTileID,
-                hasStructure: cell.hasStructure
-            )
-        }
     }
 
     private func addHud() {
@@ -811,60 +594,6 @@ public final class ScenarioScene: SKScene {
         return CGPoint(x: CGFloat(x) * Self.tileSize, y: CGFloat(flippedY) * Self.tileSize)
     }
 
-    /// Map-backed `tileEnterScore` closure. Reads the snapshot's tile
-    /// grid at the packed index, classifies via `TileResolver`, and
-    /// returns the OpenDUNE-faithful score (inverted speed or `256` for
-    /// impassable). See `Unit_GetTileEnterScore` in `src/unit.c:2335`.
-    private static func makeTileEnterScorer(
-        snapshot: Simulation.WorldSnapshot,
-        resolver: TileResolver
-    ) -> (UInt16, UInt8, Simulation.MovementType) -> Int32 {
-        // Capture tiles so the closure is self-contained.
-        let tiles = snapshot.tiles
-        return { packed, orient8, movementType in
-            guard Int(packed) < tiles.count else { return 256 }
-            let cell = tiles[Int(packed)]
-            let landscape = resolver.landscapeType(
-                groundTileID: cell.groundTileID,
-                overlayTileID: cell.overlayTileID,
-                hasStructure: cell.hasStructure
-            )
-            let info = Simulation.LandscapeInfo.lookup(landscape)
-            let mtIndex = Int(movementType.rawValue)
-            guard mtIndex < info.movementSpeed.count else { return 256 }
-            var speed = Int32(info.movementSpeed[mtIndex])
-            if speed == 0 { return 256 }
-            // Diagonal tax — `(orient8 & 1) != 0` means NE/SE/SW/NW.
-            if (orient8 & 1) != 0 {
-                speed -= speed / 4 + speed / 8
-            }
-            // Invert: higher speed ⇒ lower cost.
-            return Int32(UInt8(truncatingIfNeeded: UInt32(speed) ^ 0xFF))
-        }
-    }
-
-    /// Map-backed `landscapeAt` closure. Returns the raw
-    /// `LandscapeType` byte for a packed tile so `Script_Unit_CalculateRoute`
-    /// can look up `LandscapeInfo.movementSpeed[movementType]` and set
-    /// `slot.speed` — mirrors the speed-selection slice of
-    /// `Unit_StartMovement` (`src/unit.c:1088`).
-    private static func makeLandscapeLookup(
-        snapshot: Simulation.WorldSnapshot,
-        resolver: TileResolver
-    ) -> (UInt16) -> UInt8 {
-        let tiles = snapshot.tiles
-        return { packed in
-            guard Int(packed) < tiles.count else { return 0 }
-            let cell = tiles[Int(packed)]
-            let landscape = resolver.landscapeType(
-                groundTileID: cell.groundTileID,
-                overlayTileID: cell.overlayTileID,
-                hasStructure: cell.hasStructure
-            )
-            return UInt8(truncatingIfNeeded: landscape.rawValue)
-        }
-    }
-
     /// 8×8 white square used when a unit's resolved sprite ID is out of
     /// the atlas range. Keeps the marker visible as a fallback rather
     /// than invisible.
@@ -880,177 +609,14 @@ public final class ScenarioScene: SKScene {
         return tx
     }
 
-    // MARK: - Build panel (P5 slice 3)
+    // MARK: - Build panel (visual only — intent lives in the runtime)
 
-    /// Scans the structure pool for the first CONSTRUCTION_YARD (type 8)
-    /// owned by the player. Called once after scene build; slice 4 adds
-    /// click-to-switch between multiple yards.
-    private func autoSelectPlayerYard() {
-        guard let host = scheduler?.host else { return }
-        for idx in host.structures.findArray {
-            let slot = host.structures.slots[idx]
-            if slot.type == 8, slot.houseID == playerHouseID {
-                buildController.selectedYardIndex = idx
-                Log.info(
-                    "build-panel: auto-selected player construction yard slot=\(idx)",
-                    tracer: .label("build-panel")
-                )
-                return
-            }
-        }
-    }
-
-    /// Recomputes the buildable bitmask from the selected yard + current
-    /// pool state, updates the controller's `availableTypes` and
-    /// `yardState`, and rebuilds sidebar sprites. Called at scene build,
-    /// after every commit, and every scheduler tick so the progress bar
-    /// animates.
+    /// Pulls freshly-computed build state from the runtime + rebuilds
+    /// the sidebar nodes. Called at scene build, after every commit,
+    /// and every scheduler tick so the progress bar animates.
     private func refreshBuildSidebar() {
-        guard let host = scheduler?.host,
-              let yardIdx = buildController.selectedYardIndex,
-              yardIdx < host.structures.slots.count,
-              host.structures.slots[yardIdx].isUsed
-        else {
-            buildController.refreshAvailableTypes([])
-            buildController.refreshYardState(nil, queuedType: nil, countDown: nil, buildTime: nil)
-            renderSidebar()
-            return
-        }
-        let yard = host.structures.slots[yardIdx]
-        let built = Simulation.Structures.structuresBuilt(
-            houseID: yard.houseID, pool: host.structures
-        )
-        // campaignID is 0-indexed for OpenDUNE; hardcode to 0 (mission 1)
-        // until a campaign-progress field exists on ScenarioScene.
-        let campaignID: UInt16 = 0
-
-        // Slice 5b: dispatch by yard kind.
-        let types: [UInt8]
-        if yard.type == 8 /* CYARD */ {
-            currentYardKind = .structure
-            let mask = Simulation.Structures.buildableStructuresFromYard(
-                yardHouseID: yard.houseID,
-                yardUpgradeLevel: yard.upgradeLevel,
-                structuresBuilt: built,
-                campaignID: campaignID,
-                playerHouseID: playerHouseID
-            )
-            types = Simulation.StructureInfo.buildableTypesByPriority(from: mask)
-        } else {
-            currentYardKind = .unit
-            let mask = Simulation.Structures.buildableUnitsFromFactory(
-                factoryType: yard.type,
-                factoryHouseID: yard.houseID,
-                factoryUpgradeLevel: yard.upgradeLevel,
-                structuresBuilt: built
-            )
-            types = Simulation.UnitInfo.buildableUnitTypes(from: mask)
-        }
-        buildController.refreshAvailableTypes(types)
-
-        // Surface the yard's state so the controller branches on it.
-        let state = Simulation.StructureState(rawValue: yard.state)
-        let queued: UInt8?
-        let buildTime: UInt16?
-        if yard.objectType == 0xFFFF {
-            queued = nil
-            buildTime = nil
-        } else {
-            queued = UInt8(truncatingIfNeeded: yard.objectType)
-            // Slice 5b uses the yard's own buildTime as the progress
-            // denominator for factories (matches the placeholder
-            // countdown source in `startConstruction`).
-            if currentYardKind == .structure,
-               let info = Simulation.StructureInfo.lookup(queued!)
-            {
-                buildTime = info.buildTime
-            } else if let yardInfo = Simulation.StructureInfo.lookup(yard.type) {
-                buildTime = yardInfo.buildTime
-            } else {
-                buildTime = nil
-            }
-        }
-        buildController.refreshYardState(
-            state,
-            queuedType: queued,
-            countDown: yard.countDown,
-            buildTime: buildTime
-        )
+        runtime.refreshBuildState()
         renderSidebar()
-    }
-
-    /// Slice 5c + 6b: cancel the BUSY / READY item on the selected
-    /// yard. CY cancel triggers a credit refund proportional to
-    /// progress (slice 6b); factory cancel skips the refund until
-    /// slice 6c wires `UnitInfo.buildCredits`.
-    private func cancelConstructionOnYard(type: UInt8) {
-        guard let host = scheduler?.host,
-              let yardIdx = buildController.selectedYardIndex
-        else { return }
-        var pool = host.structures
-        var houses = host.houses
-        let ok = Simulation.Structures.cancelConstruction(
-            yardIndex: yardIdx, pool: &pool, houses: &houses
-        )
-        host.structures = pool
-        host.houses = houses
-        Log.info(
-            "build-panel: cancel yard=\(yardIdx) type=\(type) ok=\(ok)",
-            tracer: .label("build-panel")
-        )
-        refreshBuildSidebar()
-    }
-
-    /// Slice 5b-build: flush a READY factory — spawn the queued unit
-    /// at the factory anchor and return the yard to IDLE.
-    /// Clears `placementType` so the scene doesn't enter map-placement
-    /// mode (which is the CY path).
-    private func completeFactoryProduction(type: UInt8) {
-        guard let host = scheduler?.host,
-              let yardIdx = buildController.selectedYardIndex
-        else { return }
-        var structures = host.structures
-        var units = host.units
-        let unitIdx = Simulation.Structures.completeConstruction(
-            yardIndex: yardIdx,
-            pool: &structures,
-            unitPool: &units
-        )
-        host.structures = structures
-        host.units = units
-        if let unitIdx {
-            Log.info(
-                "build-panel: factory yard=\(yardIdx) completed type=\(type) → unit slot=\(unitIdx)",
-                tracer: .label("build-panel")
-            )
-        } else {
-            Log.info(
-                "build-panel: factory yard=\(yardIdx) completion FAILED (unit pool full?)",
-                tracer: .label("build-panel")
-            )
-        }
-        buildController.placementType = nil
-        refreshBuildSidebar()
-    }
-
-    /// Slice 4d-ui: queue a construction on the currently-selected
-    /// yard. Called from the `.enqueue` action. Delegates to the sim
-    /// layer; refreshes the sidebar so the progress bar appears
-    /// immediately.
-    private func enqueueConstruction(type: UInt8) {
-        guard let host = scheduler?.host,
-              let yardIdx = buildController.selectedYardIndex
-        else { return }
-        var pool = host.structures
-        let ok = Simulation.Structures.startConstruction(
-            yardIndex: yardIdx, objectType: type, pool: &pool
-        )
-        host.structures = pool
-        Log.info(
-            "build-panel: enqueue type=\(type) yard=\(yardIdx) ok=\(ok)",
-            tracer: .label("build-panel")
-        )
-        refreshBuildSidebar()
     }
 
     /// Tears down + rebuilds the sidebar node stack. Each slot is a
@@ -1201,128 +767,6 @@ public final class ScenarioScene: SKScene {
         return row
     }
 
-    /// Commits a placement: validates via `isValidBuildLocation`, then
-    /// maps tile coords to pos32, invokes `Simulation.Structures.create`,
-    /// refreshes the sidebar, and logs the outcome. Slice 4a rejects
-    /// out-of-bounds + overlapping placements; slice 4b adds the
-    /// landscape gate + slab-deficit count; slice 4c adds the
-    /// adjacent-to-player-base gate and applies HP degradation from
-    /// `-neededSlabs` on the create path.
-    private func commitPlacement(type: UInt8, tileX: Int, tileY: Int) {
-        guard let host = scheduler?.host else { return }
-        let resolver = assets.tileResolver
-        let tiles = tileGrid
-        let landscapeAt: (Int, Int) -> LandscapeType = { x, y in
-            guard x >= 0, x < 64, y >= 0, y < 64 else { return .entirelyMountain }
-            let idx = y * 64 + x
-            guard idx < tiles.count else { return .entirelyMountain }
-            let cell = tiles[idx]
-            return resolver.landscapeType(
-                groundTileID: cell.groundTileID,
-                overlayTileID: cell.overlayTileID,
-                hasStructure: cell.hasStructure
-            )
-        }
-        let tileHouseIDAt: (Int, Int) -> UInt8 = { x, y in
-            guard x >= 0, x < 64, y >= 0, y < 64 else { return 0 }
-            let idx = y * 64 + x
-            guard idx < tiles.count else { return 0 }
-            return tiles[idx].houseID
-        }
-        let validity = Simulation.Structures.isValidBuildLocation(
-            tileX: tileX, tileY: tileY, type: type,
-            structures: host.structures, units: host.units,
-            landscapeAt: landscapeAt,
-            playerHouseID: playerHouseID,
-            tileHouseIDAt: tileHouseIDAt
-        )
-        guard validity != 0 else {
-            Log.info(
-                "build-panel: commit rejected — invalid tile=(\(tileX),\(tileY)) type=\(type)",
-                tracer: .label("build-panel")
-            )
-            // Keep placement mode active so the player can try another
-            // tile without re-clicking the READY sidebar entry. Show a
-            // transient toast on the map so rejection is visible.
-            showPlacementToast("Can't build here — try concrete/adjacency")
-            refreshBuildSidebar()
-            return
-        }
-        let tilesWithoutSlab: Int
-        if validity < 0 {
-            // Valid but degraded — slab deficit = -validity. Apply HP
-            // damage on the create path via tilesWithoutSlab.
-            tilesWithoutSlab = Int(-validity)
-            Log.info(
-                "build-panel: commit degraded tile=(\(tileX),\(tileY)) type=\(type) slabs_needed=\(tilesWithoutSlab)",
-                tracer: .label("build-panel")
-            )
-        } else {
-            tilesWithoutSlab = 0
-        }
-        let px = UInt16(clamping: tileX * 256)
-        let py = UInt16(clamping: tileY * 256)
-        var pool = host.structures
-        let idx = Simulation.Structures.create(
-            type: type,
-            houseID: playerHouseID,
-            position: Pos32(x: px, y: py),
-            pool: &pool,
-            tilesWithoutSlab: tilesWithoutSlab
-        )
-        host.structures = pool
-        if let idx {
-            Log.info(
-                "build-panel: commit type=\(type) tile=(\(tileX),\(tileY)) → slot=\(idx)",
-                tracer: .label("build-panel")
-            )
-            // Success: exit placement mode and hide the ghost.
-            buildController.placementType = nil
-            hidePlacementGhost()
-        } else {
-            Log.info(
-                "build-panel: commit type=\(type) tile=(\(tileX),\(tileY)) FAILED (pool full)",
-                tracer: .label("build-panel")
-            )
-            showPlacementToast("Structure pool full")
-        }
-        refreshBuildSidebar()
-    }
-
-    /// Compute the validity at `(tileX, tileY)` for `type` using the
-    /// same rules as `commitPlacement` but without mutating state.
-    /// Returns `nil` on pre-check failure; `0` invalid; `>0` valid;
-    /// `<0` valid-but-degraded (slab deficit = -value).
-    private func placementValidity(type: UInt8, tileX: Int, tileY: Int) -> Int? {
-        guard let host = scheduler?.host else { return nil }
-        let resolver = assets.tileResolver
-        let tiles = tileGrid
-        let landscapeAt: (Int, Int) -> LandscapeType = { x, y in
-            guard x >= 0, x < 64, y >= 0, y < 64 else { return .entirelyMountain }
-            let idx = y * 64 + x
-            guard idx < tiles.count else { return .entirelyMountain }
-            let cell = tiles[idx]
-            return resolver.landscapeType(
-                groundTileID: cell.groundTileID,
-                overlayTileID: cell.overlayTileID,
-                hasStructure: cell.hasStructure
-            )
-        }
-        let tileHouseIDAt: (Int, Int) -> UInt8 = { x, y in
-            guard x >= 0, x < 64, y >= 0, y < 64 else { return 0 }
-            let idx = y * 64 + x
-            guard idx < tiles.count else { return 0 }
-            return tiles[idx].houseID
-        }
-        return Int(Simulation.Structures.isValidBuildLocation(
-            tileX: tileX, tileY: tileY, type: type,
-            structures: host.structures, units: host.units,
-            landscapeAt: landscapeAt,
-            playerHouseID: playerHouseID,
-            tileHouseIDAt: tileHouseIDAt
-        ))
-    }
-
     /// Rebuilds the placement ghost at `(tileX, tileY)` for `type`. The
     /// ghost is a coloured rectangle covering the structure's footprint:
     /// green when valid, yellow when degraded, red when invalid. Called
@@ -1335,7 +779,7 @@ public final class ScenarioScene: SKScene {
         let origin = screenPosition(x: tileX, y: tileY + dims.1 - 1)
         let frame = CGRect(x: origin.x, y: origin.y, width: w, height: h)
         let node = SKShapeNode(rect: frame)
-        let validity = placementValidity(type: type, tileX: tileX, tileY: tileY) ?? 0
+        let validity = runtime.placementValidity(type: type, tileX: tileX, tileY: tileY) ?? 0
         let color: NSColor
         switch validity {
         case let v where v > 0:  color = NSColor(calibratedRed: 0.2, green: 1.0, blue: 0.3, alpha: 1)
