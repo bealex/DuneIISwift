@@ -72,6 +72,10 @@ public final class ScenarioScene: SKScene {
     /// Selection halo parented to the selected unit's marker. Recreated
     /// on selection change; removed on deselect.
     private var selectionHalo: SKShapeNode?
+    /// Yellow diamond marking the selected factory's rally tile. Nil
+    /// when no factory is selected or the selected factory has no
+    /// rally set. See `Algorithms/FactoryRallyPoint.md`.
+    private var rallyMarker: SKShapeNode?
     /// Container for sidebar slot nodes. Always parented to the scene;
     /// children are rebuilt on every `refreshBuildSidebar()`.
     private var sidebarNode: SKNode?
@@ -203,6 +207,7 @@ public final class ScenarioScene: SKScene {
                 tracer: .label("build-panel")
             )
             refreshBuildSidebar()
+            refreshRallyMarker()
             return
         }
 
@@ -242,13 +247,47 @@ public final class ScenarioScene: SKScene {
         let location = event.location(in: self)
         let click = classifyClick(at: location)
         guard case .mapTile(let x, let y) = click else { return }
-        let action = commandController.handle(
-            click: .rightMapTile(x: x, y: y),
-            pool: host.units,
-            playerHouseID: playerHouseID
-        )
-        applyCommandAction(action, host: host)
-        refreshSelectionHalo()
+
+        // Unit commands take priority: if the player has a unit
+        // selected, right-click issues a move / attack order and
+        // rally-point writes are skipped. Rally lands on the fallback
+        // path when nothing is selected.
+        if commandController.selectedUnitIndex != nil {
+            let action = commandController.handle(
+                click: .rightMapTile(x: x, y: y),
+                pool: host.units,
+                playerHouseID: playerHouseID
+            )
+            applyCommandAction(action, host: host)
+            refreshSelectionHalo()
+            return
+        }
+
+        if let yardIdx = buildController.selectedYardIndex,
+           yardIdx < host.structures.slots.count,
+           isFactory(type: host.structures.slots[yardIdx].type)
+        {
+            var pool = host.structures
+            let ok = Simulation.Structures.setRallyPoint(
+                yardIndex: yardIdx, tile: (x, y), pool: &pool
+            )
+            host.structures = pool
+            Log.info(
+                "rally yard=\(yardIdx) tile=(\(x),\(y)) ok=\(ok)",
+                tracer: .label("rally")
+            )
+            refreshRallyMarker()
+        }
+    }
+
+    /// Factory yard types (LIGHT_VEHICLE, HEAVY_VEHICLE, HIGH_TECH,
+    /// WOR, BARRACKS) — the same set `completeConstruction` and
+    /// `setRallyPoint` accept.
+    private func isFactory(type: UInt8) -> Bool {
+        switch type {
+        case 3, 4, 5, 7, 10: return true
+        default: return false
+        }
     }
 
     private func applyCommandAction(
@@ -291,6 +330,42 @@ public final class ScenarioScene: SKScene {
             selectionHalo?.removeFromParent()
             selectionHalo = nil
         }
+    }
+
+    /// Rebuilds the yellow rally-tile marker for the currently-selected
+    /// factory. Removes it when no factory is selected, the selected
+    /// yard isn't a factory, or the factory has no rally set.
+    private func refreshRallyMarker() {
+        rallyMarker?.removeFromParent()
+        rallyMarker = nil
+        guard let host = scheduler?.host,
+              let yardIdx = buildController.selectedYardIndex,
+              yardIdx < host.structures.slots.count
+        else { return }
+        let yard = host.structures.slots[yardIdx]
+        guard yard.isUsed, isFactory(type: yard.type) else { return }
+        guard yard.rallyPointPacked != 0xFFFF else { return }
+        let packed = Int(yard.rallyPointPacked)
+        let rx = packed & 0x3F
+        let ry = (packed >> 6) & 0x3F
+        let half = Self.tileSize * 0.35
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: half))
+        path.addLine(to: CGPoint(x: half, y: 0))
+        path.addLine(to: CGPoint(x: 0, y: -half))
+        path.addLine(to: CGPoint(x: -half, y: 0))
+        path.closeSubpath()
+        let marker = SKShapeNode(path: path)
+        marker.strokeColor = NSColor(calibratedRed: 1.0, green: 0.9, blue: 0.2, alpha: 1.0)
+        marker.fillColor = NSColor(calibratedRed: 1.0, green: 0.9, blue: 0.2, alpha: 0.25)
+        marker.lineWidth = 2
+        marker.zPosition = 4
+        marker.position = CGPoint(
+            x: CGFloat(rx) * Self.tileSize + Self.tileSize / 2,
+            y: CGFloat(63 - ry) * Self.tileSize + Self.tileSize / 2
+        )
+        addChild(marker)
+        rallyMarker = marker
     }
 
     /// Re-parents the green selection halo to whichever unit marker
@@ -385,6 +460,7 @@ public final class ScenarioScene: SKScene {
         addHud()
         autoSelectPlayerYard()
         refreshBuildSidebar()
+        refreshRallyMarker()
     }
 
     /// Builds a live `Simulation.WorldSnapshot` from the scenario spawns,
@@ -396,6 +472,14 @@ public final class ScenarioScene: SKScene {
         tileGrid = snapshot.tiles
         let scorer = Self.makeTileEnterScorer(snapshot: snapshot, resolver: resolver)
         let landscapeLookup = Self.makeLandscapeLookup(snapshot: snapshot, resolver: resolver)
+        // Seed the runtime spice map from the baseline tile landscape.
+        // `harvestSpiceStep` will drain through this as harvesters work
+        // their spice fields. Slice 4 + 5 of the spice-income bridge.
+        let spiceMap = Self.makeSpiceMap(snapshot: snapshot, resolver: resolver)
+        Log.info(
+            "spicemap seeded tiles=\(snapshot.tiles.count) thick=\(spiceMap.cells.filter { $0 == .thick }.count) thin=\(spiceMap.cells.filter { $0 == .thin }.count)",
+            tracer: .label("scene")
+        )
         let host = Scripting.Host(
             units: snapshot.units,
             structures: snapshot.structures,
@@ -410,7 +494,8 @@ public final class ScenarioScene: SKScene {
             playerHouseID: Simulation.House.atreides,
             isValidPosition: nil,
             isPositionUnveiled: nil,
-            landscapeAt: landscapeLookup
+            landscapeAt: landscapeLookup,
+            spiceMap: spiceMap
         )
 
         // RNG stream shared between host-function closures (mirrors
@@ -437,9 +522,32 @@ public final class ScenarioScene: SKScene {
         let structureVM = Scripting.VM(program: structureProgram, functions: structureFunctions)
         let teamVM = Scripting.VM(program: teamProgram, functions: teamFunctions)
 
+        // Harvest/refine RNG — piggyback on the same Tools_Random_256
+        // stream the script functions share. One byte per harvest
+        // call; two per harvestSpiceStep inner call.
+        let harvestRNG: () -> UInt8 = { source.tools.next() }
         scheduler = Simulation.Scheduler(
-            host: host, unitVM: unitVM, structureVM: structureVM, teamVM: teamVM
+            host: host, unitVM: unitVM, structureVM: structureVM, teamVM: teamVM,
+            harvestRNG: harvestRNG
         )
+    }
+
+    /// Seeds a `Simulation.SpiceMap` from the snapshot's tile grid via
+    /// the live `TileResolver`. Skipping this (nil) would disable the
+    /// harvesting pass entirely.
+    private static func makeSpiceMap(
+        snapshot: Simulation.WorldSnapshot,
+        resolver: TileResolver
+    ) -> Simulation.SpiceMap {
+        let tiles = snapshot.tiles
+        return Simulation.SpiceMap { i in
+            let cell = tiles[i]
+            return resolver.landscapeType(
+                groundTileID: cell.groundTileID,
+                overlayTileID: cell.overlayTileID,
+                hasStructure: cell.hasStructure
+            )
+        }
     }
 
     private func addHud() {

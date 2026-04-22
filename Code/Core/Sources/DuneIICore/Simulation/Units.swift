@@ -51,6 +51,10 @@ extension Simulation {
                 slot.speed = 255
             }
             pool[idx] = slot
+            Log.info(
+                "createUnit slot=\(idx) type=\(type) house=\(houseID) tile=(\(tileX),\(tileY)) hp=\(slot.hitpoints) speed=\(slot.speed)",
+                tracer: .label("unit-create")
+            )
             return idx
         }
 
@@ -141,6 +145,95 @@ extension Simulation {
             default:
                 return nil
             }
+        }
+
+        // MARK: Harvest
+
+        /// Slice 3 of spice income — pure-sim port of OpenDUNE's
+        /// `Script_Unit_Harvest` (`src/script/unit.c:1640..1669`).
+        ///
+        /// Per call on a harvester standing on a spice tile: gains 0 or
+        /// 1 unit of ore (`Tools_Random_256() & 1`), sets `inTransport`,
+        /// clamps `amount` to 100. On ~1/32 of calls also drains 1 unit
+        /// from the tile via the `changeSpice` closure — the map grid
+        /// lives outside the simulation pools, so this primitive takes
+        /// the reader/writer as a callback.
+        ///
+        /// Arguments:
+        /// - `harvesterIndex`: slot in `units`.
+        /// - `units`: mutated to bump amount + inTransport.
+        /// - `landscapeAt`: returns the raw `LandscapeType.rawValue` for
+        ///   a packed tile (reuse the same closure that
+        ///   `Scripting.Host.landscapeAt` exposes).
+        /// - `changeSpice`: `(packed, delta) -> Void`; called with
+        ///   `delta = -1` when the tile should drain one unit. Caller
+        ///   owns map storage and decides how delta translates into
+        ///   thick→thin→bare transitions (mirrors
+        ///   `Map_ChangeSpiceAmount` in `src/map.c:771`).
+        /// - `rng`: `() -> UInt8` matching `Tools_Random_256`. Called
+        ///   up to twice per invocation (amount jitter + drain gate);
+        ///   tests can inject deterministic sequences.
+        ///
+        /// Return mirrors the C: `0` on amount-cap / off-spice / drain
+        /// tick, `1` on the common "accumulated but didn't drain" path.
+        ///
+        /// Every meaningful step logs under the `harvest` tracer.
+        @discardableResult
+        public static func harvestSpiceStep(
+            harvesterIndex: Int,
+            units: inout UnitPool,
+            landscapeAt: (UInt16) -> UInt8,
+            changeSpice: (UInt16, Int16) -> Void,
+            rng: () -> UInt8
+        ) -> UInt16 {
+            guard harvesterIndex >= 0, harvesterIndex < UnitPool.capacity else {
+                Log.debug("harvest reject: index out of range (\(harvesterIndex))", tracer: .label("harvest"))
+                return 0
+            }
+            let slot = units[harvesterIndex]
+            guard slot.isUsed, slot.isAllocated, slot.type == 16 /* HARVESTER */ else {
+                Log.debug("harvest reject: not a live harvester slot=\(harvesterIndex) type=\(slot.type)", tracer: .label("harvest"))
+                return 0
+            }
+            if slot.amount >= 100 {
+                Log.debug("harvest cap slot=\(harvesterIndex) amount=\(slot.amount) already full", tracer: .label("harvest"))
+                return 0
+            }
+
+            let tileX = Int(slot.positionX) / 256
+            let tileY = Int(slot.positionY) / 256
+            guard (0..<64).contains(tileX), (0..<64).contains(tileY) else { return 0 }
+            let packed = UInt16(tileY * 64 + tileX)
+            let landscape = landscapeAt(packed)
+            guard landscape == LandscapeType.spice.rawValue
+                    || landscape == LandscapeType.thickSpice.rawValue else {
+                Log.debug("harvest reject: tile=(\(tileX),\(tileY)) landscape=\(landscape) not spice", tracer: .label("harvest"))
+                return 0
+            }
+
+            let jitter = rng() & 1
+            var u = slot
+            let amountBefore = u.amount
+            u.amount = UInt8(clamping: Int(u.amount) + Int(jitter))
+            if u.amount > 100 { u.amount = 100 }
+            u.inTransport = true
+            units[harvesterIndex] = u
+            Log.info(
+                "harvest slot=\(harvesterIndex) tile=(\(tileX),\(tileY)) landscape=\(landscape) amount=\(amountBefore)→\(u.amount) jitter=\(jitter) inTransport=true",
+                tracer: .label("harvest")
+            )
+
+            let drainGate = rng() & 0x1F
+            if drainGate != 0 {
+                Log.debug("harvest slot=\(harvesterIndex) gate=\(drainGate) no-drain (returns 1)", tracer: .label("harvest"))
+                return 1
+            }
+            changeSpice(packed, -1)
+            Log.info(
+                "harvest slot=\(harvesterIndex) tile=(\(tileX),\(tileY)) DRAIN -1 (returns 0)",
+                tracer: .label("harvest")
+            )
+            return 0
         }
 
         // MARK: Player orders

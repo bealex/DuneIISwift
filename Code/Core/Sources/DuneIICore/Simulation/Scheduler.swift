@@ -32,6 +32,17 @@ extension Simulation {
         public static let unitOpcodesPerTick = 7
         public static let structureOpcodesPerTick = 3
         public static let teamOpcodesPerTick = 5
+        /// One harvest / refine call every N scheduler ticks. Our tick
+        /// rate is ~12 Hz; OpenDUNE's `Script_Unit_Harvest` runs with
+        /// `script.delay = 6` at a ~30 Hz cadence (~200 ms between
+        /// calls), so 3 of our ticks (~250 ms) matches reasonably.
+        public static let harvestCadenceTicks = 3
+
+        /// Optional `Tools_Random_256` source used by the harvesting
+        /// pass. `nil` disables the pass even when `host.spiceMap` is
+        /// set — tests that don't need harvest can skip wiring it.
+        public let harvestRNG: (() -> UInt8)?
+        private var harvestTickCounter: Int = 0
 
         /// Structure type IDs that have no script and are skipped during
         /// dispatch. Mirrors OpenDUNE's `STRUCTURE_SLAB_1x1`,
@@ -50,11 +61,13 @@ extension Simulation {
             host: Scripting.Host,
             unitVM: Scripting.VM,
             structureVM: Scripting.VM,
-            teamVM: Scripting.VM? = nil
+            teamVM: Scripting.VM? = nil,
+            harvestRNG: (() -> UInt8)? = nil
         ) {
             self.host = host
             self.unitVM = unitVM
             self.structureVM = structureVM
+            self.harvestRNG = harvestRNG
             // Default teamVM: reuses the unit program (empty / halted) so
             // the scheduler's team-tick is a safe no-op when no TEAM.EMC
             // is supplied. Callers that load the real TEAM.EMC pass it
@@ -105,7 +118,78 @@ extension Simulation {
             tickUnits()
             tickStructures()
             tickTeams()
+            // Harvest / refine runs after unit & structure ticks so the
+            // script-driven action / linkedID state is settled for the
+            // current tick. Gated on both a non-nil spiceMap (so tests
+            // can skip) and an RNG closure (Tools_Random_256 port).
+            harvestTickCounter &+= 1
+            if host.spiceMap != nil, harvestRNG != nil,
+               harvestTickCounter % Self.harvestCadenceTicks == 0
+            {
+                tickHarvesting()
+            }
             host.currentObject = nil
+        }
+
+        /// One harvest / refine pass. Iterates:
+        /// - Every HARVESTER in ACTION_HARVEST with `inTransport=false`
+        ///   (not yet docked) — calls `Units.harvestSpiceStep` using
+        ///   `host.spiceMap` as the landscape reader + level writer.
+        /// - Every REFINERY with `linkedID != 0xFF` (docked harvester)
+        ///   — calls `Structures.refineSpiceStep` once per pass.
+        ///
+        /// Logs entry + per-pool-entry activity under the `harvest-tick`
+        /// tracer so traces tell the full harvesting story.
+        public mutating func tickHarvesting() {
+            guard var spiceMap = host.spiceMap else { return }
+            guard let rng = harvestRNG else { return }
+            let playerHouse = host.playerHouseID ?? 0
+            var harvestedCount = 0
+            var refinedPairs = 0
+
+            // Harvest pass.
+            for idx in host.units.findArray {
+                let slot = host.units.slots[idx]
+                guard slot.type == 16 /* HARVESTER */ else { continue }
+                guard slot.actionID == Simulation.ActionID.harvest else { continue }
+                guard !slot.inTransport else { continue }
+                let before = slot.amount
+                _ = Simulation.Units.harvestSpiceStep(
+                    harvesterIndex: idx,
+                    units: &host.units,
+                    landscapeAt: { spiceMap.landscapeByte(at: $0) },
+                    changeSpice: { packed, delta in spiceMap.apply(delta: delta, at: packed) },
+                    rng: rng
+                )
+                if host.units.slots[idx].amount != before { harvestedCount += 1 }
+            }
+
+            // Refine pass.
+            for idx in host.structures.findArray {
+                let refinery = host.structures.slots[idx]
+                guard refinery.type == 12 /* REFINERY */ else { continue }
+                guard refinery.linkedID != 0xFF else { continue }
+                let harvIdx = Int(refinery.linkedID)
+                _ = Simulation.Structures.refineSpiceStep(
+                    refineryIndex: idx,
+                    harvesterIndex: harvIdx,
+                    structures: host.structures,
+                    units: &host.units,
+                    houses: &host.houses,
+                    playerHouseID: playerHouse
+                )
+                refinedPairs += 1
+            }
+
+            // Flush the mutated SpiceMap back into the host.
+            host.spiceMap = spiceMap
+
+            if harvestedCount > 0 || refinedPairs > 0 {
+                Log.debug(
+                    "harvest-tick counter=\(harvestTickCounter) harvested=\(harvestedCount) refined=\(refinedPairs)",
+                    tracer: .label("harvest-tick")
+                )
+            }
         }
 
         /// Decrements every allocated unit's `fireDelay` by 1 if non-zero.

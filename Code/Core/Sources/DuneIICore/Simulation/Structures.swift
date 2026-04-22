@@ -481,6 +481,10 @@ extension Simulation {
             updated.countDown = buildTime &<< 8
             updated.state = StructureState.busy.rawValue
             pool[yardIndex] = updated
+            Log.info(
+                "startConstruction yard=\(yardIndex) yardType=\(slot.type) house=\(slot.houseID) produce=\(objectType) buildTime=\(buildTime) state=IDLE→BUSY",
+                tracer: .label("construction")
+            )
             return true
         }
 
@@ -554,24 +558,33 @@ extension Simulation {
             updated.objectType = 0xFFFF
             updated.countDown = 0
             pool[yardIndex] = updated
+            Log.info(
+                "cancelConstruction yard=\(yardIndex) yardType=\(slot.type) house=\(slot.houseID) priorState=\(slot.state) priorType=\(slot.objectType) countDown=\(slot.countDown)→0",
+                tracer: .label("construction")
+            )
             return true
         }
 
         /// Slice 5b-build: flushes a READY factory — spawns the
-        /// queued unit at the yard's anchor tile and returns the yard
-        /// to IDLE. CY completion stays on the click-map-to-place path
-        /// (see `commitPlacement` in `ScenarioScene`), so this function
-        /// returns `nil` for CY yards.
+        /// queued unit at the yard's `factorySpawnTile` exit and
+        /// returns the yard to IDLE. CY completion stays on the
+        /// click-map-to-place path (see `commitPlacement` in
+        /// `ScenarioScene`), so this function returns `nil` for CY
+        /// yards.
         ///
         /// Returns the new unit's pool index on success, or `nil`
         /// when the yard isn't a READY factory or the unit pool is
         /// full. On failure the yard is left untouched so the player
         /// can retry later.
         ///
+        /// Rally point (our-own feature, not in OpenDUNE): when the
+        /// yard's `rallyPointPacked != 0xFFFF`, the freshly-spawned
+        /// unit gets an immediate `Units.orderMove` to the rally
+        /// tile. Failure of the move order (e.g. off-map rally) is
+        /// silently ignored — the unit just sits at the exit tile,
+        /// same as the no-rally case.
+        ///
         /// Deferred:
-        /// - Rally-point / south-of-footprint exit tile — the unit
-        ///   currently spawns at the factory anchor and visually
-        ///   overlaps the building.
         /// - `Structure_BuildObject`'s linkedID dance.
         /// - Credit payment / deduction.
         /// - Audio cues, text display.
@@ -601,7 +614,28 @@ extension Simulation {
                 type: unitType, houseID: slot.houseID,
                 tileX: exit.x, tileY: exit.y, pool: &unitPool
             ) else {
+                Log.warning(
+                    "completeConstruction yard=\(yardIndex) FAILED: unit pool full (type=\(unitType))",
+                    tracer: .label("construction")
+                )
                 return nil  // pool full; leave yard READY for retry
+            }
+            Log.info(
+                "completeConstruction yard=\(yardIndex) yardType=\(slot.type) house=\(slot.houseID) spawned unit=\(unitIdx) type=\(unitType) at tile=(\(exit.x),\(exit.y))",
+                tracer: .label("construction")
+            )
+
+            if slot.rallyPointPacked != 0xFFFF {
+                let packed = Int(slot.rallyPointPacked)
+                let rx = packed & 0x3F
+                let ry = (packed >> 6) & 0x3F
+                Log.info(
+                    "rally-fire yard=\(yardIndex) unit=\(unitIdx) tile=(\(rx),\(ry))",
+                    tracer: .label("rally")
+                )
+                Units.orderMove(
+                    poolIndex: unitIdx, tileX: rx, tileY: ry, units: &unitPool
+                )
             }
 
             var updated = slot
@@ -610,6 +644,45 @@ extension Simulation {
             updated.countDown = 0
             pool[yardIndex] = updated
             return unitIdx
+        }
+
+        /// Rally point setter. Writes `rallyPointPacked` on the target
+        /// yard if it's a factory (types 3, 4, 5, 7, 10) and the tile
+        /// is on-map. Passing `tile == nil` clears the rally (sentinel
+        /// `0xFFFF`). Non-factory yards are rejected so the caller
+        /// doesn't need to validate the yard kind.
+        ///
+        /// This feature does not exist in OpenDUNE. `Structure_BuildObject`
+        /// spawns units at `Structure_FindFreePosition` with no player
+        /// input. We layer a rally tile on top of our sim and feed it
+        /// through `Units.orderMove` at spawn time.
+        @discardableResult
+        public static func setRallyPoint(
+            yardIndex: Int,
+            tile: (x: Int, y: Int)?,
+            pool: inout StructurePool
+        ) -> Bool {
+            guard yardIndex >= 0, yardIndex < StructurePool.capacitySoft else { return false }
+            let slot = pool[yardIndex]
+            guard slot.isUsed, slot.isAllocated else { return false }
+            switch slot.type {
+            case 3, 4, 5, 7, 10: break
+            default: return false
+            }
+            var updated = slot
+            let before = slot.rallyPointPacked
+            if let tile {
+                guard (0..<64).contains(tile.x), (0..<64).contains(tile.y) else { return false }
+                updated.rallyPointPacked = UInt16(tile.y * 64 + tile.x)
+            } else {
+                updated.rallyPointPacked = 0xFFFF
+            }
+            pool[yardIndex] = updated
+            Log.info(
+                "rally-set yard=\(yardIndex) type=\(slot.type) \(String(format: "0x%04X", before))→\(String(format: "0x%04X", updated.rallyPointPacked))\(tile.map { " tile=(\($0.x),\($0.y))" } ?? " CLEARED")",
+                tracer: .label("rally")
+            )
+            return true
         }
 
         /// Port of OpenDUNE's `GUI_Widget_SelectStructure` click handler
@@ -726,6 +799,231 @@ extension Simulation {
             }
             guard let info = UnitInfo.lookup(objectType) else { return nil }
             return (info.buildCredits, info.buildTime)
+        }
+
+        /// Slice 2 of spice income — dock a harvester into a refinery.
+        /// Ports the allied-unit branch of OpenDUNE's `Unit_EnterStructure`
+        /// (`src/unit.c:2177..2225`) as a pure-sim function; callers
+        /// decide when to call it (arrival detection is a later slice).
+        ///
+        /// Steps — each logged via the `dock` tracer so traces tell the
+        /// full story:
+        /// 1. Validate: indices in range, types match (REFINERY = 12,
+        ///    HARVESTER = 16), both allocated, same house.
+        /// 2. Chain-link: harvester's `linkedID` captures the previous
+        ///    refinery head (`0xFF` when first in queue); refinery's
+        ///    `linkedID` becomes the new harvester's pool index.
+        /// 3. Hide the harvester by setting `inTransport = true`. This
+        ///    is a minor semantic overload — OpenDUNE has both
+        ///    `flags.isNotOnMap` (physical presence) and `inTransport`
+        ///    (carries ore). Our scene uses `inTransport` as the sole
+        ///    "hidden during dock" signal; `RefineSpice` clears it on
+        ///    unload-complete, at which point `undockHarvester` puts
+        ///    the harvester back on the map.
+        /// 4. Flip refinery state to READY (REFINERY has
+        ///    `busyStateIsIncoming = true`, so dock → READY not BUSY).
+        ///
+        /// Returns `true` on success, `false` on rejection. Pool state
+        /// is untouched on failure.
+        @discardableResult
+        public static func dockHarvester(
+            refineryIndex: Int,
+            harvesterIndex: Int,
+            structures: inout StructurePool,
+            units: inout UnitPool
+        ) -> Bool {
+            guard refineryIndex >= 0, refineryIndex < StructurePool.capacitySoft else { return false }
+            guard harvesterIndex >= 0, harvesterIndex < UnitPool.capacity else { return false }
+            let refinery = structures[refineryIndex]
+            let harvester = units[harvesterIndex]
+            guard refinery.isUsed, refinery.isAllocated, refinery.type == 12 /* REFINERY */ else { return false }
+            guard harvester.isUsed, harvester.isAllocated, harvester.type == 16 /* HARVESTER */ else { return false }
+            guard refinery.houseID == harvester.houseID else { return false }
+
+            let priorHead = refinery.linkedID
+            let priorState = refinery.state
+
+            var u = harvester
+            u.linkedID = priorHead
+            u.inTransport = true
+            units[harvesterIndex] = u
+            Log.info(
+                "dock step1 harvester=\(harvesterIndex) linkedID=\(priorHead)→(chain-captured) inTransport=true amount=\(u.amount)",
+                tracer: .label("dock")
+            )
+
+            var r = refinery
+            r.linkedID = UInt8(truncatingIfNeeded: harvesterIndex)
+            r.state = StructureState.ready.rawValue
+            structures[refineryIndex] = r
+            Log.info(
+                "dock step2 refinery=\(refineryIndex) linkedID=\(priorHead)→\(r.linkedID) state=\(priorState)→READY(\(r.state))",
+                tracer: .label("dock")
+            )
+            return true
+        }
+
+        /// Slice 2 of spice income — undock the refinery's head
+        /// harvester and place it at `exitTile`. Ports
+        /// `Script_Structure_FindAndLeaveUnit`'s unlink dance
+        /// (`src/script/structure.c:273..283`).
+        ///
+        /// Steps (all logged via `dock`):
+        /// 1. Refinery must have a linked harvester
+        ///    (`linkedID != 0xFF`). Else return nil.
+        /// 2. Unlink: refinery.linkedID becomes harvester.linkedID
+        ///    (next in chain or `0xFF`); harvester.linkedID becomes
+        ///    `0xFF`.
+        /// 3. Position the harvester at `exitTile` centred
+        ///    (`tile*256+128`); clear `inTransport`.
+        /// 4. When refinery's chain is empty after unlink, flip state
+        ///    back to IDLE (`if (s->o.linkedID == 0xFF) Structure_SetState(s, STRUCTURE_STATE_IDLE)`).
+        ///
+        /// Returns the undocked harvester's pool index, or `nil` when
+        /// the refinery has no linked unit or validation fails. Does
+        /// NOT set `actionID` — callers decide whether to send the
+        /// harvester back to spice or issue a fresh move; that keeps
+        /// this helper reusable for any post-unload behaviour.
+        @discardableResult
+        public static func undockHarvester(
+            refineryIndex: Int,
+            exitTile: (x: Int, y: Int),
+            structures: inout StructurePool,
+            units: inout UnitPool
+        ) -> Int? {
+            guard refineryIndex >= 0, refineryIndex < StructurePool.capacitySoft else { return nil }
+            guard (0..<64).contains(exitTile.x), (0..<64).contains(exitTile.y) else { return nil }
+            let refinery = structures[refineryIndex]
+            guard refinery.isUsed, refinery.isAllocated, refinery.type == 12 else { return nil }
+            guard refinery.linkedID != 0xFF else { return nil }
+            let harvesterIdx = Int(refinery.linkedID)
+            guard harvesterIdx < UnitPool.capacity else { return nil }
+            let harvester = units[harvesterIdx]
+            guard harvester.isUsed, harvester.isAllocated, harvester.type == 16 else { return nil }
+
+            let nextHead = harvester.linkedID
+
+            var r = refinery
+            let priorState = r.state
+            r.linkedID = nextHead
+            if r.linkedID == 0xFF {
+                r.state = StructureState.idle.rawValue
+            }
+            structures[refineryIndex] = r
+            Log.info(
+                "undock step1 refinery=\(refineryIndex) linkedID=\(harvesterIdx)→\(nextHead) state=\(priorState)→\(r.state)",
+                tracer: .label("dock")
+            )
+
+            var u = harvester
+            u.linkedID = 0xFF
+            u.inTransport = false
+            u.positionX = UInt16(clamping: exitTile.x * 256 + 128)
+            u.positionY = UInt16(clamping: exitTile.y * 256 + 128)
+            units[harvesterIdx] = u
+            Log.info(
+                "undock step2 harvester=\(harvesterIdx) linkedID=\(nextHead)→0xFF inTransport=false tile=(\(exitTile.x),\(exitTile.y))",
+                tracer: .label("dock")
+            )
+            return harvesterIdx
+        }
+
+        /// One "refine tick" for a docked harvester at a refinery.
+        /// Ports the per-step math in OpenDUNE's `Script_Structure_RefineSpice`
+        /// (`src/script/structure.c:105..153`) as a pure function: drains
+        /// `harvesterStep` ore from the harvester's `amount`, credits the
+        /// owning house `creditsStep × harvesterStep`, returns the credits
+        /// gained this call.
+        ///
+        /// First slice of the harvester / spice income bridge — no script
+        /// wiring, no dock/undock AI, no linked-ID management. Caller
+        /// passes both pool indices explicitly. Full design in
+        /// `Documentation/Algorithms/HarvesterSpiceDeposit.md`.
+        ///
+        /// `harvesterStep` is scaled by the refinery's HP ratio: a full-HP
+        /// refinery drains 3/tick, a half-HP refinery drains 1/tick, a
+        /// below-33% HP refinery drains 0 until repaired — `h * 256 / hMax * 3 / 256`
+        /// in integer arithmetic.
+        ///
+        /// `creditsStep` is a flat 7 for player-owned harvesters. Enemy
+        /// harvesters get an optional −1..+2 jitter drawn from
+        /// `enemyJitterByte() % 4 - 1`. Pass `nil` to disable jitter
+        /// entirely (useful for mission-1 scope + deterministic tests).
+        ///
+        /// Returns 0 and mutates nothing when the pair fails validation
+        /// (wrong types, cross-house, unallocated, out of range).
+        /// Returns 0 and clears `inTransport` when the harvester's
+        /// amount already reads zero — that branch mirrors the C
+        /// "unload complete" path.
+        ///
+        /// Credits saturate at `UInt16.max` rather than wrapping.
+        @discardableResult
+        public static func refineSpiceStep(
+            refineryIndex: Int,
+            harvesterIndex: Int,
+            structures: StructurePool,
+            units: inout UnitPool,
+            houses: inout HousePool,
+            playerHouseID: UInt8,
+            enemyJitterByte: (() -> UInt8)? = nil
+        ) -> UInt16 {
+            guard refineryIndex >= 0, refineryIndex < StructurePool.capacitySoft else { return 0 }
+            guard harvesterIndex >= 0, harvesterIndex < UnitPool.capacity else { return 0 }
+            let refinery = structures[refineryIndex]
+            let harvester = units[harvesterIndex]
+            guard refinery.isUsed, refinery.isAllocated, refinery.type == 12 /* REFINERY */ else { return 0 }
+            guard harvester.isUsed, harvester.isAllocated, harvester.type == 16 /* HARVESTER */ else { return 0 }
+            guard refinery.houseID == harvester.houseID else { return 0 }
+            let houseIdx = Int(harvester.houseID)
+            guard houseIdx >= 0, houseIdx < HousePool.capacity,
+                  houses.slots[houseIdx].isUsed else { return 0 }
+
+            if harvester.amount == 0 {
+                var u = harvester
+                let wasInTransport = u.inTransport
+                u.inTransport = false
+                units[harvesterIndex] = u
+                if wasInTransport {
+                    Log.info(
+                        "refine r\(refineryIndex) h\(harvesterIndex) amount=0 UNLOAD_COMPLETE (inTransport cleared)",
+                        tracer: .label("spice")
+                    )
+                }
+                return 0
+            }
+
+            let maxStepByHP: Int
+            if let info = StructureInfo.lookup(refinery.type), info.hitpoints > 0 {
+                maxStepByHP = Int(refinery.hitpoints) * 256 / Int(info.hitpoints) * 3 / 256
+            } else {
+                maxStepByHP = 0
+            }
+            let harvesterStep = min(UInt16(max(0, maxStepByHP)), UInt16(harvester.amount))
+            if harvesterStep == 0 { return 0 }
+
+            var creditsStep = 7
+            if harvester.houseID != playerHouseID, let jitter = enemyJitterByte {
+                creditsStep += Int(jitter() % 4) - 1
+                creditsStep = max(0, creditsStep)
+            }
+            let gained = UInt16(clamping: creditsStep * Int(harvesterStep))
+
+            var h = houses[houseIdx]
+            let creditsBefore = h.credits
+            h.credits = UInt16(clamping: Int(h.credits) + Int(gained))
+            houses[houseIdx] = h
+
+            var u = harvester
+            let amountBefore = u.amount
+            u.amount = UInt8(clamping: Int(u.amount) - Int(harvesterStep))
+            if u.amount == 0 { u.inTransport = false }
+            units[harvesterIndex] = u
+
+            Log.info(
+                "refine r\(refineryIndex)(hp=\(refinery.hitpoints)) h\(harvesterIndex)(house=\(harvester.houseID) amt=\(amountBefore)→\(u.amount)) step=\(harvesterStep) rate=\(creditsStep) +\(gained) credits=\(creditsBefore)→\(h.credits)\(u.amount == 0 ? " UNLOAD_COMPLETE" : "")",
+                tracer: .label("spice")
+            )
+            return gained
         }
 
         /// Walks the non-reserved structure pool and returns the

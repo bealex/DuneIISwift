@@ -11,9 +11,25 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**None — EMC-driven SetSpeed wired for ground units (2026-04-21 follow-up). Pick from "Next up" below.**
+**None — scheduler + scene wiring for harvesting (slice 5 of spice income) shipped (2026-04-21). Pick from "Next up" below.**
 
-Two-part fix shipped today (2026-04-21, post-6d): (1) `Script_Unit_GetInfo` subcase `0x0B` now reads `slot.currentDestinationX/Y` instead of `slot.targetMove` (misport — OpenDUNE's `src/script/unit.c:968` checks the per-step pixel destination, a different field). Before the fix, the UNIT.EMC MOVE handler at word 637 saw "already moving" on tick 1 of a fresh order and looped forever on the wait, so `Script_Unit_CalculateRoute` was never reached. (2) Our `makeCalculateRouteUnit` now ports the landscape-speed slice of `Unit_StartMovement` (`src/unit.c:1088..1105`): it looks up the landscape at the tile we're about to enter, reads `LandscapeInfo.movementSpeed[movementType]`, applies the HP<half 1/4 slowdown (non-winger only), and writes `slot.speed`. New `Scripting.Host.landscapeAt` closure plumbs the map-backed lookup from `ScenarioScene` via `TileResolver.landscapeType`. Simplifications: we bypass `Unit_SetSpeed`'s `movingSpeedFactor` / gameSpeed / speed-vs-speedPerTick split (our scheduler's step math is already a coarse approximation — sub-pixel parity is queued for the tick-parity golden harness). 4 new tests; 675 green / 67 suites / zero warnings on clean build. Design: `Algorithms/EmcDrivenSetSpeed.md`. Insight: `scripting-unit-getinfo-0b-is-currentdestination.md`.
+Today (2026-04-21, latest): `Scheduler.tickHarvesting()` runs the harvest-and-refine passes every 3 scheduler ticks. HOST gained `spiceMap`; Scheduler gained `harvestRNG`. `ScenarioScene` seeds the SpiceMap from snapshot tiles + shares the scripting `Tools_Random_256` stream. Auto-disabled when either state is missing, so pre-existing tests stay green. 5 new tests in `SpiceTickHarvestTests`. Slices 1–5 of the spice bridge are live end-to-end; slice 6 (harvester AI script wiring) is next — actual harvesters don't yet seek spice or dock automatically.
+
+Earlier today: new `StructureSlot.rallyPointPacked` (`0xFFFF` sentinel) + `Simulation.Structures.setRallyPoint` pure-sim writer + `completeConstruction` hook that fires `Simulation.Units.orderMove` on the freshly-spawned unit when the yard's rally is set. Scene wiring: right-click branches — if a unit is selected, command controller handles it as before; else if the selected yard is a factory, we call `setRallyPoint`. Yellow diamond marker at the rally tile, rebuilt on yard-switch and rally updates. 11 new tests; 687 green / 68 suites / zero warnings. Design: `Algorithms/FactoryRallyPoint.md`.
+
+Also today: per-module `CLAUDE.md` files under each SwiftPM target + dropped the strict-TDD workflow (tests still mandatory, now written after the implementation in the same commit). See today's history bullet.
+
+**Visual verification pending** (sandbox can't drive SpriteKit). `swift run duneii`, mission-1 Atreides:
+
+1. Left-click the Atreides CYARD → sidebar shows CY buildables.
+2. Click a LIGHT_VEHICLE on the map (once you build one) → sidebar switches; right-click a far map tile → yellow diamond appears there.
+3. Queue a TRIKE; when BUSY → READY cycles, the spawned TRIKE should drive toward the diamond on its own.
+4. Select a unit → halo appears; right-click empty sand → unit moves (rally path must NOT trigger while unit selected).
+5. Deselect the unit (click empty sand) → with the factory still selected, right-click a new tile → diamond moves.
+
+If any step fails it's a regression. Earlier slice verifications still pending below.
+
+Two-part fix shipped earlier today (post-6d): (1) `Script_Unit_GetInfo` subcase `0x0B` now reads `slot.currentDestinationX/Y` instead of `slot.targetMove` (misport — OpenDUNE's `src/script/unit.c:968` checks the per-step pixel destination, a different field). Before the fix, the UNIT.EMC MOVE handler at word 637 saw "already moving" on tick 1 of a fresh order and looped forever on the wait, so `Script_Unit_CalculateRoute` was never reached. (2) Our `makeCalculateRouteUnit` now ports the landscape-speed slice of `Unit_StartMovement` (`src/unit.c:1088..1105`): it looks up the landscape at the tile we're about to enter, reads `LandscapeInfo.movementSpeed[movementType]`, applies the HP<half 1/4 slowdown (non-winger only), and writes `slot.speed`. New `Scripting.Host.landscapeAt` closure plumbs the map-backed lookup from `ScenarioScene` via `TileResolver.landscapeType`. Simplifications: we bypass `Unit_SetSpeed`'s `movingSpeedFactor` / gameSpeed / speed-vs-speedPerTick split (our scheduler's step math is already a coarse approximation — sub-pixel parity is queued for the tick-parity golden harness). 4 new tests; 675 green / 67 suites / zero warnings on clean build. Design: `Algorithms/EmcDrivenSetSpeed.md`. Insight: `scripting-unit-getinfo-0b-is-currentdestination.md`.
 
 **Visual verification pending** for the SetSpeed slice + the two slices before it (sandbox can't drive SpriteKit). `swift run duneii`, mission-1 Atreides:
 
@@ -29,23 +45,37 @@ If any step fails it's a regression in the associated slice.
 
 ## Next up (queued)
 
-Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → failing test → implement → full suite green → history entry → insight if non-obvious → update this file).
+Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → implement → tests → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **Rally-point click on factories.** Lets player place where freshly-built units exit. Small slice.
-2. **Harvester / spice income (P4→P5 bridge).** Biggest remaining gameplay hole — economy is one-way right now. Requires harvester AI loop + refinery deposit + per-house credit accumulation.
-3. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
-4. **P5 — real HUD remainder** — unit info panel + minimap (credits already covered by slice 6d).
-5. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline (`movingSpeedFactor` + gameSpeed + speed-vs-speedPerTick split) for sub-pixel parity — SetSpeed slice took a simpler shortcut.
-6. **EMC `BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; running the real script would give proper flight frames + sonic-beam propagation. Cosmetic.
-7. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder. Optional in OpenDUNE saves.
-8. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority` (sand-only, movement-state weighted); slot 0x36.
-9. **Slice 2.1 polish** — mentat briefing text, scenario pan/zoom (intro/jukebox/voice already shipped).
-10. **Right-click-attack on enemy structures (slice 3).** Same shape as slice 2; encode `IT_STRUCTURE` instead of `IT_UNIT`. Add an `enemyStructureAtTile` scan + a structure variant of `orderAttack` (or generalise the existing one).
+1. **Harvester / spice income — remaining slices.** Slice 1 (pure-sim refine step) shipped 2026-04-21. Remaining:
+   - ~~Slice 2 — dock/undock primitives~~ (shipped 2026-04-21).
+   - ~~Slice 3 — `harvestSpiceStep` pure-sim primitive~~ (shipped 2026-04-21).
+   - ~~Slice 4 — `SpiceMap` runtime state + `Map_ChangeSpiceAmount` transitions~~ (shipped 2026-04-21).
+   - ~~Slice 5 — scheduler + scene wiring (`tickHarvesting`)~~ (shipped 2026-04-21).
+   - Slice 6 — harvester AI script wiring: port `Script_Unit_Harvest`'s caller-side flow — seek spice, move (via existing pathfinder + orderMove), arrive, enter harvest action; on amount==100 seek refinery, arrive in footprint, trigger `dockHarvester`; on `inTransport` cleared trigger `undockHarvester`; seek spice again. Also auto-advance harvesters spawned at scenario start.
+   - Slice 7 — carryall pickup loop when refinery chain is busy.
+   - Slice 6 — harvester AI loop: port `Script_Unit_Harvest`'s caller-side behaviour (seek nearest spice, move, harvest, seek refinery, dock, wait, undock, repeat). Uses existing pathfinder + orderMove primitives.
+   - Slice 7 — carryall pickup loop when the refinery chain is busy.
+2. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
+3. **P5 — real HUD remainder** — unit info panel + minimap (credits already covered by slice 6d).
+4. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline (`movingSpeedFactor` + gameSpeed + speed-vs-speedPerTick split) for sub-pixel parity — SetSpeed slice took a simpler shortcut.
+5. **EMC `BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; running the real script would give proper flight frames + sonic-beam propagation. Cosmetic.
+6. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder. Optional in OpenDUNE saves.
+7. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority` (sand-only, movement-state weighted); slot 0x36.
+8. **Slice 2.1 polish** — mentat briefing text, scenario pan/zoom (intro/jukebox/voice already shipped).
+9. **Right-click-attack on enemy structures (slice 3).** Same shape as attack slice 2; encode `IT_STRUCTURE` instead of `IT_UNIT`. Add an `enemyStructureAtTile` scan + a structure variant of `orderAttack` (or generalise the existing one).
 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-21 — Scheduler + scene wiring for harvesting (slice 5).** `Host.spiceMap`, `Scheduler.harvestRNG`, new `Scheduler.tickHarvesting()` at cadence=3, scene seeding via `TileResolver.landscapeType`, shared RandomSource. `harvest-tick` tracer summarises entry. 5 new tests. 732 green / 73 suites / zero warnings.
+- **2026-04-21 — Runtime spice map (slice 4 of spice income).** `Simulation.SpiceMap` (64×64 Level enum) + `apply(delta:at:)` ports OpenDUNE's `Map_ChangeSpiceAmount` transition rules. `init(landscapeAt:)` seeds from a closure; `landscapeByte(at:)` bridges to the `harvestSpiceStep` closure shape. Each level transition logs under `spicemap` with before→after. 7 new tests in `SpiceMapTests`. 727 green / 72 suites / zero warnings.
+- **2026-04-21 — Harvester on-spice pickup (slice 3 of spice income) + Package.swift CLAUDE.md excludes.** `Simulation.Units.harvestSpiceStep` ports `Script_Unit_Harvest` as a pure function with tile reader / writer / RNG closures; each step logged under `harvest`. Package.swift now `exclude: ["CLAUDE.md"]` on every target to silence 5 unhandled-resource warnings from the per-module CLAUDE.md files added earlier today. 10 new tests in `HarvestSpiceStepTests`. 720 green / 71 suites / zero warnings.
+- **2026-04-21 — Harvester dock / undock primitives (slice 2) + log retrofit.** `Simulation.Structures.dockHarvester` (chain-link + state=READY) and `undockHarvester` (unlink + exit-tile reposition + state=IDLE when chain empty) — pure-sim ports of `Unit_EnterStructure` + `Script_Structure_FindAndLeaveUnit`. Step-by-step logs under the `dock` tracer. Retrofitted logs across `refineSpiceStep`, `startConstruction`/`cancelConstruction`/`completeConstruction`, `createUnit`, `setRallyPoint`/rally-fire. 10 new tests in `HarvesterDockTests`. 710 green / 70 suites / zero warnings.
+- **2026-04-21 — Harvester → refinery spice deposit (slice 1 — pure-sim refine step).** `Simulation.Structures.refineSpiceStep` ports OpenDUNE's `Script_Structure_RefineSpice` deposit math as a pure function: `harvesterStep = (refineryHP × 256 / hpMax) × 3 / 256` capped by amount; `creditsStep = 7` flat (+ optional −1..+2 enemy jitter via closure); credits += step × harvesterStep; amount decrements; `inTransport` clears on empty. No script / dock / tile wiring yet. Credits saturate at `UInt16.max`. 13 new tests in `HarvesterSpiceDepositTests`. 700 green / 69 suites / zero warnings. Design: `Algorithms/HarvesterSpiceDeposit.md`.
+- **2026-04-21 — Rally-point click on factories.** New `StructureSlot.rallyPointPacked: UInt16` (`0xFFFF` = unset) + `Simulation.Structures.setRallyPoint(yardIndex:tile:pool:)` writer (factory-kind + bounds validated; `tile: nil` clears). `completeConstruction` reads the rally on success and fires `Simulation.Units.orderMove` on the freshly-spawned unit. Scene: `rightMouseDown` branches — unit-command first (selection → move/attack), then rally-point when a player factory is selected. Yellow diamond `SKShapeNode` marker at the rally tile, refreshed on yard-switch + rally updates. This is our own feature — OpenDUNE has no rally system. 11 new tests in `FactoryRallyPointTests`. 687 green / 68 suites / zero warnings on clean build. Design: `Algorithms/FactoryRallyPoint.md`.
+- **2026-04-21 — Per-module CLAUDE.md + dropped strict TDD.** Each SwiftPM target (`DuneIICore`, `AssetExport`, `DuneIIRendering`, `assetgen`, `duneii`) now carries its own `CLAUDE.md` with local layout / conventions / entry points. Root `CLAUDE.md` points at them. Feature workflow relaxed: tests still mandatory but now written after the implementation in the same commit. No code changes.
 - **2026-04-21 — Wire EMC-driven SetSpeed for ground units.** Two-part port fix. (1) `Script_Unit_GetInfo` subcase `0x0B` now reads `currentDestinationX/Y` instead of `targetMove` (OpenDUNE `src/script/unit.c:968`) — the misport made UNIT.EMC's MOVE handler loop at the "already moving" wait on tick 1 and never reach `CalculateRoute`. (2) `makeCalculateRouteUnit` now ports the landscape-speed slice of `Unit_StartMovement` (`src/unit.c:1088..1105`): looks up landscape via the new `Scripting.Host.landscapeAt` closure, reads `LandscapeInfo.movementSpeed[movementType]`, applies HP<half 1/4 slowdown (non-winger only), scales by `byScenario`, writes `slot.speed`. `ScenarioScene.setUpScheduler` wires the closure from the snapshot tile grid. We bypass `Unit_SetSpeed`'s `movingSpeedFactor` / gameSpeed / speed-vs-speedPerTick split — sub-pixel parity is queued for the tick-parity golden harness. 4 new tests (GetInfo 0x0B + 3 on CalcRoute: landscape-set, HP<half, nil-closure guard). 675 green / 67 suites / zero warnings on clean build. Design: `Algorithms/EmcDrivenSetSpeed.md`. Insight: `scripting-unit-getinfo-0b-is-currentdestination.md`.
 - **2026-04-21 — P5 slice 6d: HUD credits label.** "Credits: N" SKLabelNode pinned at top of the right-hand sidebar; refreshed every tick from new pure-sim helper `Simulation.House.credits(for:in:)` (returns `UInt16?` — `nil` for unallocated / out-of-range house IDs, `0` for allocated-but-empty, distinguishing "—" from "0" in the label). Mission 1 Atreides starts at 1000 and ticks down as BUSY yards drain. 5 new tests in `HouseCreditsLookupTests`. 671 green / 67 suites / zero warnings on clean build. Design: `Algorithms/HudCreditsLabel.md`.
 - **2026-04-21 — Right-click-attack on enemy units (slice 2).** New `Simulation.Units.orderAttack(poolIndex:targetUnitIndex:units:)` composes `Unit_SetAction(ACTION_ATTACK)` + `Unit_SetTarget` (`src/unit.c:497, 1131`) into one pure-sim write. Always: `targetAttack = EncodedIndex.unit(targetUnitIndex)`, `actionID = attack` (0), `currentDestination{X,Y} = 0`. Non-turret attackers (TROOPER, TRIKE, QUAD, DEVASTATOR) also get `targetMove = targetAttack` + `route[0] = 0xFF` so the chassis chases; turreted units leave move state alone (rotates turret in place — `unit.c:1161`). Controller side: new `Action.orderAttack` + `enemyUnitAtTile` scan; the right-click handler discriminates empty / friendly / enemy under the click and promotes to attack on enemy. Slice-1 right-click semantics regression-guarded. `ScenarioScene.applyCommandAction` gets the new case; logs `unit-order-attack unit=N target=M ok=true`. 14 new tests (8 in `UnitOrderAttackTests`, 6 added to `UnitCommandControllerTests`). 666 green / 66 suites / zero warnings on clean build. Design: `Algorithms/UnitOrderAttack.md`. Deferred: enemy-structure attack (slice 3), target blink + voice cue, alliance check.
@@ -120,7 +150,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **675 tests across 67 suites, all green** as of 2026-04-21 (post-SetSpeed slice). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **732 tests across 73 suites, all green** as of 2026-04-21 (post-scheduler-wiring-slice). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 

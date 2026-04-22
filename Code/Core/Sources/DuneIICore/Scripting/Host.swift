@@ -53,6 +53,15 @@ extension Scripting {
         /// `slot.speed` alone so install-less tests keep working.
         public var landscapeAt: ((_ packed: UInt16) -> UInt8)?
 
+        /// Runtime spice grid. When non-nil, the scheduler's harvesting
+        /// pass reads `spiceMap.landscapeByte` to decide whether a
+        /// harvester's current tile holds spice, and writes level
+        /// transitions through `spiceMap.apply`. `nil` disables the
+        /// pass entirely — tests that don't care about spice leave it
+        /// `nil` and existing paths stay unaffected. See
+        /// `Documentation/Algorithms/HarvesterSpiceDeposit.md`.
+        public var spiceMap: Simulation.SpiceMap?
+
         public enum ObjectRef: Sendable, Equatable {
             case unit(poolIndex: Int)
             case structure(poolIndex: Int)
@@ -88,7 +97,8 @@ extension Scripting {
             playerHouseID: UInt8? = nil,
             isValidPosition: ((_ packed: UInt16) -> Bool)? = nil,
             isPositionUnveiled: ((_ packed: UInt16) -> Bool)? = nil,
-            landscapeAt: ((_ packed: UInt16) -> UInt8)? = nil
+            landscapeAt: ((_ packed: UInt16) -> UInt8)? = nil,
+            spiceMap: Simulation.SpiceMap? = nil
         ) {
             self.units = units
             self.structures = structures
@@ -104,6 +114,7 @@ extension Scripting {
             self.isValidPosition = isValidPosition
             self.isPositionUnveiled = isPositionUnveiled
             self.landscapeAt = landscapeAt
+            self.spiceMap = spiceMap
         }
 
         // MARK: Convenience queries

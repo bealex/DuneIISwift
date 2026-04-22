@@ -23,6 +23,7 @@ let package = Package(
                 .product(name: "Memoirs", package: "memoirs-ios")
             ],
             path: "Sources/DuneIICore",
+            exclude: ["CLAUDE.md"],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]
@@ -31,6 +32,7 @@ let package = Package(
             name: "AssetExport",
             dependencies: ["DuneIICore"],
             path: "Sources/AssetExport",
+            exclude: ["CLAUDE.md"],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]
@@ -39,6 +41,7 @@ let package = Package(
             name: "DuneIIRendering",
             dependencies: ["DuneIICore", "AssetExport"],
             path: "Sources/DuneIIRendering",
+            exclude: ["CLAUDE.md"],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]
@@ -46,12 +49,14 @@ let package = Package(
         .executableTarget(
             name: "assetgen",
             dependencies: ["DuneIICore", "AssetExport"],
-            path: "Sources/assetgen"
+            path: "Sources/assetgen",
+            exclude: ["CLAUDE.md"]
         ),
         .executableTarget(
             name: "duneii",
             dependencies: ["DuneIICore", "AssetExport", "DuneIIRendering"],
-            path: "Sources/duneii"
+            path: "Sources/duneii",
+            exclude: ["CLAUDE.md"]
         ),
         .testTarget(
             name: "DuneIICoreTests",

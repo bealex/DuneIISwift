@@ -9,10 +9,12 @@ After that, `Documentation/Plans/01.Initial.md` is the authoritative long-term p
 ## Layout
 
 - `CurrentState.md` (repo root) — operational state: active task, next steps, recent completions, test status. Read first, update after every task. This is the resume point across sessions.
-- `Code/` — Swift sources. SwiftPM package at `Code/Core/` with three targets:
-  - `DuneIICore` library — pure-Swift format decoders, codecs, simulation (Foundation + Synchronization only).
-  - `AssetExport` library — glue writers (PNG/WAV/JSON) + per-format extractors, uses ImageIO/CoreGraphics.
-  - `assetgen` executable — thin CLI driver that scans every PAK and dispatches. An Xcode app target will live alongside later (P2+). See §4 of the Initial plan.
+- `Code/` — Swift sources. SwiftPM package at `Code/Core/` with five targets. Each target has its own `CLAUDE.md` covering layout, conventions, and key entry points — read the relevant one before editing that module.
+  - `DuneIICore` library — pure-Swift format decoders, codecs, simulation (Foundation + Synchronization only). See `Code/Core/Sources/DuneIICore/CLAUDE.md`.
+  - `AssetExport` library — glue writers (PNG/WAV/JSON) + per-format extractors, uses ImageIO/CoreGraphics. See `Code/Core/Sources/AssetExport/CLAUDE.md`.
+  - `DuneIIRendering` library — SpriteKit scenes, controllers, audio, asset loading. See `Code/Core/Sources/DuneIIRendering/CLAUDE.md`.
+  - `assetgen` executable — CLI that extracts Resources/ from the install. See `Code/Core/Sources/assetgen/CLAUDE.md`.
+  - `duneii` executable — AppKit host for the rendering library. See `Code/Core/Sources/duneii/CLAUDE.md`.
 - `Documentation/`
   - `Plans/` — phased plans (`01.*.md`, `02.*.md`, …). Authoritative roadmap.
   - `Formats/` — one markdown per on-disk format (PAK, SHP, WSA, …). Written in our own words with a pointer to the reference C source.
@@ -34,33 +36,30 @@ After that, `Documentation/Plans/01.Initial.md` is the authoritative long-term p
 - Every format/codec ships with XCTest (Swift Testing) coverage in `Core/Tests/DuneIICoreTests/`. Real-data assertions use `TestInstall.locate()` and short-circuit when the install is absent.
 - Simulation parity with OpenDUNE is non-negotiable. When in doubt, port the C behavior literally. Only add a comment when a subtle invariant would surprise a future reader. Do not "improve" the simulation.
 
-## Feature workflow — TDD required
+## Feature workflow
 
-Every feature follows this loop. No step is optional. `CLAUDE.md` exists so this loop can't get skipped.
+Every feature follows this loop. Steps 0, 1, 4, 5, 6, 7 are mandatory. Tests are now written **after** the feature, not before — see step 3.
 
 0. **Open `CurrentState.md` first.** Confirm the task you're about to do matches the active task there (or is one of the queued next-ups). If you're starting something new, add it to "Active task" with enough detail that a cold reader could resume it.
 
 1. **Design on paper first.** Write or update the relevant doc under `Documentation/Formats/` (or `Algorithms/`, `Architecture/`) before you touch code. Own-words description, pointer to the reference C source, worked byte-level example where helpful.
 
-2. **Write the failing test.** Add a test in `Core/Tests/DuneIICoreTests/` that captures the intended behavior. Synthetic input is preferred. Add a real-data test alongside when a PAK entry can exercise the path — have it short-circuit when the install isn't present.
+2. **Implement the feature.** Don't add abstractions for hypothetical future uses. No speculative generality.
 
-3. **Run the suite to confirm the test fails for the right reason.**
+3. **Write tests for the new behavior** in `Core/Tests/DuneIICoreTests/`. Synthetic input is preferred. Add a real-data test alongside when a PAK entry can exercise the path — have it short-circuit when the install isn't present. Coverage bar is unchanged (see "What counts as tested" below).
+
+4. **Run the full suite.** All of it, not just your new tests. It must be **green** before you claim the feature is done. Every previously-green test must still be green.
    ```
    cd Code/Core && swift test
    ```
-If it passes already, your test isn't testing what you think.
 
-4. **Implement the minimum to make the test pass.** Don't add abstractions for hypothetical future uses. No speculative generality.
-
-5. **Run the full suite.** All of it, not just your new test. It must be **green** before you claim the feature is done. Every previously-green test must still be green. **Zero warnings.** After a clean rebuild (`swift package clean && swift build`), the compiler must report no warnings — every `warning:` line is treated as a failure. Incremental builds suppress already-emitted warnings, so use a clean build to audit. Common offenders we don't ignore: `var` that's never mutated, unused variables, deprecated API. Don't silence a warning with `_ =` or `// swift-ignore` — fix the root cause.
+5. **Zero warnings.** After a clean rebuild (`swift package clean && swift build`), the compiler must report no warnings — every `warning:` line is treated as a failure. Incremental builds suppress already-emitted warnings, so use a clean build to audit. Common offenders we don't ignore: `var` that's never mutated, unused variables, deprecated API. Don't silence a warning with `_ =` or `// swift-ignore` — fix the root cause.
 
 6. **Log the change.** Append a bullet to `Documentation/History/YYYY-MM.md` (create the file if it's a new month). One sentence, imperative mood, with file references when useful.
 
-7. **If you learned something non-obvious, capture it as an insight.** Create `Documentation/Insights/<category>-<slug>.md` following the template in `Insights/README.md`, and add a line to the index there. An insight is anything that would trip up a competent engineer coming to the same problem fresh.
+7. **Update `CurrentState.md`.** Move the finished item to "Recently completed" with the test count and a pointer to today's history bullet. Replace "Active task" with whatever's next on the queue, and spell out its immediate next step so the next session can resume cold. Refresh "Test status" with the post-feature numbers from `swift test`.
 
-8. **Cross-link.** The format doc should list which test covers it; the insight (if any) should link to the code file:line and the test that exercises it.
-
-9. **Update `CurrentState.md`.** Move the finished item to "Recently completed" with the test count and a pointer to today's history bullet. Replace "Active task" with whatever's next on the queue, and spell out its immediate next step so the next session can resume cold. Refresh "Test status" with the post-feature numbers from `swift test`.
+8. **If you learned something non-obvious, capture it as an insight.** Create `Documentation/Insights/<category>-<slug>.md` following the template in `Insights/README.md`, and add a line to the index there. Cross-link: the format doc should list which test covers it; the insight (if any) should link to the code file:line and the test that exercises it.
 
 ### What counts as "tested"
 
@@ -90,6 +89,6 @@ swift run assetgen -v
 - Do not introduce new gameplay behavior, balance tweaks, or animation retiming. Presentation-layer changes are limited to §7 of the Initial plan.
 - Do not add cross-platform abstractions. macOS 26 only.
 - Do not clone OpenDUNE or dunepak into the repo — they're external references under `Repositories/` and are not part of our build.
-- Do not skip the TDD loop. Ship the test with the feature, in the same commit.
+- Do not ship without tests — they can land after the implementation in the same commit, but "feature done" requires green coverage.
 - Do not rewrite historical `History/*.md` entries. If an entry turns out to be wrong, add a new dated correction.
 - Do not hard-wrap paragraphs in Markdown. One paragraph = one line. Editors and viewers soft-wrap for display. Only break lines to separate paragraphs, or where Markdown syntax requires it (lists, tables, fenced code, blockquotes). When editing an existing `.md` file, keep its existing lines flat — don't re-introduce wraps.

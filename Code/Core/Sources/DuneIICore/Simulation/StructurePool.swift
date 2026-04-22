@@ -49,6 +49,12 @@ extension Simulation {
         /// time. Slice 4c sets it on degraded placements; the per-tick
         /// decay consumer is a later slice.
         public var degrades: Bool
+        /// Player-set rally tile, packed as `y * 64 + x`. Sentinel
+        /// `0xFFFF` means "unset" (default). Only factories consult
+        /// this field; non-factory structures ignore it. Set via
+        /// `Simulation.Structures.setRallyPoint`. Not persisted across
+        /// saves — a UI-layer convenience, not a logic-parity field.
+        public var rallyPointPacked: UInt16
 
         public init(
             isUsed: Bool = false,
@@ -66,7 +72,8 @@ extension Simulation {
             upgradeLevel: UInt8 = 0,
             objectType: UInt16 = 0xFFFF,
             rotationSpriteDiff: UInt8 = 0,
-            degrades: Bool = false
+            degrades: Bool = false,
+            rallyPointPacked: UInt16 = 0xFFFF
         ) {
             self.isUsed = isUsed
             self.isAllocated = isAllocated
@@ -84,6 +91,7 @@ extension Simulation {
             self.objectType = objectType
             self.rotationSpriteDiff = rotationSpriteDiff
             self.degrades = degrades
+            self.rallyPointPacked = rallyPointPacked
         }
     }
 
