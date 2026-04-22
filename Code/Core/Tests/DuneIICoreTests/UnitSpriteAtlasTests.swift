@@ -40,15 +40,30 @@ struct UnitSpriteAtlasTests {
         #expect(flip == false)
     }
 
-    @Test("resolveFrame(infantry3) strides by 3 across orientation buckets")
+    @Test("resolveFrame(infantry3) uses values_32C4 buckets + values_334A phase")
     func resolveFrameInfantry3() {
         let soldier = Simulation.UnitInfo.lookup(4)!
-        // N (octant 0 → bucket 0).
-        let (n, _) = UnitSpriteAtlas.resolveFrame(info: soldier, orientation: 0)
+        // N (octant 0 → bucket 0). phase=0 → offset 0*3+0 = 0.
+        let (n, nFlip) = UnitSpriteAtlas.resolveFrame(info: soldier, orientation: 0)
         #expect(n == Int(soldier.groundSpriteID))
-        // E (octant 2 → bucket 2). Offset should be 2 * 3 = 6.
-        let (e, _) = UnitSpriteAtlas.resolveFrame(info: soldier, orientation: 64)
-        #expect(e == Int(soldier.groundSpriteID) + 6)
+        #expect(nFlip == false)
+        // E (octant 2 → bucket 1). phase=0 → offset 1*3+0 = 3.
+        let (e, eFlip) = UnitSpriteAtlas.resolveFrame(info: soldier, orientation: 64)
+        #expect(e == Int(soldier.groundSpriteID) + 3)
+        #expect(eFlip == false)
+        // S (octant 4 → bucket 2). phase=0 → offset 2*3+0 = 6.
+        let (s, sFlip) = UnitSpriteAtlas.resolveFrame(info: soldier, orientation: -128)
+        #expect(s == Int(soldier.groundSpriteID) + 6)
+        #expect(sFlip == false)
+        // W (octant 6 → bucket 1 with flip). phase=0 → offset 3.
+        let (w, wFlip) = UnitSpriteAtlas.resolveFrame(info: soldier, orientation: -64)
+        #expect(w == Int(soldier.groundSpriteID) + 3)
+        #expect(wFlip == true)
+        // spriteOffset phase 1 bumps within the bucket: offset 3 + 1 = 4.
+        let (ePhase1, _) = UnitSpriteAtlas.resolveFrame(
+            info: soldier, orientation: 64, spriteOffset: 1
+        )
+        #expect(ePhase1 == Int(soldier.groundSpriteID) + 4)
     }
 
     @MainActor

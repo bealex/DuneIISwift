@@ -48,31 +48,47 @@ public final class UnitSpriteAtlas {
     }
 
     /// Compose the ground-frame sprite index for a unit at an arbitrary
-    /// 0..255 orientation, according to `values_32A4` and the unit's
-    /// `displayMode`. Returns `(spriteID, flipHorizontal)`. Pure
-    /// computation — safe to call off the main actor.
+    /// 0..255 orientation, according to `values_32A4` / `values_32C4`
+    /// and the unit's `displayMode`. Returns `(spriteID, flipHorizontal)`.
+    /// Pure computation — safe to call off the main actor.
+    ///
+    /// Vehicles (DISPLAYMODE_UNIT / _ROCKET): 5 direction sprites with
+    /// E-side mirrored for W — `octantFrame` lookup.
+    ///
+    /// Infantry (DISPLAYMODE_INFANTRY_3_FRAMES / _4_FRAMES): 3
+    /// direction buckets (N, side, S) × N walk-cycle frames. Frame
+    /// within the bucket is selected by `spriteOffset`:
+    /// - 3-frame: `infantry3FramePhase[spriteOffset & 3]` → {0, 1, 0, 2}
+    /// - 4-frame: `spriteOffset & 3` → {0, 1, 2, 3}
+    ///
+    /// Port of `src/gui/viewport.c:504..523`.
     public nonisolated static func resolveFrame(
         info: Simulation.UnitInfo,
-        orientation: Int8
+        orientation: Int8,
+        spriteOffset: Int8 = 0
     ) -> (spriteID: Int, flipHorizontal: Bool) {
         let octant = Orientation.to8(orientation)
-        let frame = Orientation.octantFrame[Int(octant)]
         switch info.displayMode {
         case .unit, .rocket, .ornithopter:
-            // SLITHER (sandworm) skips the orientation offset.
             if info.movementType == .slither {
                 return (Int(info.groundSpriteID), false)
             }
+            let frame = Orientation.octantFrame[Int(octant)]
             return (Int(info.groundSpriteID) + Int(frame.offset), frame.flipHorizontal)
-        case .infantry3, .infantry4:
-            // 3/4-frame walk cycles stride by 3 or 4 per orientation bucket.
-            // MVP: always pick the "idle" frame at offset 0.
-            let stride = info.displayMode == .infantry3 ? 3 : 4
-            // `values_32C4` in OpenDUNE has only 3 distinct frames (0, 1, 2);
-            // re-use the octant frame as the bucket since both tables share
-            // the odd-octant mirroring pattern. See viewport.c:511.
-            let bucket = min(Int(frame.offset), 2)
-            return (Int(info.groundSpriteID) + bucket * stride, frame.flipHorizontal)
+        case .infantry3:
+            let bucket = Orientation.infantryBucket[Int(octant)]
+            let phase = Orientation.infantry3FramePhase[Int(UInt8(bitPattern: spriteOffset) & 3)]
+            let index = Int(info.groundSpriteID)
+                + Int(bucket.bucket) * 3
+                + Int(phase)
+            return (index, bucket.flipHorizontal)
+        case .infantry4:
+            let bucket = Orientation.infantryBucket[Int(octant)]
+            let phase = Int(UInt8(bitPattern: spriteOffset) & 3)
+            let index = Int(info.groundSpriteID)
+                + Int(bucket.bucket) * 4
+                + phase
+            return (index, bucket.flipHorizontal)
         case .singleFrame:
             return (Int(info.groundSpriteID), false)
         }

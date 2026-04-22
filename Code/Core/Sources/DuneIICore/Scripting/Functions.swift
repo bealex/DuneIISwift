@@ -290,7 +290,9 @@ extension Scripting {
 
         /// `Script_Unit_SetSpeed` — clamps peek(1) to 0..255, applies the
         /// `byScenario`-flag 192/256 down-scale (OpenDUNE `src/script/unit.c:388`),
-        /// and writes to `speed`. Returns the resulting speed.
+        /// and routes through `Units.setSpeed` so `speed`, `speedPerTick`,
+        /// `speedRemainder`, and `movingSpeed` are all set from the
+        /// same input. Returns the 0..255 percent speed.
         public static func makeSetSpeedUnit(host: Host) -> VM.Function {
             return { engine in
                 let raw = Scripting.peek(engine: &engine, position: 1)
@@ -299,21 +301,26 @@ extension Scripting {
                 if !slot.byScenario {
                     speed = (speed &* 192) / 256
                 }
-                let clamped = UInt8(truncatingIfNeeded: speed)
-                var updated = slot
-                updated.speed = clamped
-                host.units[poolIndex] = updated
-                return UInt16(clamped)
+                Simulation.Units.setSpeed(
+                    poolIndex: poolIndex,
+                    speedPercent: speed,
+                    units: &host.units
+                )
+                return speed
             }
         }
 
-        /// `Script_Unit_Stop` — sets speed to 0. Returns 0.
+        /// `Script_Unit_Stop` — sets speed to 0 through the same
+        /// setSpeed pipeline so `speedPerTick` / `speedRemainder` reset
+        /// cleanly.
         public static func makeStopUnit(host: Host) -> VM.Function {
             return { _ in
                 guard let (poolIndex, _) = currentUnit(host: host) else { return 0 }
-                var slot = host.units.slots[poolIndex]
-                slot.speed = 0
-                host.units[poolIndex] = slot
+                Simulation.Units.setSpeed(
+                    poolIndex: poolIndex,
+                    speedPercent: 0,
+                    units: &host.units
+                )
                 return 0
             }
         }
@@ -838,20 +845,21 @@ extension Scripting {
                     return 1
                 }
 
-                let desired = Int8(bitPattern: UInt8(updated.route[0] &* 32))
-                if updated.orientationCurrent != desired {
-                    updated.orientationCurrent = desired
-                    host.units[poolIndex] = updated
-                    return 1
-                }
-
                 // Port the SetSpeed slice of `Unit_StartMovement`
-                // (`src/unit.c:1088..1105`): look up the landscape at the
-                // tile we're about to enter, read `movementSpeed[type]`,
-                // reduce by 1/4 if HP<half for non-winger units, write to
-                // `slot.speed`. Without this, ground units stay at
-                // speed=0 and the scheduler's `max(4, speed/4)` clamp
-                // produces a 5-sec-per-tile crawl.
+                // (`src/unit.c:1088..1105`): look up the landscape at
+                // the tile we're about to enter, read
+                // `movementSpeed[type]`, reduce by 1/4 if HP<half for
+                // non-winger units, then route through
+                // `Units.setSpeed` so `speedPerTick` + `speedRemainder`
+                // are set correctly — the scheduler's subpixel tick
+                // reads them to drive `Tile_MoveByDirection`.
+                //
+                // Runs BEFORE the orientation-gated early return so a
+                // newly-filled route sets speed immediately. Previously
+                // this lived after the orientation check, but the UNIT.EMC
+                // MOVE handler hits the "already moving" wait once
+                // `currentDestination` populates, which blocks any second
+                // CalcRoute call — leaving `speed = 0` forever.
                 if let landscapeAt = host.landscapeAt,
                    let info = Simulation.UnitInfo.lookup(slot.type) {
                     let stepDir = Int(updated.route[0])
@@ -867,21 +875,38 @@ extension Scripting {
                         let mIndex = Int(info.movementType.rawValue)
                         if mIndex < land.movementSpeed.count {
                             var speed = UInt16(land.movementSpeed[mIndex])
-                            // HP<half slowdown — non-winger only
-                            // (src/unit.c:1103). hitpointsMax == info.hitpoints.
                             if info.movementType != .winger,
                                info.hitpoints != 0,
                                Int(updated.hitpoints) * 2 < Int(info.hitpoints) {
                                 speed &-= speed / 4
                             }
-                            // byScenario scaling mirrors `makeSetSpeedUnit`
-                            // (Functions.swift's SetSpeed path).
                             if !updated.byScenario {
                                 speed = (speed &* 192) / 256
                             }
-                            updated.speed = UInt8(truncatingIfNeeded: speed)
+                            // Write updated slot before setSpeed so it
+                            // sees the current HP / amount.
+                            host.units[poolIndex] = updated
+                            Simulation.Units.setSpeed(
+                                poolIndex: poolIndex,
+                                speedPercent: speed,
+                                units: &host.units
+                            )
+                            updated = host.units[poolIndex]
                         }
                     }
+                }
+
+                // Orientation gate: if the unit hasn't rotated to face
+                // the next step yet, set the target orientation and
+                // return without consuming the step. Speed was already
+                // written above so `tickMovement` can inch the unit
+                // while the turret rotates (matches OpenDUNE's
+                // `Unit_StartMovement` ordering).
+                let desired = Int8(bitPattern: UInt8(updated.route[0] &* 32))
+                if updated.orientationCurrent != desired {
+                    updated.orientationCurrent = desired
+                    host.units[poolIndex] = updated
+                    return 1
                 }
 
                 // Consume one step (memmove route[1..] down by one). The

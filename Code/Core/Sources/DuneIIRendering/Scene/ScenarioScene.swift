@@ -463,7 +463,11 @@ public final class ScenarioScene: SKScene {
             marker.colorBlendFactor = 0
             marker.position = screenPositionPos32(x: slot.positionX, y: slot.positionY)
             if let info = Simulation.UnitInfo.lookup(slot.type) {
-                let frame = UnitSpriteAtlas.resolveFrame(info: info, orientation: slot.orientationCurrent)
+                let frame = UnitSpriteAtlas.resolveFrame(
+                    info: info,
+                    orientation: slot.orientationCurrent,
+                    spriteOffset: slot.spriteOffset
+                )
                 let texture = unitAtlas?.texture(at: frame.spriteID, houseID: slot.houseID)
                     ?? fallbackMarkerTexture
                 marker.texture = texture

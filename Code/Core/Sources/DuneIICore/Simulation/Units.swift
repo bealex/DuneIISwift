@@ -47,12 +47,16 @@ extension Simulation {
             slot.positionX = UInt16(clamping: tileX * 256 + 128)
             slot.positionY = UInt16(clamping: tileY * 256 + 128)
             slot.seenByHouses = 0xFF
-            if info.movementType == .winger {
-                slot.speed = 255
-            }
             pool[idx] = slot
+            if info.movementType == .winger {
+                // Wingers cruise in at full throttle from spawn. The
+                // setSpeed pipeline computes speed/speedPerTick from
+                // the per-type movingSpeedFactor — matches OpenDUNE's
+                // `Unit_Create` path for air units.
+                setSpeed(poolIndex: idx, speedPercent: 255, units: &pool)
+            }
             Log.info(
-                "createUnit slot=\(idx) type=\(type) house=\(houseID) tile=(\(tileX),\(tileY)) hp=\(slot.hitpoints) speed=\(slot.speed)",
+                "createUnit slot=\(idx) type=\(type) house=\(houseID) tile=(\(tileX),\(tileY)) hp=\(slot.hitpoints) speed=\(pool[idx].speed) speedPerTick=\(pool[idx].speedPerTick)",
                 tracer: .label("unit-create")
             )
             return idx
@@ -102,11 +106,6 @@ extension Simulation {
                 bullet.currentDestinationX = targetPos.x
                 bullet.currentDestinationY = targetPos.y
                 bullet.fireDelay = UInt8(truncatingIfNeeded: info.fireDistance & 0xFF)
-                // OpenDUNE `Unit_Create` sets speed=255 for winger types; all
-                // bullets/missiles are MOVEMENT_WINGER. Required for the
-                // scheduler's route-follower to advance the bullet at a
-                // meaningful rate.
-                bullet.speed = 255
                 // Winger targets get doubled travel budget (AA-style
                 // lead-the-target behaviour, from OpenDUNE).
                 if encoded.kind == .unit,
@@ -116,6 +115,10 @@ extension Simulation {
                     bullet.fireDelay = UInt8(clamping: UInt16(bullet.fireDelay) &* 2)
                 }
                 host.units[bulletIdx] = bullet
+                // Route through setSpeed so speedPerTick is set for
+                // the subpixel mover. All bullets/missiles are
+                // MOVEMENT_WINGER.
+                setSpeed(poolIndex: bulletIdx, speedPercent: 255, units: &host.units)
                 return bulletIdx
 
             case 23, 24:
@@ -138,13 +141,83 @@ extension Simulation {
                 if type == 24 {
                     bullet.fireDelay = UInt8(truncatingIfNeeded: info.fireDistance & 0xFF)
                 }
-                bullet.speed = 255
                 host.units[bulletIdx] = bullet
+                setSpeed(poolIndex: bulletIdx, speedPercent: 255, units: &host.units)
                 return bulletIdx
 
             default:
                 return nil
             }
+        }
+
+        // MARK: Speed (Unit_SetSpeed port)
+
+        /// Port of OpenDUNE's `Unit_SetSpeed` (`src/unit.c:1902`).
+        /// Computes `speed` (tile-hop clamp), `speedPerTick` (subpixel
+        /// accumulator increment), and `movingSpeed` (the original
+        /// 0..255 percent) from the incoming `speedPercent` and the
+        /// unit's `movingSpeedFactor` table entry.
+        ///
+        /// Harvester rule: when amount > 0, speed scales by
+        /// `(255 - amount) / 256` — loaded harvesters crawl.
+        ///
+        /// Deliberate simplifications vs. OpenDUNE:
+        /// - Game-speed factor (`Tools_AdjustToGameSpeed`) is skipped;
+        ///   we run at a fixed "normal" cadence. Absolute speed values
+        ///   will land ~1.5× OpenDUNE's normal-speed values but the
+        ///   *relative* speed between units (via movingSpeedFactor)
+        ///   and the terrain slowdown remain faithful.
+        @discardableResult
+        public static func setSpeed(
+            poolIndex: Int,
+            speedPercent: UInt16,
+            units: inout UnitPool
+        ) -> Bool {
+            guard poolIndex >= 0, poolIndex < UnitPool.capacity else { return false }
+            var u = units[poolIndex]
+            guard u.isUsed, u.isAllocated else { return false }
+            guard let info = UnitInfo.lookup(u.type) else { return false }
+
+            var speed = speedPercent
+
+            // Harvester slowdown scales with carried amount.
+            if u.type == 16 /* HARVESTER */ {
+                speed = (UInt16(255) &- UInt16(u.amount)) &* speed / 256
+            }
+
+            // Reset accumulator state on every set.
+            u.speed = 0
+            u.speedRemainder = 0
+            u.speedPerTick = 0
+
+            if speed == 0 || speed >= 256 {
+                u.movingSpeed = 0
+                units[poolIndex] = u
+                return true
+            }
+
+            u.movingSpeed = UInt8(truncatingIfNeeded: speed & 0xFF)
+
+            // Apply the per-type factor (movingSpeedFactor 0..255).
+            speed = UInt16(info.movingSpeedFactor) &* speed / 256
+
+            // OpenDUNE splits `speed` into high-nibble × 16 (tile-hop
+            // clamp) + low-nibble << 4 (subpixel increment). When the
+            // high nibble is non-zero the unit is fast enough to move
+            // every tick, so `speedPerTick` is pinned to 255.
+            var speedPerTick = speed &<< 4
+            var clampSpeed = speed &>> 4
+
+            if clampSpeed != 0 {
+                speedPerTick = 255
+            } else {
+                clampSpeed = 1
+            }
+
+            u.speed = UInt8(truncatingIfNeeded: clampSpeed & 0xFF)
+            u.speedPerTick = UInt8(truncatingIfNeeded: speedPerTick & 0xFF)
+            units[poolIndex] = u
+            return true
         }
 
         // MARK: Harvest

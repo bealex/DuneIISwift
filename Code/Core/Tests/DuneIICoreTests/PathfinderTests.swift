@@ -148,10 +148,12 @@ struct PathfinderTests {
             engine = Scripting.Engine.reset()
             _ = vm.step(&engine)
             _ = vm.step(&engine)
-            if host.units[0].speed != 0 { break }
+            if host.units[0].movingSpeed != 0 { break }
         }
-        #expect(host.units[0].speed == 112,
-                "tracked unit on sand should have speed 112, got \(host.units[0].speed)")
+        // `movingSpeed` carries the 0..255 percent input; `speed` is
+        // the tile-hop clamp derived via `movingSpeedFactor`.
+        #expect(host.units[0].movingSpeed == 112,
+                "tracked unit on sand should have movingSpeed 112, got \(host.units[0].movingSpeed)")
     }
 
     @Test("CalculateRoute reduces speed by 1/4 when HP < max/2 for non-winger units")
@@ -192,10 +194,10 @@ struct PathfinderTests {
             engine = Scripting.Engine.reset()
             _ = vm.step(&engine)
             _ = vm.step(&engine)
-            if host.units[0].speed != 0 { break }
+            if host.units[0].movingSpeed != 0 { break }
         }
-        // 112 - 112/4 = 84
-        #expect(host.units[0].speed == 84)
+        // 112 - 112/4 = 84 after the HP<half slowdown.
+        #expect(host.units[0].movingSpeed == 84)
     }
 
     @Test("CalculateRoute leaves slot.speed untouched when host has no landscapeAt closure")
@@ -240,6 +242,7 @@ struct PathfinderTests {
             _ = vm.step(&engine)
         }
         #expect(host.units[0].speed == 77, "speed must not be clobbered when landscapeAt is nil")
+        #expect(host.units[0].movingSpeed == 0, "movingSpeed stays default when landscapeAt nil")
     }
 
     @Test("Scheduler route-follower advances along a filled route")
@@ -250,7 +253,10 @@ struct PathfinderTests {
         // Start at tile (10, 10): pos32 (10*256+128, 10*256+128) = (2688, 2688).
         u.positionX = 2688
         u.positionY = 2688
-        u.speed = 255
+        // Post-setSpeed port: shape `speed` + `speedPerTick` as if
+        // setSpeed(255) were called for a fast wheeled unit.
+        u.speed = 15
+        u.speedPerTick = 255
         u.route[0] = 2    // East step
         u.route[1] = 2    // East step
         u.route[2] = 0xFF

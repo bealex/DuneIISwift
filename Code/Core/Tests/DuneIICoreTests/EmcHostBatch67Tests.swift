@@ -102,7 +102,9 @@ struct EmcHostBatch67Tests {
         let vm = makeVM(words: ins(3, 500) + ins(14, 0), functions: functions)
         var engine = Scripting.Engine.reset()
         _ = vm.step(&engine); _ = vm.step(&engine)
-        #expect(host.units[0].speed == 255)
+        // setSpeed stores the 0..255 percent input in `movingSpeed`.
+        // `speed` is the tile-hop clamp derived from `movingSpeedFactor`.
+        #expect(host.units[0].movingSpeed == 255)
         #expect(engine.returnValue == 255)
     }
 
@@ -117,8 +119,9 @@ struct EmcHostBatch67Tests {
         let vm = makeVM(words: ins(3, 256) + ins(14, 0), functions: functions)
         var engine = Scripting.Engine.reset()
         _ = vm.step(&engine); _ = vm.step(&engine)
-        // min(256,255)=255; 255*192/256 = 191.
-        #expect(host.units[0].speed == 191)
+        // min(256,255)=255; 255*192/256 = 191. movingSpeed holds the
+        // percent input post-scale; `speed` is the tile-hop clamp.
+        #expect(host.units[0].movingSpeed == 191)
         #expect(engine.returnValue == 191)
     }
 

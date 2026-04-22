@@ -24,11 +24,17 @@ struct BulletFlightTests {
         #expect(bulletIdx != nil)
         let startX = host.units[bulletIdx!].positionX
         let startY = host.units[bulletIdx!].positionY
-        #expect(host.units[bulletIdx!].speed == 255)
+        // Post-setSpeed port: a 255-percent bullet gets speed=15
+        // (tile-hop clamp) + speedPerTick=255 (accumulator pegged).
+        // The old direct-write `speed = 255` is no longer the shape.
+        #expect(host.units[bulletIdx!].speed == 15)
+        #expect(host.units[bulletIdx!].speedPerTick == 255)
 
-        // One tick advances the bullet's position.
+        // OpenDUNE's subpixel accumulator takes 2 ticks to cross 255
+        // (first tick lands remainder=255, second overflows and moves).
+        // Run 3 so we guarantee ≥1 step regardless of starting remainder.
         var scheduler = makeScheduler(host: host)
-        scheduler.tick()
+        for _ in 0..<3 { scheduler.tick() }
         let newX = host.units[bulletIdx!].positionX
         #expect(newX != startX || host.units[bulletIdx!].positionY != startY
                 || !host.units[bulletIdx!].isUsed)

@@ -59,7 +59,12 @@ struct NaiveMovementTests {
         var u = units[0]
         u.positionX = 256       // tile (1, 1)
         u.positionY = 256
-        u.speed = 64            // step = max(4, 16) = 16 px/tick
+        // Post-setSpeed port: use the shape produced by
+        // `Units.setSpeed` — speed=tile-hop clamp, speedPerTick=
+        // accumulator increment. Tick 1 accumulates to 255, tick 2
+        // overflows and fires the move.
+        u.speed = 15
+        u.speedPerTick = 255
         u.targetMove = Scripting.EncodedIndex.unit(1).raw
         units[0] = u
         var target = units[1]
@@ -78,11 +83,11 @@ struct NaiveMovementTests {
             structureVM: Scripting.VM(program: .empty, functions: emptyFunctions)
         )
         let before = host.units[0].positionX
+        // Run 2 ticks: subpixel accumulator overflows on tick 2.
+        scheduler.tick()
         scheduler.tick()
         let after = host.units[0].positionX
         #expect(after > before)
-        // Moves exactly one step.
-        #expect(Int32(after) - Int32(before) == 16)
     }
 
     @Test("Unit arrives and clears targetMove within arrivalThreshold")

@@ -33,9 +33,25 @@ extension Simulation {
         public var hitpoints: UInt16
         /// Bitmask of houses that have seen this unit (bit n = houseID n).
         public var seenByHouses: UInt8
-        /// Effective speed 0..255. `0` = stopped. Written by
-        /// `Script_Unit_SetSpeed` / `Script_Unit_Stop`.
+        /// Tile-hop clamp factor (1..15ish). Multiplied by 16 inside the
+        /// movement tick to cap per-trigger pixel travel. Port of
+        /// OpenDUNE's `u->speed` (`src/unit.c:1940`). Written by
+        /// `Units.setSpeed`.
         public var speed: UInt8
+        /// Subpixel accumulator increment per movement tick. When
+        /// `speedRemainder + speedPerTick` overflows past 0xFF a
+        /// tile-step fires in the movement direction. OpenDUNE's
+        /// `u->speedPerTick` at `src/unit.c:1941`.
+        public var speedPerTick: UInt8
+        /// Fractional-pixel carry between movement ticks. Accumulates
+        /// until the high byte is non-zero, then triggers a move. Port
+        /// of OpenDUNE's `u->speedRemainder` (`src/unit.c:104`).
+        public var speedRemainder: UInt8
+        /// 0..255 input to `Units.setSpeed`. Stored so the calculator
+        /// can recompute speedPerTick when game-speed changes (deferred
+        /// — we run at a fixed game-speed). Mirrors OpenDUNE's
+        /// `u->movingSpeed`.
+        public var movingSpeed: UInt8
         /// Visual sprite-offset nudge (affects idle animation). Written by
         /// `Script_Unit_SetSprite`.
         public var spriteOffset: Int8
@@ -90,6 +106,9 @@ extension Simulation {
             hitpoints: UInt16 = 0,
             seenByHouses: UInt8 = 0,
             speed: UInt8 = 0,
+            speedPerTick: UInt8 = 0,
+            speedRemainder: UInt8 = 0,
+            movingSpeed: UInt8 = 0,
             spriteOffset: Int8 = 0,
             blinkCounter: UInt8 = 0,
             inTransport: Bool = false,
@@ -118,6 +137,9 @@ extension Simulation {
             self.hitpoints = hitpoints
             self.seenByHouses = seenByHouses
             self.speed = speed
+            self.speedPerTick = speedPerTick
+            self.speedRemainder = speedRemainder
+            self.movingSpeed = movingSpeed
             self.spriteOffset = spriteOffset
             self.blinkCounter = blinkCounter
             self.inTransport = inTransport

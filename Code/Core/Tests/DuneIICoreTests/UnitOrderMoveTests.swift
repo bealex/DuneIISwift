@@ -124,7 +124,8 @@ struct UnitOrderMoveTests {
         var u = units[0]
         u.positionX = 10 * 256 + 128  // tile (10, 10) centre
         u.positionY = 10 * 256 + 128
-        u.speed = 128                 // step = max(4, 32) = 32 px/tick
+        u.speed = 15                  // post-setSpeed port: tile-hop
+        u.speedPerTick = 255          // accumulator pegged for fast move
         units[0] = u
 
         _ = Simulation.Units.orderMove(poolIndex: 0, tileX: 20, tileY: 10, units: &units)
@@ -140,6 +141,8 @@ struct UnitOrderMoveTests {
             structureVM: Scripting.VM(program: .empty, functions: emptyFunctions)
         )
         let xBefore = host.units[0].positionX
+        // Subpixel accumulator overflows on tick 2.
+        scheduler.tick()
         scheduler.tick()
         #expect(host.units[0].positionX > xBefore)
     }

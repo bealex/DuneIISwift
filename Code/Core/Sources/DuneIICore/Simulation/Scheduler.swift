@@ -212,6 +212,8 @@ extension Simulation {
             // reads `fireDelay == 0` as its gate; decrementing before
             // the EMC dispatch matches OpenDUNE's `Unit_Tick` order.
             tickFireCooldowns()
+            // Infantry walk-cycle animation advance.
+            tickSpriteOffsets()
             // Explosion frame decrement — simple lifetime tick for the
             // presentation layer. Matches OpenDUNE's `Explosion_Tick`
             // reducing each active slot's `timeOut`, but simplified to
@@ -440,6 +442,40 @@ extension Simulation {
             }
         }
 
+        /// Advances the infantry walk-cycle animation frame by bumping
+        /// `spriteOffset` once every 5 scheduler ticks. Mirrors
+        /// OpenDUNE's `src/unit.c:243..244`:
+        /// `u->spriteOffset = (u->spriteOffset & 0x3F) + 1;` — a
+        /// six-bit counter that's sampled with `& 3` by the infantry
+        /// resolver to produce a 4-phase cycle. Only infantry (3/4-frame
+        /// display modes) are animated; vehicles leave the byte alone.
+        /// Gated by `spriteAnimationStride` so the walk cycle plays at
+        /// a reasonable visual pace.
+        public static let spriteAnimationStride = 5
+        private mutating func tickSpriteOffsets() {
+            guard spriteAnimationCounter % Self.spriteAnimationStride == 0 else {
+                spriteAnimationCounter &+= 1
+                return
+            }
+            spriteAnimationCounter &+= 1
+            for idx in host.units.findArray {
+                var slot = host.units.slots[idx]
+                guard let info = Simulation.UnitInfo.lookup(slot.type) else { continue }
+                switch info.displayMode {
+                case .infantry3, .infantry4:
+                    // Only animate while actually moving (speed != 0);
+                    // standing infantry hold a pose.
+                    guard slot.speed != 0 else { continue }
+                    let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
+                    slot.spriteOffset = Int8(bitPattern: bumped)
+                    host.units[idx] = slot
+                default:
+                    continue
+                }
+            }
+        }
+        private var spriteAnimationCounter: Int = 0
+
         /// Decrements every allocated unit's `fireDelay` by 1 if non-zero.
         /// Mirrors OpenDUNE `Unit_Tick`'s `if (u->fireDelay != 0) u->fireDelay--`.
         private mutating func tickFireCooldowns() {
@@ -565,11 +601,19 @@ extension Simulation {
                     continue
                 }
 
-                let dx = Int32(goal.x) - Int32(slot.positionX)
-                let dy = Int32(goal.y) - Int32(slot.positionY)
-                let manhattan = abs(dx) + abs(dy)
+                // `Tile_GetDistance` semantics (`max(|dx|,|dy|) + min/2`).
+                // Used both for the arrival threshold and the
+                // per-trigger distance cap — matches OpenDUNE's
+                // `Unit_MovementTick` distance arg. We also keep this
+                // value to detect overshoot: a post-move distance
+                // GREATER than the pre-move distance means we've
+                // stepped past the goal (per `unit.c:1419`'s
+                // `distanceToDestination < distance` test).
+                let here = Pos32(x: slot.positionX, y: slot.positionY)
+                let distBefore = Int32(Pos32.distance(here, goal))
+                let distToGoal = distBefore
 
-                if manhattan <= arrivalThreshold {
+                if distToGoal <= arrivalThreshold {
                     slot.positionX = goal.x
                     slot.positionY = goal.y
                     // Bullet / missile arrival → detonate and free.
@@ -625,45 +669,74 @@ extension Simulation {
                     continue
                 }
 
-                let step = max(Int32(4), Int32(slot.speed) / 4)
-                let longest = max(abs(dx), abs(dy))
-                let stepX = dx * step / longest
-                let stepY = dy * step / longest
-                let priorX = slot.positionX
-                let priorY = slot.positionY
+                // Orientation first: the subpixel step uses
+                // `orientation[0].current` to pick the `_stepX/_stepY`
+                // direction, so it must be set before we move. Route
+                // steps lock to `route[0] * 32` (octant midpoint);
+                // targetMove fallback computes the continuous heading.
                 let priorOrient = slot.orientationCurrent
-                slot.positionX = UInt16(clamping: Int32(slot.positionX) + stepX)
-                slot.positionY = UInt16(clamping: Int32(slot.positionY) + stepY)
-                // Orientation:
-                //   - Route-driven step: lock to `route[0] * 32`. `route[0]`
-                //     encodes an 8-way compass direction (0=N, 2=E, 4=S,
-                //     6=W) and `* 32` lands squarely on the octant midpoint
-                //     used by the sprite-atlas `to8` mapping. Recomputing
-                //     from the continuous pos32 delta every tick made the
-                //     byte oscillate around octant boundaries (N↔NW at
-                //     byte ≈ 240), producing a visible sprite "blink" when
-                //     the unit was a few pixels off the tile centerline.
-                //     OpenDUNE's `Script_Unit_CalculateRoute` aligns
-                //     orientation to `route[0] * 32` too — see
-                //     `Functions.swift:816` for our port of that line.
-                //   - targetMove fallback (no route): continuous direction
-                //     from pos32 delta. This branch is rare (first tick
-                //     after `orderMove` before `CalculateRoute` runs, and
-                //     carryall `SetDestinationDirect`) so sub-tile drift
-                //     is less of a problem.
                 if goalSource == "route", slot.route[0] != 0xFF {
                     slot.orientationCurrent = Int8(bitPattern: slot.route[0] &* 32)
                 } else {
                     let from = Pos32(x: slot.positionX, y: slot.positionY)
                     slot.orientationCurrent = Int8(bitPattern: Pos32.direction(from: from, to: goal))
                 }
-                // Per-tick trace for moving units. `move` tracer; gated at
-                // .verbose since 12Hz × Nunits can get chatty. Trigger
-                // `DUNEII_LOG_VERBOSE=1` to widen the filter.
-                Log.verbose(
-                    "move-tick u\(idx) (t=\(slot.type) a=\(slot.actionID)) pos=(\(priorX),\(priorY))→(\(slot.positionX),\(slot.positionY)) step=(\(stepX),\(stepY)) o=\(priorOrient)→\(slot.orientationCurrent) goal=(\(goal.x),\(goal.y)) via=\(goalSource) dist=\(manhattan)",
-                    tracer: .label("move")
-                )
+
+                // Subpixel movement — port of OpenDUNE's
+                // `Unit_MovementTick` (`src/unit.c:98`). speed is the
+                // per-trigger pixel clamp (`speed * 16`, capped by
+                // distance-to-destination + 16); speedPerTick is the
+                // per-tick accumulator increment; speedRemainder is the
+                // fractional-pixel carry. When the accumulator
+                // overflows past 255, a step fires via
+                // `Pos32.moved(...)` along the orientation vector.
+                let priorX = slot.positionX
+                let priorY = slot.positionY
+                var didStep = false
+                if slot.speed != 0, slot.speedPerTick != 0 {
+                    let remainder = UInt16(slot.speedRemainder) &+ UInt16(slot.speedPerTick)
+                    slot.speedRemainder = UInt8(truncatingIfNeeded: remainder & 0xFF)
+                    if (remainder & 0xFF00) != 0 {
+                        // `distance` in pos32 pixels: min(speed*16, dist+16).
+                        let capBySpeed = UInt32(slot.speed) * 16
+                        let capByGoal = UInt32(distToGoal) + 16
+                        let distance = UInt32(min(capBySpeed, capByGoal))
+                        let orient = UInt8(bitPattern: slot.orientationCurrent)
+                        let from = Pos32(x: slot.positionX, y: slot.positionY)
+                        let next = Pos32.moved(
+                            from, orientation: orient, distance: distance
+                        )
+                        slot.positionX = next.x
+                        slot.positionY = next.y
+                        didStep = true
+                    }
+                }
+
+                if didStep {
+                    // Overshoot detection: if the post-move distance
+                    // to goal is >= pre-move distance, we stepped past
+                    // (or at least not closer) and should snap.
+                    let after = Pos32(x: slot.positionX, y: slot.positionY)
+                    let distAfter = Int32(Pos32.distance(after, goal))
+                    if distAfter >= distBefore || distAfter <= arrivalThreshold {
+                        slot.positionX = goal.x
+                        slot.positionY = goal.y
+                        Log.debug(
+                            "move-snap u\(idx) overshoot or in-threshold — pos→(\(goal.x),\(goal.y)) distB=\(distBefore) distA=\(distAfter)",
+                            tracer: .label("move")
+                        )
+                        // Re-enter the arrival branch next tick by
+                        // leaving the loop; the distToGoal<=threshold
+                        // check at the top of the next iteration will
+                        // trigger the normal arrival logic.
+                        host.units[idx] = slot
+                        continue
+                    }
+                    Log.verbose(
+                        "move-tick u\(idx) (t=\(slot.type) a=\(slot.actionID)) pos=(\(priorX),\(priorY))→(\(slot.positionX),\(slot.positionY)) o=\(priorOrient)→\(slot.orientationCurrent) goal=(\(goal.x),\(goal.y)) via=\(goalSource) speedPT=\(slot.speedPerTick) rem=\(slot.speedRemainder) dist=\(distBefore)→\(distAfter)",
+                        tracer: .label("move")
+                    )
+                }
                 host.units[idx] = slot
             }
         }
