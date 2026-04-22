@@ -28,6 +28,33 @@ extension Formats {
 
         public let colors: [Color]
 
+        /// OpenDUNE's `GUI_PaletteAnimate` (src/gui/gui.c:697) slowly
+        /// shifts palette index 223 (0xDF) between the RGB values of
+        /// indices 12 and 10 every 5 ticks — this is the "windtrap
+        /// vanes" animation colour. Without that live shift running,
+        /// index 223 stays at its raw IBM.PAL value which is a harsh
+        /// magenta, and every windtrap tile (whose sub-palette
+        /// includes 0xDF) renders with hot-pink vanes.
+        ///
+        /// This helper produces a new Palette that statically
+        /// replaces index 223 with index `target`'s colour so
+        /// structures render in a legible hue. Animating between two
+        /// targets is a follow-up — matches OpenDUNE's visual with
+        /// extra plumbing, but static replacement avoids the pink
+        /// without a per-tick rebake of every cached ICN tile.
+        public func overridingIndex(_ index: Int, with target: Int) -> Palette {
+            guard index >= 0, index < colors.count,
+                  target >= 0, target < colors.count else { return self }
+            var copy = colors
+            copy[index] = colors[target]
+            return Palette(copy)
+        }
+
+        public init(_ colors: [Color]) {
+            precondition(colors.count == Self.entryCount, "palette must be 256 entries")
+            self.colors = colors
+        }
+
         public init(data: Data) throws {
             let expected = Self.entryCount * 3
             guard data.count == expected else { throw DecodeError.wrongSize(data.count) }

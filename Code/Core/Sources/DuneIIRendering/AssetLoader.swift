@@ -25,10 +25,17 @@ public final class AssetLoader {
         guard let palBody = installation.body(of: "IBM.PAL") else {
             throw LoadError.missingPalette
         }
-        guard let paletteObj = try? Formats.Palette(data: palBody) else {
+        guard let rawPalette = try? Formats.Palette(data: palBody) else {
             throw LoadError.decodeFailed(name: "IBM.PAL", cause: "palette decoder threw")
         }
-        self.palette = paletteObj
+        // OpenDUNE's `GUI_PaletteAnimate` shifts palette index 223
+        // between colours 12 and 10 every 5 ticks for the "windtrap
+        // vanes" effect. We don't run that animation yet (would need
+        // to invalidate every cached ICN / SHP tile on each shift);
+        // instead, statically resolve index 223 to colour 12 at load
+        // time so structures render in a legible hue rather than hot
+        // pink. See `Formats.Palette.overridingIndex(_:with:)`.
+        self.palette = rawPalette.overridingIndex(223, with: 12)
 
         guard let mapBody = installation.body(of: "ICON.MAP") else {
             throw LoadError.missingIconMap
