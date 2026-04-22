@@ -11,7 +11,7 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**None — mission-1 is fully playable end-to-end with a live minimap as of 2026-04-22. Pick from "Next up".**
+**Carryall pickup loop — slice 8a shipped, 8b (spawn carryall + link harvester) is next.** Design doc: `Algorithms/CarryallPickup.md` with full 8a/8b/8c breakdown. Immediate next step for a cold session: port OpenDUNE's `Unit_CallUnitByType` (`src/unit.c:2131`) as `Simulation.Units.callCarryall(forHarvester:destination:units:)` — spawn a CARRYALL in the pool's 0..5 range, set `inTransport=true`, `linkedID=harvester.index`, `targetMove=EncodedIndex.structure(refineryIdx).raw`, origin at a map-edge tile. Then wire it into `tickHarvesting`'s "all refineries busy" branch.
 
 What works now:
 - CYARD pre-selected at scene load; build panel shows buildables.
@@ -30,7 +30,7 @@ Latest session (2026-04-22) shipped tasks 1-9 + the minimap; all details in toda
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → implement → tests → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **Carryall pickup loop** (spice income slice 8). When a refinery chain is already busy + another harvester fills, a carryall ferries it to the next free refinery.
+1. **Carryall pickup loop 8b + 8c** — spawn a carryall on busy-refinery events; flight + drop-off + re-dock. Design: `Algorithms/CarryallPickup.md`. 8a already shipped.
 2. **Scene repaint on `SpiceMap.apply`** (slice 9). Cosmetic; lets the player see spice thick→thin→bare drain in real time.
 3. **STARPORT case** — port `Structure_GetBuildable` `-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
 4. **Mentat briefing screen** — scenario intro text, voice cue. Intro WSA + jukebox already shipped.

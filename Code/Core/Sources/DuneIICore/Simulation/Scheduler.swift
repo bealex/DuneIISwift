@@ -182,6 +182,40 @@ extension Simulation {
             return bestIdx
         }
 
+        /// Slice 8a helper. Nearest same-house REFINERY whose chain
+        /// is empty (`linkedID == 0xFF` — no harvester currently
+        /// docked). Callers (tickHarvesting) prefer this over
+        /// `findNearestRefinery` for full harvesters so two harvesters
+        /// don't pile up at the same refinery while another sits idle.
+        /// Returns nil when every refinery already has a docked
+        /// harvester (or the house owns none); callers fall back to
+        /// `findNearestRefinery` in that case.
+        static func findFreeRefinery(
+            forHarvester harvester: UnitSlot,
+            structures: StructurePool
+        ) -> Int? {
+            let hx = Int(harvester.positionX) / 256
+            let hy = Int(harvester.positionY) / 256
+            var bestIdx: Int?
+            var bestDist = Int.max
+            for idx in structures.findArray {
+                let s = structures.slots[idx]
+                guard s.type == 12 /* REFINERY */ else { continue }
+                guard s.houseID == harvester.houseID else { continue }
+                guard s.linkedID == 0xFF else { continue }
+                let sx = Int(s.positionX) / 256
+                let sy = Int(s.positionY) / 256
+                let dx = sx - hx
+                let dy = sy - hy
+                let d = dx * dx + dy * dy
+                if d < bestDist {
+                    bestDist = d
+                    bestIdx = idx
+                }
+            }
+            return bestIdx
+        }
+
         /// Slice 6b helper. Returns the refinery pool index whose 3×2
         /// footprint covers `tile` and belongs to `houseID`, else nil.
         static func refineryAt(
@@ -311,9 +345,20 @@ extension Simulation {
                 if slot.actionID == Simulation.ActionID.harvest,
                    slot.amount >= 100, !slot.inTransport
                 {
-                    if let refIdx = Self.findNearestRefinery(
+                    // Slice 8a: prefer a free refinery (no harvester
+                    // docked) over the absolute nearest so two
+                    // harvesters parallelise across refineries
+                    // instead of queueing at the closer one. Falls
+                    // back to `findNearestRefinery` when every refinery
+                    // is already busy — the carryall slice (8b) will
+                    // intercept that case later.
+                    let freeIdx = Self.findFreeRefinery(
                         forHarvester: slot, structures: host.structures
-                    ) {
+                    )
+                    let refIdx = freeIdx ?? Self.findNearestRefinery(
+                        forHarvester: slot, structures: host.structures
+                    )
+                    if let refIdx {
                         let r = host.structures.slots[refIdx]
                         let rx = Int(r.positionX) / 256
                         let ry = Int(r.positionY) / 256
@@ -323,8 +368,9 @@ extension Simulation {
                         var u = host.units[idx]
                         u.actionID = Simulation.ActionID.returnAction
                         host.units[idx] = u
+                        let kind = freeIdx != nil ? "free" : "busy-fallback"
                         Log.info(
-                            "harvest-cycle full harvester=\(idx) → refinery=\(refIdx) tile=(\(rx),\(ry))",
+                            "harvest-cycle full harvester=\(idx) → refinery=\(refIdx) (\(kind)) tile=(\(rx),\(ry))",
                             tracer: .label("harvest-tick")
                         )
                     }

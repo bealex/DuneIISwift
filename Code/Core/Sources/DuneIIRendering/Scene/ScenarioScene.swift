@@ -543,6 +543,10 @@ public final class ScenarioScene: SKScene {
         node.zPosition = 21
         addChild(node)
         minimapNode = node
+        Log.info(
+            "minimap node mounted size=\(Minimap.size)×\(Minimap.size) at=(\(Int(node.position.x)),\(Int(node.position.y)))",
+            tracer: .label("scene-minimap")
+        )
     }
 
     private func addGroundTiles(world: ScenarioWorld) {
