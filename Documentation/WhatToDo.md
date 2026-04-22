@@ -29,7 +29,7 @@ See also:
 | # | Area | What | Size | Why |
 |---|------|------|------|-----|
 | 5 | **Spice/harvester income** | Harvester → refinery → credits-in. Other side of economy | L | Currently no way to earn credits |
-| 6 | **Unit selection + orders** | Click unit, right-click to move/attack; selection rectangle for groups | L | Built units currently just sit there |
+| 6 | **Unit selection + orders** | Slice 1 (single-select + right-click-move) **DONE** 2026-04-21. Remaining: drag-rectangle group select, shift-additive, right-click-attack on enemy, right-click-harvest on spice | M | Most of the input-layer gap is closed; attack/harvest orders are the next cut |
 | 7 | **Victory / loss conditions** | Scenario win on quota or enemy wipe; loss on base destruction | M | Scenarios never end |
 | 8 | **Sim-to-visual sync for HP/death** | Render hooks so damaged units show HP bars, dying units despawn cleanly | M | Noted in `CurrentState.md` Next up |
 | 9 | **`buildCostRemainder` fractional smoothing** | Port OpenDUNE's per-tick accumulator for exact credit math | XS | Off-by-1-credit at completion now |

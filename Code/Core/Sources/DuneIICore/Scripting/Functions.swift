@@ -671,14 +671,60 @@ extension Scripting {
                     return 0
                 }
 
-                // Advance the Tools_Random stream deterministically to match
-                // OpenDUNE's "ensure the order of Tools_Random_256 calls"
-                // comment — the result is ignored; only the side-effect on
-                // the stream matters.
-                _ = source.tools.next()
+                // OpenDUNE: `i = (Tools_Random_256() & 1) == 0 ? 1 : 0;`
+                // then `Unit_SetOrientation(u, Tools_Random_256(), false, i)`.
+                // `i == 0` writes the body orientation; `i == 1` writes
+                // the turret. For units without a turret (foot /
+                // non-turret wheeled), `i == 1` is a no-op, so body
+                // orientation only changes ~50% of the calls. Our port
+                // had dropped that distinction and rotated the body
+                // every call, which made trikes / soldiers visibly
+                // "blink" (sprite-flip toggles across octant boundaries)
+                // while guarding.
+                let turretByte = source.tools.next()
+                let i: UInt8 = (turretByte & 1) == 0 ? 1 : 0
                 let newOrientation = Int8(bitPattern: source.tools.next())
-                updated.orientationCurrent = newOrientation
+                if i == 0 {
+                    updated.orientationCurrent = newOrientation
+                } else if info.hasTurret {
+                    // `i == 1` targets the turret. We don't yet model a
+                    // separate turret orientation on the slot (the
+                    // save-format turret field is parsed but ignored
+                    // during simulation), so treat as a no-op for now
+                    // — matches OpenDUNE for units where the turret
+                    // rotation has no visual consequence.
+                    _ = newOrientation
+                }
                 host.units[poolIndex] = updated
+                return 0
+            }
+        }
+
+        /// `Script_Unit_SetActionDefault` (slot 0x0A). Port of
+        /// `src/script/unit.c:896` — reads `actionsPlayer[3]` off the
+        /// unit's `UnitInfo` and writes it to the slot. `actionsPlayer[3]`
+        /// is the fall-through action after a player-commanded move
+        /// finishes (typically `guard_` for ground combat units).
+        ///
+        /// We collapse OpenDUNE's `Unit_SetAction` switchType=0 tail
+        /// into a direct field write + `currentDestination` clear. The
+        /// scheduler's per-slot `loadedUnitAction` delta-check reloads
+        /// the engine at the new action on the next tick; OpenDUNE's
+        /// explicit `Script_Reset` + `Script_Load` call falls out of
+        /// that mechanism.
+        public static func makeSetActionDefaultUnit(host: Host) -> VM.Function {
+            return { _ in
+                guard let (poolIndex, slot) = currentUnit(host: host) else { return 0 }
+                guard let info = Simulation.UnitInfo.lookup(slot.type) else { return 0 }
+                var updated = slot
+                updated.actionID = info.actionsPlayer[3]
+                updated.currentDestinationX = 0
+                updated.currentDestinationY = 0
+                host.units[poolIndex] = updated
+                Log.debug(
+                    "SetActionDefault unit \(poolIndex) type=\(slot.type) → action \(info.actionsPlayer[3])",
+                    tracer: .label("action")
+                )
                 return 0
             }
         }
@@ -732,6 +778,10 @@ extension Scripting {
                     updated.route[0] = 0xFF
                     updated.targetMove = 0
                     host.units[poolIndex] = updated
+                    Log.debug(
+                        "CalculateRoute u\(poolIndex) src==dst tile=(\(src & 0x3F),\((src >> 6) & 0x3F)) — clearing targetMove",
+                        tracer: .label("route")
+                    )
                     return 0
                 }
 
@@ -754,12 +804,28 @@ extension Scripting {
                     }
                     if updated.route[0] == 0xFF {
                         updated.targetMove = 0
+                        Log.info(
+                            "CalculateRoute u\(poolIndex) NO ROUTE from tile=(\(src & 0x3F),\((src >> 6) & 0x3F)) to tile=(\(dst & 0x3F),\((dst >> 6) & 0x3F)) — clearing targetMove",
+                            tracer: .label("route")
+                        )
+                    } else {
+                        let steps = updated.route.prefix(Int(copyCount)).map(String.init).joined(separator: ",")
+                        Log.info(
+                            "CalculateRoute u\(poolIndex) filled route len=\(copyCount) from tile=(\(src & 0x3F),\((src >> 6) & 0x3F)) to tile=(\(dst & 0x3F),\((dst >> 6) & 0x3F)) steps=[\(steps)]",
+                            tracer: .label("route")
+                        )
                     }
                 } else {
                     // `route[0] != 0xFF` — we already have a partial route.
                     // OpenDUNE truncates when we're close enough; match that.
                     let distance = Simulation.Pathfinder.packedDistance(from: src, to: dst)
-                    if distance < 14 { updated.route[Int(distance)] = 0xFF }
+                    if distance < 14 {
+                        updated.route[Int(distance)] = 0xFF
+                        Log.debug(
+                            "CalculateRoute u\(poolIndex) truncating partial route at distance=\(distance)",
+                            tracer: .label("route")
+                        )
+                    }
                 }
 
                 if updated.route[0] == 0xFF {

@@ -11,11 +11,42 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**P5 — slice 6d: HUD credits label.** Slice 6c landed: drain + refund symmetric between CY and factories. The economy is now complete for the build panel — every BUSY yard deducts credits per tick; every cancel refunds proportional to progress; pause-on-insufficient-credits works for both yard kinds.
+**None — movement-bug triage done. Pick from "Next up" below.**
 
-Slice 6d plan: `ScenarioScene` adds a `Credits: N` label above the sidebar, refreshed per tick (12 Hz) from `host.houses[playerHouseID].credits`. Small visual change; mostly wiring. No sim changes.
+User reported (2026-04-21) odd unit movement after the unit-selection slice landed: units "blinked" on arrival and sometimes "moved in the wrong direction." Root cause turned out to be three separate bugs, two of which predated the unit-selection slice but only became visible once player-ordered MOVE actions were possible:
 
-Slice 6d also unlocks genuine gameplay: a player who runs out of money sees construction stop, cancels to recover credits, queues up a cheaper build. Without the visible number it's invisible.
+1. **Scheduler loaded the wrong script entry point.** `unitVM.load(typeID: actionID)` landed the PC at another unit type's prologue (ornithopter for action=MOVE). Fixed to load by `slot.type` + set `variables[0] = actionID` separately. Insight: `scripting-unit-entry-point-by-type-not-action.md`.
+2. **`Script_Unit_SetActionDefault` (slot 0x0A) was unported.** The MOVE script couldn't fall through to GUARD on arrival. Ported (reads `actionsPlayer[3]`, writes `actionID`, clears `currentDestination`).
+3. **`IdleAction` over-rotated body**. OpenDUNE's 50/50 body-vs-turret split was collapsed to always-body. Fixed — non-turret units keep body stationary when the coin says "turret."
+
+Visual verification still pending. User should `swift run duneii` against mission-1 Atreides and confirm:
+
+- Clicking a ground unit + right-clicking a sand tile → unit walks without erratic orientation changes.
+- On arrival, unit stops cleanly and doesn't sprite-flip repeatedly.
+- Multiple move orders in succession work.
+
+Unit selection + move orders (slice 1) shipped earlier on 2026-04-21. Left-click selects, right-click moves, green halo tracks the selected unit. Deferred: drag-select, shift-additive, attack orders on enemy-click, harvest orders on spice-click, rally-point click on factories.
+
+**Visual verification pending** (the sandbox can't drive SpriteKit). `swift run duneii`, mission-1 Atreides:
+
+1. Launch — scene lands straight on the map (intro first if `INTRO.WSA` present).
+2. Click any Atreides unit on the map → green halo appears around it.
+3. Click a different Atreides unit → halo jumps to the new selection.
+4. Click empty sand → halo disappears.
+5. With one Atreides unit selected, right-click a sand tile ~10 tiles away → log `unit-order-move unit=N tile=(X,Y) ok=true`; unit begins walking.
+6. Right-click an unreachable rock tile → pathfinder handles it (unit attempts; halts at nearest reachable).
+7. Click an enemy unit → no halo (not selectable in this slice).
+8. Build panel still works: click WINDTRAP row → BUSY with progress bar → READY → click READY, click adjacent rock tile, structure appears.
+9. Yard-select still works: click a different player-owned yard on the map → sidebar switches to that yard's buildable list.
+
+If any step fails, it's a regression in the associated slice.
+
+Candidates for the next slice:
+
+- **Right-click-attack on enemy units.** Natural extension; sim side has `actionID = attack` + targetAttack already.
+- **HUD credits label (P5 slice 6d).** Small visual; `Credits: N` above sidebar, refreshed per tick.
+- **Rally-point click on factories.** Lets player place where freshly-built units exit.
+- **Harvester/spice income (P4→P5 bridge).** Biggest remaining gameplay hole — economy is one-way right now.
 
 **Visual verification pending** — `swift run duneii` against mission 1 Atreides:
 
@@ -63,7 +94,8 @@ After visual verification, next productive directions:
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → failing test → implement → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **P5 slice 6d — HUD credits label.** "Credits: N" on `ScenarioScene`, refreshed per tick. Needs a default-credits value for mission-1 scenarios that don't specify.
+1. **Right-click-attack on enemy units.** Extends the command controller — on right-click over an enemy unit tile, set `targetAttack` + `actionID = attack` on the selected unit(s). Sim side (`TargetAcquisition`, `Fire`, `bullet flight`) already works; just needs the order bridge.
+2. **P5 slice 6d — HUD credits label.** "Credits: N" on `ScenarioScene`, refreshed per tick. Needs a default-credits value for mission-1 scenarios that don't specify.
 2. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state.
 3. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal.
 3. **P5 — real HUD** — resource counters, unit info, minimap. Cosmetic but high impact.
@@ -81,6 +113,9 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-21 — Movement bug triage: fix scheduler entry-point, port SetActionDefault, fix IdleAction turret-skip.** Three pre-existing bugs surfaced by player-ordered MOVE actions. Scheduler now loads `unitVM` at `entryPoints[slot.type]` and sets `variables[0] = actionID` separately (OpenDUNE's split: `src/unit.c:520`). `Script_Unit_SetActionDefault` (slot 0x0A) ported so MOVE→GUARD transition works on arrival. `IdleAction` split restored: 50% body, 50% turret — non-turret units stop excess rotation. 3 new tests + 1 rewrite. 652 green / 65 suites / zero warnings on clean build. Insight: `scripting-unit-entry-point-by-type-not-action.md`.
+- **2026-04-21 — Unit selection + move orders (slice 1).** `Simulation.Units.orderMove` (4-field pure-sim write). `DuneIIRendering.UnitCommandController` (pure state machine, parallel to `BuildPanelController`). `ScenarioScene` wiring: left-click routes to command controller first (consumes on `.selectUnit`, falls through on `.deselect` / `.none`); new `rightMouseDown` for move orders; green halo `SKShapeNode` parented to selected unit's marker; per-tick `validateSelectionHalo` clears stale selections. 18 new tests (7 orderMove + 11 controller). 649 green / 65 suites / zero warnings. Design: `Algorithms/UnitSelectionAndOrders.md`. Insight: `simulation-action-id-drives-script-reload.md`.
+- **2026-04-21 — Boot flow: dropped mentat screens + fixed map-click scene-cycle bug.** Two UI-layer fixes in response to user report. `ScenarioScene.mouseDown`'s `.none` fallback replaced with `break` so unclassified map clicks don't route to mainMenu. `GameController` boots Intro → Scenario directly, skipping `MainMenuScene` + `MentatScene`; jukebox kickoff moved to scenario entry. Wrote design doc `Algorithms/UnitSelectionAndOrders.md` for the next slice. No sim changes; 631 green / 63 suites / zero warnings.
 - **2026-04-21 — P5 slice 6c: factory credit drain + refund.** `UnitInfo.buildCredits` added (27 rows; 17 non-zero). `Structures.producedCost(slot:)` private helper dispatches CY→StructureInfo, factory→UnitInfo; `tickConstruction` + `cancelConstruction` share it. Drain + refund symmetric across both yard kinds. 5 new tests. 631 green / 63 suites / zero warnings. Design: `Algorithms/CreditDrainFactory.md`.
 - **2026-04-21 — P5 slice 6b: credit drain + cancel refund (CY path).** `tickConstruction` and `cancelConstruction` gained `houses: inout HousePool`. CY drain = `buildCredits/buildTime` per tick; pauses when house can't pay. Cancel refunds proportional to progress. `Scripting.Host` grew `houses`. Factory drain deferred to 6c. 6 new tests. 626 green / 63 suites / zero warnings. Design: `Algorithms/CreditDrainAndRefund.md`.
 - **2026-04-21 — P5 slice 6a: HouseSlot credits plumbing.** `credits` / `creditsStorage` / `creditsQuota` added to `Simulation.HouseSlot`; both `WorldSnapshot` init paths seed from `Scenario.HouseLayout` / `Formats.Save.Players.Slot`. Pure-sim groundwork for 6b's drain + 6c's HUD. 3 new tests. 620 green / 63 suites / zero warnings. Design: `Algorithms/HouseCredits.md`.
@@ -149,7 +184,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **631 tests across 63 suites, all green** as of 2026-04-21 (post-P5-slice-6c). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
+`cd Code/Core && swift test` — **652 tests across 65 suites, all green** as of 2026-04-21 (post-movement-bug-triage). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
 
 ## Open questions / risks (pointers)
 

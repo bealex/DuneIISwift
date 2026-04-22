@@ -38,7 +38,8 @@ extension Scripting.Functions {
         // 0x08 — Script_Unit_Fire
         table[0x08] = Scripting.Functions.makeFireUnit(host: host)
         // 0x09 — Script_Unit_MCVDeploy (not ported; structure creation)
-        // 0x0A — Script_Unit_SetActionDefault (not ported; needs UnitInfo)
+        // 0x0A — Script_Unit_SetActionDefault
+        table[0x0A] = Scripting.Functions.makeSetActionDefaultUnit(host: host)
         // 0x0B — Script_Unit_Blink
         table[0x0B] = Scripting.Functions.makeBlinkUnit(host: host)
         // 0x0C — Script_Unit_CalculateRoute
