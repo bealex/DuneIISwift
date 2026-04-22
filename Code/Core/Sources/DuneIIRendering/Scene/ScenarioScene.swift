@@ -62,6 +62,7 @@ public final class ScenarioScene: SKScene {
     private var placementToast: SKLabelNode?
     private var placementToastExpiryTick: Int = -1
     private var sidebarNode: SKNode?
+    private var minimapNode: SKSpriteNode?
 
     // Convenience accessors — delegate to runtime.
     private var scheduler: Simulation.Scheduler? { runtime.scheduler }
@@ -133,6 +134,7 @@ public final class ScenarioScene: SKScene {
             validateSelectionHalo()
             refreshHud()
             refreshBuildSidebar()
+            refreshMinimap()
             // Per-tick trace of the selected unit. Compact; lets the
             // developer follow a single unit across dozens of ticks
             // without the noise of every unit on the map. Skipped when
@@ -434,6 +436,7 @@ public final class ScenarioScene: SKScene {
         addHud()
         refreshBuildSidebar()
         refreshRallyMarker()
+        refreshMinimap()
     }
 
     private func addHud() {
@@ -483,6 +486,63 @@ public final class ScenarioScene: SKScene {
         }
 
         expirePlacementToastIfDue()
+    }
+
+    /// Rebuilds the minimap SKSpriteNode's texture from the live
+    /// tile grid + pools. Creates the node + its background frame
+    /// once. Called every scheduler tick.
+    private func refreshMinimap() {
+        guard let host = scheduler?.host else { return }
+        let tiles = runtime.tileGrid
+        guard !tiles.isEmpty else { return }
+        let resolver = assets.tileResolver
+        let landscape: (Simulation.WorldSnapshot.Tile) -> LandscapeType = { cell in
+            resolver.landscapeType(
+                groundTileID: cell.groundTileID,
+                overlayTileID: cell.overlayTileID,
+                hasStructure: cell.hasStructure
+            )
+        }
+        let houseColor: (UInt8) -> Minimap.ColorRGBA = { id in
+            // Convert to sRGB first — `NSColor.white` is generic
+            // grayscale and crashes on `.redComponent` if accessed raw.
+            guard let ns = self.houseColorFor(houseID: id)
+                .usingColorSpace(.sRGB)
+            else {
+                return Minimap.ColorRGBA(r: 0xFF, g: 0xFF, b: 0xFF)
+            }
+            let r = UInt8(clamping: Int((ns.redComponent * 255).rounded()))
+            let g = UInt8(clamping: Int((ns.greenComponent * 255).rounded()))
+            let b = UInt8(clamping: Int((ns.blueComponent * 255).rounded()))
+            return Minimap.ColorRGBA(r: r, g: g, b: b)
+        }
+        let pixels = Minimap.render(
+            tileGrid: tiles,
+            landscapeAt: landscape,
+            units: host.units,
+            structures: host.structures,
+            houseColor: houseColor
+        )
+        guard let cg = try? CGImageFactory.makeRGBAImage(
+            bytes: pixels, width: Minimap.size, height: Minimap.size
+        ) else { return }
+        let texture = SKTexture(cgImage: cg)
+        texture.filteringMode = .nearest
+
+        if let node = minimapNode {
+            node.texture = texture
+            return
+        }
+        let node = SKSpriteNode(texture: texture)
+        node.anchorPoint = .zero
+        node.size = CGSize(width: MinimapPanel.size, height: MinimapPanel.size)
+        node.position = CGPoint(
+            x: Self.mapSize + (Self.sidebarWidth - MinimapPanel.size) / 2,
+            y: MinimapPanel.baseY
+        )
+        node.zPosition = 21
+        addChild(node)
+        minimapNode = node
     }
 
     private func addGroundTiles(world: ScenarioWorld) {
@@ -737,6 +797,16 @@ public final class ScenarioScene: SKScene {
         static let hpBarHeight: CGFloat = 6
         static let statusY: CGFloat = 88
         static let hintY: CGFloat = 60
+    }
+
+    /// Layout constants for the minimap panel — sits just above the
+    /// info panel, square, sidebar-width minus padding on both sides.
+    /// `baseY = InfoPanel.height + sidebarPadding = 204`, inlined
+    /// because nested-enum default values can't reach the enclosing
+    /// MainActor-isolated statics.
+    private enum MinimapPanel {
+        static let size: CGFloat = 120
+        static let baseY: CGFloat = 204
     }
 
     /// Appends an info-panel block to `container` showing the current

@@ -11,7 +11,7 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**None — mission-1 is fully playable end-to-end as of 2026-04-22. Pick from "Next up".**
+**None — mission-1 is fully playable end-to-end with a live minimap as of 2026-04-22. Pick from "Next up".**
 
 What works now:
 - CYARD pre-selected at scene load; build panel shows buildables.
@@ -21,29 +21,30 @@ What works now:
 - Right-click with friendly unit → orderMove (empty tile), orderAttack (enemy unit), or orderAttackStructure (enemy building).
 - Enemy HUNT-action units walk toward the player base (redirect-to-adjacent when target tile is impassable).
 - Keyboard: Escape deselects, Tab cycles player units.
+- Sidebar minimap renders terrain + unit / structure dots, refreshed every tick.
 - Harness (`swift run duneii-headless`) drives the same runtime as the scene.
 
-Latest session (2026-04-22) shipped tasks 1-9; all details in today's `Documentation/History/2026-04.md` bullets.
+Latest session (2026-04-22) shipped tasks 1-9 + the minimap; all details in today's `Documentation/History/2026-04.md` bullets.
 
 ## Next up (queued)
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → implement → tests → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **Minimap in the right sidebar.** Empty strip between BUILD panel + INFO panel would fit an 80×80 colour-per-tile render of the runtime tileGrid + unit markers. Refresh per tick.
-2. **Carryall pickup loop** (spice income slice 8). When a refinery chain is already busy + another harvester fills, a carryall ferries it to the next free refinery.
-3. **Scene repaint on `SpiceMap.apply`** (slice 9). Cosmetic; lets the player see spice thick→thin→bare drain in real time.
-4. **STARPORT case** — port `Structure_GetBuildable` `-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
-5. **Mentat briefing screen** — scenario intro text, voice cue. Intro WSA + jukebox already shipped.
-6. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline's `gameSpeed` factor.
-7. **`BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; the real script gives proper flight frames + sonic-beam propagation. Cosmetic.
-8. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder.
-9. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority`; slot 0x36.
-10. **HP-bar visual on world markers** — small bar above each unit/structure SKNode for at-a-glance status. Info panel already shows HP for the selection; this would make every entity show it.
+1. **Carryall pickup loop** (spice income slice 8). When a refinery chain is already busy + another harvester fills, a carryall ferries it to the next free refinery.
+2. **Scene repaint on `SpiceMap.apply`** (slice 9). Cosmetic; lets the player see spice thick→thin→bare drain in real time.
+3. **STARPORT case** — port `Structure_GetBuildable` `-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
+4. **Mentat briefing screen** — scenario intro text, voice cue. Intro WSA + jukebox already shipped.
+5. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline's `gameSpeed` factor.
+6. **`BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; the real script gives proper flight frames + sonic-beam propagation. Cosmetic.
+7. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder.
+8. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority`; slot 0x36.
+9. **HP-bar visual on world markers** — small bar above each unit/structure SKNode for at-a-glance status. Info panel already shows HP for the selection; this would make every entity show it.
 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-22 — Sidebar minimap.** New `DuneIIRendering.Minimap` produces a 64×64 RGBA buffer from live tile grid + pools. `ScenarioScene.refreshMinimap()` rebuilds the `SKTexture` every tick; 120×120 pt node sits above the info panel. Terrain colours per `LandscapeType`; units + structure footprints overlaid in house colour; projectiles (types 18..24), slabs + walls skipped. 12 new tests. **789 green / 78 suites / zero warnings.**
 - **2026-04-22 — Task 9: Pathfinder + scheduler redirect to passable neighbour.** `findRoute.resolveReachable` + `Scheduler.nearestPassableNeighbor` stop hunt-action enemies from halting at the player CYARD. Mission 1's 3 Ordos hunters now march toward the base. 3 new tests.
 - **2026-04-22 — Task 8: Keyboard shortcuts (Escape / Tab).** Deselect all + cycle through friendly units. 2 new tests.
 - **2026-04-22 — Task 7: Right-click attack on enemy structures.** New `Simulation.Units.orderAttackStructure`; `UnitCommandController.handle` takes a structures pool + scans for enemy structures; right-click promotes to `.orderAttackStructure` when the click lands on one. Non-turret attackers drive to the building, turreted rotate in place. 4 new tests. 772 green.
@@ -136,7 +137,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **777 tests across 77 suites, all green** as of 2026-04-22 (post-enemy-hunt-pathing + keyboard shortcuts). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **789 tests across 78 suites, all green** as of 2026-04-22 (post-minimap). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 

@@ -99,6 +99,10 @@ OpenDUNE `src/...` or dunepak `src/...` or the raw bytes of
 - [simulation-action-id-drives-script-reload](simulation-action-id-drives-script-reload.md) — writing `slot.actionID` is enough to re-enter the unit script; the scheduler's per-tick `loadedUnitAction` delta-check reloads the engine without explicit `Script_Reset` / `Script_Load` calls.
 - [simulation-route-orientation-locked-to-step](simulation-route-orientation-locked-to-step.md) — while following a pathfinder route, `tickMovement` must pin `orientationCurrent = route[0] * 32` (canonical octant midpoint); recomputing from continuous pos32 delta made the sprite flicker across octant boundaries when the unit was off-axis.
 
+### Render
+
+- [render-mainactor-nested-enum-default-values](render-mainactor-nested-enum-default-values.md) — nested-enum `static let` defaults can't reference `@MainActor` statics on the enclosing class under Swift 6 strict concurrency; inline the literal.
+
 ### Audio
 
 - [audio-voc-sample-rate-formula](audio-voc-sample-rate-formula.md) — the classic Creative rate formula `1_000_000 / (256 − divisor)`.
