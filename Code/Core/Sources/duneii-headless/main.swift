@@ -285,6 +285,7 @@ final class Harness {
         case .unitDeselected: return "unitDeselected"
         case .orderMove(let u, let x, let y, let ok): return "orderMove(unit=\(u) tile=(\(x),\(y)) ok=\(ok))"
         case .orderAttack(let a, let t, let ok): return "orderAttack(attacker=\(a) target=\(t) ok=\(ok))"
+        case .orderAttackStructure(let a, let s, let ok): return "orderAttackStructure(attacker=\(a) target=s\(s) ok=\(ok))"
         case .yardSelected(let i): return "yardSelected(\(i))"
         case .structureSelected(let i): return "structureSelected(\(i))"
         case .placementStarted(let t): return "placementStarted(type=\(t))"

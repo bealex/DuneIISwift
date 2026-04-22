@@ -85,6 +85,7 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-22 — Task 7: Right-click attack on enemy structures.** New `Simulation.Units.orderAttackStructure`; `UnitCommandController.handle` takes a structures pool + scans for enemy structures; right-click promotes to `.orderAttackStructure` when the click lands on one. Non-turret attackers drive to the building, turreted rotate in place. 4 new tests. 772 green.
 - **2026-04-22 — Task 6: Spawn harvester on first refinery.** `ensureHarvesterAvailable` ports OpenDUNE's same-named helper (simplified; no carryall ferry). Triggers on REFINERY placement. New `harvester-spawn` tracer. 1 new test. 768 green.
 - **2026-04-22 — Selection UI tasks 1-5: enemy unit selection, runtime structure selection, info panel, structure halo, ground tile repaint.** Live info panel + halo for any selected entity; enemies show info only; ground tiles now repaint as slabs + buildings get placed. 5 commits + 3 new tests.
 - **2026-04-22 — Movement port + infantry sprite fix.** `Unit_SetSpeed` + `Unit_MovementTick` ported with the subpixel accumulator (`speedPerTick` / `speedRemainder`). `Tile_MoveByDirection` drives actual motion via `Pos32.moved`. Overshoot detection mirrors `unit.c:1419`. Infantry resolver now uses `values_32C4` buckets + `values_334A` phase with an animated `spriteOffset` that advances every 5 ticks for moving infantry. 9 test-file updates to match new slot-field semantics (`movingSpeed` carries the percent, `speed` the tile-hop clamp). 763 green / 77 suites / zero warnings.
@@ -174,7 +175,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **768 tests across 77 suites, all green** as of 2026-04-22 (post-harvester-spawn + tile-sync). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **772 tests across 77 suites, all green** as of 2026-04-22 (post-attack-structure). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 

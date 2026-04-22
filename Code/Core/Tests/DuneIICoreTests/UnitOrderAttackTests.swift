@@ -168,6 +168,70 @@ struct UnitOrderAttackTests {
 
     // MARK: Semantic quirks
 
+    // MARK: Attack enemy structure
+
+    @Test("orderAttackStructure on non-turret trike flips action=attack + move-to-target")
+    func orderAttackStructureNonTurret() {
+        var units = Self.makePool()
+        var structs = Simulation.StructurePool()
+        _ = structs.allocate(at: 5, type: 12 /* REFINERY */, houseID: Simulation.House.harkonnen)
+        var s = structs[5]
+        s.positionX = 20 * 256
+        s.positionY = 20 * 256
+        structs[5] = s
+
+        let ok = Simulation.Units.orderAttackStructure(
+            poolIndex: 0, targetStructureIndex: 5,
+            units: &units, structures: structs
+        )
+        #expect(ok)
+        let u = units[0]
+        #expect(u.actionID == Simulation.ActionID.attack)
+        let encoded = Scripting.EncodedIndex.structure(5).raw
+        #expect(u.targetAttack == encoded)
+        // Non-turret attackers also drive to the target.
+        #expect(u.targetMove == encoded)
+        #expect(u.route[0] == 0xFF)
+    }
+
+    @Test("orderAttackStructure on turreted tank leaves move state untouched")
+    func orderAttackStructureTurret() {
+        var units = Self.makePool(attackerType: Self.tank)
+        var u0 = units[0]
+        u0.targetMove = 0xBEEF
+        u0.route[0] = 3
+        units[0] = u0
+        var structs = Simulation.StructurePool()
+        _ = structs.allocate(at: 5, type: 12, houseID: Simulation.House.harkonnen)
+        var s = structs[5]
+        s.positionX = 0
+        s.positionY = 0
+        structs[5] = s
+
+        _ = Simulation.Units.orderAttackStructure(
+            poolIndex: 0, targetStructureIndex: 5,
+            units: &units, structures: structs
+        )
+        let u = units[0]
+        // Turreted unit keeps its prior move state — rotates in place.
+        #expect(u.targetMove == 0xBEEF)
+        #expect(u.route[0] == 3)
+        #expect(u.targetAttack == Scripting.EncodedIndex.structure(5).raw)
+    }
+
+    @Test("orderAttackStructure rejects unallocated target")
+    func orderAttackStructureRejectsUnallocated() {
+        var units = Self.makePool()
+        let structs = Simulation.StructurePool()    // empty
+        let before = units
+        let ok = Simulation.Units.orderAttackStructure(
+            poolIndex: 0, targetStructureIndex: 5,
+            units: &units, structures: structs
+        )
+        #expect(!ok)
+        #expect(units == before)
+    }
+
     @Test("orderAttack overwrites a previous attack target")
     func overwritesPreviousTarget() {
         var units = Self.makePool()

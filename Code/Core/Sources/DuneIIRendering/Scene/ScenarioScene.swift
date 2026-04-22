@@ -205,7 +205,7 @@ public final class ScenarioScene: SKScene {
         switch outcome {
         case .unitSelected, .unitDeselected:
             refreshSelectionHalo()
-        case .orderMove, .orderAttack:
+        case .orderMove, .orderAttack, .orderAttackStructure:
             refreshSelectionHalo()
         case .yardSelected:
             refreshBuildSidebar()

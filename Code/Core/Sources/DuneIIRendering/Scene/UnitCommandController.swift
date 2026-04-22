@@ -46,12 +46,16 @@ public struct UnitCommandController: Equatable, Sendable {
         case deselect
         case orderMove(poolIndex: Int, tileX: Int, tileY: Int)
         case orderAttack(attackerIndex: Int, targetIndex: Int)
+        /// Attack order against an enemy structure. Runtime calls
+        /// `Simulation.Units.orderAttackStructure(...)`.
+        case orderAttackStructure(attackerIndex: Int, targetStructureIndex: Int)
     }
 
     public mutating func handle(
         click: Click,
         pool: Simulation.UnitPool,
-        playerHouseID: UInt8
+        playerHouseID: UInt8,
+        structures: Simulation.StructurePool = Simulation.StructurePool()
     ) -> Action {
         // Auto-clear a stale selection (e.g. a unit died between the
         // last and current click).
@@ -103,8 +107,40 @@ public struct UnitCommandController: Equatable, Sendable {
             ), enemy != sel {
                 return .orderAttack(attackerIndex: sel, targetIndex: enemy)
             }
+            // Enemy structure at this tile? Attack it.
+            if let structIdx = Self.enemyStructureAtTile(
+                x: x, y: y, pool: structures, playerHouseID: playerHouseID
+            ) {
+                return .orderAttackStructure(
+                    attackerIndex: sel, targetStructureIndex: structIdx
+                )
+            }
             return .orderMove(poolIndex: sel, tileX: x, tileY: y)
         }
+    }
+
+    /// Returns the pool index of a non-player-owned structure whose
+    /// footprint covers `(x, y)`, or `nil`.
+    private static func enemyStructureAtTile(
+        x: Int, y: Int,
+        pool: Simulation.StructurePool,
+        playerHouseID: UInt8
+    ) -> Int? {
+        guard (0..<64).contains(x), (0..<64).contains(y) else { return nil }
+        for idx in pool.findArray {
+            let s = pool.slots[idx]
+            guard s.isUsed, s.isAllocated else { continue }
+            guard s.houseID != playerHouseID else { continue }
+            let ax = Int(s.positionX) / 256
+            let ay = Int(s.positionY) / 256
+            let footprint = Simulation.Structures.footprintTiles(
+                type: s.type, anchorX: ax, anchorY: ay
+            )
+            if footprint.contains(where: { $0.0 == x && $0.1 == y }) {
+                return idx
+            }
+        }
+        return nil
     }
 
     /// Finds the first unit in `pool.findArray` sitting on `(x, y)`

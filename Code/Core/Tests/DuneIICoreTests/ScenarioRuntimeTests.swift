@@ -123,6 +123,41 @@ struct ScenarioRuntimeTests {
         #expect(r.host?.units.slots[idx].actionID == Simulation.ActionID.move)
     }
 
+    @Test("Right-click with friendly unit on enemy structure issues orderAttackStructure")
+    func rightClickAttacksStructure() throws {
+        guard let r = try loadMission1() else { return }
+        let host = try #require(r.host)
+        // Manually plant an enemy structure to attack. Mutate through
+        // a local copy + write-back so the class property actually
+        // updates (chained `.allocate` on a class var goes through
+        // modify but subsequent subscript writes need the same
+        // pattern).
+        var structs = host.structures
+        _ = structs.allocate(
+            at: 7, type: 12 /* REFINERY */, houseID: Simulation.House.harkonnen
+        )
+        var s = structs[7]
+        // Plant far from any scenario unit so only the structure hits
+        // the right-click. Mission 1's Ordos units sit around (40, 30)
+        // and (43, 38); (50, 50) is clear.
+        s.positionX = UInt16(50 * 256)
+        s.positionY = UInt16(50 * 256)
+        structs[7] = s
+        host.structures = structs
+
+        _ = r.leftClick(tileX: 29, tileY: 23)        // select friendly trike
+        #expect(r.commandController.selectedUnitIndex != nil)
+        #expect(r.commandController.isFriendlySelection == true)
+
+        let outcome = r.rightClick(tileX: 50, tileY: 50)
+        guard case .orderAttackStructure(_, let targetIdx, let ok) = outcome else {
+            Issue.record("expected orderAttackStructure, got \(outcome)")
+            return
+        }
+        #expect(targetIdx == 7)
+        #expect(ok)
+    }
+
     @Test("Right-click with selection on enemy unit issues orderAttack")
     func rightClickAttacks() throws {
         guard let r = try loadMission1() else { return }

@@ -42,6 +42,7 @@ public final class ScenarioRuntime {
         case unitDeselected
         case orderMove(unitIdx: Int, tileX: Int, tileY: Int, ok: Bool)
         case orderAttack(attacker: Int, target: Int, ok: Bool)
+        case orderAttackStructure(attacker: Int, targetStructureIndex: Int, ok: Bool)
         case yardSelected(Int)
         /// A structure was selected via map click — any owner, any
         /// type. The info panel reads the pool slot directly.
@@ -264,6 +265,10 @@ public final class ScenarioRuntime {
                     tracer: .label("unit-cmd")
                 )
                 return .orderAttack(attacker: attacker, target: target, ok: ok)
+            case .orderAttackStructure:
+                // Left-click never produces this case (structure
+                // attacks are right-click only); handle defensively.
+                break
             case .none:
                 break
             }
@@ -349,7 +354,8 @@ public final class ScenarioRuntime {
             let action = commandController.handle(
                 click: .rightMapTile(x: tileX, y: tileY),
                 pool: host.units,
-                playerHouseID: playerHouseID
+                playerHouseID: playerHouseID,
+                structures: host.structures
             )
             switch action {
             case .orderMove(let idx, let tx, let ty):
@@ -366,6 +372,20 @@ public final class ScenarioRuntime {
                     poolIndex: attacker, targetUnitIndex: target, units: &host.units
                 )
                 return .orderAttack(attacker: attacker, target: target, ok: ok)
+            case .orderAttackStructure(let attacker, let structIdx):
+                let ok = Simulation.Units.orderAttackStructure(
+                    poolIndex: attacker,
+                    targetStructureIndex: structIdx,
+                    units: &host.units,
+                    structures: host.structures
+                )
+                Log.info(
+                    "unit-order-attack-structure unit=\(attacker) target=s\(structIdx) ok=\(ok)",
+                    tracer: .label("unit-cmd")
+                )
+                return .orderAttackStructure(
+                    attacker: attacker, targetStructureIndex: structIdx, ok: ok
+                )
             default:
                 return .none
             }

@@ -430,6 +430,58 @@ extension Simulation {
             return true
         }
 
+        /// Player-issued attack against a structure. Same shape as
+        /// `orderAttack(poolIndex:targetUnitIndex:units:)` but encodes
+        /// the target as `EncodedIndex.structure(idx)` so the unit's
+        /// script + target-priority math (when it lands) treats the
+        /// hit as a building. Non-turret attackers also get
+        /// `targetMove = encoded` + cleared route so the chassis
+        /// drives toward the building; turreted units only rotate the
+        /// turret. Port of OpenDUNE's `Unit_SetAction(ACTION_ATTACK) +
+        /// Unit_SetTarget(encoded)` path for IT_STRUCTURE targets.
+        ///
+        /// Returns `false` and leaves state untouched on:
+        /// - Out-of-range / unallocated attacker / target.
+        /// - Attacker without a `UnitInfo` entry.
+        ///
+        /// The actual damage loop runs via the existing fire + bullet
+        /// path once the attacker closes to `fireDistance`; structure
+        /// impact damage is handled by `Simulation.Explosions.makeExplosion`.
+        @discardableResult
+        public static func orderAttackStructure(
+            poolIndex: Int,
+            targetStructureIndex: Int,
+            units: inout UnitPool,
+            structures: StructurePool
+        ) -> Bool {
+            guard poolIndex >= 0, poolIndex < UnitPool.capacity else { return false }
+            guard targetStructureIndex >= 0,
+                  targetStructureIndex < StructurePool.capacitySoft else { return false }
+            guard units.slots[poolIndex].isUsed, units.slots[poolIndex].isAllocated else { return false }
+            guard structures[targetStructureIndex].isUsed,
+                  structures[targetStructureIndex].isAllocated else { return false }
+            guard let info = UnitInfo.lookup(units.slots[poolIndex].type) else { return false }
+
+            let encoded = Scripting.EncodedIndex.structure(UInt16(targetStructureIndex)).raw
+            var slot = units[poolIndex]
+            let priorAction = slot.actionID
+            let priorTarget = slot.targetAttack
+            slot.targetAttack = encoded
+            slot.actionID = Simulation.ActionID.attack
+            slot.currentDestinationX = 0
+            slot.currentDestinationY = 0
+            if !info.hasTurret {
+                slot.targetMove = encoded
+                slot.route[0] = 0xFF
+            }
+            units[poolIndex] = slot
+            Log.info(
+                "orderAttackStructure u\(poolIndex) (t=\(slot.type) h=\(slot.houseID) turret=\(info.hasTurret)) → structure s\(targetStructureIndex) encoded=\(String(format: "0x%04X", encoded)) action:\(priorAction)→0 prevTarget=\(String(format: "0x%04X", priorTarget))",
+                tracer: .label("attack")
+            )
+            return true
+        }
+
         // MARK: Team membership
 
         /// Port of `Unit_AddToTeam` (`src/unit.c:540`). Writes
