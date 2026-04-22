@@ -477,9 +477,16 @@ extension Scripting {
         /// fireDelay, `Unit_Deviation_Decrease`, voice + fog side-effects.
         public static func makeFireUnit(host: Host) -> VM.Function {
             return { _ in
-                guard let (shooterIdx, shooter) = currentUnit(host: host) else { return 0 }
+                guard let (shooterIdx, shooter) = currentUnit(host: host) else {
+                    Log.debug("fire-gate no-current-object", tracer: .label("fire-gate"))
+                    return 0
+                }
                 let target = shooter.targetAttack
                 if target == 0 || !isValid(encoded: Scripting.EncodedIndex(raw: target), host: host) {
+                    Log.debug(
+                        "fire-gate unit=\(shooterIdx) invalid-target raw=\(String(format: "0x%04X", target))",
+                        tracer: .label("fire-gate")
+                    )
                     return 0
                 }
 
@@ -494,20 +501,40 @@ extension Scripting {
                 if !isSandworm && target == ownTileEncoded {
                     shooterSlot.targetAttack = 0
                     host.units[shooterIdx] = shooterSlot
+                    Log.debug(
+                        "fire-gate unit=\(shooterIdx) self-tile-cancel",
+                        tracer: .label("fire-gate")
+                    )
                     return 0
                 }
 
                 // Cooldown still running.
-                if shooterSlot.fireDelay != 0 { return 0 }
+                if shooterSlot.fireDelay != 0 {
+                    Log.debug(
+                        "fire-gate unit=\(shooterIdx) cooldown fireDelay=\(shooterSlot.fireDelay)",
+                        tracer: .label("fire-gate")
+                    )
+                    return 0
+                }
 
                 // Target in range.
                 guard let targetPos = Pos32.of(Scripting.EncodedIndex(raw: target), host: host) else {
+                    Log.debug(
+                        "fire-gate unit=\(shooterIdx) target-pos-unresolved raw=\(String(format: "0x%04X", target))",
+                        tracer: .label("fire-gate")
+                    )
                     return 0
                 }
                 let shooterPos = Pos32(x: shooter.positionX, y: shooter.positionY)
                 let distance = UInt32(Pos32.distance(shooterPos, targetPos))
                 let fireRange = UInt32(info.fireDistance) &<< 8
-                if Int32(bitPattern: fireRange) < Int32(bitPattern: distance) { return 0 }
+                if Int32(bitPattern: fireRange) < Int32(bitPattern: distance) {
+                    Log.debug(
+                        "fire-gate unit=\(shooterIdx) out-of-range distance=\(distance) fireRange=\(fireRange) fireDistance=\(info.fireDistance)",
+                        tracer: .label("fire-gate")
+                    )
+                    return 0
+                }
 
                 // Orientation gate — skip for sandworm and for winger targets.
                 let targetEncoded = Scripting.EncodedIndex(raw: target)
@@ -523,7 +550,13 @@ extension Scripting {
                     let desired = Int16(Int8(bitPattern: dir))
                     var diff = abs(current - desired)
                     if info.movementType == .winger { diff /= 8 }
-                    if diff >= 8 { return 0 }
+                    if diff >= 8 {
+                        Log.debug(
+                            "fire-gate unit=\(shooterIdx) off-orientation current=\(current) desired=\(desired) diff=\(diff)",
+                            tracer: .label("fire-gate")
+                        )
+                        return 0
+                    }
                 }
 
                 var damage = info.damage

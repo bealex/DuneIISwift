@@ -399,6 +399,10 @@ public final class ScenarioScene: SKScene {
             let h = CGFloat(dims.1) * Self.tileSize
             let origin = screenPosition(x: ax, y: ay + dims.1 - 1)
             let rect = CGRect(x: origin.x, y: origin.y, width: w, height: h)
+            Log.info(
+                "halo structure sel=\(sel) type=\(s.type) anchor=(\(ax),\(ay)) dims=\(dims.0)×\(dims.1) rect=(\(Int(rect.minX)),\(Int(rect.minY))) size=(\(Int(rect.width)),\(Int(rect.height)))",
+                tracer: .label("scene-halo")
+            )
             let halo = SKShapeNode(rect: rect)
             let isFriendly = s.houseID == playerHouseID
             halo.strokeColor = isFriendly

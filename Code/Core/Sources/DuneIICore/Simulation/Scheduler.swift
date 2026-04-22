@@ -708,9 +708,18 @@ extension Simulation {
                 guard let info = Simulation.UnitInfo.lookup(slot.type) else { continue }
                 switch info.displayMode {
                 case .infantry3, .infantry4:
-                    // Only animate while actually moving (speed != 0);
-                    // standing infantry hold a pose.
-                    guard slot.speed != 0 else { continue }
+                    // Only animate while actually *in motion* — an
+                    // active route step or a live currentDestination
+                    // or an outstanding targetMove. `slot.speed` alone
+                    // stays non-zero after arrival (tile-hop clamp is
+                    // set on order, not reset on stop), which left
+                    // GUARD-action infantry ticking their walk cycle
+                    // forever after finishing a move.
+                    let hasRoute = slot.route[0] != 0xFF
+                    let hasCurDest = slot.currentDestinationX != 0
+                        || slot.currentDestinationY != 0
+                    let hasTargetMove = slot.targetMove != 0
+                    guard hasRoute || hasCurDest || hasTargetMove else { continue }
                     let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
                     slot.spriteOffset = Int8(bitPattern: bumped)
                     host.units[idx] = slot

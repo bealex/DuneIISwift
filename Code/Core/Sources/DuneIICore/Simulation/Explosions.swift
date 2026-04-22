@@ -32,12 +32,17 @@ extension Simulation {
 
             if damage == 0 { return false }
 
+            let hpBefore = slot.hitpoints
             if slot.hitpoints >= damage {
                 slot.hitpoints &-= damage
             } else {
                 slot.hitpoints = 0
             }
             host.units[unitIndex] = slot
+            Log.debug(
+                "applyUnitDamage unit=\(unitIndex) type=\(slot.type) house=\(slot.houseID) hp=\(hpBefore)→\(slot.hitpoints) dmg=\(damage)",
+                tracer: .label("damage")
+            )
 
             if slot.hitpoints == 0 {
                 // Capture the death visual BEFORE freeing — after free,
@@ -88,14 +93,23 @@ extension Simulation {
             guard slot.isUsed else { return false }
             if damage == 0 { return false }
 
+            let hpBefore = slot.hitpoints
             if slot.hitpoints >= damage {
                 slot.hitpoints &-= damage
             } else {
                 slot.hitpoints = 0
             }
             host.structures[structureIndex] = slot
+            Log.debug(
+                "applyStructureDamage structure=\(structureIndex) type=\(slot.type) house=\(slot.houseID) hp=\(hpBefore)→\(slot.hitpoints) dmg=\(damage)",
+                tracer: .label("damage")
+            )
 
             if slot.hitpoints == 0 {
+                Log.info(
+                    "structure \(structureIndex) (type \(slot.type) house \(slot.houseID)) destroyed by \(damage) dmg",
+                    tracer: .label("damage")
+                )
                 host.structures.free(at: structureIndex)
                 return true
             }
