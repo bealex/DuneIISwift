@@ -76,6 +76,14 @@ public final class ScenarioScene: SKScene {
     /// when no factory is selected or the selected factory has no
     /// rally set. See `Algorithms/FactoryRallyPoint.md`.
     private var rallyMarker: SKShapeNode?
+    /// Ghost footprint rendered while the build panel is in placement
+    /// mode. Follows mouse hover; green when `isValidBuildLocation`
+    /// passes, red when it fails. Hidden otherwise. See commitPlacement.
+    private var placementGhost: SKShapeNode?
+    /// Transient toast shown near the top of the map when a placement
+    /// commit rejects. Cleared on the next tick.
+    private var placementToast: SKLabelNode?
+    private var placementToastExpiryTick: Int = -1
     /// Container for sidebar slot nodes. Always parented to the scene;
     /// children are rebuilt on every `refreshBuildSidebar()`.
     private var sidebarNode: SKNode?
@@ -107,6 +115,17 @@ public final class ScenarioScene: SKScene {
     required init?(coder: NSCoder) { fatalError("not supported") }
 
     public override func didMove(to view: SKView) {
+        // Enable mouse-moved events so placement ghost tracks hover.
+        // Tracking area is reinstalled on each didMove since the view's
+        // bounds might have changed.
+        view.window?.acceptsMouseMovedEvents = true
+        let tracking = NSTrackingArea(
+            rect: view.bounds,
+            options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+            owner: view, userInfo: nil
+        )
+        view.trackingAreas.forEach(view.removeTrackingArea)
+        view.addTrackingArea(tracking)
         removeAllChildren()
         tileNodes.removeAll(keepingCapacity: true)
         unitMarkers.removeAll(keepingCapacity: true)
@@ -240,6 +259,20 @@ public final class ScenarioScene: SKScene {
             // wired).
             break
         }
+    }
+
+    public override func mouseMoved(with event: NSEvent) {
+        guard let type = buildController.placementType else {
+            hidePlacementGhost()
+            return
+        }
+        let location = event.location(in: self)
+        let click = classifyClick(at: location)
+        guard case .mapTile(let x, let y) = click else {
+            hidePlacementGhost()
+            return
+        }
+        updatePlacementGhost(type: type, tileX: x, tileY: y)
     }
 
     public override func rightMouseDown(with event: NSEvent) {
@@ -579,7 +612,11 @@ public final class ScenarioScene: SKScene {
         guard let hud else { return }
         let units = scheduler?.host.units.findArray.count ?? 0
         let structures = scheduler?.host.structures.findArray.count ?? 0
-        hud.text = "Tick \(tickCounter) · units \(units) · structures \(structures)"
+        var hudText = "Tick \(tickCounter) · units \(units) · structures \(structures)"
+        if let type = buildController.placementType {
+            hudText += " · PLACING \(Self.shortName(for: type)) (click map)"
+        }
+        hud.text = hudText
 
         if let creditsLabel {
             let value = scheduler.flatMap {
@@ -591,6 +628,8 @@ public final class ScenarioScene: SKScene {
                 creditsLabel.text = "Credits: —"
             }
         }
+
+        expirePlacementToastIfDue()
     }
 
     private func addGroundTiles(world: ScenarioWorld) {
@@ -1202,9 +1241,10 @@ public final class ScenarioScene: SKScene {
                 "build-panel: commit rejected — invalid tile=(\(tileX),\(tileY)) type=\(type)",
                 tracer: .label("build-panel")
             )
-            // Reset placement state on rejection so a re-pick starts
-            // cleanly. Sidebar refresh clears the highlight.
-            buildController.placementType = nil
+            // Keep placement mode active so the player can try another
+            // tile without re-clicking the READY sidebar entry. Show a
+            // transient toast on the map so rejection is visible.
+            showPlacementToast("Can't build here — try concrete/adjacency")
             refreshBuildSidebar()
             return
         }
@@ -1236,13 +1276,107 @@ public final class ScenarioScene: SKScene {
                 "build-panel: commit type=\(type) tile=(\(tileX),\(tileY)) → slot=\(idx)",
                 tracer: .label("build-panel")
             )
+            // Success: exit placement mode and hide the ghost.
+            buildController.placementType = nil
+            hidePlacementGhost()
         } else {
             Log.info(
                 "build-panel: commit type=\(type) tile=(\(tileX),\(tileY)) FAILED (pool full)",
                 tracer: .label("build-panel")
             )
+            showPlacementToast("Structure pool full")
         }
         refreshBuildSidebar()
+    }
+
+    /// Compute the validity at `(tileX, tileY)` for `type` using the
+    /// same rules as `commitPlacement` but without mutating state.
+    /// Returns `nil` on pre-check failure; `0` invalid; `>0` valid;
+    /// `<0` valid-but-degraded (slab deficit = -value).
+    private func placementValidity(type: UInt8, tileX: Int, tileY: Int) -> Int? {
+        guard let host = scheduler?.host else { return nil }
+        let resolver = assets.tileResolver
+        let tiles = tileGrid
+        let landscapeAt: (Int, Int) -> LandscapeType = { x, y in
+            guard x >= 0, x < 64, y >= 0, y < 64 else { return .entirelyMountain }
+            let idx = y * 64 + x
+            guard idx < tiles.count else { return .entirelyMountain }
+            let cell = tiles[idx]
+            return resolver.landscapeType(
+                groundTileID: cell.groundTileID,
+                overlayTileID: cell.overlayTileID,
+                hasStructure: cell.hasStructure
+            )
+        }
+        let tileHouseIDAt: (Int, Int) -> UInt8 = { x, y in
+            guard x >= 0, x < 64, y >= 0, y < 64 else { return 0 }
+            let idx = y * 64 + x
+            guard idx < tiles.count else { return 0 }
+            return tiles[idx].houseID
+        }
+        return Int(Simulation.Structures.isValidBuildLocation(
+            tileX: tileX, tileY: tileY, type: type,
+            structures: host.structures, units: host.units,
+            landscapeAt: landscapeAt,
+            playerHouseID: playerHouseID,
+            tileHouseIDAt: tileHouseIDAt
+        ))
+    }
+
+    /// Rebuilds the placement ghost at `(tileX, tileY)` for `type`. The
+    /// ghost is a coloured rectangle covering the structure's footprint:
+    /// green when valid, yellow when degraded, red when invalid. Called
+    /// from `mouseMoved` while `placementType != nil`.
+    private func updatePlacementGhost(type: UInt8, tileX: Int, tileY: Int) {
+        placementGhost?.removeFromParent()
+        let dims = Simulation.StructureInfo.lookup(type)?.layout.dimensions ?? (1, 1)
+        let w = CGFloat(dims.0) * Self.tileSize
+        let h = CGFloat(dims.1) * Self.tileSize
+        let origin = screenPosition(x: tileX, y: tileY + dims.1 - 1)
+        let frame = CGRect(x: origin.x, y: origin.y, width: w, height: h)
+        let node = SKShapeNode(rect: frame)
+        let validity = placementValidity(type: type, tileX: tileX, tileY: tileY) ?? 0
+        let color: NSColor
+        switch validity {
+        case let v where v > 0:  color = NSColor(calibratedRed: 0.2, green: 1.0, blue: 0.3, alpha: 1)
+        case let v where v < 0:  color = NSColor(calibratedRed: 1.0, green: 0.9, blue: 0.2, alpha: 1)
+        default:                  color = NSColor(calibratedRed: 1.0, green: 0.25, blue: 0.25, alpha: 1)
+        }
+        node.strokeColor = color
+        node.fillColor = color.withAlphaComponent(0.2)
+        node.lineWidth = 2
+        node.zPosition = 8
+        addChild(node)
+        placementGhost = node
+    }
+
+    private func hidePlacementGhost() {
+        placementGhost?.removeFromParent()
+        placementGhost = nil
+    }
+
+    /// Shows a transient toast near the top of the map. Auto-cleared
+    /// ~24 ticks (~2 seconds at 12 Hz) later via `refreshHud`.
+    private func showPlacementToast(_ text: String) {
+        placementToast?.removeFromParent()
+        let label = SKLabelNode(text: text)
+        label.fontColor = NSColor(calibratedRed: 1.0, green: 0.25, blue: 0.25, alpha: 1)
+        label.fontSize = 14
+        label.fontName = "Menlo-Bold"
+        label.horizontalAlignmentMode = .center
+        label.position = CGPoint(x: Self.mapSize / 2, y: Self.mapSize - 40)
+        label.zPosition = 30
+        addChild(label)
+        placementToast = label
+        placementToastExpiryTick = tickCounter + 24
+    }
+
+    private func expirePlacementToastIfDue() {
+        guard let toast = placementToast else { return }
+        if tickCounter >= placementToastExpiryTick {
+            toast.removeFromParent()
+            placementToast = nil
+        }
     }
 
     /// Short name for unit-type sidebar labels. Mirrors in-game

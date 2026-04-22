@@ -100,11 +100,27 @@ Called from `tick()` once every `Scheduler.harvestCadenceTicks` (default 3 — ~
 
 Logs: `tickHarvesting` entry summary under `harvest-tick` (counter + harvested + refined-pairs); per-action logs retained on `harvestSpiceStep` / `refineSpiceStep` / `SpiceMap.apply`.
 
+## Slice 6 — harvester AI loop (shipped 2026-04-21)
+
+Two additions inside `Scheduler.tickHarvesting`:
+
+**6a — auto-undock after refine.** Once `refineSpiceStep` drains the harvester's amount to 0 (clears `inTransport`), the refine pass records the refinery/harvester pair; a second loop then runs `Structures.undockHarvester` at the factory-spawn south-of-footprint tile, and flips the harvester's `actionID` back to HARVEST so the next pass can seek spice again. Mirrors what `Script_Structure_FindAndLeaveUnit` does when we wire the refinery EMC; for now the scheduler drives it directly.
+
+**6b — seek refinery when full / dock on arrival.** Pre-pass (before harvest/refine):
+
+- HARVESTER in `actionID == HARVEST` with `amount >= 100` and `!inTransport` — find the nearest same-house REFINERY via `Scheduler.findNearestRefinery` (squared-distance over anchor tiles), issue `Units.orderMove(toward refinery anchor)`, flip `actionID = RETURN`.
+- HARVESTER in `actionID == RETURN` and `!inTransport` — test if its current tile is inside a refinery footprint via `Scheduler.refineryAt`; if yes, call `Structures.dockHarvester` and flip `actionID = HARVEST`.
+
+Both emit `harvest-tick` logs (`full harvester=X → refinery=Y`, `arrived harvester=X refinery=Y DOCK`, `released harvester=X action=HARVEST tile=(...)`).
+
+End-to-end, a harvester that starts on spice in HARVEST action will: fill to 100 → seek nearest refinery → dock on arrival → drain to 0 over ~34 scheduler-harvest-passes → undock to south-of-footprint → resume seeking spice on its own. ~700 credits per cycle at a full refinery.
+
 ## What this slice does NOT ship
 
-- **Harvester AI loop.** Harvesters don't yet seek spice, arrive at a refinery, dock automatically, or re-depart. The scheduler only runs the tick math for harvesters whose `actionID` is already `harvest` and for refineries whose `linkedID` is already set. Script-slot porting (`Script_Unit_Harvest`'s caller side + `FindAndLeaveUnit` dispatch) follows in slice 6.
-- **Scene tile repaint** when `SpiceMap.apply` flips a level. Cosmetic; baseline tile stamping still shows the scenario-seed terrain.
-- **Carryall pickup loop** — slice 7.
+- **Seek spice target selection.** On undock the harvester stays in HARVEST action but without a move target — the harvest pass only runs when the unit is already standing on a spice tile. A later slice needs to scan for the nearest `spice / thickSpice` tile and issue `orderMove`.
+- **Movement between waypoints.** Movement is driven by `orderMove` + the existing route-follower; nothing new here. But routing into a 3×2 refinery footprint relies on the existing pathfinder's ability to find a path *onto* a structure tile — untested for this slice. Full-cycle test uses a teleport to simulate arrival.
+- **Scene tile repaint** when `SpiceMap.apply` flips a level. Cosmetic.
+- **Carryall pickup** when all refineries are busy — slice 7.
 - **Carryall pickup path** (refinery busy → carryall returns harvester to spice field).
 - **Credit readout animation.** The HUD label updates each tick from `Simulation.House.credits(for:in:)` so the number changes live, but no roll-up SFX.
 - **Scheduler wiring.** No script slot calls `refineSpiceStep` yet — callers invoke it directly (tests today; per-tick wiring once harvest AI slice lands).

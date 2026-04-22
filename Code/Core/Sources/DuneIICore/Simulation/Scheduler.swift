@@ -57,6 +57,95 @@ extension Simulation {
             return (18...24).contains(type)
         }
 
+        /// True when ground units of `movementType` can traverse the
+        /// tile at `(tileX, tileY)`. Combines:
+        ///
+        /// - Live structure-pool check: any structure's footprint is
+        ///   impassable regardless of landscape (walls, refineries,
+        ///   windtraps). Needed because the baseline `landscapeAt`
+        ///   closure is a snapshot and doesn't reflect runtime-placed
+        ///   buildings.
+        /// - `LandscapeInfo.movementSpeed[movementType] != 0` via the
+        ///   host's `landscapeAt` closure. Baseline rock / mountain
+        ///   gating.
+        ///
+        /// Winger (air) and slither (sandworm) always pass. Off-map
+        /// tiles are never passable.
+        func isTilePassable(
+            tileX: Int, tileY: Int, movementType: MovementType
+        ) -> Bool {
+            if movementType == .winger || movementType == .slither { return true }
+            guard (0..<64).contains(tileX), (0..<64).contains(tileY) else { return false }
+            for idx in host.structures.findArray {
+                let s = host.structures.slots[idx]
+                let ax = Int(s.positionX) / 256
+                let ay = Int(s.positionY) / 256
+                let footprint = Structures.footprintTiles(type: s.type, anchorX: ax, anchorY: ay)
+                if footprint.contains(where: { $0.0 == tileX && $0.1 == tileY }) {
+                    return false
+                }
+            }
+            guard let lookup = host.landscapeAt else { return true }
+            let packed = UInt16(tileY * 64 + tileX)
+            let raw = lookup(packed)
+            guard let landscape = LandscapeType(rawValue: Int(raw)) else { return true }
+            let info = LandscapeInfo.lookup(landscape)
+            let mt = Int(movementType.rawValue)
+            guard mt < info.movementSpeed.count else { return true }
+            return info.movementSpeed[mt] != 0
+        }
+
+        /// Slice 6b helper. Nearest same-house REFINERY for a full
+        /// harvester. Uses squared-distance over the structure anchor
+        /// tiles (close enough for routing; route cost lives in the
+        /// pathfinder). Returns `nil` when the house owns no refinery.
+        static func findNearestRefinery(
+            forHarvester harvester: UnitSlot,
+            structures: StructurePool
+        ) -> Int? {
+            let hx = Int(harvester.positionX) / 256
+            let hy = Int(harvester.positionY) / 256
+            var bestIdx: Int?
+            var bestDist = Int.max
+            for idx in structures.findArray {
+                let s = structures.slots[idx]
+                guard s.type == 12 /* REFINERY */ else { continue }
+                guard s.houseID == harvester.houseID else { continue }
+                let sx = Int(s.positionX) / 256
+                let sy = Int(s.positionY) / 256
+                let dx = sx - hx
+                let dy = sy - hy
+                let d = dx * dx + dy * dy
+                if d < bestDist {
+                    bestDist = d
+                    bestIdx = idx
+                }
+            }
+            return bestIdx
+        }
+
+        /// Slice 6b helper. Returns the refinery pool index whose 3×2
+        /// footprint covers `tile` and belongs to `houseID`, else nil.
+        static func refineryAt(
+            tile: (x: Int, y: Int),
+            houseID: UInt8,
+            structures: StructurePool
+        ) -> Int? {
+            for idx in structures.findArray {
+                let s = structures.slots[idx]
+                guard s.type == 12 else { continue }
+                guard s.houseID == houseID else { continue }
+                let ax = Int(s.positionX) / 256
+                let ay = Int(s.positionY) / 256
+                for (fx, fy) in Structures.footprintTiles(
+                    type: s.type, anchorX: ax, anchorY: ay
+                ) where fx == tile.x && fy == tile.y {
+                    return idx
+                }
+            }
+            return nil
+        }
+
         public init(
             host: Scripting.Host,
             unitVM: Scripting.VM,
@@ -147,6 +236,61 @@ extension Simulation {
             var harvestedCount = 0
             var refinedPairs = 0
 
+            // Harvester AI transitions (slice 6b):
+            // - HARVEST + amount>=100 + not docked → seek nearest
+            //   same-house refinery, issue move, flip to RETURN.
+            // - RETURN + on a refinery footprint → dockHarvester,
+            //   flip back to HARVEST.
+            for idx in host.units.findArray {
+                let slot = host.units.slots[idx]
+                guard slot.type == 16 else { continue }
+                if slot.actionID == Simulation.ActionID.harvest,
+                   slot.amount >= 100, !slot.inTransport
+                {
+                    if let refIdx = Self.findNearestRefinery(
+                        forHarvester: slot, structures: host.structures
+                    ) {
+                        let r = host.structures.slots[refIdx]
+                        let rx = Int(r.positionX) / 256
+                        let ry = Int(r.positionY) / 256
+                        _ = Simulation.Units.orderMove(
+                            poolIndex: idx, tileX: rx, tileY: ry, units: &host.units
+                        )
+                        var u = host.units[idx]
+                        u.actionID = Simulation.ActionID.returnAction
+                        host.units[idx] = u
+                        Log.info(
+                            "harvest-cycle full harvester=\(idx) → refinery=\(refIdx) tile=(\(rx),\(ry))",
+                            tracer: .label("harvest-tick")
+                        )
+                    }
+                } else if slot.actionID == Simulation.ActionID.returnAction,
+                          !slot.inTransport
+                {
+                    let tx = Int(slot.positionX) / 256
+                    let ty = Int(slot.positionY) / 256
+                    if let refIdx = Self.refineryAt(
+                        tile: (x: tx, y: ty), houseID: slot.houseID,
+                        structures: host.structures
+                    ) {
+                        _ = Simulation.Structures.dockHarvester(
+                            refineryIndex: refIdx, harvesterIndex: idx,
+                            structures: &host.structures, units: &host.units
+                        )
+                        // After dock, flip action back to HARVEST so
+                        // the post-undock path resumes seeking spice
+                        // without needing a fresh AI pass.
+                        var u = host.units[idx]
+                        u.actionID = Simulation.ActionID.harvest
+                        host.units[idx] = u
+                        Log.info(
+                            "harvest-cycle arrived harvester=\(idx) refinery=\(refIdx) DOCK",
+                            tracer: .label("harvest-tick")
+                        )
+                    }
+                }
+            }
+
             // Harvest pass.
             for idx in host.units.findArray {
                 let slot = host.units.slots[idx]
@@ -165,6 +309,7 @@ extension Simulation {
             }
 
             // Refine pass.
+            var undockedThisPass: [(refineryIdx: Int, harvesterIdx: Int)] = []
             for idx in host.structures.findArray {
                 let refinery = host.structures.slots[idx]
                 guard refinery.type == 12 /* REFINERY */ else { continue }
@@ -179,6 +324,46 @@ extension Simulation {
                     playerHouseID: playerHouse
                 )
                 refinedPairs += 1
+                // Slice 6a: auto-undock when the refine cycle finishes
+                // (amount drained to 0 clears inTransport). Mirrors what
+                // a fully-wired `Script_Structure_FindAndLeaveUnit` will
+                // drive once the refinery EMC runs; until then we kick
+                // the harvester free here so it can re-enter the cycle.
+                let finished = !host.units.slots[harvIdx].inTransport
+                    && host.units.slots[harvIdx].amount == 0
+                if finished {
+                    undockedThisPass.append((idx, harvIdx))
+                }
+            }
+
+            // Undock-after-refine — run in a second pass to avoid
+            // mutating the findArray while iterating it. Exit tile is
+            // the factorySpawnTile heuristic (south of the footprint).
+            for pair in undockedThisPass {
+                let refinery = host.structures.slots[pair.refineryIdx]
+                let ax = Int(refinery.positionX) / 256
+                let ay = Int(refinery.positionY) / 256
+                let exit = Simulation.Structures.factorySpawnTile(
+                    yardType: refinery.type, anchorX: ax, anchorY: ay
+                )
+                let released = Simulation.Structures.undockHarvester(
+                    refineryIndex: pair.refineryIdx,
+                    exitTile: (x: exit.x, y: exit.y),
+                    structures: &host.structures,
+                    units: &host.units
+                )
+                if released != nil {
+                    // Keep the harvester in HARVEST action so the next
+                    // tick's harvest pass picks it up (scene-side AI
+                    // slice 6b will reroute to spice before then).
+                    var u = host.units[pair.harvesterIdx]
+                    u.actionID = Simulation.ActionID.harvest
+                    host.units[pair.harvesterIdx] = u
+                    Log.info(
+                        "harvest-cycle refinery=\(pair.refineryIdx) released harvester=\(pair.harvesterIdx) action=HARVEST tile=(\(exit.x),\(exit.y))",
+                        tracer: .label("harvest-tick")
+                    )
+                }
             }
 
             // Flush the mutated SpiceMap back into the host.
@@ -249,10 +434,30 @@ extension Simulation {
                     let delta = Pathfinder.mapDirection[Int(slot.route[0])]
                     let currentPacked = Pathfinder.packedTile(x: slot.positionX, y: slot.positionY)
                     let nextPacked = UInt16(truncatingIfNeeded: Int32(currentPacked) + delta)
-                    let tileX = UInt16(nextPacked & 0x3F)
-                    let tileY = UInt16((nextPacked >> 6) & 0x3F)
-                    slot.currentDestinationX = tileX &* 256 &+ 128
-                    slot.currentDestinationY = tileY &* 256 &+ 128
+                    let tileX = Int(nextPacked & 0x3F)
+                    let tileY = Int((nextPacked >> 6) & 0x3F)
+                    // Defensive: re-check that the tile is still
+                    // passable for this unit's movement type. A
+                    // structure may have landed on the planned route
+                    // since the pathfinder ran, or the route itself
+                    // may have been stamped by a non-validating path.
+                    let mt = Simulation.UnitInfo.lookup(slot.type)?.movementType ?? .foot
+                    if !Self.isProjectileType(slot.type),
+                       !isTilePassable(tileX: tileX, tileY: tileY, movementType: mt)
+                    {
+                        Log.info(
+                            "move-halt u\(idx) impassable tile=(\(tileX),\(tileY)) mt=\(mt) — clearing route + target",
+                            tracer: .label("move")
+                        )
+                        slot.route = [UInt8](repeating: 0xFF, count: 14)
+                        slot.currentDestinationX = 0
+                        slot.currentDestinationY = 0
+                        slot.targetMove = 0
+                        host.units[idx] = slot
+                        continue
+                    }
+                    slot.currentDestinationX = UInt16(tileX) &* 256 &+ 128
+                    slot.currentDestinationY = UInt16(tileY) &* 256 &+ 128
                     Log.debug(
                         "move-step u\(idx) picked route[0]=\(slot.route[0]) → dest=(\(tileX),\(tileY))",
                         tracer: .label("move")
@@ -267,6 +472,24 @@ extension Simulation {
                     goal = Pos32(x: slot.currentDestinationX, y: slot.currentDestinationY)
                     goalSource = "route"
                 } else if let t = Pos32.of(Scripting.EncodedIndex(raw: slot.targetMove), host: host) {
+                    // Fallback slide toward a raw targetMove tile. This
+                    // bypasses the pathfinder, so guard against walking
+                    // straight into an impassable tile (rock for
+                    // non-tracked, walls, structures).
+                    let goalTileX = Int(t.x) / 256
+                    let goalTileY = Int(t.y) / 256
+                    let mt = Simulation.UnitInfo.lookup(slot.type)?.movementType ?? .foot
+                    if !Self.isProjectileType(slot.type),
+                       !isTilePassable(tileX: goalTileX, tileY: goalTileY, movementType: mt)
+                    {
+                        Log.info(
+                            "move-halt u\(idx) fallback target=(\(goalTileX),\(goalTileY)) impassable mt=\(mt) — clearing",
+                            tracer: .label("move")
+                        )
+                        slot.targetMove = 0
+                        host.units[idx] = slot
+                        continue
+                    }
                     goal = t
                     goalSource = "targetMove(fallback)"
                 } else {

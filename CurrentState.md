@@ -11,9 +11,9 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**None — scheduler + scene wiring for harvesting (slice 5 of spice income) shipped (2026-04-21). Pick from "Next up" below.**
+**None — placement UX + movement passability fixes shipped (2026-04-21). Pick from "Next up" below.**
 
-Today (2026-04-21, latest): `Scheduler.tickHarvesting()` runs the harvest-and-refine passes every 3 scheduler ticks. HOST gained `spiceMap`; Scheduler gained `harvestRNG`. `ScenarioScene` seeds the SpiceMap from snapshot tiles + shares the scripting `Tools_Random_256` stream. Auto-disabled when either state is missing, so pre-existing tests stay green. 5 new tests in `SpiceTickHarvestTests`. Slices 1–5 of the spice bridge are live end-to-end; slice 6 (harvester AI script wiring) is next — actual harvesters don't yet seek spice or dock automatically.
+Today (2026-04-21, latest): two user-reported bug fixes. (1) Building placement now shows a hover-tracked ghost footprint (green/yellow/red by validity), keeps placement mode active across rejected clicks, adds a HUD "PLACING X" indicator, and surfaces a red toast when a commit fails. (2) `Scheduler.tickMovement` now gates every tile entry through a new `Scheduler.isTilePassable(...)` that combines live structure-pool footprint checks with `LandscapeInfo.movementSpeed[movementType]`. Vehicles no longer walk over walls/structures or rock (wheeled-only); infantry can still climb mountain; wingers bypass. Route-step path and targetMove fallback path both guarded; on fail the unit halts and clears route + targetMove with a `move-halt` log line. 7 new tests in `MovementPassabilityTests`.
 
 Earlier today: new `StructureSlot.rallyPointPacked` (`0xFFFF` sentinel) + `Simulation.Structures.setRallyPoint` pure-sim writer + `completeConstruction` hook that fires `Simulation.Units.orderMove` on the freshly-spawned unit when the yard's rally is set. Scene wiring: right-click branches — if a unit is selected, command controller handles it as before; else if the selected yard is a factory, we call `setRallyPoint`. Yellow diamond marker at the rally tile, rebuilt on yard-switch and rally updates. 11 new tests; 687 green / 68 suites / zero warnings. Design: `Algorithms/FactoryRallyPoint.md`.
 
@@ -52,8 +52,9 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
    - ~~Slice 3 — `harvestSpiceStep` pure-sim primitive~~ (shipped 2026-04-21).
    - ~~Slice 4 — `SpiceMap` runtime state + `Map_ChangeSpiceAmount` transitions~~ (shipped 2026-04-21).
    - ~~Slice 5 — scheduler + scene wiring (`tickHarvesting`)~~ (shipped 2026-04-21).
-   - Slice 6 — harvester AI script wiring: port `Script_Unit_Harvest`'s caller-side flow — seek spice, move (via existing pathfinder + orderMove), arrive, enter harvest action; on amount==100 seek refinery, arrive in footprint, trigger `dockHarvester`; on `inTransport` cleared trigger `undockHarvester`; seek spice again. Also auto-advance harvesters spawned at scenario start.
-   - Slice 7 — carryall pickup loop when refinery chain is busy.
+   - ~~Slice 6 — harvester AI loop (seek refinery + dock + auto-undock)~~ (shipped 2026-04-21).
+   - Slice 7 — seek-spice target selection after undock: when a HARVESTER in HARVEST action has no spice under its feet and no move target, find the nearest `spice`/`thickSpice` tile in the SpiceMap and issue `orderMove`. This closes the last gap in the harvest cycle — today the harvester goes idle after undock and only harvests again if a human/scripted nudge moves it onto spice.
+   - Slice 8 — carryall pickup loop when every refinery's chain is busy.
    - Slice 6 — harvester AI loop: port `Script_Unit_Harvest`'s caller-side behaviour (seek nearest spice, move, harvest, seek refinery, dock, wait, undock, repeat). Uses existing pathfinder + orderMove primitives.
    - Slice 7 — carryall pickup loop when the refinery chain is busy.
 2. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
@@ -69,6 +70,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-21 — Placement UX + movement passability gate.** (1) Building placement gained a hover ghost footprint (green/yellow/red by validity), persistent placement mode across rejections, "PLACING X" HUD indicator, red toast on rejection; `commitPlacement` exits mode only on success. (2) New `Scheduler.isTilePassable(tileX:tileY:movementType:)` combines live structure footprint check + `LandscapeInfo.movementSpeed` gate; wired into both `tickMovement` paths (route step + targetMove fallback). Winger/slither/projectiles bypass. Halts unit + clears route on impassable step with `move-halt` log. 7 new tests. 744 green / 75 suites / zero warnings.
+- **2026-04-21 — Harvester AI loop (slice 6).** `tickHarvesting` auto-undocks after empty (6a) + seeks nearest same-house refinery when full / docks on arrival (6b). `Scheduler.findNearestRefinery` (squared-distance) + `refineryAt` (footprint hit) helpers. Every transition logs under `harvest-tick`. 5 new tests. 737 green / 74 suites / zero warnings.
 - **2026-04-21 — Scheduler + scene wiring for harvesting (slice 5).** `Host.spiceMap`, `Scheduler.harvestRNG`, new `Scheduler.tickHarvesting()` at cadence=3, scene seeding via `TileResolver.landscapeType`, shared RandomSource. `harvest-tick` tracer summarises entry. 5 new tests. 732 green / 73 suites / zero warnings.
 - **2026-04-21 — Runtime spice map (slice 4 of spice income).** `Simulation.SpiceMap` (64×64 Level enum) + `apply(delta:at:)` ports OpenDUNE's `Map_ChangeSpiceAmount` transition rules. `init(landscapeAt:)` seeds from a closure; `landscapeByte(at:)` bridges to the `harvestSpiceStep` closure shape. Each level transition logs under `spicemap` with before→after. 7 new tests in `SpiceMapTests`. 727 green / 72 suites / zero warnings.
 - **2026-04-21 — Harvester on-spice pickup (slice 3 of spice income) + Package.swift CLAUDE.md excludes.** `Simulation.Units.harvestSpiceStep` ports `Script_Unit_Harvest` as a pure function with tile reader / writer / RNG closures; each step logged under `harvest`. Package.swift now `exclude: ["CLAUDE.md"]` on every target to silence 5 unhandled-resource warnings from the per-module CLAUDE.md files added earlier today. 10 new tests in `HarvestSpiceStepTests`. 720 green / 71 suites / zero warnings.
@@ -150,7 +153,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **732 tests across 73 suites, all green** as of 2026-04-21 (post-scheduler-wiring-slice). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **744 tests across 75 suites, all green** as of 2026-04-21 (post-placement-UX / passability-gate fixes). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 
