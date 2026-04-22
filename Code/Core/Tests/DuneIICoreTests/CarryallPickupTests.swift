@@ -361,4 +361,149 @@ struct CarryallPickupTests {
     // behaviour — 2 busy refineries now triggers the carryall ferry,
     // tested by `carryallFerryKicksIn`. The single-refinery-busy
     // fallback lives in `singleBusyRefineryNoFerry`.
+
+    // MARK: dropCarryall (slice 8c pure helper)
+
+    @Test("dropCarryall places harvester at carryall tile + frees carryall slot")
+    func dropCarryallHappyPath() {
+        var units = Simulation.UnitPool()
+        var structures = Simulation.StructurePool()
+        // Refinery at (50, 50), unlinked (this is where the ferry
+        // delivers to).
+        let rIdx = structures.allocate(at: 5, type: REFINERY, houseID: 1)!
+        var r = structures[rIdx]
+        r.positionX = UInt16(50 * 256); r.positionY = UInt16(50 * 256)
+        r.hitpoints = 450; r.isAllocated = true
+        structures[rIdx] = r
+        // Harvester in-transport (riding the carryall).
+        let hIdx = units.allocate(in: 16...19, type: HARVESTER, houseID: 1)!
+        var h = units[hIdx]
+        h.positionX = UInt16(12 * 256 + 128); h.positionY = UInt16(12 * 256 + 128)
+        h.inTransport = true
+        h.isAllocated = true
+        units[hIdx] = h
+        // Carryall at the destination refinery tile (simulating post-
+        // tickMovement arrival — targetMove already cleared).
+        let cIdx = units.allocate(in: 0...9, type: 0, houseID: 1)!
+        var c = units[cIdx]
+        c.positionX = UInt16(50 * 256 + 128); c.positionY = UInt16(50 * 256 + 128)
+        c.inTransport = true
+        c.linkedID = UInt8(hIdx)
+        c.targetMove = 0    // arrival signal
+        c.isAllocated = true
+        units[cIdx] = c
+
+        let dropped = Simulation.Units.dropCarryall(
+            carryallIndex: cIdx, units: &units, structures: structures
+        )
+        #expect(dropped == hIdx)
+        // Carryall slot freed.
+        #expect(units[cIdx].isUsed == false)
+        // Harvester released + positioned at the carryall's tile.
+        #expect(units[hIdx].inTransport == false)
+        #expect(units[hIdx].positionX == UInt16(50 * 256 + 128))
+        #expect(units[hIdx].positionY == UInt16(50 * 256 + 128))
+    }
+
+    @Test("dropCarryall rejects non-carryall slots")
+    func dropCarryallRejectsWrongType() {
+        var units = Simulation.UnitPool()
+        let structures = Simulation.StructurePool()
+        let tIdx = units.allocate(in: 22...60, type: 13 /* Trike */, houseID: 1)!
+        var t = units[tIdx]
+        t.inTransport = true; t.linkedID = 5; t.isAllocated = true
+        units[tIdx] = t
+        #expect(Simulation.Units.dropCarryall(
+            carryallIndex: tIdx, units: &units, structures: structures
+        ) == nil)
+    }
+
+    @Test("dropCarryall rejects carryall without a linked harvester")
+    func dropCarryallRejectsUnlinked() {
+        var units = Simulation.UnitPool()
+        let structures = Simulation.StructurePool()
+        let cIdx = units.allocate(in: 0...9, type: 0, houseID: 1)!
+        var c = units[cIdx]
+        c.inTransport = true; c.linkedID = 0xFF; c.isAllocated = true
+        units[cIdx] = c
+        #expect(Simulation.Units.dropCarryall(
+            carryallIndex: cIdx, units: &units, structures: structures
+        ) == nil)
+    }
+
+    // MARK: Scheduler tickCarryallFerry integration
+
+    @Test("tickCarryallFerry drops a carryall whose targetMove just cleared")
+    func tickCarryallFerryDropsOnArrival() {
+        var scheduler = emptyScheduler(rng: { 0 })
+        // Destination refinery (free), where the ferry delivers.
+        let rIdx = scheduler.host.structures.allocate(
+            at: 5, type: REFINERY, houseID: Simulation.House.atreides
+        )!
+        var r = scheduler.host.structures[rIdx]
+        r.positionX = UInt16(50 * 256); r.positionY = UInt16(50 * 256)
+        r.hitpoints = 450; r.isAllocated = true
+        scheduler.host.structures[rIdx] = r
+        // Harvester (inside the carryall).
+        let hIdx = scheduler.host.units.allocate(
+            in: 16...19, type: HARVESTER, houseID: Simulation.House.atreides
+        )!
+        var h = scheduler.host.units[hIdx]
+        h.inTransport = true
+        h.isAllocated = true
+        scheduler.host.units[hIdx] = h
+        // Carryall post-arrival (targetMove cleared by a prior tickMovement).
+        let cIdx = scheduler.host.units.allocate(
+            in: 0...9, type: 0 /* CARRYALL */, houseID: Simulation.House.atreides
+        )!
+        var c = scheduler.host.units[cIdx]
+        c.positionX = UInt16(50 * 256 + 128); c.positionY = UInt16(50 * 256 + 128)
+        c.inTransport = true
+        c.linkedID = UInt8(hIdx)
+        c.targetMove = 0
+        c.isAllocated = true
+        scheduler.host.units[cIdx] = c
+
+        scheduler.tickCarryallFerry()
+
+        #expect(scheduler.host.units[cIdx].isUsed == false)   // freed
+        #expect(scheduler.host.units[hIdx].inTransport == false)
+        // Harvester landed at refinery tile, ready to dock next tick.
+        #expect(scheduler.host.units[hIdx].positionX == UInt16(50 * 256 + 128))
+    }
+
+    @Test("tickCarryallFerry leaves an in-flight carryall alone (targetMove still set)")
+    func tickCarryallFerryKeepsInFlight() {
+        var scheduler = emptyScheduler(rng: { 0 })
+        let rIdx = scheduler.host.structures.allocate(
+            at: 5, type: REFINERY, houseID: Simulation.House.atreides
+        )!
+        var r = scheduler.host.structures[rIdx]
+        r.positionX = UInt16(50 * 256); r.positionY = UInt16(50 * 256)
+        r.hitpoints = 450; r.isAllocated = true
+        scheduler.host.structures[rIdx] = r
+        let hIdx = scheduler.host.units.allocate(
+            in: 16...19, type: HARVESTER, houseID: Simulation.House.atreides
+        )!
+        var h = scheduler.host.units[hIdx]
+        h.inTransport = true
+        h.isAllocated = true
+        scheduler.host.units[hIdx] = h
+        let cIdx = scheduler.host.units.allocate(
+            in: 0...9, type: 0, houseID: Simulation.House.atreides
+        )!
+        var c = scheduler.host.units[cIdx]
+        c.positionX = UInt16(12 * 256 + 128); c.positionY = UInt16(12 * 256 + 128)
+        c.inTransport = true
+        c.linkedID = UInt8(hIdx)
+        // Still mid-flight (targetMove still set).
+        c.targetMove = Scripting.EncodedIndex.structure(UInt16(rIdx)).raw
+        c.isAllocated = true
+        scheduler.host.units[cIdx] = c
+
+        scheduler.tickCarryallFerry()
+
+        #expect(scheduler.host.units[cIdx].isUsed == true)     // still flying
+        #expect(scheduler.host.units[hIdx].inTransport == true)
+    }
 }

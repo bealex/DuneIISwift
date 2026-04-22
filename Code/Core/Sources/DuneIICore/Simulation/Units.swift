@@ -136,6 +136,57 @@ extension Simulation {
             return carryallIdx
         }
 
+        /// Carryall pickup slice 8c. Drop-off counterpart to
+        /// `callCarryall`. Detaches the harvester from the carryall,
+        /// clears `inTransport` on both sides, snaps the harvester
+        /// position to the carryall's current tile (by arrival the
+        /// carryall has been flown to the destination refinery by
+        /// `tickMovement`), and frees the carryall slot.
+        ///
+        /// Returns the dropped-off harvester pool index on success,
+        /// `nil` when the carryall isn't ferrying anything (not
+        /// in-transport / no linkedID / not a CARRYALL). Logs under
+        /// the `carryall` tracer.
+        ///
+        /// Deferred vs. OpenDUNE: no "fly off to map edge" return
+        /// trip — we free the carryall the moment the drop lands.
+        /// Future slices can route the empty carryall back for reuse.
+        @discardableResult
+        public static func dropCarryall(
+            carryallIndex: Int,
+            units: inout UnitPool,
+            structures: StructurePool
+        ) -> Int? {
+            guard carryallIndex >= 0, carryallIndex < UnitPool.capacity else { return nil }
+            let carryall = units[carryallIndex]
+            guard carryall.isUsed, carryall.isAllocated else { return nil }
+            guard carryall.type == 0 /* CARRYALL */ else { return nil }
+            guard carryall.inTransport else { return nil }
+            guard carryall.linkedID != 0xFF else { return nil }
+            let harvesterIdx = Int(carryall.linkedID)
+            guard harvesterIdx >= 0, harvesterIdx < UnitPool.capacity else { return nil }
+            var harvester = units[harvesterIdx]
+            guard harvester.isUsed, harvester.type == 16 /* HARVESTER */ else { return nil }
+
+            // Place the harvester at the carryall's current tile —
+            // tickMovement has already snapped the carryall to the
+            // destination refinery's anchor. The harvester's RETURN
+            // action then docks on the next tickHarvesting pass via
+            // the existing refineryAt flow.
+            harvester.positionX = carryall.positionX
+            harvester.positionY = carryall.positionY
+            harvester.inTransport = false
+            units[harvesterIdx] = harvester
+
+            units.free(at: carryallIndex)
+
+            Log.info(
+                "carryall-drop slot=\(carryallIndex) harvester=\(harvesterIdx) at=(\(harvester.positionX),\(harvester.positionY))",
+                tracer: .label("carryall")
+            )
+            return harvesterIdx
+        }
+
         /// Port of `Unit_CreateBullet` (`src/unit.c:1954`). Allocates a
         /// projectile-type unit in the pool's bullet range (12..15),
         /// sets its position / orientation / target / hitpoints.

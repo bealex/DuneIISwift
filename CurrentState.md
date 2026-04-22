@@ -11,7 +11,7 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**Carryall pickup loop — 8a + 8b shipped. 8c (flight + drop-off + re-dock) is next.** Design doc: `Algorithms/CarryallPickup.md`. Immediate next step for a cold session: extend `Scheduler.tickMovement` (or add a dedicated `tickCarryallFerry`) to detect when an in-transport carryall reaches its destination refinery. On arrival, unlink the harvester (`carryall.linkedID = 0xFF`, both sides flip `inTransport = false`), snap the harvester to a passable tile adjacent to the refinery, carryall continues to return-to-origin or frees the slot. The harvester's next `tickHarvesting` pass docks via the existing RETURN-action path.
+**None — carryall pickup loop (slices 8a/8b/8c) is fully shipped as of 2026-04-22. Pick from "Next up".**
 
 What works now:
 - CYARD pre-selected at scene load; build panel shows buildables.
@@ -30,20 +30,21 @@ Latest session (2026-04-22) shipped tasks 1-9 + the minimap; all details in toda
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → implement → tests → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **Carryall pickup loop 8c** — flight + drop-off at destination + re-dock. Design: `Algorithms/CarryallPickup.md`. 8a + 8b already shipped.
-2. **Scene repaint on `SpiceMap.apply`** (slice 9). Cosmetic; lets the player see spice thick→thin→bare drain in real time.
-3. **STARPORT case** — port `Structure_GetBuildable` `-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
-4. **Mentat briefing screen** — scenario intro text, voice cue. Intro WSA + jukebox already shipped.
-5. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline's `gameSpeed` factor.
-6. **`BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; the real script gives proper flight frames + sonic-beam propagation. Cosmetic.
-7. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder.
-8. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority`; slot 0x36.
-9. **HP-bar visual on world markers** — small bar above each unit/structure SKNode for at-a-glance status. Info panel already shows HP for the selection; this would make every entity show it.
+1. **Scene repaint on `SpiceMap.apply`** (slice 9). Cosmetic; lets the player see spice thick→thin→bare drain in real time.
+2. **STARPORT case** — port `Structure_GetBuildable` `-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
+3. **Mentat briefing screen** — scenario intro text, voice cue. Intro WSA + jukebox already shipped.
+4. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline's `gameSpeed` factor.
+5. **`BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; the real script gives proper flight frames + sonic-beam propagation. Cosmetic.
+6. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder.
+7. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority`; slot 0x36.
+8. **HP-bar visual on world markers** — small bar above each unit/structure SKNode for at-a-glance status. Info panel already shows HP for the selection; this would make every entity show it.
+9. **Carryall reuse** — when a drop completes, fly the empty carryall back to a map-edge origin instead of freeing it; next ferry can reuse the existing slot. Cosmetic + matches OpenDUNE's persistent-carryall behaviour.
 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-22 — Carryall pickup 8c.** `Simulation.Units.dropCarryall` detaches the ferried harvester + frees the carryall on arrival. New `Scheduler.tickCarryallFerry` pass (between tickMovement and tickUnits) picks up carryalls whose `targetMove` just cleared, invokes drop. Closes the carryall pickup loop. 5 new tests. 807 green / 79 suites / zero warnings.
 - **2026-04-22 — Carryall pickup 8b.** `Simulation.Units.callCarryall` spawns a CARRYALL in-pool at the harvester's tile with `inTransport=true` + `linkedID=harvester` + `targetMove=encoded(refinery)`. `tickHarvesting` picks between free-refinery (8a), carryall-ferry (new), and on-foot-only-option branches; `countRefineries(houseID:structures:)` gates ferry on ≥ 2 refineries. 4 new tests, 1 superseded. 802 green / 79 suites / zero warnings.
 - **2026-04-22 — Carryall pickup 8a.** `findFreeRefinery` + tickHarvesting preference for free refineries over nearest. Observable: two harvesters parallelise across two refineries. 9 new tests. 798 green / 79 suites / zero warnings.
 - **2026-04-22 — Sidebar minimap.** New `DuneIIRendering.Minimap` produces a 64×64 RGBA buffer from live tile grid + pools. `ScenarioScene.refreshMinimap()` rebuilds the `SKTexture` every tick; 120×120 pt node sits above the info panel. Terrain colours per `LandscapeType`; units + structure footprints overlaid in house colour; projectiles (types 18..24), slabs + walls skipped. 12 new tests. **789 green / 78 suites / zero warnings.**
@@ -139,7 +140,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **802 tests across 79 suites, all green** as of 2026-04-22 (post-carryall-8b). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **807 tests across 79 suites, all green** as of 2026-04-22 (post-carryall-loop). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 

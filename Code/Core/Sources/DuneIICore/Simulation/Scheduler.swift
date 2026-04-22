@@ -303,6 +303,12 @@ extension Simulation {
             // `CalculateRoute`) observe the updated position when deciding
             // whether to pop the next step or re-plan.
             tickMovement()
+            // Carryall arrival drop-off (slice 8c). tickMovement snaps
+            // an in-transport carryall to its destination refinery and
+            // clears `targetMove`; we pick that up here and detach the
+            // harvester so its RETURN action can dock on the next
+            // tickHarvesting pass.
+            tickCarryallFerry()
             // Construction countdown + credit drain pass. Drains
             // `countDown` on BUSY yards (paused when the owning house
             // can't pay the per-tick cost) and flips to `READY` at
@@ -327,6 +333,35 @@ extension Simulation {
                 tickHarvesting()
             }
             host.currentObject = nil
+        }
+
+        /// Carryall arrival pass (slice 8c). Walks the unit pool once
+        /// and, for every in-transport CARRYALL whose `targetMove`
+        /// just cleared (tickMovement's arrival signal), calls
+        /// `Simulation.Units.dropCarryall` to detach the ferried
+        /// harvester + free the carryall slot.
+        ///
+        /// Arrival detection is the transition `targetMove != 0 →
+        /// targetMove == 0` that tickMovement writes on arrival at a
+        /// target-move tile (see `Scheduler.swift:tickMovement` →
+        /// "Arrived via targetMove fallback"). Carryalls that didn't
+        /// have a targetMove to begin with (idle slots, legacy state)
+        /// are skipped by the `inTransport && linkedID != 0xFF`
+        /// filter.
+        public mutating func tickCarryallFerry() {
+            for idx in host.units.findArray {
+                let carryall = host.units.slots[idx]
+                guard carryall.isUsed else { continue }
+                guard carryall.type == 0 /* CARRYALL */ else { continue }
+                guard carryall.inTransport else { continue }
+                guard carryall.linkedID != 0xFF else { continue }
+                guard carryall.targetMove == 0 else { continue }
+                _ = Simulation.Units.dropCarryall(
+                    carryallIndex: idx,
+                    units: &host.units,
+                    structures: host.structures
+                )
+            }
         }
 
         /// One harvest / refine pass. Iterates:
