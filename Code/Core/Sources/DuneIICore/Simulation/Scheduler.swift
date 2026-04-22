@@ -95,6 +95,34 @@ extension Simulation {
             return info.movementSpeed[mt] != 0
         }
 
+        /// Slice 7 helper. Nearest `thin` or `thick` spice tile to
+        /// `from` by squared distance. Returns nil when the SpiceMap
+        /// holds no spice anywhere (fully drained or scenario seed
+        /// without spice in range). Scans all 4096 cells — cheap at
+        /// 12 Hz scheduler cadence and slice-cadence 3.
+        static func findNearestSpiceTile(
+            from: (x: Int, y: Int),
+            map: SpiceMap
+        ) -> (x: Int, y: Int)? {
+            var bestIdx: Int?
+            var bestDist = Int.max
+            for i in 0..<SpiceMap.cellCount {
+                let level = map.cells[i]
+                guard level == .thin || level == .thick else { continue }
+                let tx = i % SpiceMap.width
+                let ty = i / SpiceMap.width
+                let dx = tx - from.x
+                let dy = ty - from.y
+                let d = dx * dx + dy * dy
+                if d < bestDist {
+                    bestDist = d
+                    bestIdx = i
+                }
+            }
+            guard let idx = bestIdx else { return nil }
+            return (idx % SpiceMap.width, idx / SpiceMap.width)
+        }
+
         /// Slice 6b helper. Nearest same-house REFINERY for a full
         /// harvester. Uses squared-distance over the structure anchor
         /// tiles (close enough for routing; route cost lives in the
@@ -236,11 +264,15 @@ extension Simulation {
             var harvestedCount = 0
             var refinedPairs = 0
 
-            // Harvester AI transitions (slice 6b):
+            // Harvester AI transitions (slices 6b + 7):
             // - HARVEST + amount>=100 + not docked → seek nearest
             //   same-house refinery, issue move, flip to RETURN.
             // - RETURN + on a refinery footprint → dockHarvester,
             //   flip back to HARVEST.
+            // - HARVEST + amount<100 + not docked + no active move +
+            //   standing off-spice → find nearest spice tile + orderMove
+            //   (slice 7). Closes the cycle after undock so harvesters
+            //   resume working without a human nudge.
             for idx in host.units.findArray {
                 let slot = host.units.slots[idx]
                 guard slot.type == 16 else { continue }
@@ -261,6 +293,37 @@ extension Simulation {
                         host.units[idx] = u
                         Log.info(
                             "harvest-cycle full harvester=\(idx) → refinery=\(refIdx) tile=(\(rx),\(ry))",
+                            tracer: .label("harvest-tick")
+                        )
+                    }
+                } else if slot.actionID == Simulation.ActionID.harvest,
+                          slot.amount < 100, !slot.inTransport
+                {
+                    let hx = Int(slot.positionX) / 256
+                    let hy = Int(slot.positionY) / 256
+                    // Idle when not already moving AND current tile is
+                    // not spice (can't harvest where we stand).
+                    let idle = slot.targetMove == 0
+                        && slot.route[0] == 0xFF
+                        && slot.currentDestinationX == 0
+                        && slot.currentDestinationY == 0
+                    let currentPacked = UInt16(hy * 64 + hx)
+                    let onSpice: Bool = {
+                        let lb = spiceMap.landscapeByte(at: currentPacked)
+                        return lb == UInt8(LandscapeType.spice.rawValue)
+                            || lb == UInt8(LandscapeType.thickSpice.rawValue)
+                    }()
+                    if idle, !onSpice,
+                       let spice = Self.findNearestSpiceTile(
+                           from: (x: hx, y: hy), map: spiceMap
+                       )
+                    {
+                        _ = Simulation.Units.orderMove(
+                            poolIndex: idx, tileX: spice.x, tileY: spice.y,
+                            units: &host.units
+                        )
+                        Log.info(
+                            "harvest-cycle seek-spice harvester=\(idx) from=(\(hx),\(hy)) → tile=(\(spice.x),\(spice.y))",
                             tracer: .label("harvest-tick")
                         )
                     }

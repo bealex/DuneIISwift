@@ -115,12 +115,19 @@ Both emit `harvest-tick` logs (`full harvester=X → refinery=Y`, `arrived harve
 
 End-to-end, a harvester that starts on spice in HARVEST action will: fill to 100 → seek nearest refinery → dock on arrival → drain to 0 over ~34 scheduler-harvest-passes → undock to south-of-footprint → resume seeking spice on its own. ~700 credits per cycle at a full refinery.
 
+## Slice 7 — auto-seek spice after undock (shipped 2026-04-21)
+
+New transition in `tickHarvesting`'s AI pre-pass: a HARVEST-action harvester with `amount < 100`, `!inTransport`, no active move (`targetMove == 0 && route[0] == 0xFF && currentDestination == 0`), and standing on a non-spice tile auto-issues `Units.orderMove` toward the nearest `thin`/`thick` spice tile. Closes the cycle after `undockHarvester` — the harvester now resumes work on its own.
+
+Implementation: new `Scheduler.findNearestSpiceTile(from:map:) -> (x,y)?` scans all 4096 cells by squared distance (cheap at cadence 3). Returns nil when the SpiceMap holds no spice — silent no-op; the harvester simply idles until something reseeds spice.
+
+Logs: `harvest-cycle seek-spice harvester=<N> from=(x,y) → tile=(x,y)` under the `harvest-tick` tracer.
+
 ## What this slice does NOT ship
 
-- **Seek spice target selection.** On undock the harvester stays in HARVEST action but without a move target — the harvest pass only runs when the unit is already standing on a spice tile. A later slice needs to scan for the nearest `spice / thickSpice` tile and issue `orderMove`.
 - **Movement between waypoints.** Movement is driven by `orderMove` + the existing route-follower; nothing new here. But routing into a 3×2 refinery footprint relies on the existing pathfinder's ability to find a path *onto* a structure tile — untested for this slice. Full-cycle test uses a teleport to simulate arrival.
 - **Scene tile repaint** when `SpiceMap.apply` flips a level. Cosmetic.
-- **Carryall pickup** when all refineries are busy — slice 7.
+- **Carryall pickup** when all refineries are busy — slice 8.
 - **Carryall pickup path** (refinery busy → carryall returns harvester to spice field).
 - **Credit readout animation.** The HUD label updates each tick from `Simulation.House.credits(for:in:)` so the number changes live, but no roll-up SFX.
 - **Scheduler wiring.** No script slot calls `refineSpiceStep` yet — callers invoke it directly (tests today; per-tick wiring once harvest AI slice lands).

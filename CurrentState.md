@@ -11,9 +11,9 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**None — placement UX + movement passability fixes shipped (2026-04-21). Pick from "Next up" below.**
+**None — slice 7 (auto-seek spice after undock) shipped (2026-04-21). Pick from "Next up" below.**
 
-Today (2026-04-21, latest): two user-reported bug fixes. (1) Building placement now shows a hover-tracked ghost footprint (green/yellow/red by validity), keeps placement mode active across rejected clicks, adds a HUD "PLACING X" indicator, and surfaces a red toast when a commit fails. (2) `Scheduler.tickMovement` now gates every tile entry through a new `Scheduler.isTilePassable(...)` that combines live structure-pool footprint checks with `LandscapeInfo.movementSpeed[movementType]`. Vehicles no longer walk over walls/structures or rock (wheeled-only); infantry can still climb mountain; wingers bypass. Route-step path and targetMove fallback path both guarded; on fail the unit halts and clears route + targetMove with a `move-halt` log line. 7 new tests in `MovementPassabilityTests`.
+Today (2026-04-21, latest): harvesters now self-manage end-to-end. New seek-spice transition in `Scheduler.tickHarvesting` auto-issues `orderMove` toward the nearest spice tile when an idle HARVEST-action harvester is standing off-spice. New `Scheduler.findNearestSpiceTile` squared-distance scan. Full cycle (fill → return → dock → drain → undock → seek → move → fill) runs without human input. 5 new tests in `SpiceSeekTests`.
 
 Earlier today: new `StructureSlot.rallyPointPacked` (`0xFFFF` sentinel) + `Simulation.Structures.setRallyPoint` pure-sim writer + `completeConstruction` hook that fires `Simulation.Units.orderMove` on the freshly-spawned unit when the yard's rally is set. Scene wiring: right-click branches — if a unit is selected, command controller handles it as before; else if the selected yard is a factory, we call `setRallyPoint`. Yellow diamond marker at the rally tile, rebuilt on yard-switch and rally updates. 11 new tests; 687 green / 68 suites / zero warnings. Design: `Algorithms/FactoryRallyPoint.md`.
 
@@ -53,8 +53,9 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
    - ~~Slice 4 — `SpiceMap` runtime state + `Map_ChangeSpiceAmount` transitions~~ (shipped 2026-04-21).
    - ~~Slice 5 — scheduler + scene wiring (`tickHarvesting`)~~ (shipped 2026-04-21).
    - ~~Slice 6 — harvester AI loop (seek refinery + dock + auto-undock)~~ (shipped 2026-04-21).
-   - Slice 7 — seek-spice target selection after undock: when a HARVESTER in HARVEST action has no spice under its feet and no move target, find the nearest `spice`/`thickSpice` tile in the SpiceMap and issue `orderMove`. This closes the last gap in the harvest cycle — today the harvester goes idle after undock and only harvests again if a human/scripted nudge moves it onto spice.
+   - ~~Slice 7 — seek-spice target selection after undock~~ (shipped 2026-04-21). Full self-sustaining cycle live.
    - Slice 8 — carryall pickup loop when every refinery's chain is busy.
+   - Slice 9 — scene repaint when `SpiceMap.apply` flips a tile level. Cosmetic; lets the player see spice drain in real time.
    - Slice 6 — harvester AI loop: port `Script_Unit_Harvest`'s caller-side behaviour (seek nearest spice, move, harvest, seek refinery, dock, wait, undock, repeat). Uses existing pathfinder + orderMove primitives.
    - Slice 7 — carryall pickup loop when the refinery chain is busy.
 2. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
@@ -70,6 +71,7 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-21 — Harvester auto-seek spice (slice 7).** Idle HARVEST-action harvester off spice auto-issues `orderMove` to nearest spice via new `Scheduler.findNearestSpiceTile`. Completes the self-sustaining harvest cycle. 5 new tests. 749 green / 76 suites / zero warnings.
 - **2026-04-21 — Placement UX + movement passability gate.** (1) Building placement gained a hover ghost footprint (green/yellow/red by validity), persistent placement mode across rejections, "PLACING X" HUD indicator, red toast on rejection; `commitPlacement` exits mode only on success. (2) New `Scheduler.isTilePassable(tileX:tileY:movementType:)` combines live structure footprint check + `LandscapeInfo.movementSpeed` gate; wired into both `tickMovement` paths (route step + targetMove fallback). Winger/slither/projectiles bypass. Halts unit + clears route on impassable step with `move-halt` log. 7 new tests. 744 green / 75 suites / zero warnings.
 - **2026-04-21 — Harvester AI loop (slice 6).** `tickHarvesting` auto-undocks after empty (6a) + seeks nearest same-house refinery when full / docks on arrival (6b). `Scheduler.findNearestRefinery` (squared-distance) + `refineryAt` (footprint hit) helpers. Every transition logs under `harvest-tick`. 5 new tests. 737 green / 74 suites / zero warnings.
 - **2026-04-21 — Scheduler + scene wiring for harvesting (slice 5).** `Host.spiceMap`, `Scheduler.harvestRNG`, new `Scheduler.tickHarvesting()` at cadence=3, scene seeding via `TileResolver.landscapeType`, shared RandomSource. `harvest-tick` tracer summarises entry. 5 new tests. 732 green / 73 suites / zero warnings.
@@ -153,7 +155,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **744 tests across 75 suites, all green** as of 2026-04-21 (post-placement-UX / passability-gate fixes). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **749 tests across 76 suites, all green** as of 2026-04-21 (post-seek-spice slice). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 
