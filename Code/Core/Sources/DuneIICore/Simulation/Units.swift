@@ -143,6 +143,62 @@ extension Simulation {
             }
         }
 
+        // MARK: Player orders
+
+        /// Player-issued "move to tile" order. Analogue of the path
+        /// `Unit_SetAction(ACTION_MOVE)` + `Unit_SetDestination(encoded)`
+        /// takes in OpenDUNE (`src/unit.c:497, 701`), collapsed to a
+        /// single pure-sim write. Sets `targetMove` to the packed-tile
+        /// encoded index, flips `actionID` to `move` (1), wipes any
+        /// in-progress route + `currentDestination` so the scheduler's
+        /// follower picks up the fresh target next tick.
+        ///
+        /// Returns `true` on success; `false` when the slot is
+        /// unallocated / freed / out of range, or `(tileX, tileY)` is
+        /// off the 64×64 map. On failure the pool is untouched.
+        ///
+        /// Deferred vs OpenDUNE:
+        /// - `Unit_SetDestination`'s tile→unit / tile→structure upgrade
+        ///   (when the target tile already holds an entity).
+        /// - Harvester-on-refinery linking (sets `linkedID` via
+        ///   `Object_Script_Variable4_Link`).
+        /// - `nextActionID` queuing for switchType=0 actions while a
+        ///   current destination is active — we always apply
+        ///   immediately so the player's input feels responsive.
+        /// - `Script_Reset` + `Script_Load(actionsPlayer[i])` — the
+        ///   scheduler's per-slot `loadedUnitAction != actionID` check
+        ///   (`Scheduler.swift:253`) reloads the engine on the next
+        ///   tick at the ACTION_MOVE entry point.
+        @discardableResult
+        public static func orderMove(
+            poolIndex: Int,
+            tileX: Int,
+            tileY: Int,
+            units: inout UnitPool
+        ) -> Bool {
+            guard poolIndex >= 0, poolIndex < UnitPool.capacity else { return false }
+            guard (0..<64).contains(tileX), (0..<64).contains(tileY) else { return false }
+            guard units.slots[poolIndex].isUsed, units.slots[poolIndex].isAllocated else { return false }
+
+            let packed = UInt16(tileY &* 64 &+ tileX)
+            let encoded = Scripting.EncodedIndex.tile(packed: packed).raw
+
+            var slot = units[poolIndex]
+            let priorAction = slot.actionID
+            let priorTarget = slot.targetMove
+            slot.targetMove = encoded
+            slot.actionID = Simulation.ActionID.move
+            slot.currentDestinationX = 0
+            slot.currentDestinationY = 0
+            slot.route[0] = 0xFF
+            units[poolIndex] = slot
+            Log.info(
+                "orderMove u\(poolIndex) (t=\(slot.type) h=\(slot.houseID)) pos=(\(slot.positionX),\(slot.positionY)) → tile=(\(tileX),\(tileY)) encoded=\(String(format: "0x%04X", encoded)) action:\(priorAction)→1 prevTarget=\(String(format: "0x%04X", priorTarget))",
+                tracer: .label("move")
+            )
+            return true
+        }
+
         // MARK: Team membership
 
         /// Port of `Unit_AddToTeam` (`src/unit.c:540`). Writes

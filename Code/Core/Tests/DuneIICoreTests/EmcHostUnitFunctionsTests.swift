@@ -199,6 +199,51 @@ struct EmcHostUnitFunctionsTests {
         return engine.returnValue
     }
 
+    // MARK: SetActionDefault
+
+    @Test("SetActionDefault writes actionsPlayer[3] to actionID + clears currentDestination")
+    func setActionDefaultWrites() throws {
+        var units = Simulation.UnitPool()
+        units.allocate(at: 7, type: 13, houseID: 1)  // Trike → actionsPlayer[3] = guard_ (3)
+        var slot = units[7]
+        slot.actionID = Simulation.ActionID.move  // 1
+        slot.currentDestinationX = 1234
+        slot.currentDestinationY = 5678
+        units[7] = slot
+
+        let host = Scripting.Host(
+            units: units, structures: .init(),
+            currentObject: .unit(poolIndex: 7),
+            texts: [], textLog: []
+        )
+        var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
+        functions[0x0A] = Scripting.Functions.makeSetActionDefaultUnit(host: host)
+        let vm = makeVM(words: ins(14, 0x0A), functions: functions)
+        var engine = Scripting.Engine.reset()
+        _ = vm.step(&engine)
+
+        #expect(host.units[7].actionID == Simulation.ActionID.guard_)
+        #expect(host.units[7].currentDestinationX == 0)
+        #expect(host.units[7].currentDestinationY == 0)
+    }
+
+    @Test("SetActionDefault with no current object is a no-op")
+    func setActionDefaultNoCurrent() throws {
+        let units = Simulation.UnitPool()
+        let host = Scripting.Host(
+            units: units, structures: .init(),
+            currentObject: nil,
+            texts: [], textLog: []
+        )
+        var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
+        functions[0x0A] = Scripting.Functions.makeSetActionDefaultUnit(host: host)
+        let vm = makeVM(words: ins(14, 0x0A), functions: functions)
+        var engine = Scripting.Engine.reset()
+        // Runs without crashing or mutating anything.
+        _ = vm.step(&engine)
+        #expect(host.units == units)
+    }
+
     private func ins(_ opcode: UInt8, _ parameter: UInt16) -> [UInt16] {
         return [(UInt16(opcode) << 8) | 0x2000, parameter]
     }

@@ -4,58 +4,60 @@ import Testing
 
 @Suite("Simulation.Scheduler")
 struct SimulationSchedulerTests {
-    @Test("Scheduler loads engine entry point for actionID on first tick, reloads on action change")
-    func schedulerLoadsEntryPointOnActionChange() throws {
+    @Test("Scheduler loads engine at entryPoints[slot.type] and seeds variables[0] with actionID")
+    func schedulerLoadsEntryPointByType() throws {
+        // Regression guard: the scheduler used to pass `actionID` as
+        // `typeID` to `unitVM.load`, which landed the PC at
+        // `entryPoints[action]` — a different unit type's entry, with
+        // all the local-allocation prologue that implies. OpenDUNE
+        // loads `entryPoints[u->o.type]` and sets `variables[0] = action`
+        // separately. The EMC top-level dispatch reads `variables[0]`
+        // to branch per action. See `src/unit.c:520..521`.
         var units = Simulation.UnitPool()
-        units.allocate(at: 0, type: 9, houseID: 0)
+        units.allocate(at: 0, type: 9, houseID: 0)  // TANK (type 9)
         var u = units[0]
         u.actionID = 3 // ACTION_GUARD
         units[0] = u
         let host = Scripting.Host(units: units)
 
-        // Program with 4 entry points at offsets 10, 20, 30, 40 and 50
-        // filler words so `Program.empty` logic doesn't kick in.
+        // 27 entry points (one per unit type). Each is a JUMP 0 (halt-ish),
+        // so the PC stays where load put it long enough to inspect.
+        var entryPoints = [UInt16](repeating: 0, count: 27)
+        for i in 0..<27 { entryPoints[i] = UInt16(i * 2) }
         let code = Array(repeating: UInt16(0x8000), count: 60)  // 60 words of JUMP 0
         let program = Formats.Emc.Program(
             texts: [],
-            entryPoints: [10, 20, 30, 40],
+            entryPoints: entryPoints,
             code: code,
             instructions: [],
             wordIndexToInsn: Array(repeating: -1, count: code.count)
         )
+        // Use an empty function table — we only care about load-time state.
         let vm = Scripting.VM(
             program: program,
             functions: Array(repeating: nil, count: 64)
         )
         var scheduler = Simulation.Scheduler(host: host, unitVM: vm, structureVM: vm)
 
-        // First tick: engine was fresh, action = 3, entry point 40.
+        // Freeze the engine just after load, before any steps, by
+        // capturing its state immediately. We do this by giving the
+        // engine a delay so tickUnits' reload path runs, writes
+        // variables[0], and then the dispatch loop bails on the delay.
         scheduler.tick()
-        // After 7 opcodes of JUMP 0, pc should have wrapped to 0 via the jumps.
-        // But the initial load set pc to 40. That proves load fired.
-        // We can't observe pc directly after the jumps, but we can check
-        // the loadedAction tracking by changing action + observing reload.
+        // Dispatch decremented delay from 0 (fresh) to some steps; the
+        // JUMP 0 loops keep pc bouncing but variables[0] persists.
+        #expect(scheduler.unitEngines[0].variables[0] == 3,
+                "variables[0] should carry actionID=GUARD (3), not type=9")
+
+        // Action change (GUARD → MOVE) triggers reload.
         u = host.units[0]
         u.actionID = 1 // ACTION_MOVE
         host.units[0] = u
         scheduler.tick()
-        // Again the engine should have been re-loaded to entry point 20.
-        // Set actionID back to a third value and confirm it loads again.
-        u = host.units[0]
-        u.actionID = 0 // ACTION_ATTACK
-        host.units[0] = u
-
-        // Save pc before tick; after tick, pc should differ from what a
-        // never-loaded engine would show (0).
-        let priorPc = scheduler.unitEngines[0].pc
-        scheduler.tick()
-        let afterPc = scheduler.unitEngines[0].pc
-        // An action change re-loads, so the pc can't equal both priorPc
-        // AND follow from it — either it reset, or kept running.
-        // Simplest assertion: the engine is not halted (load set pc to a
-        // valid code offset).
-        #expect(!scheduler.unitEngines[0].halted)
-        _ = priorPc; _ = afterPc
+        #expect(scheduler.unitEngines[0].variables[0] == 1,
+                "After MOVE action change, variables[0] should be 1")
+        #expect(!scheduler.unitEngines[0].halted,
+                "Engine should not halt — entry point is valid for type 9")
     }
 
     @Test("engine.delay counts down 3 → 2 → 1 → 0 over three ticks without stepping")

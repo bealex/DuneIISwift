@@ -61,6 +61,13 @@ public final class ScenarioScene: SKScene {
 
     // P5 slice 3 — build panel.
     private var buildController = BuildPanelController()
+    /// Pure state machine for player-issued unit orders: left-click to
+    /// select a friendly unit, right-click (with a selection) to issue
+    /// a move order. See `Algorithms/UnitSelectionAndOrders.md`.
+    private var commandController = UnitCommandController()
+    /// Selection halo parented to the selected unit's marker. Recreated
+    /// on selection change; removed on deselect.
+    private var selectionHalo: SKShapeNode?
     /// Container for sidebar slot nodes. Always parented to the scene;
     /// children are rebuilt on every `refreshBuildSidebar()`.
     private var sidebarNode: SKNode?
@@ -119,10 +126,26 @@ public final class ScenarioScene: SKScene {
             scheduler?.tick()
             tickCounter += 1
             syncVisualsFromPool()
+            validateSelectionHalo()
             refreshHud()
             // Progress bar + READY highlight animate at tick cadence
             // (~12 Hz) — cheap rebuild of a handful of SKNodes.
             refreshBuildSidebar()
+            // Per-tick trace of the selected unit. Compact; lets the
+            // developer follow a single unit across dozens of ticks
+            // without the noise of every unit on the map. Skipped when
+            // no unit is selected.
+            if let sel = commandController.selectedUnitIndex,
+               let host = scheduler?.host,
+               sel < host.units.slots.count,
+               host.units.slots[sel].isUsed {
+                let s = host.units.slots[sel]
+                let routeTail = s.route.prefix(while: { $0 != 0xFF }).map(String.init).joined(separator: ",")
+                Log.debug(
+                    "sel-tick \(tickCounter) u\(sel) a=\(s.actionID) pos=(\(s.positionX),\(s.positionY)) o=\(s.orientationCurrent) tgt=\(String(format: "0x%04X", s.targetMove)) curDst=(\(s.currentDestinationX),\(s.currentDestinationY)) route=[\(routeTail)]",
+                    tracer: .label("sel")
+                )
+            }
             // Every 60 ticks (≈5 seconds at 12 Hz), sample the first
             // few unit slots so we can see whether position /
             // orientation are actually changing run-over-run.
@@ -140,6 +163,23 @@ public final class ScenarioScene: SKScene {
     public override func mouseDown(with event: NSEvent) {
         let location = event.location(in: self)
         let click = classifyClick(at: location)
+
+        // Unit-command gets first crack at map clicks when we're not
+        // mid-placement. A landed selection (`.selectUnit`) consumes
+        // the event; `.deselect` / `.none` fall through so yard-select
+        // + build-panel still run when a player clicks past a halo.
+        if buildController.placementType == nil,
+           case .mapTile(let x, let y) = click,
+           let host = scheduler?.host {
+            let action = commandController.handle(
+                click: .leftMapTile(x: x, y: y),
+                pool: host.units,
+                playerHouseID: playerHouseID
+            )
+            applyCommandAction(action, host: host)
+            refreshSelectionHalo()
+            if case .selectUnit = action { return }
+        }
 
         // Slice 5b: map click on a player-owned yard/factory → switch
         // `selectedYardIndex`. Only when not in placement mode so we
@@ -183,14 +223,86 @@ public final class ScenarioScene: SKScene {
         case .cancelConstruction(let type):
             cancelConstructionOnYard(type: type)
         case .none:
-            // Sidebar click on empty row / outside click → fall back to
-            // the pre-slice-3 "return to main menu" behaviour, but only
-            // when we're *not* mid-placement (otherwise a misclick
-            // outside the sidebar would bail out of placement silently).
-            if buildController.placementType == nil {
-                coordinator?.route(to: .mainMenu)
-            }
+            // Unclassified click (empty sidebar row, map tile with no
+            // yard, off-map). Do nothing — the scenario is the terminal
+            // scene during play; routing away on a stray click was a
+            // pre-slice-3 placeholder that cycled the user through
+            // mentat/mainmenu. Exiting is an explicit action (not yet
+            // wired).
+            break
         }
+    }
+
+    public override func rightMouseDown(with event: NSEvent) {
+        guard let host = scheduler?.host else { return }
+        let location = event.location(in: self)
+        let click = classifyClick(at: location)
+        guard case .mapTile(let x, let y) = click else { return }
+        let action = commandController.handle(
+            click: .rightMapTile(x: x, y: y),
+            pool: host.units,
+            playerHouseID: playerHouseID
+        )
+        applyCommandAction(action, host: host)
+        refreshSelectionHalo()
+    }
+
+    private func applyCommandAction(
+        _ action: UnitCommandController.Action,
+        host: Scripting.Host
+    ) {
+        switch action {
+        case .selectUnit(let idx):
+            Log.info("unit-select \(idx)", tracer: .label("unit-cmd"))
+        case .deselect:
+            Log.info("unit-deselect", tracer: .label("unit-cmd"))
+        case .orderMove(let idx, let tx, let ty):
+            let ok = Simulation.Units.orderMove(
+                poolIndex: idx, tileX: tx, tileY: ty, units: &host.units
+            )
+            Log.info(
+                "unit-order-move unit=\(idx) tile=(\(tx),\(ty)) ok=\(ok)",
+                tracer: .label("unit-cmd")
+            )
+        case .none:
+            break
+        }
+    }
+
+    /// Per-tick guard: drop the halo + selection when the selected
+    /// unit dies. Cheap no-op when nothing's selected.
+    private func validateSelectionHalo() {
+        guard let sel = commandController.selectedUnitIndex,
+              let host = scheduler?.host else { return }
+        if sel >= host.units.slots.count || !host.units.slots[sel].isUsed {
+            commandController.selectedUnitIndex = nil
+            selectionHalo?.removeFromParent()
+            selectionHalo = nil
+        }
+    }
+
+    /// Re-parents the green selection halo to whichever unit marker
+    /// matches `commandController.selectedUnitIndex`. Removes the halo
+    /// when nothing is selected, when the selected slot has been
+    /// freed, or when the marker isn't visible yet (pre-first-tick).
+    private func refreshSelectionHalo() {
+        selectionHalo?.removeFromParent()
+        selectionHalo = nil
+        guard let sel = commandController.selectedUnitIndex else { return }
+        guard let host = scheduler?.host,
+              sel < host.units.slots.count,
+              host.units.slots[sel].isUsed else {
+            commandController.selectedUnitIndex = nil
+            return
+        }
+        guard let marker = unitMarkers[sel], !marker.isHidden else { return }
+        let halo = SKShapeNode(circleOfRadius: Self.tileSize * 0.75)
+        halo.strokeColor = .green
+        halo.lineWidth = 2
+        halo.fillColor = .clear
+        halo.zPosition = 5
+        marker.addChild(halo)
+        selectionHalo = halo
     }
 
     /// Pure translation from a scene-local point to a controller click.

@@ -138,4 +138,48 @@ struct NaiveMovementTests {
         #expect(host.units[0].positionX == 500)
         #expect(host.units[0].positionY == 500)
     }
+
+    @Test("Route-driven orientation is locked to route[0] * 32 across ticks, even when off-axis")
+    func routeOrientationStableOffAxis() throws {
+        // Regression: if `tickMovement` recomputes orientation from the
+        // continuous pos32 delta, small cross-axis drift can straddle an
+        // octant boundary (byte ≈ 240 for N↔NW) and flip the sprite each
+        // tick. The fix locks orientation to `route[0] * 32` while
+        // following a route step.
+        var units = Simulation.UnitPool()
+        units.allocate(at: 0, type: 13, houseID: 0)  // Trike (wheeled)
+        var u = units[0]
+        // Start at tile (5, 5) but 6 px west of centre. That asymmetry
+        // would make the continuous direction from unit→N-tile-centre
+        // skew toward NW (byte > 224) rather than land on 0 (N).
+        u.positionX = 5 * 256 + 128 - 6   // 1402 (off-centre west by 6)
+        u.positionY = 5 * 256 + 128        // 1408 (on-centre)
+        u.speed = 128
+        u.route[0] = 0   // N
+        u.route[1] = 0   // N (second step) — keeps route alive after first pop
+        u.targetMove = Scripting.EncodedIndex.tile(packed: UInt16(3 * 64 + 5)).raw  // tile (5, 3) to the north
+        units[0] = u
+
+        let host = Scripting.Host(
+            units: units, structures: .init(),
+            currentObject: nil, texts: [], textLog: [], voiceLog: []
+        )
+        let emptyFunctions = [Scripting.VM.Function?](repeating: nil, count: 64)
+        var scheduler = Simulation.Scheduler(
+            host: host,
+            unitVM: Scripting.VM(program: .empty, functions: emptyFunctions),
+            structureVM: Scripting.VM(program: .empty, functions: emptyFunctions)
+        )
+        // First tick: populates currentDestination, takes one step.
+        scheduler.tick()
+        // route[0] is still 0 (north-bound). Orientation must be exactly
+        // `0 * 32 = 0`, not a byte drifted toward NW by the x-offset.
+        #expect(host.units[0].orientationCurrent == 0,
+                "Orientation should be pinned to route[0] * 32 (=0 for N), got \(host.units[0].orientationCurrent)")
+
+        // Several more ticks, all while route[0]=0 is active.
+        for _ in 0..<3 { scheduler.tick() }
+        #expect(host.units[0].orientationCurrent == 0,
+                "Orientation must remain 0 (N) across ticks — no drift.")
+    }
 }

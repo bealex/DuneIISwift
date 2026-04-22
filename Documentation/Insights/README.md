@@ -87,6 +87,7 @@ OpenDUNE `src/...` or dunepak `src/...` or the raw bytes of
 
 - [scripting-emc-saved-location-plus-one](scripting-emc-saved-location-plus-one.md) — `PUSH_RETURN_OR_LOCATION 1` saves `pc + 1` because the EMC compiler always emits a `JUMP` immediately after the call setup.
 - [scripting-host-fn-peek-not-pop](scripting-host-fn-peek-not-pop.md) — host functions must read args via `peek`, never pop; the EMC compiler emits a `STACK_REWIND` after every call to clean up.
+- [scripting-unit-entry-point-by-type-not-action](scripting-unit-entry-point-by-type-not-action.md) — `UNIT.EMC` entry points are indexed by unit TYPE (27 entries); the dispatch branches on `variables[0] = action`. Loading by action lands the PC inside another type's prologue — silent but visibly broken motion.
 
 ### Simulation
 
@@ -94,6 +95,8 @@ OpenDUNE `src/...` or dunepak `src/...` or the raw bytes of
 - [simulation-findbesttarget-stamps-origin](simulation-findbesttarget-stamps-origin.md) — `Unit_FindBestTargetUnit` mutates the attacker's `originEncoded` on first call; priority also uses the *target's* fireDistance off-map (not the attacker's).
 - [simulation-unitpool-bullets-share-slots](simulation-unitpool-bullets-share-slots.md) — bullets / missiles live in the same `UnitPool` as units; per-type `indexStart..indexEnd` ranges prevent collisions and cap concurrent bullets at 4.
 - [simulation-getbuildable-signed-int-campaign-gate](simulation-getbuildable-signed-int-campaign-gate.md) — `Structure_GetBuildable`'s `availableCampaign - 1` promotes to signed int; ROCKET_TURRET's `availableCampaign = 0` passes the gate, and the upgrade-level requirement is what actually keeps it locked.
+- [simulation-action-id-drives-script-reload](simulation-action-id-drives-script-reload.md) — writing `slot.actionID` is enough to re-enter the unit script; the scheduler's per-tick `loadedUnitAction` delta-check reloads the engine without explicit `Script_Reset` / `Script_Load` calls.
+- [simulation-route-orientation-locked-to-step](simulation-route-orientation-locked-to-step.md) — while following a pathfinder route, `tickMovement` must pin `orientationCurrent = route[0] * 32` (canonical octant midpoint); recomputing from continuous pos32 delta made the sprite flicker across octant boundaries when the unit was off-axis.
 
 ### Audio
 

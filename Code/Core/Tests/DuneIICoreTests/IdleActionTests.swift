@@ -101,6 +101,46 @@ struct IdleActionTests {
         #expect(host.units[0].spriteOffset != 0)
     }
 
+    @Test("IdleAction skips body rotation half the time (i==1 → turret-target; no-op on non-turret unit)")
+    func turretHalfSkip() throws {
+        // OpenDUNE picks `i = (byte & 1) == 0 ? 1 : 0` — so when the
+        // drawn `Tools_Random_256()` byte is EVEN, `i == 1` and the
+        // orientation writes land on the turret (which our slot doesn't
+        // model yet). A trike has no turret; body must stay put.
+        //
+        // Pick a toolsSeed whose first `next()` byte is EVEN + an LCG
+        // seed that passes the `random > 2` gate.
+        var lcgSeed: UInt16 = 0
+        for candidate in 0..<50 {
+            var lcg = RNG.BorlandLCG(seed: UInt16(candidate))
+            if lcg.range(0, 10) <= 2 { lcgSeed = UInt16(candidate); break }
+        }
+        var toolsSeed: UInt32 = 0
+        for candidate in 1..<256 {
+            var t = RNG.ToolsRandom256(seed: UInt32(candidate))
+            if (t.next() & 1) == 0 { toolsSeed = UInt32(candidate); break }
+        }
+        var units = Simulation.UnitPool()
+        units.allocate(at: 0, type: 13, houseID: 0)  // Trike — no turret
+        var u = units[0]; u.orientationCurrent = 64; units[0] = u
+        let host = Scripting.Host(
+            units: units, structures: .init(),
+            currentObject: .unit(poolIndex: 0),
+            texts: [], textLog: [], voiceLog: []
+        )
+        let source = Scripting.RandomSource(lcgSeed: lcgSeed, toolsSeed: toolsSeed)
+        var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
+        functions[0] = Scripting.Functions.makeIdleActionUnit(source: source, host: host)
+        let vm = Scripting.VM(
+            program: (try? Formats.Emc.Program.decodeCode(ins(14, 0))) ?? .empty,
+            functions: functions
+        )
+        var engine = Scripting.Engine.reset()
+        _ = vm.step(&engine)
+        #expect(host.units[0].orientationCurrent == 64,
+                "Body orientation should stay at 64: the even first-byte path targets the turret.")
+    }
+
     private func ins(_ opcode: UInt8, _ parameter: UInt16) -> [UInt16] {
         return [(UInt16(opcode) << 8) | 0x2000, parameter]
     }

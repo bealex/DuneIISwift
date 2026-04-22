@@ -169,16 +169,27 @@ extension Simulation {
                     let tileY = UInt16((nextPacked >> 6) & 0x3F)
                     slot.currentDestinationX = tileX &* 256 &+ 128
                     slot.currentDestinationY = tileY &* 256 &+ 128
+                    Log.debug(
+                        "move-step u\(idx) picked route[0]=\(slot.route[0]) → dest=(\(tileX),\(tileY))",
+                        tracer: .label("move")
+                    )
                 }
 
                 // Pick the goal. Route-backed destination wins; else fall
                 // back to the targetMove tile directly.
                 let goal: Pos32
+                let goalSource: String
                 if slot.currentDestinationX != 0 || slot.currentDestinationY != 0 {
                     goal = Pos32(x: slot.currentDestinationX, y: slot.currentDestinationY)
+                    goalSource = "route"
                 } else if let t = Pos32.of(Scripting.EncodedIndex(raw: slot.targetMove), host: host) {
                     goal = t
+                    goalSource = "targetMove(fallback)"
                 } else {
+                    Log.debug(
+                        "move-abort u\(idx) targetMove=\(String(format: "0x%04X", slot.targetMove)) invalid; clearing",
+                        tracer: .label("move")
+                    )
                     slot.targetMove = 0
                     host.units[idx] = slot
                     continue
@@ -220,10 +231,25 @@ extension Simulation {
                     if wasRouteStep, slot.route[0] != 0xFF {
                         for i in 0..<13 { slot.route[i] = slot.route[i + 1] }
                         slot.route[13] = 0xFF
-                        if slot.route[0] == 0xFF { slot.targetMove = 0 }
+                        if slot.route[0] == 0xFF {
+                            slot.targetMove = 0
+                            Log.info(
+                                "move-arrived u\(idx) (type=\(slot.type)) at pos=(\(goal.x),\(goal.y)) route-exhausted",
+                                tracer: .label("move")
+                            )
+                        } else {
+                            Log.debug(
+                                "move-pop u\(idx) step-done, route[0]=\(slot.route[0]), pos=(\(goal.x),\(goal.y))",
+                                tracer: .label("move")
+                            )
+                        }
                     } else {
                         // Arrived via targetMove fallback.
                         slot.targetMove = 0
+                        Log.info(
+                            "move-arrived u\(idx) (type=\(slot.type)) at pos=(\(goal.x),\(goal.y)) via=\(goalSource)",
+                            tracer: .label("move")
+                        )
                     }
                     host.units[idx] = slot
                     continue
@@ -233,10 +259,41 @@ extension Simulation {
                 let longest = max(abs(dx), abs(dy))
                 let stepX = dx * step / longest
                 let stepY = dy * step / longest
+                let priorX = slot.positionX
+                let priorY = slot.positionY
+                let priorOrient = slot.orientationCurrent
                 slot.positionX = UInt16(clamping: Int32(slot.positionX) + stepX)
                 slot.positionY = UInt16(clamping: Int32(slot.positionY) + stepY)
-                let from = Pos32(x: slot.positionX, y: slot.positionY)
-                slot.orientationCurrent = Int8(bitPattern: Pos32.direction(from: from, to: goal))
+                // Orientation:
+                //   - Route-driven step: lock to `route[0] * 32`. `route[0]`
+                //     encodes an 8-way compass direction (0=N, 2=E, 4=S,
+                //     6=W) and `* 32` lands squarely on the octant midpoint
+                //     used by the sprite-atlas `to8` mapping. Recomputing
+                //     from the continuous pos32 delta every tick made the
+                //     byte oscillate around octant boundaries (N↔NW at
+                //     byte ≈ 240), producing a visible sprite "blink" when
+                //     the unit was a few pixels off the tile centerline.
+                //     OpenDUNE's `Script_Unit_CalculateRoute` aligns
+                //     orientation to `route[0] * 32` too — see
+                //     `Functions.swift:816` for our port of that line.
+                //   - targetMove fallback (no route): continuous direction
+                //     from pos32 delta. This branch is rare (first tick
+                //     after `orderMove` before `CalculateRoute` runs, and
+                //     carryall `SetDestinationDirect`) so sub-tile drift
+                //     is less of a problem.
+                if goalSource == "route", slot.route[0] != 0xFF {
+                    slot.orientationCurrent = Int8(bitPattern: slot.route[0] &* 32)
+                } else {
+                    let from = Pos32(x: slot.positionX, y: slot.positionY)
+                    slot.orientationCurrent = Int8(bitPattern: Pos32.direction(from: from, to: goal))
+                }
+                // Per-tick trace for moving units. `move` tracer; gated at
+                // .verbose since 12Hz × Nunits can get chatty. Trigger
+                // `DUNEII_LOG_VERBOSE=1` to widen the filter.
+                Log.verbose(
+                    "move-tick u\(idx) (t=\(slot.type) a=\(slot.actionID)) pos=(\(priorX),\(priorY))→(\(slot.positionX),\(slot.positionY)) step=(\(stepX),\(stepY)) o=\(priorOrient)→\(slot.orientationCurrent) goal=(\(goal.x),\(goal.y)) via=\(goalSource) dist=\(manhattan)",
+                    tracer: .label("move")
+                )
                 host.units[idx] = slot
             }
         }
@@ -247,13 +304,22 @@ extension Simulation {
                 let idx = Int(slot.index)
                 host.currentObject = .unit(poolIndex: idx)
                 // OpenDUNE's `Script_Load` runs once per action change.
-                // Detect the delta here and load the matching entry point
-                // so the engine starts at the right place in `UNIT.EMC`.
+                // Load the per-unit-type entry point (mirrors
+                // `Script_Load(&u->o.script, u->o.type)` in
+                // `src/unit.c:521`) and then overwrite `variables[0]`
+                // with the action — the top-level dispatch in UNIT.EMC
+                // branches on `variables[0]`. Passing `action` as
+                // `typeID` (earlier scheduler shape) landed the PC at
+                // `entryPoints[action]` — a completely different unit
+                // type's entry — and made trikes execute the ornithopter
+                // prologue, etc.
                 let action = Int(slot.actionID)
                 if loadedUnitAction[idx] != action {
-                    unitVM.load(engine: &unitEngines[idx], typeID: action)
+                    let type = Int(slot.type)
+                    unitVM.load(engine: &unitEngines[idx], typeID: type)
+                    unitEngines[idx].variables[0] = UInt16(truncatingIfNeeded: action)
                     Log.debug(
-                        "unit \(idx) (type \(slot.type) house \(slot.houseID)) → action \(action), pc=\(unitEngines[idx].pc)",
+                        "unit \(idx) (type \(type) house \(slot.houseID)) → action \(action), pc=\(unitEngines[idx].pc)",
                         tracer: .label("scheduler")
                     )
                     loadedUnitAction[idx] = action
