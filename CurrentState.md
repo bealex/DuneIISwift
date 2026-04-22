@@ -11,7 +11,11 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**None — mission-1 blockers fixed (2026-04-22). Pick from "Next up".**
+**None — full mission-1 playability chain live (2026-04-22). Pick from "Next up".**
+
+Mission-1 end-to-end is now reachable: player opens scene, CYARD pre-selected, sidebar shows buildables. Queue slabs → build windtrap → build refinery → harvester spawns at refinery exit in HARVEST action → auto-seeks nearest spice → mines → returns to refinery → docks → drains → credits roll in → unlocks more buildings. Selection info panel + halo + live ground-tile repaint make all this visible. Next session can dig into enemy AI, combat, or campaign polish.
+
+Earlier today:
 
 Four fixes landed today:
 - Scenario-spawned structures now stamp `hasStructure=true` onto the runtime tileGrid on load → pathfinder sees CYARD as impassable.
@@ -81,6 +85,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-22 — Task 6: Spawn harvester on first refinery.** `ensureHarvesterAvailable` ports OpenDUNE's same-named helper (simplified; no carryall ferry). Triggers on REFINERY placement. New `harvester-spawn` tracer. 1 new test. 768 green.
+- **2026-04-22 — Selection UI tasks 1-5: enemy unit selection, runtime structure selection, info panel, structure halo, ground tile repaint.** Live info panel + halo for any selected entity; enemies show info only; ground tiles now repaint as slabs + buildings get placed. 5 commits + 3 new tests.
 - **2026-04-22 — Movement port + infantry sprite fix.** `Unit_SetSpeed` + `Unit_MovementTick` ported with the subpixel accumulator (`speedPerTick` / `speedRemainder`). `Tile_MoveByDirection` drives actual motion via `Pos32.moved`. Overshoot detection mirrors `unit.c:1419`. Infantry resolver now uses `values_32C4` buckets + `values_334A` phase with an animated `spriteOffset` that advances every 5 ticks for moving infantry. 9 test-file updates to match new slot-field semantics (`movingSpeed` carries the percent, `speed` the tile-hop clamp). 763 green / 77 suites / zero warnings.
 - **2026-04-22 — Mission-1 bug hunt pass 1.** Scenario-structures stamp `hasStructure` on tileGrid at load; runtime-placed slabs/structures stamp live; CYARD flips IDLE after commit; landscape closures capture a TileGridRef class box so mutations propagate. 14 new install-gated runtime tests cover the full click flow + build chain. 763 green / 77 suites / zero warnings.
 - **2026-04-21 — Headless harness + ScenarioRuntime extraction.** New `ScenarioRuntime` owns all non-visual sim state + intent methods (`load`, `tick`, `leftClick`, `rightClick`, `sidebarClick`, `selectYard`). `ScenarioScene` becomes a thin SpriteKit renderer. New `duneii-headless` executable drives the runtime from stdin (commands: load, tick, click, rclick, sidebar, yard, dump [units/structures/houses/tile/build/spice/scene], validity, enqueue, build, quit) — Log facade to stderr. First bug caught: runtime `tick()` wasn't refreshing BuildPanelController surface state so headless callers saw stale yardState. Fixed.
@@ -168,7 +174,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **766 tests across 77 suites, all green** as of 2026-04-22 (post-selection-UI pass). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **768 tests across 77 suites, all green** as of 2026-04-22 (post-harvester-spawn + tile-sync). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 

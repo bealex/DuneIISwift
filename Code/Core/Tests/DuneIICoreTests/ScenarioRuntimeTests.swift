@@ -283,6 +283,68 @@ struct ScenarioRuntimeTests {
         #expect(r.buildController.availableTypes.contains(12))
     }
 
+    @Test("Placing a refinery spawns a harvester for the player (no carryall ferry)")
+    func refineryPlacementSpawnsHarvester() throws {
+        guard let r = try loadMission1() else { return }
+        let host = try #require(r.host)
+        let yardIdx = r.buildController.selectedYardIndex!
+
+        // Slab 2x2 area adjacent to CYARD so we can put a windtrap.
+        for (x, y) in [(29, 25), (29, 26), (28, 25), (28, 26)] {
+            var pool = host.structures
+            _ = Simulation.Structures.startConstruction(
+                yardIndex: yardIdx, objectType: 0, pool: &pool
+            )
+            host.structures = pool
+            r.tick(30)
+            _ = r.sidebarClick(row: 0)
+            _ = r.leftClick(tileX: x, tileY: y)
+        }
+        // Build windtrap.
+        var pool = host.structures
+        _ = Simulation.Structures.startConstruction(
+            yardIndex: yardIdx, objectType: 9, pool: &pool
+        )
+        host.structures = pool
+        r.tick(100)
+        _ = r.sidebarClick(row: 1)
+        _ = r.leftClick(tileX: 28, tileY: 25)
+
+        // REFINERY is 3x2; needs 6 slabs. For test simplicity place
+        // it on the sand west of the CYARD (degraded HP is fine).
+        // Build it via the enqueue path.
+        var pool2 = host.structures
+        _ = Simulation.Structures.startConstruction(
+            yardIndex: yardIdx, objectType: 12, pool: &pool2
+        )
+        host.structures = pool2
+        r.tick(120)
+        r.refreshBuildState()
+        // Refinery is row 2 in available=[0, 9, 12].
+        _ = r.sidebarClick(row: 2)
+        // Place at (28, 27) — 3×2 footprint (28..30, 27..28) on rock,
+        // adjacent to both the windtrap and the CYARD. All 6 tiles
+        // need slab (validity = -6 = valid but degraded), which is
+        // fine for this test.
+        let commit = r.leftClick(tileX: 28, tileY: 27)
+        guard case .placementCommitted = commit else {
+            Issue.record("refinery placement failed: \(commit)")
+            return
+        }
+
+        // Expect a harvester to exist for the Atreides.
+        let harvesters = host.units.findArray.filter {
+            host.units.slots[$0].type == 16
+                && host.units.slots[$0].houseID == Simulation.House.atreides
+        }
+        #expect(harvesters.count == 1, "expected 1 player harvester after refinery, got \(harvesters.count)")
+        if let hIdx = harvesters.first {
+            // Harvester spawned in HARVEST action so the auto-seek
+            // cycle picks it up on the next tickHarvesting pass.
+            #expect(host.units.slots[hIdx].actionID == Simulation.ActionID.harvest)
+        }
+    }
+
     // MARK: Pathfinder live-structure awareness
 
     @Test("Pathfinder routes a TRIKE around the CYARD rather than through it")

@@ -625,6 +625,17 @@ public final class ScenarioRuntime {
             // validity, pathfinder, passability gate) see the freshly
             // placed slab/structure.
             stampPlacement(type: type, tileX: tileX, tileY: tileY)
+            // REFINERY completion should give the player a harvester if
+            // they don't already have one — simplified port of
+            // OpenDUNE's `House_EnsureHarvesterAvailable` (no carryall
+            // ferry, direct spawn at the refinery's south exit).
+            if type == 12 /* REFINERY */ {
+                ensureHarvesterAvailable(
+                    houseID: playerHouseID,
+                    refineryTileX: tileX, refineryTileY: tileY,
+                    host: host
+                )
+            }
             // Return the CYARD to IDLE now that its produced item is on
             // the map. Without this the yard stays stuck in READY and
             // sidebar clicks re-open placement for the same type.
@@ -748,6 +759,62 @@ public final class ScenarioRuntime {
             "tile-stamp type=\(type) anchor=(\(tileX),\(tileY)) cells=\(footprint.count) slab=\(isSlab) wall=\(isWall) icons=\(iconTiles?.count ?? 0)",
             tracer: .label("tile")
         )
+    }
+
+    /// Simplified port of OpenDUNE's `House_EnsureHarvesterAvailable`
+    /// (`src/house.c:298`). When a refinery finishes for `houseID`
+    /// and the house doesn't already own a harvester (on-map or
+    /// docked), spawn one at the refinery's south-exit tile.
+    /// OpenDUNE ferries the harvester in via a spawned carryall; we
+    /// shortcut to a direct spawn so the harvest AI can take over
+    /// immediately. Logs under `harvester-spawn`.
+    private func ensureHarvesterAvailable(
+        houseID: UInt8,
+        refineryTileX: Int, refineryTileY: Int,
+        host: Scripting.Host
+    ) {
+        if Self.houseHasHarvester(houseID: houseID, pool: host.units) {
+            Log.debug(
+                "harvester-spawn skipped — house=\(houseID) already has a harvester",
+                tracer: .label("harvester-spawn")
+            )
+            return
+        }
+        let exit = Simulation.Structures.factorySpawnTile(
+            yardType: 12, anchorX: refineryTileX, anchorY: refineryTileY
+        )
+        var units = host.units
+        guard let harvIdx = Simulation.Units.createUnit(
+            type: 16 /* HARVESTER */, houseID: houseID,
+            tileX: exit.x, tileY: exit.y, pool: &units
+        ) else {
+            Log.warning(
+                "harvester-spawn FAILED — pool full (house=\(houseID))",
+                tracer: .label("harvester-spawn")
+            )
+            return
+        }
+        // Action: HARVEST — so slice 7's idle-off-spice seek kicks in
+        // on the next tickHarvesting pass and sends the harvester to
+        // the nearest spice tile.
+        var u = units[harvIdx]
+        u.actionID = Simulation.ActionID.harvest
+        units[harvIdx] = u
+        host.units = units
+        Log.info(
+            "harvester-spawn house=\(houseID) slot=\(harvIdx) tile=(\(exit.x),\(exit.y)) action=HARVEST",
+            tracer: .label("harvester-spawn")
+        )
+    }
+
+    private static func houseHasHarvester(
+        houseID: UInt8, pool: Simulation.UnitPool
+    ) -> Bool {
+        for idx in pool.findArray {
+            let u = pool.slots[idx]
+            if u.isUsed, u.type == 16, u.houseID == houseID { return true }
+        }
+        return false
     }
 
     private func autoSelectPlayerYard() {
