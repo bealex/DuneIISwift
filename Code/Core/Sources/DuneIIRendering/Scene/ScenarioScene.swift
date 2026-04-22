@@ -744,9 +744,17 @@ public final class ScenarioScene: SKScene {
                     ?? fallbackMarkerTexture
                 marker.texture = texture
                 if let size = texture?.size() {
-                    let maxDim = max(size.width, size.height)
-                    let scale = Self.tileSize / max(maxDim, 1)
-                    marker.size = CGSize(width: size.width * scale, height: size.height * scale)
+                    // Render at native sprite pixel size so relative
+                    // scale between unit types survives (harvester ~24
+                    // px > trike ~16 > infantry ~8). Our scene pixels
+                    // and points are 1:1 with tileSize=16, which
+                    // matches OpenDUNE's 16-pixel tile grid — a
+                    // 24-pixel harvester spills beyond a single tile,
+                    // which is the correct look. Prior "fit longest
+                    // edge to tileSize" scaling collapsed everything
+                    // to a uniform 16×16 and inverted the intended
+                    // size hierarchy.
+                    marker.size = size
                 }
                 marker.xScale = abs(marker.xScale) * (frame.flipHorizontal ? -1 : 1)
             }

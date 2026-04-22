@@ -150,15 +150,16 @@ public final class ScreenshotRenderer {
             )
             guard let sprite = unitSprite(spriteID: frame.spriteID, houseID: u.houseID)
             else { continue }
-            // Scale the sprite so its longest side = tilePx (matches
-            // scene's max-dim scaling).
-            let spriteW = sprite.width
-            let spriteH = sprite.height
-            let maxDim = max(spriteW, spriteH)
-            guard maxDim > 0 else { continue }
-            let scale = CGFloat(tilePx) / CGFloat(maxDim)
-            let drawW = CGFloat(spriteW) * scale
-            let drawH = CGFloat(spriteH) * scale
+            // Render at native sprite pixel size — matches OpenDUNE's
+            // `GUI_DrawSprite` (reads width/height off the SHP frame
+            // header). Our tile pixels and scene pixels are 1:1
+            // (tilePx = 16), so a 24-px harvester spills across 1.5
+            // tiles while an 8-px infantry fits inside half a tile.
+            // Prior "scale longest edge to tilePx" made every sprite
+            // 16×16 and inverted the size hierarchy.
+            let drawW = CGFloat(sprite.width)
+            let drawH = CGFloat(sprite.height)
+            guard drawW > 0, drawH > 0 else { continue }
             // Destination rect: centred at unit position, flipped Y.
             let pxX = cx * CGFloat(tilePx) - drawW / 2
             let pxY = (CGFloat(heightTiles) - cy) * CGFloat(tilePx) - drawH / 2
