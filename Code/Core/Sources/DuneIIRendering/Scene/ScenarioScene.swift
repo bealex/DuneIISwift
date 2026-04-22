@@ -103,6 +103,8 @@ public final class ScenarioScene: SKScene {
         )
         view.trackingAreas.forEach(view.removeTrackingArea)
         view.addTrackingArea(tracking)
+        // Make the scene the first responder so keyDown(with:) fires.
+        view.window?.makeFirstResponder(self)
         removeAllChildren()
         tileNodes.removeAll(keepingCapacity: true)
         unitMarkers.removeAll(keepingCapacity: true)
@@ -188,6 +190,26 @@ public final class ScenarioScene: SKScene {
         }
         updatePlacementGhost(type: type, tileX: x, tileY: y)
     }
+
+    public override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 53: // Escape
+            runtime.deselect()
+            hidePlacementGhost()
+            refreshBuildSidebar()
+            refreshSelectionHalo()
+            refreshRallyMarker()
+        case 48: // Tab
+            if runtime.cycleToNextPlayerUnit() != nil {
+                refreshSelectionHalo()
+                refreshBuildSidebar()
+            }
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    public override var acceptsFirstResponder: Bool { true }
 
     public override func rightMouseDown(with event: NSEvent) {
         let location = event.location(in: self)

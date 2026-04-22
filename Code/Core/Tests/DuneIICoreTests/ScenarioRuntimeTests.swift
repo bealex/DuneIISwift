@@ -460,6 +460,35 @@ struct ScenarioRuntimeTests {
         #expect(r.commandController.selectedUnitIndex != nil)
     }
 
+    @Test("deselect() clears unit + structure + placement selections")
+    func deselectClearsAll() throws {
+        guard let r = try loadMission1() else { return }
+        _ = r.leftClick(tileX: 29, tileY: 23)    // select trike
+        _ = r.leftClick(tileX: 30, tileY: 25)    // select CYARD
+        // Both a structure selection (CYARD) and the prior unit
+        // selection get recorded across these clicks — verify deselect
+        // wipes the whole slate.
+        r.buildController.placementType = 9       // simulate placement mode
+        r.deselect()
+        #expect(r.commandController.selectedUnitIndex == nil)
+        #expect(r.commandController.isFriendlySelection == false)
+        #expect(r.selectedStructureIndex == nil)
+        #expect(r.buildController.placementType == nil)
+    }
+
+    @Test("cycleToNextPlayerUnit steps through friendly units, skipping enemies")
+    func cycleSelection() throws {
+        guard let r = try loadMission1() else { return }
+        // Atreides units in mission 1: slots 2, 4, 5, 6, 8 (from the
+        // scenario dump). Cycling should walk through them in order.
+        let first = r.cycleToNextPlayerUnit()
+        #expect(first == 2)
+        let second = r.cycleToNextPlayerUnit()
+        #expect(second == 4)
+        let third = r.cycleToNextPlayerUnit()
+        #expect(third == 5)
+    }
+
     @Test("BuildController.yardState surface stays in sync after tick() — no stale UI state")
     func tickRefreshesYardState() throws {
         guard let r = try loadMission1() else { return }

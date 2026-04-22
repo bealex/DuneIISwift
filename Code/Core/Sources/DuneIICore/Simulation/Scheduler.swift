@@ -53,7 +53,7 @@ extension Simulation {
         /// They detonate on arrival at `currentDestination` rather than
         /// resuming along a route. Matches OpenDUNE's `flags.isBullet`
         /// group in `UnitInfo`.
-        static func isProjectileType(_ type: UInt8) -> Bool {
+        public static func isProjectileType(_ type: UInt8) -> Bool {
             return (18...24).contains(type)
         }
 

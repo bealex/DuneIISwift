@@ -411,6 +411,62 @@ public final class ScenarioRuntime {
         return applyBuildAction(action)
     }
 
+    /// Drops all current selections (unit + structure + yard
+    /// placement). Called from the Escape-key shortcut and tests.
+    public func deselect() {
+        let hadUnit = commandController.selectedUnitIndex != nil
+        let hadStructure = selectedStructureIndex != nil
+        let hadPlacement = buildController.placementType != nil
+        commandController.selectedUnitIndex = nil
+        commandController.isFriendlySelection = false
+        selectedStructureIndex = nil
+        buildController.placementType = nil
+        if hadUnit || hadStructure || hadPlacement {
+            Log.info(
+                "deselect all unit=\(hadUnit) structure=\(hadStructure) placement=\(hadPlacement)",
+                tracer: .label("selection")
+            )
+        }
+    }
+
+    /// Selects the next friendly unit after the currently-selected
+    /// one, wrapping around `findArray`. Skips bullets / projectiles
+    /// and non-player units. Used by the Tab keyboard shortcut.
+    /// Returns the newly-selected unit's pool index, or nil when the
+    /// player owns no units.
+    @discardableResult
+    public func cycleToNextPlayerUnit() -> Int? {
+        guard let host else { return nil }
+        // Build an ordered list of player-owned, non-projectile units.
+        let owned = host.units.findArray.filter { idx in
+            let u = host.units.slots[idx]
+            guard u.isUsed else { return false }
+            guard u.houseID == playerHouseID else { return false }
+            guard !Simulation.Scheduler.isProjectileType(u.type) else { return false }
+            return true
+        }
+        guard !owned.isEmpty else {
+            Log.debug("cycle-select: no player units", tracer: .label("selection"))
+            return nil
+        }
+        let next: Int
+        if let current = commandController.selectedUnitIndex,
+           let currentPos = owned.firstIndex(of: current)
+        {
+            next = owned[(currentPos + 1) % owned.count]
+        } else {
+            next = owned[0]
+        }
+        commandController.selectedUnitIndex = next
+        commandController.isFriendlySelection = true
+        selectedStructureIndex = nil
+        Log.info(
+            "cycle-select next=\(next) (of \(owned.count) player units)",
+            tracer: .label("selection")
+        )
+        return next
+    }
+
     /// Direct yard selection (bypasses click routing). Useful for tests
     /// + harness.
     public func selectYard(index: Int) {
