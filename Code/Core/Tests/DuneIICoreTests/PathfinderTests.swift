@@ -4,6 +4,45 @@ import Testing
 
 @Suite("Simulation.Pathfinder")
 struct PathfinderTests {
+
+    @Test("resolveReachable redirects an impassable dst to its nearest passable neighbour")
+    func resolveReachableFallback() {
+        // Target tile (32, 32) is impassable; the N neighbour (32, 31)
+        // is passable. Source is (10, 10) which scores the N neighbour
+        // closer than S.
+        let src = UInt16(10 * 64 + 10)
+        let dst = UInt16(32 * 64 + 32)
+        let scorer: Simulation.Pathfinder.TileEnterScore = { packed, _ in
+            return packed == dst ? 256 : 128     // impassable at dst, walkable elsewhere
+        }
+        let resolved = Simulation.Pathfinder.resolveReachable(src: src, dst: dst, score: scorer)
+        #expect(resolved != dst)
+        // Nearest neighbour to src (10, 10) is the NW corner (31, 31).
+        #expect(resolved == UInt16(31 * 64 + 31))
+    }
+
+    @Test("resolveReachable returns dst unchanged when it's already passable")
+    func resolveReachablePasses() {
+        let src = UInt16(10 * 64 + 10)
+        let dst = UInt16(20 * 64 + 20)
+        let scorer: Simulation.Pathfinder.TileEnterScore = { _, _ in 128 }
+        #expect(Simulation.Pathfinder.resolveReachable(src: src, dst: dst, score: scorer) == dst)
+    }
+
+    @Test("findRoute with an impassable dst still produces a non-empty route to the adjacent tile")
+    func findRouteHandlesImpassableDst() {
+        let src = UInt16(10 * 64 + 10)
+        let dst = UInt16(12 * 64 + 10)
+        // Everything walkable except `dst`.
+        let scorer: Simulation.Pathfinder.TileEnterScore = { packed, _ in
+            packed == dst ? 256 : 128
+        }
+        let route = Simulation.Pathfinder.findRoute(
+            src: src, dst: dst, bufferSize: 16, score: scorer
+        )
+        #expect(route.size > 0, "expected a non-empty route to an adjacent tile")
+    }
+
     @Test("packedTile converts pos32 pixel coords to tile indexes")
     func packedTileConversion() {
         // Tile (5, 3) centred → pos32 (5*256+128, 3*256+128) = (1408, 896).

@@ -85,6 +85,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-22 — Task 9: Pathfinder + scheduler redirect to passable neighbour.** `findRoute.resolveReachable` + `Scheduler.nearestPassableNeighbor` stop hunt-action enemies from halting at the player CYARD. Mission 1's 3 Ordos hunters now march toward the base. 3 new tests.
+- **2026-04-22 — Task 8: Keyboard shortcuts (Escape / Tab).** Deselect all + cycle through friendly units. 2 new tests.
 - **2026-04-22 — Task 7: Right-click attack on enemy structures.** New `Simulation.Units.orderAttackStructure`; `UnitCommandController.handle` takes a structures pool + scans for enemy structures; right-click promotes to `.orderAttackStructure` when the click lands on one. Non-turret attackers drive to the building, turreted rotate in place. 4 new tests. 772 green.
 - **2026-04-22 — Task 6: Spawn harvester on first refinery.** `ensureHarvesterAvailable` ports OpenDUNE's same-named helper (simplified; no carryall ferry). Triggers on REFINERY placement. New `harvester-spawn` tracer. 1 new test. 768 green.
 - **2026-04-22 — Selection UI tasks 1-5: enemy unit selection, runtime structure selection, info panel, structure halo, ground tile repaint.** Live info panel + halo for any selected entity; enemies show info only; ground tiles now repaint as slabs + buildings get placed. 5 commits + 3 new tests.
@@ -175,7 +177,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **772 tests across 77 suites, all green** as of 2026-04-22 (post-attack-structure). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **777 tests across 77 suites, all green** as of 2026-04-22 (post-enemy-hunt-pathing + keyboard shortcuts). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 

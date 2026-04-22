@@ -34,6 +34,17 @@ extension Simulation {
         ) -> Route {
             var res = Route(buffer: [UInt8](repeating: 0xFF, count: bufferSize + 1), score: 0, size: 0)
             let capacity = bufferSize - 1
+
+            // If the destination tile is impassable for this unit
+            // (structure, wall, mountain for vehicles…), redirect to
+            // the nearest passable neighbour. Without this, hunt-action
+            // enemies targeting a CYARD just halt at the edge because
+            // their route is computed toward a tile they can never
+            // enter. OpenDUNE doesn't need this shortcut because its
+            // attack loop runs the fire script once the unit gets
+            // within range; our partial port benefits from the
+            // pathfinder stopping adjacent instead.
+            let dst = Self.resolveReachable(src: src, dst: dst, score: score)
             var packedCur = src
 
             while res.size < capacity {
@@ -118,6 +129,52 @@ extension Simulation {
             }
             smoothen(&res, src: src, score: score)
             return res
+        }
+
+        /// If `dst` is impassable for this unit's movement type,
+        /// returns the nearest passable neighbour (ring of up to 8
+        /// adjacent tiles, closest to `src` first). Returns `dst`
+        /// unchanged when it's reachable or when no passable neighbour
+        /// exists.
+        static func resolveReachable(
+            src: UInt16, dst: UInt16, score: TileEnterScore
+        ) -> UInt16 {
+            // A tile is passable iff at least one cardinal approach
+            // scores <= 255. Sampling orientation 0 (N) is enough for
+            // the pathfinder's purposes — the gate it cares about is
+            // `movementSpeed[type] != 0`, which doesn't change with
+            // orientation (the orient bit only tweaks the diagonal
+            // tax).
+            if score(dst, 0) <= 255 { return dst }
+            let dstX = Int(dst & 0x3F)
+            let dstY = Int((dst >> 6) & 0x3F)
+            let srcX = Int(src & 0x3F)
+            let srcY = Int((src >> 6) & 0x3F)
+            // 8-direction neighbour offsets: N, NE, E, SE, S, SW, W, NW.
+            let offs: [(Int, Int)] = [
+                (0, -1), (1, -1), (1, 0), (1, 1),
+                (0, 1), (-1, 1), (-1, 0), (-1, -1)
+            ]
+            var best: (packed: UInt16, dist: Int)? = nil
+            for (dx, dy) in offs {
+                let nx = dstX + dx
+                let ny = dstY + dy
+                guard (0..<64).contains(nx), (0..<64).contains(ny) else { continue }
+                let packed = UInt16(ny * 64 + nx)
+                guard score(packed, 0) <= 255 else { continue }
+                let d = (nx - srcX) * (nx - srcX) + (ny - srcY) * (ny - srcY)
+                if best == nil || d < best!.dist {
+                    best = (packed, d)
+                }
+            }
+            if let best {
+                Log.debug(
+                    "pathfinder dst-retarget impassable=\(dst) → adjacent=\(best.packed)",
+                    tracer: .label("route")
+                )
+                return best.packed
+            }
+            return dst
         }
 
         // MARK: - Pathfinder_Connect

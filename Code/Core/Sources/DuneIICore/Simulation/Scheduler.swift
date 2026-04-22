@@ -57,6 +57,36 @@ extension Simulation {
             return (18...24).contains(type)
         }
 
+        /// Finds the nearest passable 8-neighbour of `target` (for the
+        /// given `movementType`) closest to `from` by squared
+        /// distance. Returns nil when no neighbour is passable. Used
+        /// by `tickMovement`'s fallback to redirect a unit heading
+        /// toward an impassable tile (enemy CYARD etc.) to an adjacent
+        /// tile instead.
+        func nearestPassableNeighbor(
+            of target: (Int, Int),
+            from src: (Int, Int),
+            movementType: MovementType
+        ) -> (Int, Int)? {
+            let offs: [(Int, Int)] = [
+                (0, -1), (1, -1), (1, 0), (1, 1),
+                (0, 1), (-1, 1), (-1, 0), (-1, -1)
+            ]
+            var best: (Int, Int, Int)? = nil
+            for (dx, dy) in offs {
+                let nx = target.0 + dx
+                let ny = target.1 + dy
+                guard (0..<64).contains(nx), (0..<64).contains(ny) else { continue }
+                guard isTilePassable(tileX: nx, tileY: ny, movementType: movementType) else { continue }
+                let d = (nx - src.0) * (nx - src.0) + (ny - src.1) * (ny - src.1)
+                if best == nil || d < best!.2 {
+                    best = (nx, ny, d)
+                }
+            }
+            if let best { return (best.0, best.1) }
+            return nil
+        }
+
         /// True when ground units of `movementType` can traverse the
         /// tile at `(tileX, tileY)`. Combines:
         ///
@@ -574,22 +604,44 @@ extension Simulation {
                     // Fallback slide toward a raw targetMove tile. This
                     // bypasses the pathfinder, so guard against walking
                     // straight into an impassable tile (rock for
-                    // non-tracked, walls, structures).
-                    let goalTileX = Int(t.x) / 256
-                    let goalTileY = Int(t.y) / 256
+                    // non-tracked, walls, structures). When the target
+                    // tile itself is impassable, redirect to the
+                    // nearest passable adjacent tile so hunt-action
+                    // enemies stop adjacent to their target (a CYARD,
+                    // a wall, …) instead of halting at spawn.
+                    var goalTileX = Int(t.x) / 256
+                    var goalTileY = Int(t.y) / 256
+                    var adjusted = t
                     let mt = Simulation.UnitInfo.lookup(slot.type)?.movementType ?? .foot
                     if !Self.isProjectileType(slot.type),
                        !isTilePassable(tileX: goalTileX, tileY: goalTileY, movementType: mt)
                     {
-                        Log.info(
-                            "move-halt u\(idx) fallback target=(\(goalTileX),\(goalTileY)) impassable mt=\(mt) — clearing",
-                            tracer: .label("move")
-                        )
-                        slot.targetMove = 0
-                        host.units[idx] = slot
-                        continue
+                        if let nearest = nearestPassableNeighbor(
+                            of: (goalTileX, goalTileY),
+                            from: (Int(slot.positionX) / 256, Int(slot.positionY) / 256),
+                            movementType: mt
+                        ) {
+                            goalTileX = nearest.0
+                            goalTileY = nearest.1
+                            adjusted = Pos32(
+                                x: UInt16(clamping: goalTileX * 256 + 128),
+                                y: UInt16(clamping: goalTileY * 256 + 128)
+                            )
+                            Log.debug(
+                                "move-retarget u\(idx) target impassable → adjacent tile=(\(goalTileX),\(goalTileY))",
+                                tracer: .label("move")
+                            )
+                        } else {
+                            Log.info(
+                                "move-halt u\(idx) fallback target=(\(goalTileX),\(goalTileY)) impassable mt=\(mt) — clearing",
+                                tracer: .label("move")
+                            )
+                            slot.targetMove = 0
+                            host.units[idx] = slot
+                            continue
+                        }
                     }
-                    goal = t
+                    goal = adjusted
                     goalSource = "targetMove(fallback)"
                 } else {
                     Log.debug(
