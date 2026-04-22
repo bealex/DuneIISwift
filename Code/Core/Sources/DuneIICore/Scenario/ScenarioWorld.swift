@@ -42,14 +42,19 @@ public struct ScenarioWorld: Sendable {
                       ),
                       let group = Formats.IconMap.Group(rawValue: groupRaw),
                       let info = Simulation.StructureInfo.lookup(structure.structureType.typeID) {
-                // Paint the fully-built footprint from the iconGroup's
-                // tail tiles. Construction phases use the earlier tiles;
-                // here we always pick the last `w × h` for "finished".
+                // Paint the fully-built footprint via OpenDUNE's
+                // `Structure_UpdateMap` offset: skip the first two
+                // layoutSize-tile frames (construction phases) and
+                // take the third as the "finished" frame. Earlier
+                // versions used `tiles.tail(w*h)` which lands on the
+                // damaged / with-content / rotated variant for any
+                // iconGroup carrying more than 3 frames (refinery,
+                // windtrap). `src/structure.c:1796`.
                 let tiles = iconMap.tileIds(in: group)
                 let (w, h) = info.layout.dimensions
                 let needed = w * h
-                if tiles.count >= needed {
-                    let start = tiles.count - needed
+                let start = 2 * needed
+                if tiles.count >= start + needed {
                     for dy in 0..<h {
                         for dx in 0..<w {
                             let tx = Int(tile.x) + dx
@@ -57,6 +62,19 @@ public struct ScenarioWorld: Sendable {
                             guard tx < Map.width, ty < Map.height else { continue }
                             let cellIdx = ty * Map.width + tx
                             map.cells[cellIdx].groundTileID = tiles[start + dy * w + dx]
+                            map.cells[cellIdx].hasStructure = true
+                        }
+                    }
+                } else if tiles.count >= needed {
+                    // Short group: fall back to the last frame.
+                    let tailStart = tiles.count - needed
+                    for dy in 0..<h {
+                        for dx in 0..<w {
+                            let tx = Int(tile.x) + dx
+                            let ty = Int(tile.y) + dy
+                            guard tx < Map.width, ty < Map.height else { continue }
+                            let cellIdx = ty * Map.width + tx
+                            map.cells[cellIdx].groundTileID = tiles[tailStart + dy * w + dx]
                             map.cells[cellIdx].hasStructure = true
                         }
                     }

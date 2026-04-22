@@ -779,7 +779,11 @@ public final class ScenarioRuntime {
 
         // For non-slab / non-wall structures, pre-compute the
         // fully-built iconGroup tile IDs so the scene's ground-tile
-        // pass can paint the building visually.
+        // pass can paint the building visually. Matches OpenDUNE's
+        // `Structure_UpdateMap` offset (`src/structure.c:1796`):
+        // skip the first two `layoutSize`-tile frames (construction
+        // phases) and take the third as the finished frame. Falls
+        // back to the tail for short groups.
         var iconTiles: [UInt16]? = nil
         if !isSlab, !isWall,
            let groupRaw = Simulation.StructureInfo.iconGroupRawValue(for: type),
@@ -789,9 +793,12 @@ public final class ScenarioRuntime {
             let all = iconMap.tileIds(in: group)
             let (w, h) = info.layout.dimensions
             let needed = w * h
-            if all.count >= needed {
-                let start = all.count - needed
+            let start = 2 * needed
+            if all.count >= start + needed {
                 iconTiles = Array(all[start..<(start + needed)])
+            } else if all.count >= needed {
+                let tail = all.count - needed
+                iconTiles = Array(all[tail..<(tail + needed)])
             }
         }
 

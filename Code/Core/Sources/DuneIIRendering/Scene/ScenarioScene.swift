@@ -46,6 +46,10 @@ public final class ScenarioScene: SKScene {
     private var tileTextures: [SKTexture] = []
 
     private var frameCounter: Int = 0
+    /// Debug speed multiplier. 1 = normal (1 tick per `framesPerTick`
+    /// frames); N = N ticks per boundary. Bound to `,` / `.` keys.
+    /// Cycle: 1 → 2 → 4 → 8 → 16 (caps; `,` halves, `.` doubles).
+    private var speedMultiplier: Int = 1
     private var hud: SKLabelNode?
     /// "Credits: N" readout pinned above the BUILD sidebar header.
     private var creditsLabel: SKLabelNode?
@@ -128,7 +132,11 @@ public final class ScenarioScene: SKScene {
         frameCounter += 1
         if frameCounter >= Self.framesPerTick {
             frameCounter = 0
-            runtime.tick()
+            // Speed multiplier: run N sim ticks per render boundary.
+            // Defaults to 1; debug keys `,` / `.` adjust.
+            for _ in 0..<max(1, speedMultiplier) {
+                runtime.tick()
+            }
             syncVisualsFromPool()
             syncGroundTiles()
             validateSelectionHalo()
@@ -205,6 +213,18 @@ public final class ScenarioScene: SKScene {
             if runtime.cycleToNextPlayerUnit() != nil {
                 refreshSelectionHalo()
                 refreshBuildSidebar()
+            }
+        case 47: // . (period) — double speed
+            let before = speedMultiplier
+            speedMultiplier = min(speedMultiplier * 2, 16)
+            if before != speedMultiplier {
+                Log.info("speed \(before)× → \(speedMultiplier)×", tracer: .label("scene"))
+            }
+        case 43: // , (comma) — halve speed
+            let before = speedMultiplier
+            speedMultiplier = max(speedMultiplier / 2, 1)
+            if before != speedMultiplier {
+                Log.info("speed \(before)× → \(speedMultiplier)×", tracer: .label("scene"))
             }
         default:
             super.keyDown(with: event)
@@ -469,6 +489,9 @@ public final class ScenarioScene: SKScene {
         let units = scheduler?.host.units.findArray.count ?? 0
         let structures = scheduler?.host.structures.findArray.count ?? 0
         var hudText = "Tick \(tickCounter) · units \(units) · structures \(structures)"
+        if speedMultiplier != 1 {
+            hudText += " · \(speedMultiplier)×"
+        }
         if let type = buildController.placementType {
             hudText += " · PLACING \(Self.shortName(for: type)) (click map)"
         }
@@ -684,8 +707,14 @@ public final class ScenarioScene: SKScene {
                 structureMarkers[idx] = marker
             }
             marker.strokeColor = houseColorFor(houseID: slot.houseID).withAlphaComponent(0.8)
-            let centeredX = Int32(slot.positionX) + Int32(dims.0 - 1) * 128
-            let centeredY = Int32(slot.positionY) + Int32(dims.1 - 1) * 128
+            // Footprint centre in pos32 = anchor + dims * 128. The
+            // marker is an SKShapeNode(rectOf:) which centres its
+            // rect on position, so we feed it the footprint midpoint.
+            // (Earlier code used `(dims - 1) * 128` — the centre of
+            // the top-left tile — shifting the outline half a tile
+            // up-left from the actual footprint.)
+            let centeredX = Int32(slot.positionX) + Int32(dims.0) * 128
+            let centeredY = Int32(slot.positionY) + Int32(dims.1) * 128
             marker.position = screenPositionPos32(
                 x: UInt16(clamping: centeredX),
                 y: UInt16(clamping: centeredY)
@@ -1272,14 +1301,19 @@ public final class ScenarioScene: SKScene {
     }
 
     /// Inverse of `sidebarSlotY`: given a scene-local Y, returns the
-    /// row index that contains it, or nil when outside any row.
+    /// row index whose visible frame contains it, or nil when outside
+    /// any row. Iterates row frames directly — the prior analytic
+    /// formula was off by one row (click region was shifted one row
+    /// below the visible highlight).
     private func sidebarSlotIndex(atY y: CGFloat) -> Int? {
-        let topMargin: CGFloat = 36
-        let topY = Self.mapSize - topMargin
-        let rawRow = (topY - y) / Self.sidebarRowHeight
-        let row = Int(rawRow) - 1
-        guard row >= 0, row < buildController.availableTypes.count else { return nil }
-        return row
+        let visibleHeight = Self.sidebarRowHeight - Self.sidebarPadding
+        for row in 0..<buildController.availableTypes.count {
+            let slotY = sidebarSlotY(forIndex: row)
+            if y >= slotY, y <= slotY + visibleHeight {
+                return row
+            }
+        }
+        return nil
     }
 
     /// Rebuilds the placement ghost at `(tileX, tileY)` for `type`. The

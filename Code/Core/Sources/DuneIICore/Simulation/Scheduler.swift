@@ -390,8 +390,29 @@ extension Simulation {
             //   (slice 7). Closes the cycle after undock so harvesters
             //   resume working without a human nudge.
             for idx in host.units.findArray {
-                let slot = host.units.slots[idx]
+                var slot = host.units.slots[idx]
                 guard slot.type == 16 else { continue }
+                // Pin: a genuinely idle harvester (not moving, not in
+                // transport, not carrying spice) gets flipped back to
+                // HARVEST so the auto-seek-spice branch below can
+                // reclaim it. OpenDUNE sets `actionsPlayer[3] = stop`
+                // for harvesters, so `Script_Unit_SetActionDefault`
+                // leaves a player-owned harvester stuck in STOP once
+                // its current task finishes. Without this nudge,
+                // `ensureHarvesterAvailable`'s freshly-spawned unit
+                // idles forever.
+                if slot.actionID == Simulation.ActionID.stop,
+                   !slot.inTransport, slot.amount < 100,
+                   slot.targetMove == 0, slot.route[0] == 0xFF,
+                   slot.currentDestinationX == 0, slot.currentDestinationY == 0
+                {
+                    slot.actionID = Simulation.ActionID.harvest
+                    host.units[idx] = slot
+                    Log.info(
+                        "harvest-pin harvester=\(idx) STOP → HARVEST (idle)",
+                        tracer: .label("harvest-tick")
+                    )
+                }
                 if slot.actionID == Simulation.ActionID.harvest,
                    slot.amount >= 100, !slot.inTransport
                 {
