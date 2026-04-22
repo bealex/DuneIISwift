@@ -11,7 +11,7 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**Carryall pickup loop — slice 8a shipped, 8b (spawn carryall + link harvester) is next.** Design doc: `Algorithms/CarryallPickup.md` with full 8a/8b/8c breakdown. Immediate next step for a cold session: port OpenDUNE's `Unit_CallUnitByType` (`src/unit.c:2131`) as `Simulation.Units.callCarryall(forHarvester:destination:units:)` — spawn a CARRYALL in the pool's 0..5 range, set `inTransport=true`, `linkedID=harvester.index`, `targetMove=EncodedIndex.structure(refineryIdx).raw`, origin at a map-edge tile. Then wire it into `tickHarvesting`'s "all refineries busy" branch.
+**Carryall pickup loop — 8a + 8b shipped. 8c (flight + drop-off + re-dock) is next.** Design doc: `Algorithms/CarryallPickup.md`. Immediate next step for a cold session: extend `Scheduler.tickMovement` (or add a dedicated `tickCarryallFerry`) to detect when an in-transport carryall reaches its destination refinery. On arrival, unlink the harvester (`carryall.linkedID = 0xFF`, both sides flip `inTransport = false`), snap the harvester to a passable tile adjacent to the refinery, carryall continues to return-to-origin or frees the slot. The harvester's next `tickHarvesting` pass docks via the existing RETURN-action path.
 
 What works now:
 - CYARD pre-selected at scene load; build panel shows buildables.
@@ -30,7 +30,7 @@ Latest session (2026-04-22) shipped tasks 1-9 + the minimap; all details in toda
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → implement → tests → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **Carryall pickup loop 8b + 8c** — spawn a carryall on busy-refinery events; flight + drop-off + re-dock. Design: `Algorithms/CarryallPickup.md`. 8a already shipped.
+1. **Carryall pickup loop 8c** — flight + drop-off at destination + re-dock. Design: `Algorithms/CarryallPickup.md`. 8a + 8b already shipped.
 2. **Scene repaint on `SpiceMap.apply`** (slice 9). Cosmetic; lets the player see spice thick→thin→bare drain in real time.
 3. **STARPORT case** — port `Structure_GetBuildable` `-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
 4. **Mentat briefing screen** — scenario intro text, voice cue. Intro WSA + jukebox already shipped.
@@ -44,6 +44,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-22 — Carryall pickup 8b.** `Simulation.Units.callCarryall` spawns a CARRYALL in-pool at the harvester's tile with `inTransport=true` + `linkedID=harvester` + `targetMove=encoded(refinery)`. `tickHarvesting` picks between free-refinery (8a), carryall-ferry (new), and on-foot-only-option branches; `countRefineries(houseID:structures:)` gates ferry on ≥ 2 refineries. 4 new tests, 1 superseded. 802 green / 79 suites / zero warnings.
+- **2026-04-22 — Carryall pickup 8a.** `findFreeRefinery` + tickHarvesting preference for free refineries over nearest. Observable: two harvesters parallelise across two refineries. 9 new tests. 798 green / 79 suites / zero warnings.
 - **2026-04-22 — Sidebar minimap.** New `DuneIIRendering.Minimap` produces a 64×64 RGBA buffer from live tile grid + pools. `ScenarioScene.refreshMinimap()` rebuilds the `SKTexture` every tick; 120×120 pt node sits above the info panel. Terrain colours per `LandscapeType`; units + structure footprints overlaid in house colour; projectiles (types 18..24), slabs + walls skipped. 12 new tests. **789 green / 78 suites / zero warnings.**
 - **2026-04-22 — Task 9: Pathfinder + scheduler redirect to passable neighbour.** `findRoute.resolveReachable` + `Scheduler.nearestPassableNeighbor` stop hunt-action enemies from halting at the player CYARD. Mission 1's 3 Ordos hunters now march toward the base. 3 new tests.
 - **2026-04-22 — Task 8: Keyboard shortcuts (Escape / Tab).** Deselect all + cycle through friendly units. 2 new tests.
@@ -137,7 +139,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **789 tests across 78 suites, all green** as of 2026-04-22 (post-minimap). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **802 tests across 79 suites, all green** as of 2026-04-22 (post-carryall-8b). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 

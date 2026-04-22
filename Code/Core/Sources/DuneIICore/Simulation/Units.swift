@@ -62,6 +62,80 @@ extension Simulation {
             return idx
         }
 
+        /// Carryall pickup slice 8b. Partial port of OpenDUNE's
+        /// `Unit_CallUnitByType` tail (`src/unit.c:2131`) shortcut: spawn
+        /// a CARRYALL (type 0) owned by the harvester's house at the
+        /// harvester's current pixel position, link the harvester via
+        /// `linkedID`, set `inTransport=true` on both sides, and route
+        /// the carryall at `destinationRefineryIndex`'s encoded index.
+        ///
+        /// Returns the new carryall pool slot, or `nil` when inputs are
+        /// invalid / pools are full. Logs the spawn under the
+        /// `carryall` tracer.
+        ///
+        /// Deferred (slice 8c): fly-to-pickup phase, drop-off at the
+        /// destination refinery, carryall return-to-origin. In this
+        /// slice the carryall teleports to the harvester's tile and
+        /// begins its ferry flight — visually "pops in" above the busy
+        /// refinery.
+        @discardableResult
+        public static func callCarryall(
+            harvesterIndex: Int,
+            destinationRefineryIndex: Int,
+            units: inout UnitPool,
+            structures: StructurePool
+        ) -> Int? {
+            guard harvesterIndex >= 0, harvesterIndex < UnitPool.capacity else { return nil }
+            let harvester = units[harvesterIndex]
+            guard harvester.isUsed, harvester.isAllocated else { return nil }
+            guard harvester.type == 16 /* HARVESTER */ else { return nil }
+            guard destinationRefineryIndex >= 0,
+                  destinationRefineryIndex < structures.slots.count
+            else { return nil }
+            let refinery = structures.slots[destinationRefineryIndex]
+            guard refinery.isUsed, refinery.isAllocated else { return nil }
+            guard refinery.type == 12 /* REFINERY */ else { return nil }
+            guard refinery.houseID == harvester.houseID else { return nil }
+
+            guard let carryallIdx = units.allocateForType(
+                type: 0 /* CARRYALL */, houseID: harvester.houseID
+            ) else {
+                Log.warning(
+                    "carryall-spawn FAILED — pool full (house=\(harvester.houseID) harvester=\(harvesterIndex))",
+                    tracer: .label("carryall")
+                )
+                return nil
+            }
+            var carryall = units[carryallIdx]
+            carryall.positionX = harvester.positionX
+            carryall.positionY = harvester.positionY
+            carryall.hitpoints = UnitInfo.lookup(0)?.hitpoints ?? 100
+            carryall.seenByHouses = 0xFF
+            carryall.inTransport = true
+            carryall.linkedID = UInt8(truncatingIfNeeded: harvesterIndex)
+            carryall.targetMove = Scripting.EncodedIndex.structure(
+                UInt16(truncatingIfNeeded: destinationRefineryIndex)
+            ).raw
+            units[carryallIdx] = carryall
+            // Wingers cruise in at full speed — matches `createUnit`
+            // handling of winger-type spawns.
+            setSpeed(poolIndex: carryallIdx, speedPercent: 255, units: &units)
+
+            // Mark the harvester as in-transport so tickHarvesting
+            // doesn't re-route it while the carryall ferries.
+            var h = units[harvesterIndex]
+            h.inTransport = true
+            units[harvesterIndex] = h
+
+            let rx = Int(refinery.positionX) / 256
+            let ry = Int(refinery.positionY) / 256
+            Log.info(
+                "carryall-spawn slot=\(carryallIdx) house=\(harvester.houseID) harvester=\(harvesterIndex) refinery=\(destinationRefineryIndex) tile=(\(rx),\(ry))",
+                tracer: .label("carryall")
+            )
+            return carryallIdx
+        }
+
         /// Port of `Unit_CreateBullet` (`src/unit.c:1954`). Allocates a
         /// projectile-type unit in the pool's bullet range (12..15),
         /// sets its position / orientation / target / hitpoints.

@@ -216,6 +216,21 @@ extension Simulation {
             return bestIdx
         }
 
+        /// Slice 8b helper. Count of same-house refineries (used in
+        /// the scheduler to gate the carryall ferry on "house owns at
+        /// least 2 refineries" — no point ferrying a single harvester
+        /// to the same refinery it just left).
+        static func countRefineries(
+            houseID: UInt8, structures: StructurePool
+        ) -> Int {
+            var n = 0
+            for idx in structures.findArray {
+                let s = structures.slots[idx]
+                if s.type == 12, s.houseID == houseID { n &+= 1 }
+            }
+            return n
+        }
+
         /// Slice 6b helper. Returns the refinery pool index whose 3×2
         /// footprint covers `tile` and belongs to `houseID`, else nil.
         static func refineryAt(
@@ -348,17 +363,51 @@ extension Simulation {
                     // Slice 8a: prefer a free refinery (no harvester
                     // docked) over the absolute nearest so two
                     // harvesters parallelise across refineries
-                    // instead of queueing at the closer one. Falls
-                    // back to `findNearestRefinery` when every refinery
-                    // is already busy — the carryall slice (8b) will
-                    // intercept that case later.
+                    // instead of queueing at the closer one.
+                    // Slice 8b: if every refinery is busy AND the
+                    // house owns at least two refineries (so a ferry
+                    // actually has somewhere to go), call a carryall
+                    // to lift this harvester out to the nearest one
+                    // rather than make it trundle over on foot.
                     let freeIdx = Self.findFreeRefinery(
                         forHarvester: slot, structures: host.structures
                     )
-                    let refIdx = freeIdx ?? Self.findNearestRefinery(
+                    if let freeIdx {
+                        let r = host.structures.slots[freeIdx]
+                        let rx = Int(r.positionX) / 256
+                        let ry = Int(r.positionY) / 256
+                        _ = Simulation.Units.orderMove(
+                            poolIndex: idx, tileX: rx, tileY: ry, units: &host.units
+                        )
+                        var u = host.units[idx]
+                        u.actionID = Simulation.ActionID.returnAction
+                        host.units[idx] = u
+                        Log.info(
+                            "harvest-cycle full harvester=\(idx) → refinery=\(freeIdx) (free) tile=(\(rx),\(ry))",
+                            tracer: .label("harvest-tick")
+                        )
+                    } else if Self.countRefineries(
+                        houseID: slot.houseID, structures: host.structures
+                    ) >= 2,
+                    let nearestBusy = Self.findNearestRefinery(
                         forHarvester: slot, structures: host.structures
-                    )
-                    if let refIdx {
+                    ) {
+                        _ = Simulation.Units.callCarryall(
+                            harvesterIndex: idx,
+                            destinationRefineryIndex: nearestBusy,
+                            units: &host.units,
+                            structures: host.structures
+                        )
+                        var u = host.units[idx]
+                        u.actionID = Simulation.ActionID.returnAction
+                        host.units[idx] = u
+                        Log.info(
+                            "harvest-cycle full harvester=\(idx) → carryall ferry (all-busy)",
+                            tracer: .label("harvest-tick")
+                        )
+                    } else if let refIdx = Self.findNearestRefinery(
+                        forHarvester: slot, structures: host.structures
+                    ) {
                         let r = host.structures.slots[refIdx]
                         let rx = Int(r.positionX) / 256
                         let ry = Int(r.positionY) / 256
@@ -368,9 +417,8 @@ extension Simulation {
                         var u = host.units[idx]
                         u.actionID = Simulation.ActionID.returnAction
                         host.units[idx] = u
-                        let kind = freeIdx != nil ? "free" : "busy-fallback"
                         Log.info(
-                            "harvest-cycle full harvester=\(idx) → refinery=\(refIdx) (\(kind)) tile=(\(rx),\(ry))",
+                            "harvest-cycle full harvester=\(idx) → refinery=\(refIdx) (only-option) tile=(\(rx),\(ry))",
                             tracer: .label("harvest-tick")
                         )
                     }
