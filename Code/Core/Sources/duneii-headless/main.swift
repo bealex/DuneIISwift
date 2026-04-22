@@ -305,10 +305,10 @@ final class Harness {
         out.write(Data((s + "\n").utf8))
     }
 
-    /// Renders the live tile grid's `groundTileID` for a tile rectangle
-    /// to a PNG on disk. 16 pixels per tile (matching the ICN tile
-    /// resolution); no additional overlays. Silently clips the rect to
-    /// the 64×64 map extent.
+    /// Renders the live tile grid + structure outlines + units +
+    /// selection halo for a tile rectangle to a PNG on disk via the
+    /// shared `ScreenshotRenderer`. 16 pixels per tile. Short-circuits
+    /// when no scenario is loaded.
     private func takeScreenshot(
         originX: Int, originY: Int,
         widthTiles: Int, heightTiles: Int, path: String
@@ -317,61 +317,17 @@ final class Harness {
         guard widthTiles > 0, heightTiles > 0 else {
             throw ScreenshotError.invalidRect
         }
-        let icnTiles = try runtime.assets.loadIcn()
-        let tilePx = 16
-        let w = widthTiles * tilePx
-        let h = heightTiles * tilePx
-        let cs = CGColorSpaceCreateDeviceRGB()
-        let info = CGImageAlphaInfo.premultipliedLast.rawValue
-        var buffer = [UInt8](repeating: 0, count: w * h * 4)
-        guard let ctx = buffer.withUnsafeMutableBytes({ ptr -> CGContext? in
-            CGContext(
-                data: ptr.baseAddress, width: w, height: h,
-                bitsPerComponent: 8, bytesPerRow: w * 4,
-                space: cs, bitmapInfo: info
-            )
-        }) else {
-            throw ScreenshotError.contextCreationFailed
-        }
-        ctx.interpolationQuality = .none
-        // Fill opaque black as default (cells outside the grid).
-        ctx.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
-        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
-
-        let tiles = runtime.tileGrid
-        for dy in 0..<heightTiles {
-            for dx in 0..<widthTiles {
-                let gx = originX + dx
-                let gy = originY + dy
-                guard (0..<64).contains(gx), (0..<64).contains(gy) else { continue }
-                let tileIdx = gy * 64 + gx
-                guard tileIdx < tiles.count else { continue }
-                let tileID = Int(tiles[tileIdx].groundTileID)
-                guard tileID >= 0, tileID < icnTiles.count else { continue }
-                // CGContext origin is bottom-left; our grid is top-left.
-                // Flip the destination Y so (dy=0) ends up at the top.
-                let dst = CGRect(
-                    x: dx * tilePx,
-                    y: (heightTiles - 1 - dy) * tilePx,
-                    width: tilePx, height: tilePx
-                )
-                ctx.draw(icnTiles[tileID], in: dst)
-            }
-        }
-        // Read the rendered RGBA back out and hand it to PNGWriter so
-        // we route through the existing on-disk writer (consistent
-        // error surface + directory creation).
-        guard let image = ctx.makeImage(),
-              let provider = image.dataProvider,
-              let data = provider.data
-        else {
-            throw ScreenshotError.contextCreationFailed
-        }
-        let rgbaLen = CFDataGetLength(data)
-        var rgba = [UInt8](repeating: 0, count: rgbaLen)
-        CFDataGetBytes(data, CFRangeMake(0, rgbaLen), &rgba)
+        let renderer = ScreenshotRenderer(loader: runtime.assets)
+        let data = try renderer.renderPNGData(
+            runtime: runtime,
+            originTileX: originX, originTileY: originY,
+            widthTiles: widthTiles, heightTiles: heightTiles
+        )
         let url = URL(fileURLWithPath: path)
-        try PNGWriter.write(rgba: rgba, width: w, height: h, to: url)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try data.write(to: url)
         Log.info(
             "screenshot rect=(\(originX),\(originY),\(widthTiles),\(heightTiles)) → \(path)",
             tracer: .label("screenshot")

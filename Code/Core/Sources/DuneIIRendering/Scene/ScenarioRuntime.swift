@@ -110,6 +110,7 @@ public final class ScenarioRuntime {
         // plain `Map.Generator` used by `WorldSnapshot.init(scenario:)`
         // doesn't apply structure placements (that's ScenarioWorld's
         // job, which we only use for rendering).
+        let iconMap = assets.iconMap
         for idx in snapshot.structures.findArray {
             let s = snapshot.structures.slots[idx]
             let ax = Int(s.positionX) / 256
@@ -117,13 +118,46 @@ public final class ScenarioRuntime {
             let footprint = Simulation.Structures.footprintTiles(
                 type: s.type, anchorX: ax, anchorY: ay
             )
+            // Pre-compute the iconGroup tile IDs the same way
+            // `stampPlacement` does for runtime-placed structures
+            // (Structure_UpdateMap offset = 2 × layoutSize, take next
+            // layoutSize). Without this, scenario-placed structures
+            // only set `hasStructure` on the grid but leave the
+            // ground tiles as sand/rock, invisible to any consumer
+            // that reads from tileGrid (minimap, screenshot tests).
+            var iconTiles: [UInt16]? = nil
+            if let groupRaw = Simulation.StructureInfo.iconGroupRawValue(for: s.type),
+               let group = Formats.IconMap.Group(rawValue: groupRaw),
+               let info = Simulation.StructureInfo.lookup(s.type)
+            {
+                let all = iconMap.tileIds(in: group)
+                let (w, h) = info.layout.dimensions
+                let needed = w * h
+                let start = 2 * needed
+                if all.count >= start + needed {
+                    iconTiles = Array(all[start..<(start + needed)])
+                } else if all.count >= needed {
+                    let tail = all.count - needed
+                    iconTiles = Array(all[tail..<(tail + needed)])
+                }
+            }
+            let dims = Simulation.StructureInfo.lookup(s.type)?.layout.dimensions ?? (1, 1)
             for (fx, fy) in footprint {
                 guard (0..<64).contains(fx), (0..<64).contains(fy) else { continue }
                 let cellIdx = fy * 64 + fx
                 guard cellIdx < tileGridRef.tiles.count else { continue }
                 let old = tileGridRef.tiles[cellIdx]
+                var newGround = old.groundTileID
+                if let iconTiles {
+                    let dx = fx - ax
+                    let dy = fy - ay
+                    let idx2 = dy * dims.0 + dx
+                    if idx2 >= 0, idx2 < iconTiles.count {
+                        newGround = iconTiles[idx2]
+                    }
+                }
                 tileGridRef.tiles[cellIdx] = Simulation.WorldSnapshot.Tile(
-                    groundTileID: old.groundTileID,
+                    groundTileID: newGround,
                     overlayTileID: old.overlayTileID,
                     houseID: s.houseID,
                     isUnveiled: old.isUnveiled,
