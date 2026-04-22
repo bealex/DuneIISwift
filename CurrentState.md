@@ -168,7 +168,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **763 tests across 77 suites, all green** as of 2026-04-22 (post-mission-1 fixes). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **766 tests across 77 suites, all green** as of 2026-04-22 (post-selection-UI pass). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 
