@@ -558,6 +558,19 @@ extension Scripting {
                     var bullet = host.units[bulletIdx]
                     bullet.originEncoded = Scripting.EncodedIndex.unit(shooter.index).raw
                     host.units[bulletIdx] = bullet
+                    // Muzzle flash — cosmetic `IMPACT_SMALL` with 0
+                    // damage at the shooter's tile. OpenDUNE plays a
+                    // voice cue (`Voice_PlayAtTile(ui->bulletSound)`)
+                    // here; we render a visual instead so the player
+                    // gets an unambiguous "this unit just fired" cue
+                    // while the bullet flies toward its target.
+                    Simulation.Explosions.makeExplosion(
+                        type: Simulation.ExplosionType.impactSmall.rawValue,
+                        position: shooterPos,
+                        hitpoints: 0,
+                        unitOriginEncoded: Scripting.EncodedIndex.unit(shooter.index).raw,
+                        host: host
+                    )
                     Log.info(
                         "fire: unit \(shooterIdx) (type \(shooter.type)) → bullet slot \(bulletIdx) (type \(bulletType)) target=\(String(format: "0x%04X", target)) damage=\(damage)",
                         tracer: .label("fire")

@@ -232,6 +232,16 @@ struct FireTests {
         // Let me re-check with SIEGE_TANK which has firesTwice=true.
         let shooter = host.units[50]
         #expect(shooter.fireDelay == 160)
+
+        // Muzzle-flash explosion spawned at the shooter's tile —
+        // IMPACT_SMALL with hitpoints=0 (cosmetic, matches OpenDUNE's
+        // voice-cue-on-fire but as a visual indicator).
+        let activeFlashes = host.explosions.slots.filter {
+            $0.isActive && $0.type == Simulation.ExplosionType.impactSmall.rawValue
+        }
+        #expect(activeFlashes.count == 1)
+        #expect(activeFlashes.first?.positionX == 128)
+        #expect(activeFlashes.first?.positionY == 128)
     }
 
     @Test("slot 0x08 Fire firesTwice: first fire sets quick reload, second fire the full reload")
