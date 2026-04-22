@@ -212,6 +212,34 @@ final class Harness {
         case "scene":
             writeLine("scene tick=\(runtime.tickCounter) selectedYard=\(runtime.buildController.selectedYardIndex ?? -1) placement=\(runtime.buildController.placementType.map(String.init) ?? "nil") yardKind=\(runtime.currentYardKind)")
             writeLine("ok dump scene")
+        case "icntile":
+            guard let tileID = args.first.flatMap({ Int($0) }) else {
+                writeLine("! usage: dump icntile <tileID>"); return
+            }
+            do {
+                let ts = try runtime.assets.loadIcnTileSet()
+                guard tileID < ts.tileCount else {
+                    writeLine("! tile out of range (have \(ts.tileCount))"); return
+                }
+                let rtbl = Int(ts.rtbl[tileID])
+                let base = rtbl * 16
+                let sub = Array(ts.rpal[base..<(base + 16)])
+                writeLine("icntile id=\(tileID) rtbl=\(rtbl) subPalette=\(sub.map { String($0, radix: 16) }.joined(separator: " "))")
+                let pixels = ts.pixels(forTile: tileID)
+                let uniq = Set(pixels).sorted()
+                writeLine("  uniquePixelIndices=\(uniq.map { String($0, radix: 16) }.joined(separator: " "))")
+                writeLine("ok dump icntile")
+            } catch {
+                writeLine("! icntile \(error)")
+            }
+        case "iconmap":
+            guard let raw = args.first.flatMap({ Int($0) }),
+                  let group = Formats.IconMap.Group(rawValue: raw) else {
+                writeLine("! usage: dump iconmap <group-raw>"); return
+            }
+            let ids = runtime.assets.iconMap.tileIds(in: group)
+            writeLine("iconmap group=\(raw) count=\(ids.count) ids=[\(ids.map(String.init).joined(separator: " "))]")
+            writeLine("ok dump iconmap")
         case "selection":
             let unitIdx = runtime.commandController.selectedUnitIndex
             let friendly = runtime.commandController.isFriendlySelection

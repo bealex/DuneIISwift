@@ -101,6 +101,20 @@ public final class AssetLoader {
         }
     }
 
+    /// Raw ICN tile-set (packed pixels + rpal/rtbl). Exposed so callers
+    /// that need per-tile per-house palette remap can render their own
+    /// CGImages via `pixels(forTile:houseID:)`. See `ScreenshotRenderer`.
+    public func loadIcnTileSet(named name: String = "ICON.ICN") throws -> Formats.Icn.TileSet {
+        guard let body = installation.body(of: name) else {
+            throw LoadError.missingAsset(name)
+        }
+        do {
+            return try Formats.Icn.decode(body)
+        } catch {
+            throw LoadError.decodeFailed(name: name, cause: "\(error)")
+        }
+    }
+
     /// Decodes a named ICN and returns every tile as a separate `CGImage`.
     /// Returned in `TileSet.tiles` order — `TileResolver.tileId(_:offset:)`
     /// maps `(group, offset)` into this array.

@@ -26,6 +26,17 @@ public final class ScreenshotRenderer {
 
     private let loader: AssetLoader
     private var icnCache: [CGImage]?
+    /// Raw ICN tile-set, needed for per-house palette remap on
+    /// structure cells (see `houseRemappedIcnTile`). Loaded on first
+    /// use alongside `icnCache`.
+    private var icnTileSetCache: Formats.Icn.TileSet?
+    /// Per (tileID, houseID) rendered CGImage with OpenDUNE's
+    /// `applyHouseColors` remap baked in. Populated lazily; structure
+    /// cells in the tile grid route their `groundTileID` through this
+    /// cache so house-colour bytes (palette indices 0x90..0x98) pick
+    /// up the owning house's band. Harkonnen (house=0) keeps the
+    /// default palette.
+    private var housePalettedTileCache: [UInt32: CGImage] = [:]
     /// Per-house cached unit sprite atlas, keyed by houseID. Same
     /// sprite-index layout as `UnitSpriteAtlas` — see its doc for
     /// the global-index → source-SHP mapping.
@@ -59,7 +70,10 @@ public final class ScreenshotRenderer {
         ctx.interpolationQuality = .none
         ctx.setShouldAntialias(false)
 
-        // 1. Ground tiles.
+        // 1. Ground tiles. Structure cells route through the
+        //    per-house palette cache so house-colour pixels (palette
+        //    indices 0x90..0x98) render in the owning house's band.
+        //    Plain terrain cells use the default atlas.
         let icnTiles = try loadIcnCached()
         let tiles = runtime.tileGrid
         for dy in 0..<heightTiles {
@@ -69,9 +83,17 @@ public final class ScreenshotRenderer {
                 guard (0..<64).contains(gx), (0..<64).contains(gy) else { continue }
                 let tileIdx = gy * 64 + gx
                 guard tileIdx < tiles.count else { continue }
-                let tileID = Int(tiles[tileIdx].groundTileID)
+                let cell = tiles[tileIdx]
+                let tileID = Int(cell.groundTileID)
                 guard tileID >= 0, tileID < icnTiles.count else { continue }
-                ctx.draw(icnTiles[tileID], in: tileRect(dx: dx, dy: dy, heightTiles: heightTiles))
+                let drawn: CGImage
+                if cell.hasStructure, cell.houseID != 0 {
+                    drawn = (try? houseRemappedIcnTile(tileID: tileID, houseID: cell.houseID))
+                        ?? icnTiles[tileID]
+                } else {
+                    drawn = icnTiles[tileID]
+                }
+                ctx.draw(drawn, in: tileRect(dx: dx, dy: dy, heightTiles: heightTiles))
             }
         }
 
@@ -243,6 +265,36 @@ public final class ScreenshotRenderer {
         let tiles = try loader.loadIcn()
         icnCache = tiles
         return tiles
+    }
+
+    private func loadIcnTileSetCached() throws -> Formats.Icn.TileSet {
+        if let cached = icnTileSetCache { return cached }
+        let tileSet = try loader.loadIcnTileSet()
+        icnTileSetCache = tileSet
+        return tileSet
+    }
+
+    /// Lazy per-(tileID, houseID) CGImage with `applyHouseColors`
+    /// baked in. OpenDUNE does this inline at render time; we cache
+    /// because each tile only needs 1–5 variants across the six
+    /// houses in practice.
+    private func houseRemappedIcnTile(tileID: Int, houseID: UInt8) throws -> CGImage {
+        let key = (UInt32(tileID) << 8) | UInt32(houseID)
+        if let cached = housePalettedTileCache[key] { return cached }
+        let tileSet = try loadIcnTileSetCached()
+        guard tileID < tileSet.tileCount else {
+            return try loadIcnCached()[tileID]
+        }
+        let pixels = tileSet.pixels(forTile: tileID, houseID: houseID)
+        let image = try CGImageFactory.makeImage(
+            indices: pixels,
+            width: tileSet.tileWidth,
+            height: tileSet.tileHeight,
+            palette: loader.palette,
+            mode: .opaque
+        )
+        housePalettedTileCache[key] = image
+        return image
     }
 
     private func unitSprite(spriteID: Int, houseID: UInt8) -> CGImage? {

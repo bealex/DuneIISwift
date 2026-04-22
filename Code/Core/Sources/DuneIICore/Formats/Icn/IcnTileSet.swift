@@ -24,9 +24,35 @@ extension Formats {
             /// Expanded 8-bit palette indices for a given tile, row-major
             /// (`tileWidth * tileHeight` entries).
             public func pixels(forTile tileIndex: Int) -> [UInt8] {
+                pixels(forTile: tileIndex, houseID: 0)
+            }
+
+            /// Same as `pixels(forTile:)` but remaps the 16-entry per-tile
+            /// sub-palette through `Palette.applyHouseColors` first, so
+            /// pixel bytes in the `[0x90, 0x98]` house-colour band render
+            /// using `houseID`'s band instead of Harkonnen's. HouseID 0
+            /// is the identity (matches Harkonnen's default colours).
+            /// Used by structure rendering — OpenDUNE applies the same
+            /// remap on the fly via `GUI_Widget_Viewport_GetSprite_HousePalette`.
+            public func pixels(forTile tileIndex: Int, houseID: UInt8) -> [UInt8] {
                 precondition(tileIndex < tileCount, "tile index out of range")
                 let paletteBase = Int(rtbl[tileIndex]) * 16
-                let palette = Array(rpal[paletteBase..<(paletteBase + 16)])
+                var subPalette = Array(rpal[paletteBase..<(paletteBase + 16)])
+                // OpenDUNE's `GFX_DrawTile` (`src/gfx.c:210`) uses the
+                // wider band `(colour & 0xF0) == 0x90` — the full
+                // 0x90..0x9F range — for map-tile house remap. The
+                // enhanced-mode narrower rule (`colour <= 0x96`) is a
+                // port-only ENHANCEMENT; vanilla D2 remaps the whole
+                // upper half too. Units go through the narrower
+                // sprite-palette range via `applyHouseColors`.
+                if houseID != 0 {
+                    for i in 0..<16 {
+                        let v = subPalette[i]
+                        if (v & 0xF0) == 0x90 {
+                            subPalette[i] = v &+ (houseID &<< 4)
+                        }
+                    }
+                }
                 let tileByteSize = (tileWidth * tileHeight) / 2
                 let start = tileIndex * tileByteSize
                 var out: [UInt8] = []
@@ -34,8 +60,8 @@ extension Formats {
                 for i in 0..<tileByteSize {
                     let byte = packedPixels[start + i]
                     // Upper nibble is the left pixel.
-                    out.append(palette[Int(byte >> 4)])
-                    out.append(palette[Int(byte & 0x0F)])
+                    out.append(subPalette[Int(byte >> 4)])
+                    out.append(subPalette[Int(byte & 0x0F)])
                 }
                 return out
             }
