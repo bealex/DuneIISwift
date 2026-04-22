@@ -11,39 +11,49 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**Playtest follow-up batch (user-requested).** (1) **Attack animation** — no visible muzzle flash / projectile trail / impact when a friendly unit fires on an enemy. Need to port OpenDUNE's muzzle-flash + bullet sprite passes (`src/unit.c` fire path → `src/script/unit.c` Script_Unit_Fire). (2) **Action shortcut keys** — after selecting a unit, press `A`/`M`/`H`/`R` to stage "next left-click issues Attack/Move/Harvest/Return" (Harvest/Return are harvester-only; Attack/Move are generic). (3) **Spice bloom interaction** — walking into or attacking a spice bloom detonates it into spice; port OpenDUNE's bloom explosion (`Map_Bloom_*`). Consult OpenDUNE for each algorithm before coding.
+**None — playtest follow-up (attack muzzle flash, A/M/H/R shortcuts, spice-bloom detonation) shipped. Pick from "Next up".**
 
 What works now:
 - CYARD pre-selected at scene load; build panel shows buildables.
 - Slab → Windtrap → Refinery chain works; REFINERY placement auto-spawns a harvester in HARVEST action.
 - Harvester seeks spice → drains → docks at refinery → returns credits → repeats. Credits accumulate.
+- Two harvesters parallelise across two refineries; if both refineries are busy, a carryall ferries the next one (spawns above the harvester, flies to destination, drops off).
+- Spice tiles actually deplete — tile repaints bare when a harvester drains all the way down.
+- Walking into a spice bloom (non-sandworm) detonates it: tremor explosion + radius-5 spice spread + the walker dies.
+- Every fire attempt spawns a muzzle-flash explosion at the shooter, so attack intent is visible even when the bullet sprite is too small / too fast.
 - Click any unit or structure → info panel shows name / house / HP bar / state / action; halo matches friendly (green) vs enemy (red).
 - Right-click with friendly unit → orderMove (empty tile), orderAttack (enemy unit), or orderAttackStructure (enemy building).
+- Keyboard shortcut keys: `A` / `M` / `H` / `R` stage Attack / Move / Harvest / Return — next left-click resolves (Harvest + Return harvester-only). Escape clears selection + stage. Tab cycles player units. `,` / `.` halves / doubles sim speed (1× → 16×).
 - Enemy HUNT-action units walk toward the player base (redirect-to-adjacent when target tile is impassable).
-- Keyboard: Escape deselects, Tab cycles player units.
 - Sidebar minimap renders terrain + unit / structure dots, refreshed every tick.
-- Harness (`swift run duneii-headless`) drives the same runtime as the scene.
+- Structure + unit sprites pick up per-house palette remap (Atreides CY is blue, not default Harkonnen).
+- Headless: `screenshot x y w h path` emits a PNG via the same renderer the tests consume; `dump icntile / iconmap` for palette debugging; `stage <name>` mirrors the shortcut keys.
+- `ScreenshotTests` suite gives us golden-image regression coverage (5 tests).
 
-Latest session (2026-04-22) shipped tasks 1-9 + the minimap; all details in today's `Documentation/History/2026-04.md` bullets.
+Latest session (2026-04-22) shipped 17 commits across the day. All details in today's `Documentation/History/2026-04.md` bullets.
 
 ## Next up (queued)
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → implement → tests → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **Attack animation + action shortcuts + spice-bloom interaction** (see Active task — three-part playtest follow-up).
-2. **STARPORT case** — port `Structure_GetBuildable` `-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
-3. **Mentat briefing screen** — scenario intro text, voice cue. Intro WSA + jukebox already shipped.
-4. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline's `gameSpeed` factor.
-5. **`BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; the real script gives proper flight frames + sonic-beam propagation. Cosmetic.
-6. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder.
-7. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority`; slot 0x36.
-8. **HP-bar visual on world markers** — small bar above each unit/structure SKNode for at-a-glance status. Info panel already shows HP for the selection; this would make every entity show it.
-9. **Carryall reuse** — when a drop completes, fly the empty carryall back to a map-edge origin instead of freeing it; next ferry can reuse the existing slot. Cosmetic + matches OpenDUNE's persistent-carryall behaviour.
+1. **STARPORT case** — port `Structure_GetBuildable` `-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
+2. **Mentat briefing screen** — scenario intro text, voice cue. Intro WSA + jukebox already shipped.
+3. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline's `gameSpeed` factor.
+4. **`BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; the real script gives proper flight frames + sonic-beam propagation. Cosmetic.
+5. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder.
+6. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority`; slot 0x36.
+7. **HP-bar visual on world markers** — small bar above each unit/structure SKNode for at-a-glance status. Info panel already shows HP for the selection; this would make every entity show it.
+8. **Carryall reuse** — when a drop completes, fly the empty carryall back to a map-edge origin instead of freeing it; next ferry can reuse the existing slot. Cosmetic + matches OpenDUNE's persistent-carryall behaviour.
+9. **Spice-bloom on damage** — port `Map_Bloom_ExplodeSpecial` + the explosion-callback path so blooms also detonate when attacked / caught in other explosions. Walk-into already shipped.
+10. **Spice-map edge fixup** — port `Map_FixupSpiceEdges` so neighbouring spice tiles blend visually after a harvester drain instead of showing hard edges.
 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-22 — Attack muzzle flash.** `Script_Unit_Fire` spawns a cosmetic `IMPACT_SMALL` explosion at the shooter's tile on every successful fire so attack intent is always visible. Extended `FireTests.fireSuccess`. 832 green / 83 suites.
+- **2026-04-22 — Spice-bloom walk-into detonation.** `Simulation.Bloom.explodeSpice` ports `Map_Bloom_ExplodeSpice` + `Map_FillCircleWithSpice` (radius-5, edge 50% via rng, centre gets +2). `Scheduler.tickBloomDetonation` sweeps non-sandworm units on bloom tiles between `tickMovement` and `tickUnits`. New `Host.groundTileOverride` closure resets the bloom cell to sand. 6 new tests. 832 green / 83 suites.
+- **2026-04-22 — Action shortcut keys (A/M/H/R).** `UnitCommandController.stage(action:pool:)` primes a staged intent; next left-click resolves (Harvest/Return harvester-only; Attack falls back to move on empty). New `.orderHarvest` / `.orderReturn` runtime outcomes; scene keybindings + HUD `STAGE X (click target)` indicator. Headless `stage <name>` verb. 11 new tests. 826 green / 82 suites.
 - **2026-04-22 — Slice 9: scene repaint on SpiceMap.apply.** New `Host.spiceLevelDidChange` callback; scheduler fires on level transitions; runtime rewrites tileGrid groundTileID per `Map_ChangeSpiceAmount`'s offsets. 3 new tests. 815 green / 81 suites / zero warnings.
 - **2026-04-22 — Scene tile rendering: per-house palette remap.** `ScenarioScene` lazy-caches house-remapped `SKTexture`s via the same `(tileID, houseID)` path used by `ScreenshotRenderer`; `syncGroundTiles` runs right after `runtime.load` so Atreides CY renders in blue on first frame.
 - **2026-04-22 — Structure ICN tiles get per-house palette remap (renderer).** New `Formats.Icn.TileSet.pixels(forTile:houseID:)` applies OpenDUNE vanilla's `(c & 0xF0) == 0x90` 0x90..0x9F remap. `ScreenshotRenderer` routes structure cells through a lazy `(tileID, houseID) → CGImage` cache. New headless `dump icntile` / `dump iconmap` debug commands.
@@ -146,7 +156,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **815 tests across 81 suites, all green** as of 2026-04-22 (post-slice-9). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **832 tests across 83 suites, all green** as of 2026-04-22 (post-muzzle-flash, end of day). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 
