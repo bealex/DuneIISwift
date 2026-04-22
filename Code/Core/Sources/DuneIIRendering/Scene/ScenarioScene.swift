@@ -621,10 +621,342 @@ public final class ScenarioScene: SKScene {
 
     /// Pulls freshly-computed build state from the runtime + rebuilds
     /// the sidebar nodes. Called at scene build, after every commit,
-    /// and every scheduler tick so the progress bar animates.
+    /// and every scheduler tick so the progress bar + info panel
+    /// animate.
     private func refreshBuildSidebar() {
         runtime.refreshBuildState()
         renderSidebar()
+    }
+
+    /// Layout constants for the info panel at the bottom of the
+    /// right sidebar. Grows upward from the scene's y=0 line.
+    private enum InfoPanel {
+        static let height: CGFloat = 200
+        static let headerY: CGFloat = 180      // from panel base
+        static let nameY: CGFloat = 160
+        static let houseY: CGFloat = 140
+        static let hpLabelY: CGFloat = 120
+        static let hpBarY: CGFloat = 108
+        static let hpBarHeight: CGFloat = 6
+        static let statusY: CGFloat = 88
+        static let hintY: CGFloat = 60
+    }
+
+    /// Appends an info-panel block to `container` showing the current
+    /// selection's name, house, HP bar, state, and action hint.
+    /// Layout is fixed at the bottom of the right sidebar. Called by
+    /// `renderSidebar` so the same container-teardown cycle clears old
+    /// nodes.
+    private func renderInfoPanel(into container: SKNode) {
+        let baseX = Self.mapSize + Self.sidebarPadding
+        let baseY: CGFloat = 0
+        let panelWidth = Self.sidebarWidth - 2 * Self.sidebarPadding
+        let panelRect = CGRect(
+            x: baseX, y: baseY,
+            width: panelWidth, height: InfoPanel.height
+        )
+        let bg = SKShapeNode(rect: panelRect)
+        bg.fillColor = NSColor(calibratedWhite: 0.08, alpha: 1.0)
+        bg.strokeColor = NSColor(calibratedWhite: 0.28, alpha: 1.0)
+        bg.lineWidth = 1
+        container.addChild(bg)
+
+        let header = SKLabelNode(text: "INFO")
+        header.fontColor = NSColor(calibratedWhite: 0.85, alpha: 1.0)
+        header.fontSize = 11
+        header.fontName = "Menlo-Bold"
+        header.horizontalAlignmentMode = .center
+        header.position = CGPoint(
+            x: baseX + panelWidth / 2,
+            y: baseY + InfoPanel.headerY
+        )
+        container.addChild(header)
+
+        // Resolve the current selection. Priority: unit > structure.
+        // (Selection types are mutually exclusive in the runtime but
+        // be defensive here.)
+        if let unitIdx = runtime.commandController.selectedUnitIndex,
+           let host = runtime.host,
+           unitIdx < host.units.slots.count,
+           host.units.slots[unitIdx].isUsed
+        {
+            renderUnitInfo(
+                into: container, baseX: baseX, baseY: baseY,
+                panelWidth: panelWidth,
+                slot: host.units.slots[unitIdx],
+                isFriendly: runtime.commandController.isFriendlySelection
+            )
+        } else if let structIdx = runtime.selectedStructureIndex,
+                  let host = runtime.host,
+                  structIdx < host.structures.slots.count,
+                  host.structures.slots[structIdx].isUsed
+        {
+            renderStructureInfo(
+                into: container, baseX: baseX, baseY: baseY,
+                panelWidth: panelWidth,
+                slot: host.structures.slots[structIdx]
+            )
+        } else {
+            let hint = SKLabelNode(text: "click a unit or building")
+            hint.fontColor = NSColor(calibratedWhite: 0.45, alpha: 1.0)
+            hint.fontSize = 9
+            hint.fontName = "Menlo"
+            hint.horizontalAlignmentMode = .center
+            hint.position = CGPoint(
+                x: baseX + panelWidth / 2,
+                y: baseY + InfoPanel.nameY
+            )
+            container.addChild(hint)
+        }
+    }
+
+    private func renderUnitInfo(
+        into container: SKNode, baseX: CGFloat, baseY: CGFloat, panelWidth: CGFloat,
+        slot: Simulation.UnitSlot, isFriendly: Bool
+    ) {
+        let name = Self.fullUnitName(for: slot.type)
+        let houseName = Self.houseName(for: slot.houseID)
+        let hpMax = Simulation.UnitInfo.lookup(slot.type)?.hitpoints ?? 1
+        let hpPct = max(0, min(1.0, Double(slot.hitpoints) / Double(max(1, hpMax))))
+
+        addLabel(
+            container,
+            text: name, size: 13, bold: true,
+            color: isFriendly ? .white : NSColor(calibratedRed: 1.0, green: 0.65, blue: 0.65, alpha: 1),
+            x: baseX + panelWidth / 2, y: baseY + InfoPanel.nameY
+        )
+        addLabel(
+            container,
+            text: houseName,
+            size: 10, bold: false,
+            color: NSColor(calibratedWhite: 0.7, alpha: 1),
+            x: baseX + panelWidth / 2, y: baseY + InfoPanel.houseY
+        )
+        addLabel(
+            container,
+            text: "HP: \(slot.hitpoints)/\(hpMax)",
+            size: 10, bold: false,
+            color: NSColor(calibratedWhite: 0.85, alpha: 1),
+            x: baseX + panelWidth / 2, y: baseY + InfoPanel.hpLabelY
+        )
+        addHPBar(
+            container,
+            x: baseX + 6, y: baseY + InfoPanel.hpBarY,
+            width: panelWidth - 12, pct: hpPct
+        )
+
+        // Action hint.
+        let actionName = Self.unitActionName(for: slot.actionID)
+        addLabel(
+            container,
+            text: "Action: \(actionName)",
+            size: 9, bold: false,
+            color: NSColor(calibratedWhite: 0.7, alpha: 1),
+            x: baseX + panelWidth / 2, y: baseY + InfoPanel.statusY
+        )
+
+        let hint = isFriendly
+            ? "R-click: move / attack"
+            : "Enemy — info only"
+        addLabel(
+            container,
+            text: hint,
+            size: 9, bold: false,
+            color: isFriendly
+                ? NSColor(calibratedRed: 0.4, green: 0.9, blue: 0.4, alpha: 1)
+                : NSColor(calibratedRed: 1.0, green: 0.5, blue: 0.5, alpha: 1),
+            x: baseX + panelWidth / 2, y: baseY + InfoPanel.hintY
+        )
+    }
+
+    private func renderStructureInfo(
+        into container: SKNode, baseX: CGFloat, baseY: CGFloat, panelWidth: CGFloat,
+        slot: Simulation.StructureSlot
+    ) {
+        let name = Self.fullStructureName(for: slot.type)
+        let houseName = Self.houseName(for: slot.houseID)
+        let isFriendly = slot.houseID == runtime.playerHouseID
+        let hpMax = slot.hitpointsMax > 0
+            ? slot.hitpointsMax
+            : Simulation.StructureInfo.lookup(slot.type)?.hitpoints ?? 1
+        let hpPct = max(0, min(1.0, Double(slot.hitpoints) / Double(max(1, hpMax))))
+
+        addLabel(
+            container,
+            text: name, size: 13, bold: true,
+            color: isFriendly ? .white : NSColor(calibratedRed: 1.0, green: 0.65, blue: 0.65, alpha: 1),
+            x: baseX + panelWidth / 2, y: baseY + InfoPanel.nameY
+        )
+        addLabel(
+            container,
+            text: houseName,
+            size: 10, bold: false,
+            color: NSColor(calibratedWhite: 0.7, alpha: 1),
+            x: baseX + panelWidth / 2, y: baseY + InfoPanel.houseY
+        )
+        addLabel(
+            container,
+            text: "HP: \(slot.hitpoints)/\(hpMax)",
+            size: 10, bold: false,
+            color: NSColor(calibratedWhite: 0.85, alpha: 1),
+            x: baseX + panelWidth / 2, y: baseY + InfoPanel.hpLabelY
+        )
+        addHPBar(
+            container,
+            x: baseX + 6, y: baseY + InfoPanel.hpBarY,
+            width: panelWidth - 12, pct: hpPct
+        )
+
+        if isFriendly, let state = Simulation.StructureState(rawValue: slot.state) {
+            addLabel(
+                container,
+                text: "State: \(Self.stateName(for: state))",
+                size: 9, bold: false,
+                color: NSColor(calibratedWhite: 0.7, alpha: 1),
+                x: baseX + panelWidth / 2, y: baseY + InfoPanel.statusY
+            )
+        }
+
+        let hint: String
+        let hintColor: NSColor
+        if !isFriendly {
+            hint = "Enemy — info only"
+            hintColor = NSColor(calibratedRed: 1.0, green: 0.5, blue: 0.5, alpha: 1)
+        } else {
+            let isYard = slot.type == 8 || [3, 4, 5, 7, 10].contains(slot.type)
+            hint = isYard ? "sidebar: build / R-click: rally" : "owned"
+            hintColor = NSColor(calibratedRed: 0.4, green: 0.9, blue: 0.4, alpha: 1)
+        }
+        addLabel(
+            container,
+            text: hint,
+            size: 9, bold: false, color: hintColor,
+            x: baseX + panelWidth / 2, y: baseY + InfoPanel.hintY
+        )
+    }
+
+    private func addLabel(
+        _ container: SKNode, text: String, size: CGFloat, bold: Bool,
+        color: NSColor, x: CGFloat, y: CGFloat
+    ) {
+        let label = SKLabelNode(text: text)
+        label.fontColor = color
+        label.fontSize = size
+        label.fontName = bold ? "Menlo-Bold" : "Menlo"
+        label.horizontalAlignmentMode = .center
+        label.position = CGPoint(x: x, y: y)
+        container.addChild(label)
+    }
+
+    private func addHPBar(_ container: SKNode, x: CGFloat, y: CGFloat, width: CGFloat, pct: Double) {
+        let outline = SKShapeNode(rect: CGRect(x: x, y: y, width: width, height: InfoPanel.hpBarHeight))
+        outline.strokeColor = NSColor(calibratedWhite: 0.4, alpha: 1)
+        outline.fillColor = NSColor(calibratedWhite: 0.15, alpha: 1)
+        outline.lineWidth = 1
+        container.addChild(outline)
+        let fillWidth = width * CGFloat(pct)
+        guard fillWidth > 0 else { return }
+        let fill = SKShapeNode(rect: CGRect(x: x, y: y, width: fillWidth, height: InfoPanel.hpBarHeight))
+        fill.strokeColor = .clear
+        fill.fillColor = pct > 0.66
+            ? NSColor(calibratedRed: 0.3, green: 0.9, blue: 0.4, alpha: 1)
+            : pct > 0.33
+                ? NSColor(calibratedRed: 0.95, green: 0.8, blue: 0.3, alpha: 1)
+                : NSColor(calibratedRed: 1.0, green: 0.3, blue: 0.3, alpha: 1)
+        container.addChild(fill)
+    }
+
+    private static func fullUnitName(for type: UInt8) -> String {
+        switch type {
+        case 0: return "Carryall"
+        case 1: return "Ornithopter"
+        case 2: return "Infantry"
+        case 3: return "Troopers"
+        case 4: return "Soldier"
+        case 5: return "Trooper"
+        case 6: return "Saboteur"
+        case 7: return "Launcher"
+        case 8: return "Deviator"
+        case 9: return "Tank"
+        case 10: return "Siege Tank"
+        case 11: return "Devastator"
+        case 12: return "Sonic Tank"
+        case 13: return "Trike"
+        case 14: return "Raider"
+        case 15: return "Quad"
+        case 16: return "Harvester"
+        case 17: return "MCV"
+        case 25: return "Sandworm"
+        case 26: return "Frigate"
+        default: return "Unit \(type)"
+        }
+    }
+
+    private static func fullStructureName(for type: UInt8) -> String {
+        switch type {
+        case 0: return "Slab (1x1)"
+        case 1: return "Slab (2x2)"
+        case 2: return "Palace"
+        case 3: return "Light Factory"
+        case 4: return "Heavy Factory"
+        case 5: return "High Tech"
+        case 6: return "House of IX"
+        case 7: return "WOR"
+        case 8: return "Construction Yard"
+        case 9: return "Windtrap"
+        case 10: return "Barracks"
+        case 11: return "Starport"
+        case 12: return "Spice Refinery"
+        case 13: return "Repair"
+        case 14: return "Wall"
+        case 15: return "Gun Turret"
+        case 16: return "Rocket Turret"
+        case 17: return "Spice Silo"
+        case 18: return "Outpost"
+        default: return "Structure \(type)"
+        }
+    }
+
+    private static func houseName(for id: UInt8) -> String {
+        switch id {
+        case 0: return "Harkonnen"
+        case 1: return "Atreides"
+        case 2: return "Ordos"
+        case 3: return "Fremen"
+        case 4: return "Sardaukar"
+        case 5: return "Mercenary"
+        default: return "House \(id)"
+        }
+    }
+
+    private static func unitActionName(for id: UInt8) -> String {
+        switch id {
+        case 0: return "Attack"
+        case 1: return "Move"
+        case 2: return "Retreat"
+        case 3: return "Guard"
+        case 4: return "Area Guard"
+        case 5: return "Harvest"
+        case 6: return "Return"
+        case 7: return "Stop"
+        case 8: return "Ambush"
+        case 9: return "Sabotage"
+        case 10: return "Die"
+        case 11: return "Hunt"
+        case 12: return "Deploy"
+        case 13: return "Destruct"
+        default: return "Action \(id)"
+        }
+    }
+
+    private static func stateName(for state: Simulation.StructureState) -> String {
+        switch state {
+        case .detect:    return "DETECT"
+        case .justBuilt: return "Just Built"
+        case .idle:      return "Idle"
+        case .busy:      return "Busy"
+        case .ready:     return "Ready"
+        }
     }
 
     /// Tears down + rebuilds the sidebar node stack. Each slot is a
@@ -754,6 +1086,10 @@ public final class ScenarioScene: SKScene {
             )
             container.addChild(label)
         }
+
+        // Info panel for the current selection — anchored to the
+        // bottom of the sidebar.
+        renderInfoPanel(into: container)
     }
 
     /// Top-to-bottom sidebar row placement. Row 0 lives just below the
