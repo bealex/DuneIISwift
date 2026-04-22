@@ -11,75 +11,34 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**None — full mission-1 playability chain live (2026-04-22). Pick from "Next up".**
+**None — mission-1 is fully playable end-to-end as of 2026-04-22. Pick from "Next up".**
 
-Mission-1 end-to-end is now reachable: player opens scene, CYARD pre-selected, sidebar shows buildables. Queue slabs → build windtrap → build refinery → harvester spawns at refinery exit in HARVEST action → auto-seeks nearest spice → mines → returns to refinery → docks → drains → credits roll in → unlocks more buildings. Selection info panel + halo + live ground-tile repaint make all this visible. Next session can dig into enemy AI, combat, or campaign polish.
+What works now:
+- CYARD pre-selected at scene load; build panel shows buildables.
+- Slab → Windtrap → Refinery chain works; REFINERY placement auto-spawns a harvester in HARVEST action.
+- Harvester seeks spice → drains → docks at refinery → returns credits → repeats. Credits accumulate.
+- Click any unit or structure → info panel shows name / house / HP bar / state / action; halo matches friendly (green) vs enemy (red).
+- Right-click with friendly unit → orderMove (empty tile), orderAttack (enemy unit), or orderAttackStructure (enemy building).
+- Enemy HUNT-action units walk toward the player base (redirect-to-adjacent when target tile is impassable).
+- Keyboard: Escape deselects, Tab cycles player units.
+- Harness (`swift run duneii-headless`) drives the same runtime as the scene.
 
-Earlier today:
-
-Four fixes landed today:
-- Scenario-spawned structures now stamp `hasStructure=true` onto the runtime tileGrid on load → pathfinder sees CYARD as impassable.
-- Runtime-placed slabs / structures stamp the tileGrid live (`stampPlacement`) → next validity check sees concrete under the newly-placed slab.
-- CYARD returns to IDLE after a successful commit → no more stuck-in-READY.
-- Landscape closures capture a `TileGridRef` class box, not a snapshot → scheduler scripts see post-load mutations.
-
-**Mouse clicks verified** via 14 new install-gated tests in `ScenarioRuntimeTests`. The harness (`swift run duneii-headless`) and scene share the same runtime path, so scene clicks go through the same code.
-
-Remaining from the user's list:
-- ~~**Jagged movement / wrong sprite direction**~~ — fixed 2026-04-22: ported `Unit_SetSpeed` + subpixel accumulator in the movement tick, plus fixed infantry sprite bucket + walk-cycle frame picker.
-- **Full tech-tree playtest** — the harness verifies slab → windtrap → refinery unlock. In-game: user can now try `swift run duneii` mission-1 and should be able to build → refinery → harvester → spice income works end-to-end.
-
-Earlier today: new `StructureSlot.rallyPointPacked` (`0xFFFF` sentinel) + `Simulation.Structures.setRallyPoint` pure-sim writer + `completeConstruction` hook that fires `Simulation.Units.orderMove` on the freshly-spawned unit when the yard's rally is set. Scene wiring: right-click branches — if a unit is selected, command controller handles it as before; else if the selected yard is a factory, we call `setRallyPoint`. Yellow diamond marker at the rally tile, rebuilt on yard-switch and rally updates. 11 new tests; 687 green / 68 suites / zero warnings. Design: `Algorithms/FactoryRallyPoint.md`.
-
-Also today: per-module `CLAUDE.md` files under each SwiftPM target + dropped the strict-TDD workflow (tests still mandatory, now written after the implementation in the same commit). See today's history bullet.
-
-**Visual verification pending** (sandbox can't drive SpriteKit). `swift run duneii`, mission-1 Atreides:
-
-1. Left-click the Atreides CYARD → sidebar shows CY buildables.
-2. Click a LIGHT_VEHICLE on the map (once you build one) → sidebar switches; right-click a far map tile → yellow diamond appears there.
-3. Queue a TRIKE; when BUSY → READY cycles, the spawned TRIKE should drive toward the diamond on its own.
-4. Select a unit → halo appears; right-click empty sand → unit moves (rally path must NOT trigger while unit selected).
-5. Deselect the unit (click empty sand) → with the factory still selected, right-click a new tile → diamond moves.
-
-If any step fails it's a regression. Earlier slice verifications still pending below.
-
-Two-part fix shipped earlier today (post-6d): (1) `Script_Unit_GetInfo` subcase `0x0B` now reads `slot.currentDestinationX/Y` instead of `slot.targetMove` (misport — OpenDUNE's `src/script/unit.c:968` checks the per-step pixel destination, a different field). Before the fix, the UNIT.EMC MOVE handler at word 637 saw "already moving" on tick 1 of a fresh order and looped forever on the wait, so `Script_Unit_CalculateRoute` was never reached. (2) Our `makeCalculateRouteUnit` now ports the landscape-speed slice of `Unit_StartMovement` (`src/unit.c:1088..1105`): it looks up the landscape at the tile we're about to enter, reads `LandscapeInfo.movementSpeed[movementType]`, applies the HP<half 1/4 slowdown (non-winger only), and writes `slot.speed`. New `Scripting.Host.landscapeAt` closure plumbs the map-backed lookup from `ScenarioScene` via `TileResolver.landscapeType`. Simplifications: we bypass `Unit_SetSpeed`'s `movingSpeedFactor` / gameSpeed / speed-vs-speedPerTick split (our scheduler's step math is already a coarse approximation — sub-pixel parity is queued for the tick-parity golden harness). 4 new tests; 675 green / 67 suites / zero warnings on clean build. Design: `Algorithms/EmcDrivenSetSpeed.md`. Insight: `scripting-unit-getinfo-0b-is-currentdestination.md`.
-
-**Visual verification pending** for the SetSpeed slice + the two slices before it (sandbox can't drive SpriteKit). `swift run duneii`, mission-1 Atreides:
-
-1. Scenario loads; "Credits: 1000" reads in the top-right above BUILD.
-2. Click WINDTRAP row → BUSY → credits tick down by `buildCredits/buildTime` (300/24 = ~12 per sim-tick at 12 Hz). Visible drain.
-3. Cancel the BUSY yard → credits refund proportional to remaining countdown.
-4. Click a friendly unit → green halo. Right-click empty sand → the unit now moves visibly at ≈0.5-1 tile/sec (faster on dune/sand, slower on rough rock), *not* the previous 5-sec-per-tile crawl.
-5. Right-click an enemy → `unit-order-attack` log; non-turret units should now actually close + fire thanks to proper speed.
-6. Damage a unit (take hits in combat). Below 50% HP, movement should visibly slow — HP<half 1/4 reduction.
-7. Build panel + yard switching unaffected.
-
-If any step fails it's a regression in the associated slice.
+Latest session (2026-04-22) shipped tasks 1-9; all details in today's `Documentation/History/2026-04.md` bullets.
 
 ## Next up (queued)
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → implement → tests → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **Harvester / spice income — remaining slices.** Slice 1 (pure-sim refine step) shipped 2026-04-21. Remaining:
-   - ~~Slice 2 — dock/undock primitives~~ (shipped 2026-04-21).
-   - ~~Slice 3 — `harvestSpiceStep` pure-sim primitive~~ (shipped 2026-04-21).
-   - ~~Slice 4 — `SpiceMap` runtime state + `Map_ChangeSpiceAmount` transitions~~ (shipped 2026-04-21).
-   - ~~Slice 5 — scheduler + scene wiring (`tickHarvesting`)~~ (shipped 2026-04-21).
-   - ~~Slice 6 — harvester AI loop (seek refinery + dock + auto-undock)~~ (shipped 2026-04-21).
-   - ~~Slice 7 — seek-spice target selection after undock~~ (shipped 2026-04-21). Full self-sustaining cycle live.
-   - Slice 8 — carryall pickup loop when every refinery's chain is busy.
-   - Slice 9 — scene repaint when `SpiceMap.apply` flips a tile level. Cosmetic; lets the player see spice drain in real time.
-   - Slice 6 — harvester AI loop: port `Script_Unit_Harvest`'s caller-side behaviour (seek nearest spice, move, harvest, seek refinery, dock, wait, undock, repeat). Uses existing pathfinder + orderMove primitives.
-   - Slice 7 — carryall pickup loop when the refinery chain is busy.
-2. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
-3. **P5 — real HUD remainder** — unit info panel + minimap (credits already covered by slice 6d).
-4. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline (`movingSpeedFactor` + gameSpeed + speed-vs-speedPerTick split) for sub-pixel parity — SetSpeed slice took a simpler shortcut.
-5. **EMC `BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; running the real script would give proper flight frames + sonic-beam propagation. Cosmetic.
-6. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder. Optional in OpenDUNE saves.
-7. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority` (sand-only, movement-state weighted); slot 0x36.
-8. **Slice 2.1 polish** — mentat briefing text, scenario pan/zoom (intro/jukebox/voice already shipped).
-9. **Right-click-attack on enemy structures (slice 3).** Same shape as attack slice 2; encode `IT_STRUCTURE` instead of `IT_UNIT`. Add an `enemyStructureAtTile` scan + a structure variant of `orderAttack` (or generalise the existing one).
+1. **Minimap in the right sidebar.** Empty strip between BUILD panel + INFO panel would fit an 80×80 colour-per-tile render of the runtime tileGrid + unit markers. Refresh per tick.
+2. **Carryall pickup loop** (spice income slice 8). When a refinery chain is already busy + another harvester fills, a carryall ferries it to the next free refinery.
+3. **Scene repaint on `SpiceMap.apply`** (slice 9). Cosmetic; lets the player see spice thick→thin→bare drain in real time.
+4. **STARPORT case** — port `Structure_GetBuildable` `-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
+5. **Mentat briefing screen** — scenario intro text, voice cue. Intro WSA + jukebox already shipped.
+6. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline's `gameSpeed` factor.
+7. **`BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; the real script gives proper flight frames + sonic-beam propagation. Cosmetic.
+8. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder.
+9. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority`; slot 0x36.
+10. **HP-bar visual on world markers** — small bar above each unit/structure SKNode for at-a-glance status. Info panel already shows HP for the selection; this would make every entity show it.
 
 ## Recently completed
 
