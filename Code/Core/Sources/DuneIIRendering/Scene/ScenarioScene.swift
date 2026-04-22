@@ -279,28 +279,61 @@ public final class ScenarioScene: SKScene {
         rallyMarker = marker
     }
 
-    /// Re-parents the green selection halo to whichever unit marker
-    /// matches `commandController.selectedUnitIndex`. Removes the halo
-    /// when nothing is selected, when the selected slot has been
-    /// freed, or when the marker isn't visible yet (pre-first-tick).
+    /// Draws a selection halo around the currently-selected entity —
+    /// either a unit (green ring on the unit marker) or a structure
+    /// (green rectangle outline on its footprint). Enemy selections
+    /// use a red tint so it's obvious the player can't issue orders.
+    /// Removes the halo when nothing is selected.
     private func refreshSelectionHalo() {
         selectionHalo?.removeFromParent()
         selectionHalo = nil
-        guard let sel = commandController.selectedUnitIndex else { return }
-        guard let host = scheduler?.host,
-              sel < host.units.slots.count,
-              host.units.slots[sel].isUsed else {
-            commandController.selectedUnitIndex = nil
+
+        // Unit selection takes priority.
+        if let sel = commandController.selectedUnitIndex,
+           let host = scheduler?.host,
+           sel < host.units.slots.count,
+           host.units.slots[sel].isUsed,
+           let marker = unitMarkers[sel], !marker.isHidden
+        {
+            let halo = SKShapeNode(circleOfRadius: Self.tileSize * 0.75)
+            halo.strokeColor = commandController.isFriendlySelection
+                ? .green
+                : NSColor(calibratedRed: 1.0, green: 0.3, blue: 0.3, alpha: 1)
+            halo.lineWidth = 2
+            halo.fillColor = .clear
+            halo.zPosition = 5
+            marker.addChild(halo)
+            selectionHalo = halo
             return
         }
-        guard let marker = unitMarkers[sel], !marker.isHidden else { return }
-        let halo = SKShapeNode(circleOfRadius: Self.tileSize * 0.75)
-        halo.strokeColor = .green
-        halo.lineWidth = 2
-        halo.fillColor = .clear
-        halo.zPosition = 5
-        marker.addChild(halo)
-        selectionHalo = halo
+
+        // Structure selection — draw a rectangular outline on the
+        // footprint. Uses the runtime's selectedStructureIndex so
+        // non-yard player buildings + enemy buildings are covered.
+        if let sel = runtime.selectedStructureIndex,
+           let host = scheduler?.host,
+           sel < host.structures.slots.count,
+           host.structures.slots[sel].isUsed
+        {
+            let s = host.structures.slots[sel]
+            let dims = Simulation.StructureInfo.lookup(s.type)?.layout.dimensions ?? (1, 1)
+            let ax = Int(s.positionX) / 256
+            let ay = Int(s.positionY) / 256
+            let w = CGFloat(dims.0) * Self.tileSize
+            let h = CGFloat(dims.1) * Self.tileSize
+            let origin = screenPosition(x: ax, y: ay + dims.1 - 1)
+            let rect = CGRect(x: origin.x, y: origin.y, width: w, height: h)
+            let halo = SKShapeNode(rect: rect)
+            let isFriendly = s.houseID == playerHouseID
+            halo.strokeColor = isFriendly
+                ? .green
+                : NSColor(calibratedRed: 1.0, green: 0.3, blue: 0.3, alpha: 1)
+            halo.lineWidth = 2
+            halo.fillColor = .clear
+            halo.zPosition = 5
+            addChild(halo)
+            selectionHalo = halo
+        }
     }
 
     /// Pure translation from a scene-local point to a controller click.
