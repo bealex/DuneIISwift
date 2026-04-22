@@ -11,108 +11,45 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**None — movement-bug triage done. Pick from "Next up" below.**
+**None — P5 slice 6d (HUD credits label) done. Pick from "Next up" below.**
 
-User reported (2026-04-21) odd unit movement after the unit-selection slice landed: units "blinked" on arrival and sometimes "moved in the wrong direction." Root cause turned out to be three separate bugs, two of which predated the unit-selection slice but only became visible once player-ordered MOVE actions were possible:
+Slice 6d shipped today (2026-04-21): "Credits: N" label pinned to the top of the sidebar, refreshed every tick from `Simulation.House.credits(for:in:)`. Mission 1 Atreides starts at 1000 and ticks down as BUSY yards drain. Pure-sim helper returns `nil` for unallocated / out-of-range house IDs (label shows "—") and `0` for allocated-but-empty (label shows "0"). 5 new tests; 671 green / 67 suites / zero warnings on clean build.
 
-1. **Scheduler loaded the wrong script entry point.** `unitVM.load(typeID: actionID)` landed the PC at another unit type's prologue (ornithopter for action=MOVE). Fixed to load by `slot.type` + set `variables[0] = actionID` separately. Insight: `scripting-unit-entry-point-by-type-not-action.md`.
-2. **`Script_Unit_SetActionDefault` (slot 0x0A) was unported.** The MOVE script couldn't fall through to GUARD on arrival. Ported (reads `actionsPlayer[3]`, writes `actionID`, clears `currentDestination`).
-3. **`IdleAction` over-rotated body**. OpenDUNE's 50/50 body-vs-turret split was collapsed to always-body. Fixed — non-turret units keep body stationary when the coin says "turret."
+**Known limitation flagged by the user (2026-04-21)**: ground units move very slowly because `slot.speed` defaults to `0` and our scheduler's `step = max(4, slot.speed/4)` degrades to 4 px/tick (≈48 px/sec, ~5 sec/tile). Attack animations are technically working (bullets render as colored shapes, explosions as discs) but units rarely close to fire range. Root cause: scenario-spawn doesn't seed ground-unit `slot.speed`, and the EMC `MOVE` handler's `Script_Unit_SetSpeed` call evidently isn't firing reliably. **User opted to wait for proper `SetSpeed` wiring rather than a stop-gap seed.** Track this when designing the next sim-side slice.
 
-Visual verification still pending. User should `swift run duneii` against mission-1 Atreides and confirm:
+**Visual verification pending** for the last two slices (sandbox can't drive SpriteKit). `swift run duneii`, mission-1 Atreides:
 
-- Clicking a ground unit + right-clicking a sand tile → unit walks without erratic orientation changes.
-- On arrival, unit stops cleanly and doesn't sprite-flip repeatedly.
-- Multiple move orders in succession work.
+1. Scenario loads; "Credits: 1000" reads in the top-right above BUILD.
+2. Click WINDTRAP row → BUSY → credits tick down by `buildCredits/buildTime` (300/24 = ~12 per sim-tick at 12 Hz). Visible drain.
+3. Cancel the BUSY yard → credits refund proportional to remaining countdown.
+4. Click a friendly unit → green halo. Right-click an enemy → `unit-order-attack` log; with patient observation, non-turret units close + fire (slow until SetSpeed lands).
+5. Right-click empty sand → move order (slice-1 regression guard).
+6. Build panel + yard switching unaffected.
 
-Unit selection + move orders (slice 1) shipped earlier on 2026-04-21. Left-click selects, right-click moves, green halo tracks the selected unit. Deferred: drag-select, shift-additive, attack orders on enemy-click, harvest orders on spice-click, rally-point click on factories.
-
-**Visual verification pending** (the sandbox can't drive SpriteKit). `swift run duneii`, mission-1 Atreides:
-
-1. Launch — scene lands straight on the map (intro first if `INTRO.WSA` present).
-2. Click any Atreides unit on the map → green halo appears around it.
-3. Click a different Atreides unit → halo jumps to the new selection.
-4. Click empty sand → halo disappears.
-5. With one Atreides unit selected, right-click a sand tile ~10 tiles away → log `unit-order-move unit=N tile=(X,Y) ok=true`; unit begins walking.
-6. Right-click an unreachable rock tile → pathfinder handles it (unit attempts; halts at nearest reachable).
-7. Click an enemy unit → no halo (not selectable in this slice).
-8. Build panel still works: click WINDTRAP row → BUSY with progress bar → READY → click READY, click adjacent rock tile, structure appears.
-9. Yard-select still works: click a different player-owned yard on the map → sidebar switches to that yard's buildable list.
-
-If any step fails, it's a regression in the associated slice.
-
-Candidates for the next slice:
-
-- **Right-click-attack on enemy units.** Natural extension; sim side has `actionID = attack` + targetAttack already.
-- **HUD credits label (P5 slice 6d).** Small visual; `Credits: N` above sidebar, refreshed per tick.
-- **Rally-point click on factories.** Lets player place where freshly-built units exit.
-- **Harvester/spice income (P4→P5 bridge).** Biggest remaining gameplay hole — economy is one-way right now.
-
-**Visual verification pending** — `swift run duneii` against mission 1 Atreides:
-
-1. Start scenario. Sidebar auto-selects first CY. Shows WINDTRAP, SLAB_1x1, maybe REFINERY.
-2. Click WINDTRAP → yard BUSY → yellow progress bar fills ~4s → green READY.
-3. Click READY slot → enter placement → click rock tile adjacent to CY → WINDTRAP appears.
-4. Build REFINERY + LIGHT_VEHICLE factory similarly.
-5. Click the LV factory on the map → sidebar switches to units (TRIKE present, QUAD gated on upgrade).
-6. Click TRIKE → progress bar ~3.3s (40 ticks × 256 ÷ 12 Hz) → READY.
-7. Click READY → trike unit spawns at the LV factory's anchor tile (visually overlapping the building). Yard returns to IDLE.
-8. Sidebar can be selected back to CY by clicking CY on the map.
-
-If any step fails, that's a regression in the associated slice.
-
-Candidates for next slice (in rough priority order):
-
-- **Slice 5c — rally-point + cancel + queue-swap.** Unit spawns at south-of-factory; BUSY click cancels; READY click on a different type swaps queue. These are 3 small changes; may split.
-- **P5 HUD — credits, unit info, minimap.** Per-tick credit drain on BUSY yards, HUD display. Economy closure.
-- **Slice 5d — STARPORT.** `Structure_GetBuildable` `-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
-- **Save compat** (P6 work) — the build-panel state (objectType, countDown, state, degrades) all round-trips through existing save decoders.
-- **Tick-parity golden harness** — §6 goal; compare our sim to OpenDUNE on a recorded scenario.
-
-**Before continuing, user should run `swift run duneii` for visual verification.** Mission-1 Atreides expected behaviour:
-
-1. Launch, get to scenario scene.
-2. Sidebar on right lists WINDTRAP + SLAB_1x1 (maybe REFINERY depending on starting windtrap).
-3. Click WINDTRAP row — slot border was grey, now slot turns BUSY (grey with yellow progress bar filling left-to-right over ~4 s).
-4. Wait for the progress bar to fill. Slot border turns green.
-5. Click the slot again to enter placement mode (slot border turns yellow).
-6. Click an empty rock tile adjacent to the construction yard — log `commit type=9 tile=(X,Y) slot=N`. Structure outline appears.
-7. Sidebar refreshes. If the WINDTRAP unlocks REFINERY, a new row appears.
-8. Clicks on sand / off-map / non-adjacent to base → rejection log, nothing happens.
-
-If any step fails, it's a regression from that specific slice.
-
-After visual verification, next productive directions:
-
-- **Slice 5 — factory / starport buildable case.** Extend `Structure_GetBuildable` to LIGHT_VEHICLE / HEAVY_VEHICLE / HIGH_TECH / WOR_TROOPER / BARRACKS (unit production) + STARPORT (`return -1` sentinel). Needs `UnitInfo.availableHouse / structuresRequired / upgradeLevelRequired` + per-factory `buildableUnits[8]` table. Turns construction yards into the first of many factories.
-- **Slice 4e — cancel + queue-swap.** `Structure_CancelBuild` + the READY-click-different-type-replaces-queue path.
-- **P5 HUD** — resource counters + credit drain on BUSY yards + unit info panel + minimap.
-
-**Older active task (now done this session)**: every P5 build-panel slice from 1 through 4d-ui, + worktree adaptation.
+If any step fails it's a regression in the associated slice.
 
 ## Next up (queued)
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → failing test → implement → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **Right-click-attack on enemy units.** Extends the command controller — on right-click over an enemy unit tile, set `targetAttack` + `actionID = attack` on the selected unit(s). Sim side (`TargetAcquisition`, `Fire`, `bullet flight`) already works; just needs the order bridge.
-2. **P5 slice 6d — HUD credits label.** "Credits: N" on `ScenarioScene`, refreshed per tick. Needs a default-credits value for mission-1 scenarios that don't specify.
-2. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state.
-3. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal.
-3. **P5 — real HUD** — resource counters, unit info, minimap. Cosmetic but high impact.
-4. **Tick-parity golden harness** — record OpenDUNE for N ticks, replay in our sim, diff pool state. Closes §6 Initial-plan sim-parity goal.
-5. **EMC `BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; running the real script would give proper flight frames + sonic-beam propagation. Cosmetic.
-5. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder. Optional in OpenDUNE saves.
-4. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority` (sand-only, movement-state weighted); slot 0x36.
-5. **Team AI + TeamPool** — port `Script_Team_*` + `teamaction.c` weighted-action table. Mission 1 triggers enemy waves via teams.
-6. **Tick-parity golden harness** against an OpenDUNE recording — closes the §6 simulation-parity goal.
-7. **Sim-to-visual sync** — `ScenarioScene` reads positions from pools each tick; hitpoints / death need render hooks.
-8. **Slice 2.1 polish**: Intro WSA playback, `AVMIDIPlayer` jukebox + SoundFont, VOC voice, mentat briefing text, scenario pan/zoom.
-9. **Per-unit SHP rendering with per-house palette remap** (P5) — replace marker circles with real unit frames.
+1. **Wire EMC-driven SetSpeed properly.** Ground units currently spawn with `speed = 0` and stay there — see "Known limitation" above. Either trace which UNIT.EMC path was *supposed* to call SetSpeed for player-issued MOVE/ATTACK, fix the breakage, or seed `slot.speed` from `UnitInfo.movingSpeedFactor` at scenario-spawn / `orderMove` / `orderAttack` as a stop-gap. The user explicitly wants the former.
+2. **Rally-point click on factories.** Lets player place where freshly-built units exit. Small slice.
+3. **Harvester / spice income (P4→P5 bridge).** Biggest remaining gameplay hole — economy is one-way right now. Requires harvester AI loop + refinery deposit + per-house credit accumulation.
+4. **STARPORT case** — port `Structure_GetBuildable` return-`-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
+5. **P5 — real HUD remainder** — unit info panel + minimap (credits already covered by slice 6d).
+6. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal.
+7. **EMC `BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; running the real script would give proper flight frames + sonic-beam propagation. Cosmetic.
+8. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder. Optional in OpenDUNE saves.
+9. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority` (sand-only, movement-state weighted); slot 0x36.
+10. **Slice 2.1 polish** — mentat briefing text, scenario pan/zoom (intro/jukebox/voice already shipped).
+11. **Right-click-attack on enemy structures (slice 3).** Same shape as slice 2; encode `IT_STRUCTURE` instead of `IT_UNIT`. Add an `enemyStructureAtTile` scan + a structure variant of `orderAttack` (or generalise the existing one).
 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-21 — P5 slice 6d: HUD credits label.** "Credits: N" SKLabelNode pinned at top of the right-hand sidebar; refreshed every tick from new pure-sim helper `Simulation.House.credits(for:in:)` (returns `UInt16?` — `nil` for unallocated / out-of-range house IDs, `0` for allocated-but-empty, distinguishing "—" from "0" in the label). Mission 1 Atreides starts at 1000 and ticks down as BUSY yards drain. 5 new tests in `HouseCreditsLookupTests`. 671 green / 67 suites / zero warnings on clean build. Design: `Algorithms/HudCreditsLabel.md`.
+- **2026-04-21 — Right-click-attack on enemy units (slice 2).** New `Simulation.Units.orderAttack(poolIndex:targetUnitIndex:units:)` composes `Unit_SetAction(ACTION_ATTACK)` + `Unit_SetTarget` (`src/unit.c:497, 1131`) into one pure-sim write. Always: `targetAttack = EncodedIndex.unit(targetUnitIndex)`, `actionID = attack` (0), `currentDestination{X,Y} = 0`. Non-turret attackers (TROOPER, TRIKE, QUAD, DEVASTATOR) also get `targetMove = targetAttack` + `route[0] = 0xFF` so the chassis chases; turreted units leave move state alone (rotates turret in place — `unit.c:1161`). Controller side: new `Action.orderAttack` + `enemyUnitAtTile` scan; the right-click handler discriminates empty / friendly / enemy under the click and promotes to attack on enemy. Slice-1 right-click semantics regression-guarded. `ScenarioScene.applyCommandAction` gets the new case; logs `unit-order-attack unit=N target=M ok=true`. 14 new tests (8 in `UnitOrderAttackTests`, 6 added to `UnitCommandControllerTests`). 666 green / 66 suites / zero warnings on clean build. Design: `Algorithms/UnitOrderAttack.md`. Deferred: enemy-structure attack (slice 3), target blink + voice cue, alliance check.
 - **2026-04-21 — Movement bug triage: fix scheduler entry-point, port SetActionDefault, fix IdleAction turret-skip.** Three pre-existing bugs surfaced by player-ordered MOVE actions. Scheduler now loads `unitVM` at `entryPoints[slot.type]` and sets `variables[0] = actionID` separately (OpenDUNE's split: `src/unit.c:520`). `Script_Unit_SetActionDefault` (slot 0x0A) ported so MOVE→GUARD transition works on arrival. `IdleAction` split restored: 50% body, 50% turret — non-turret units stop excess rotation. 3 new tests + 1 rewrite. 652 green / 65 suites / zero warnings on clean build. Insight: `scripting-unit-entry-point-by-type-not-action.md`.
 - **2026-04-21 — Unit selection + move orders (slice 1).** `Simulation.Units.orderMove` (4-field pure-sim write). `DuneIIRendering.UnitCommandController` (pure state machine, parallel to `BuildPanelController`). `ScenarioScene` wiring: left-click routes to command controller first (consumes on `.selectUnit`, falls through on `.deselect` / `.none`); new `rightMouseDown` for move orders; green halo `SKShapeNode` parented to selected unit's marker; per-tick `validateSelectionHalo` clears stale selections. 18 new tests (7 orderMove + 11 controller). 649 green / 65 suites / zero warnings. Design: `Algorithms/UnitSelectionAndOrders.md`. Insight: `simulation-action-id-drives-script-reload.md`.
 - **2026-04-21 — Boot flow: dropped mentat screens + fixed map-click scene-cycle bug.** Two UI-layer fixes in response to user report. `ScenarioScene.mouseDown`'s `.none` fallback replaced with `break` so unclassified map clicks don't route to mainMenu. `GameController` boots Intro → Scenario directly, skipping `MainMenuScene` + `MentatScene`; jukebox kickoff moved to scenario entry. Wrote design doc `Algorithms/UnitSelectionAndOrders.md` for the next slice. No sim changes; 631 green / 63 suites / zero warnings.
@@ -184,7 +121,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **652 tests across 65 suites, all green** as of 2026-04-21 (post-movement-bug-triage). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 5 s incremental).
+`cd Code/Core && swift test` — **671 tests across 67 suites, all green** as of 2026-04-21 (post-HUD-credits-slice-6d). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 

@@ -164,4 +164,64 @@ struct UnitCommandControllerTests {
         #expect(controller.selectedUnitIndex == nil)
         #expect(action == .none)
     }
+
+    // MARK: Right-click attack branch (slice 2)
+
+    @Test("right-click on enemy unit with friendly selected → .orderAttack")
+    func rightClickEnemyOrderAttack() {
+        let (pool, friendly, enemy) = Self.makePool()
+        var controller = UnitCommandController(selectedUnitIndex: friendly)
+        let action = controller.handle(
+            click: .rightMapTile(x: 20, y: 20),
+            pool: pool,
+            playerHouseID: Self.playerHouse
+        )
+        #expect(action == .orderAttack(attackerIndex: friendly, targetIndex: enemy))
+        #expect(controller.selectedUnitIndex == friendly)
+    }
+
+    @Test("right-click on enemy unit with no selection → .none (no rebound to attack)")
+    func rightClickEnemyNoSelection() {
+        let (pool, _, _) = Self.makePool()
+        var controller = UnitCommandController()
+        let action = controller.handle(
+            click: .rightMapTile(x: 20, y: 20),
+            pool: pool,
+            playerHouseID: Self.playerHouse
+        )
+        #expect(action == .none)
+        #expect(controller.selectedUnitIndex == nil)
+    }
+
+    @Test("right-click on friendly unit's tile with another friendly selected → .orderMove (slice-1 fallthrough)")
+    func rightClickFriendlyTileFallsToMove() {
+        // Add a second friendly so we have one to select and a *different*
+        // friendly under the click target.
+        var pool = Self.makePool().pool
+        _ = pool.allocate(at: 2, type: 13, houseID: Simulation.House.atreides)
+        var u2 = pool[2]
+        u2.positionX = 30 * 256 + 128
+        u2.positionY = 30 * 256 + 128
+        pool[2] = u2
+
+        var controller = UnitCommandController(selectedUnitIndex: 0)
+        let action = controller.handle(
+            click: .rightMapTile(x: 30, y: 30),  // tile of friendly slot 2
+            pool: pool,
+            playerHouseID: Self.playerHouse
+        )
+        #expect(action == .orderMove(poolIndex: 0, tileX: 30, tileY: 30))
+    }
+
+    @Test("right-click on empty tile with friendly selected → .orderMove (slice-1 regression guard)")
+    func rightClickEmptyTileStillMoves() {
+        let (pool, friendly, _) = Self.makePool()
+        var controller = UnitCommandController(selectedUnitIndex: friendly)
+        let action = controller.handle(
+            click: .rightMapTile(x: 50, y: 50),
+            pool: pool,
+            playerHouseID: Self.playerHouse
+        )
+        #expect(action == .orderMove(poolIndex: friendly, tileX: 50, tileY: 50))
+    }
 }

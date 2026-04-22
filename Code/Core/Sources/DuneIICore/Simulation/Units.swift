@@ -199,6 +199,71 @@ extension Simulation {
             return true
         }
 
+        /// Player-issued "attack this unit" order. Composes
+        /// `Unit_SetAction(ACTION_ATTACK)` + `Unit_SetTarget(encoded)` from
+        /// `src/unit.c:497, 1131` into a single pure-sim write — matches
+        /// the path `viewport.c:140..193` runs when the player right-clicks
+        /// an enemy in `SELECTIONTYPE_TARGET`.
+        ///
+        /// Always: writes `targetAttack = EncodedIndex.unit(targetUnitIndex)`,
+        /// `actionID = attack` (0), and zeros `currentDestination{X,Y}` so
+        /// the scheduler reloads the engine at the ATTACK entry-point on
+        /// the next tick.
+        ///
+        /// Non-turret attackers (TROOPER, TRIKE, QUAD, DEVASTATOR, etc.)
+        /// also get `targetMove = targetAttack` + `route[0] = 0xFF` so the
+        /// chassis drives toward the target. Turreted units (TANK,
+        /// SIEGE_TANK) leave `targetMove`/`route` untouched and rotate the
+        /// turret in place — matches `Unit_SetTarget`'s `!hasTurret` arm
+        /// at `unit.c:1161`.
+        ///
+        /// Returns `true` on success; `false` when either slot is out of
+        /// range / unallocated / freed, the attacker has no `UnitInfo`
+        /// row, or `poolIndex == targetUnitIndex` (self-attack). On
+        /// failure the pool is untouched.
+        ///
+        /// Deferred vs OpenDUNE:
+        /// - `target.blinkCounter = 8` visual cue.
+        /// - Voice / sound (`Sound_StartSound(g_table_actionInfo[ACTION_ATTACK].soundID)`).
+        /// - `Object_Script_Variable4_Clear`.
+        /// - `Unit_SetTarget`'s tile→unit upgrade — caller already
+        ///   resolved to a unit index, so no upgrade is needed here.
+        /// - `Unit_FindTargetAround` snap-to-nearest — we attack the
+        ///   exact unit the player clicked.
+        @discardableResult
+        public static func orderAttack(
+            poolIndex: Int,
+            targetUnitIndex: Int,
+            units: inout UnitPool
+        ) -> Bool {
+            guard poolIndex >= 0, poolIndex < UnitPool.capacity else { return false }
+            guard targetUnitIndex >= 0, targetUnitIndex < UnitPool.capacity else { return false }
+            guard poolIndex != targetUnitIndex else { return false }
+            guard units.slots[poolIndex].isUsed, units.slots[poolIndex].isAllocated else { return false }
+            guard units.slots[targetUnitIndex].isUsed, units.slots[targetUnitIndex].isAllocated else { return false }
+            guard let info = UnitInfo.lookup(units.slots[poolIndex].type) else { return false }
+
+            let encoded = Scripting.EncodedIndex.unit(UInt16(targetUnitIndex)).raw
+
+            var slot = units[poolIndex]
+            let priorAction = slot.actionID
+            let priorTarget = slot.targetAttack
+            slot.targetAttack = encoded
+            slot.actionID = Simulation.ActionID.attack
+            slot.currentDestinationX = 0
+            slot.currentDestinationY = 0
+            if !info.hasTurret {
+                slot.targetMove = encoded
+                slot.route[0] = 0xFF
+            }
+            units[poolIndex] = slot
+            Log.info(
+                "orderAttack u\(poolIndex) (t=\(slot.type) h=\(slot.houseID) turret=\(info.hasTurret)) → target u\(targetUnitIndex) encoded=\(String(format: "0x%04X", encoded)) action:\(priorAction)→0 prevTarget=\(String(format: "0x%04X", priorTarget))",
+                tracer: .label("attack")
+            )
+            return true
+        }
+
         // MARK: Team membership
 
         /// Port of `Unit_AddToTeam` (`src/unit.c:540`). Writes
