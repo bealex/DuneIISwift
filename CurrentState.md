@@ -11,9 +11,19 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**Mission-1 bug hunt** — user reported 4 blockers: jagged movement, pathfinding through buildings, can't place buildings near CYARD, buildings don't seem to progress. Tooling added today (see below) confirms construction DOES progress (latent stale-controller bug in the headless runtime, but scene was fine); placement commits DO land on rock-adjacent tiles (degraded); remaining bugs to diagnose with the new harness: (a) asymmetric windtrap adjacency (north/east return invalid while west/south return valid-degraded), (b) CYARD doesn't flip IDLE after commit, (c) placed slab in reserved slot 81 doesn't stamp the tile's landscape so subsequent placements see rock underneath, (d) jagged movement (known shortcut from SetSpeed slice), (e) pathfinder uses snapshot tileGrid and doesn't see runtime-placed structures. Next session: use the harness to narrow (a) and (b); fix (c) by stamping tileGrid + SpiceMap equivalents for slab placements. Run the harness via `swift run duneii-headless`.
+**None — mission-1 blockers fixed (2026-04-22). Pick from "Next up".**
 
-Earlier today — slice 7 (auto-seek spice after undock) shipped: 5 new tests, self-sustaining harvest cycle once a harvester exists. But mission 1 has no harvester at start (player must build windtrap → refinery → harvester), so this is untestable in-game until the placement bug is fixed.
+Four fixes landed today:
+- Scenario-spawned structures now stamp `hasStructure=true` onto the runtime tileGrid on load → pathfinder sees CYARD as impassable.
+- Runtime-placed slabs / structures stamp the tileGrid live (`stampPlacement`) → next validity check sees concrete under the newly-placed slab.
+- CYARD returns to IDLE after a successful commit → no more stuck-in-READY.
+- Landscape closures capture a `TileGridRef` class box, not a snapshot → scheduler scripts see post-load mutations.
+
+**Mouse clicks verified** via 14 new install-gated tests in `ScenarioRuntimeTests`. The harness (`swift run duneii-headless`) and scene share the same runtime path, so scene clicks go through the same code.
+
+Remaining from the user's list:
+- **Jagged movement / wrong sprite direction** — known shortcut in the SetSpeed slice (step = `max(4, speed/4)` integer division + continuous-direction sprite flip). Not blocking mission 1.
+- **Full tech-tree playtest** — the harness verifies slab → windtrap → refinery unlock. In-game: user can now try `swift run duneii` mission-1 and should be able to build → refinery → harvester → spice income works end-to-end.
 
 Earlier today: new `StructureSlot.rallyPointPacked` (`0xFFFF` sentinel) + `Simulation.Structures.setRallyPoint` pure-sim writer + `completeConstruction` hook that fires `Simulation.Units.orderMove` on the freshly-spawned unit when the yard's rally is set. Scene wiring: right-click branches — if a unit is selected, command controller handles it as before; else if the selected yard is a factory, we call `setRallyPoint`. Yellow diamond marker at the rally tile, rebuilt on yard-switch and rally updates. 11 new tests; 687 green / 68 suites / zero warnings. Design: `Algorithms/FactoryRallyPoint.md`.
 
@@ -71,6 +81,7 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-22 — Mission-1 bug hunt pass 1.** Scenario-structures stamp `hasStructure` on tileGrid at load; runtime-placed slabs/structures stamp live; CYARD flips IDLE after commit; landscape closures capture a TileGridRef class box so mutations propagate. 14 new install-gated runtime tests cover the full click flow + build chain. 763 green / 77 suites / zero warnings.
 - **2026-04-21 — Headless harness + ScenarioRuntime extraction.** New `ScenarioRuntime` owns all non-visual sim state + intent methods (`load`, `tick`, `leftClick`, `rightClick`, `sidebarClick`, `selectYard`). `ScenarioScene` becomes a thin SpriteKit renderer. New `duneii-headless` executable drives the runtime from stdin (commands: load, tick, click, rclick, sidebar, yard, dump [units/structures/houses/tile/build/spice/scene], validity, enqueue, build, quit) — Log facade to stderr. First bug caught: runtime `tick()` wasn't refreshing BuildPanelController surface state so headless callers saw stale yardState. Fixed.
 - **2026-04-21 — Harvester auto-seek spice (slice 7).** Idle HARVEST-action harvester off spice auto-issues `orderMove` to nearest spice via new `Scheduler.findNearestSpiceTile`. Completes the self-sustaining harvest cycle. 5 new tests. 749 green / 76 suites / zero warnings.
 - **2026-04-21 — Placement UX + movement passability gate.** (1) Building placement gained a hover ghost footprint (green/yellow/red by validity), persistent placement mode across rejections, "PLACING X" HUD indicator, red toast on rejection; `commitPlacement` exits mode only on success. (2) New `Scheduler.isTilePassable(tileX:tileY:movementType:)` combines live structure footprint check + `LandscapeInfo.movementSpeed` gate; wired into both `tickMovement` paths (route step + targetMove fallback). Winger/slither/projectiles bypass. Halts unit + clears route on impassable step with `move-halt` log. 7 new tests. 744 green / 75 suites / zero warnings.
@@ -156,7 +167,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **749 tests across 76 suites, all green** as of 2026-04-21 (post-seek-spice slice). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **763 tests across 77 suites, all green** as of 2026-04-22 (post-mission-1 fixes). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 

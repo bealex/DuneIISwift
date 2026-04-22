@@ -60,10 +60,18 @@ public final class ScenarioRuntime {
     public private(set) var scheduler: Simulation.Scheduler?
     public var buildController = BuildPanelController()
     public var commandController = UnitCommandController()
-    public private(set) var tileGrid: [Simulation.WorldSnapshot.Tile] = []
+    /// Live tile grid. Held in a class box so closures captured by the
+    /// scheduler's `landscapeAt` + `tileEnterScore` see runtime
+    /// mutations (placed slabs, new structures) without being rebuilt.
+    private let tileGridRef = TileGridRef()
+    public var tileGrid: [Simulation.WorldSnapshot.Tile] { tileGridRef.tiles }
     public private(set) var tickCounter: Int = 0
     public private(set) var currentYardKind: YardKind = .structure
     public private(set) var scenarioName: String?
+
+    private final class TileGridRef: @unchecked Sendable {
+        var tiles: [Simulation.WorldSnapshot.Tile] = []
+    }
 
     public init(
         assets: AssetLoader,
@@ -83,9 +91,40 @@ public final class ScenarioRuntime {
         }
         let resolver = assets.tileResolver
         let snapshot = try Simulation.WorldSnapshot(scenario: scenario, resolver: resolver)
-        tileGrid = snapshot.tiles
-        let scorer = Self.makeTileEnterScorer(snapshot: snapshot, resolver: resolver)
-        let landscapeLookup = Self.makeLandscapeLookup(snapshot: snapshot, resolver: resolver)
+        tileGridRef.tiles = snapshot.tiles
+        // Stamp every scenario-spawned structure's footprint with
+        // `hasStructure = true` + the owner's houseID so the
+        // pathfinder + passability gate see them as impassable. The
+        // plain `Map.Generator` used by `WorldSnapshot.init(scenario:)`
+        // doesn't apply structure placements (that's ScenarioWorld's
+        // job, which we only use for rendering).
+        for idx in snapshot.structures.findArray {
+            let s = snapshot.structures.slots[idx]
+            let ax = Int(s.positionX) / 256
+            let ay = Int(s.positionY) / 256
+            let footprint = Simulation.Structures.footprintTiles(
+                type: s.type, anchorX: ax, anchorY: ay
+            )
+            for (fx, fy) in footprint {
+                guard (0..<64).contains(fx), (0..<64).contains(fy) else { continue }
+                let cellIdx = fy * 64 + fx
+                guard cellIdx < tileGridRef.tiles.count else { continue }
+                let old = tileGridRef.tiles[cellIdx]
+                tileGridRef.tiles[cellIdx] = Simulation.WorldSnapshot.Tile(
+                    groundTileID: old.groundTileID,
+                    overlayTileID: old.overlayTileID,
+                    houseID: s.houseID,
+                    isUnveiled: old.isUnveiled,
+                    hasUnit: old.hasUnit,
+                    hasStructure: true,
+                    hasAnimation: old.hasAnimation,
+                    hasExplosion: old.hasExplosion,
+                    objectRef: old.objectRef
+                )
+            }
+        }
+        let scorer = Self.makeTileEnterScorer(ref: tileGridRef, resolver: resolver)
+        let landscapeLookup = Self.makeLandscapeLookup(ref: tileGridRef, resolver: resolver)
         let spiceMap = Self.makeSpiceMap(snapshot: snapshot, resolver: resolver)
         Log.info(
             "runtime spicemap seeded thick=\(spiceMap.cells.filter { $0 == .thick }.count) thin=\(spiceMap.cells.filter { $0 == .thin }.count)",
@@ -498,6 +537,32 @@ public final class ScenarioRuntime {
         )
         host.structures = pool
         if let idx {
+            // Stamp the tileGrid so subsequent landscape reads (placement
+            // validity, pathfinder, passability gate) see the freshly
+            // placed slab/structure.
+            stampPlacement(type: type, tileX: tileX, tileY: tileY)
+            // Return the CYARD to IDLE now that its produced item is on
+            // the map. Without this the yard stays stuck in READY and
+            // sidebar clicks re-open placement for the same type.
+            if let yardIdx = buildController.selectedYardIndex,
+               yardIdx < host.structures.slots.count,
+               host.structures.slots[yardIdx].isUsed
+            {
+                var yard = host.structures[yardIdx]
+                if yard.state == Simulation.StructureState.ready.rawValue,
+                   yard.objectType == UInt16(type)
+                {
+                    let priorState = yard.state
+                    yard.state = Simulation.StructureState.idle.rawValue
+                    yard.objectType = 0xFFFF
+                    yard.countDown = 0
+                    host.structures[yardIdx] = yard
+                    Log.info(
+                        "build-panel yard=\(yardIdx) state=\(priorState)→IDLE (produced \(type) committed)",
+                        tracer: .label("build-panel")
+                    )
+                }
+            }
             Log.info(
                 "build-panel commit type=\(type) tile=(\(tileX),\(tileY)) → slot=\(idx)",
                 tracer: .label("build-panel")
@@ -514,6 +579,42 @@ public final class ScenarioRuntime {
             tracer: .label("build-panel")
         )
         return .placementPoolFull(type: type, tileX: tileX, tileY: tileY)
+    }
+
+    /// Writes the freshly-placed structure's footprint tiles into the
+    /// live `tileGrid` so subsequent landscape reads (validity checks,
+    /// pathfinder, passability) see it. Slabs (type 0 / 1) set
+    /// `groundTileID` to the concrete-slab sprite + owner. Everything
+    /// else sets `hasStructure=true` + owner.
+    private func stampPlacement(type: UInt8, tileX: Int, tileY: Int) {
+        let resolver = assets.tileResolver
+        let footprint = Simulation.Structures.footprintTiles(
+            type: type, anchorX: tileX, anchorY: tileY
+        )
+        let isSlab = (type == 0 || type == 1)
+        for (fx, fy) in footprint {
+            guard (0..<64).contains(fx), (0..<64).contains(fy) else { continue }
+            let idx = fy * 64 + fx
+            guard idx < tileGridRef.tiles.count else { continue }
+            let old = tileGridRef.tiles[idx]
+            let newGround: UInt16 = isSlab ? resolver.builtSlabTileID : old.groundTileID
+            let newHasStructure: Bool = isSlab ? old.hasStructure : true
+            tileGridRef.tiles[idx] = Simulation.WorldSnapshot.Tile(
+                groundTileID: newGround,
+                overlayTileID: old.overlayTileID,
+                houseID: playerHouseID,
+                isUnveiled: old.isUnveiled,
+                hasUnit: old.hasUnit,
+                hasStructure: newHasStructure,
+                hasAnimation: old.hasAnimation,
+                hasExplosion: old.hasExplosion,
+                objectRef: old.objectRef
+            )
+        }
+        Log.info(
+            "tile-stamp type=\(type) anchor=(\(tileX),\(tileY)) cells=\(footprint.count) slab=\(isSlab)",
+            tracer: .label("tile")
+        )
     }
 
     private func autoSelectPlayerYard() {
@@ -541,13 +642,12 @@ public final class ScenarioRuntime {
     // MARK: Static closure builders (shared with scene)
 
     private static func makeTileEnterScorer(
-        snapshot: Simulation.WorldSnapshot,
+        ref: TileGridRef,
         resolver: TileResolver
     ) -> (UInt16, UInt8, Simulation.MovementType) -> Int32 {
-        let tiles = snapshot.tiles
-        return { packed, orient8, movementType in
-            guard Int(packed) < tiles.count else { return 256 }
-            let cell = tiles[Int(packed)]
+        return { [ref] packed, orient8, movementType in
+            guard Int(packed) < ref.tiles.count else { return 256 }
+            let cell = ref.tiles[Int(packed)]
             let landscape = resolver.landscapeType(
                 groundTileID: cell.groundTileID,
                 overlayTileID: cell.overlayTileID,
@@ -566,13 +666,12 @@ public final class ScenarioRuntime {
     }
 
     private static func makeLandscapeLookup(
-        snapshot: Simulation.WorldSnapshot,
+        ref: TileGridRef,
         resolver: TileResolver
     ) -> (UInt16) -> UInt8 {
-        let tiles = snapshot.tiles
-        return { packed in
-            guard Int(packed) < tiles.count else { return 0 }
-            let cell = tiles[Int(packed)]
+        return { [ref] packed in
+            guard Int(packed) < ref.tiles.count else { return 0 }
+            let cell = ref.tiles[Int(packed)]
             let landscape = resolver.landscapeType(
                 groundTileID: cell.groundTileID,
                 overlayTileID: cell.overlayTileID,

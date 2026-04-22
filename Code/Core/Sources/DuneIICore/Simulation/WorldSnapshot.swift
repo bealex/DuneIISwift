@@ -27,6 +27,28 @@ extension Simulation {
             /// Pool-index-plus-one. `0` = no object, `n` = Unit or Structure
             /// at pool index `n - 1`. See `format-save-map-is-sparse-not-fixed.md`.
             public let objectRef: UInt8
+
+            public init(
+                groundTileID: UInt16,
+                overlayTileID: UInt16,
+                houseID: UInt8,
+                isUnveiled: Bool,
+                hasUnit: Bool,
+                hasStructure: Bool,
+                hasAnimation: Bool,
+                hasExplosion: Bool,
+                objectRef: UInt8
+            ) {
+                self.groundTileID = groundTileID
+                self.overlayTileID = overlayTileID
+                self.houseID = houseID
+                self.isUnveiled = isUnveiled
+                self.hasUnit = hasUnit
+                self.hasStructure = hasStructure
+                self.hasAnimation = hasAnimation
+                self.hasExplosion = hasExplosion
+                self.objectRef = objectRef
+            }
         }
 
         public enum LoadError: Error, Equatable, Sendable {
