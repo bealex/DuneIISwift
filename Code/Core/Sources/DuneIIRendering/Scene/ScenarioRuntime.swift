@@ -666,23 +666,72 @@ public final class ScenarioRuntime {
     }
 
     /// Writes the freshly-placed structure's footprint tiles into the
-    /// live `tileGrid` so subsequent landscape reads (validity checks,
-    /// pathfinder, passability) see it. Slabs (type 0 / 1) set
-    /// `groundTileID` to the concrete-slab sprite + owner. Everything
-    /// else sets `hasStructure=true` + owner.
+    /// live `tileGrid` so subsequent landscape reads (validity, path,
+    /// passability) AND the scene's per-tick ground-tile repaint see
+    /// it.
+    ///
+    /// - **Slabs (type 0 / 1)**: `groundTileID = resolver.builtSlabTileID`,
+    ///   no structure flag (slab is just concrete ground).
+    /// - **Walls (type 14)**: `groundTileID = wallTileID + 1`, no
+    ///   structure flag (walls live on the ground layer in OpenDUNE).
+    /// - **Other structures**: paint the fully-built footprint using
+    ///   the last `w × h` tiles of the iconGroup (matches
+    ///   `ScenarioWorld` for scenario-spawned structures) and set
+    ///   `hasStructure = true`.
+    ///
+    /// All cells get `houseID = playerHouseID` so the adjacency gate
+    /// recognises them as player-owned.
     private func stampPlacement(type: UInt8, tileX: Int, tileY: Int) {
         let resolver = assets.tileResolver
+        let iconMap = assets.iconMap
         let footprint = Simulation.Structures.footprintTiles(
             type: type, anchorX: tileX, anchorY: tileY
         )
         let isSlab = (type == 0 || type == 1)
+        let isWall = (type == 14)
+
+        // For non-slab / non-wall structures, pre-compute the
+        // fully-built iconGroup tile IDs so the scene's ground-tile
+        // pass can paint the building visually.
+        var iconTiles: [UInt16]? = nil
+        if !isSlab, !isWall,
+           let groupRaw = Simulation.StructureInfo.iconGroupRawValue(for: type),
+           let group = Formats.IconMap.Group(rawValue: groupRaw),
+           let info = Simulation.StructureInfo.lookup(type)
+        {
+            let all = iconMap.tileIds(in: group)
+            let (w, h) = info.layout.dimensions
+            let needed = w * h
+            if all.count >= needed {
+                let start = all.count - needed
+                iconTiles = Array(all[start..<(start + needed)])
+            }
+        }
+
+        let dims = Simulation.StructureInfo.lookup(type)?.layout.dimensions ?? (1, 1)
+
         for (fx, fy) in footprint {
             guard (0..<64).contains(fx), (0..<64).contains(fy) else { continue }
             let idx = fy * 64 + fx
             guard idx < tileGridRef.tiles.count else { continue }
             let old = tileGridRef.tiles[idx]
-            let newGround: UInt16 = isSlab ? resolver.builtSlabTileID : old.groundTileID
-            let newHasStructure: Bool = isSlab ? old.hasStructure : true
+            var newGround = old.groundTileID
+            var newHasStructure = old.hasStructure
+            if isSlab {
+                newGround = resolver.builtSlabTileID
+            } else if isWall {
+                newGround = resolver.wallTileID &+ 1
+            } else {
+                newHasStructure = true
+                if let iconTiles {
+                    let dx = fx - tileX
+                    let dy = fy - tileY
+                    let iconIdx = dy * dims.0 + dx
+                    if iconIdx >= 0, iconIdx < iconTiles.count {
+                        newGround = iconTiles[iconIdx]
+                    }
+                }
+            }
             tileGridRef.tiles[idx] = Simulation.WorldSnapshot.Tile(
                 groundTileID: newGround,
                 overlayTileID: old.overlayTileID,
@@ -696,7 +745,7 @@ public final class ScenarioRuntime {
             )
         }
         Log.info(
-            "tile-stamp type=\(type) anchor=(\(tileX),\(tileY)) cells=\(footprint.count) slab=\(isSlab)",
+            "tile-stamp type=\(type) anchor=(\(tileX),\(tileY)) cells=\(footprint.count) slab=\(isSlab) wall=\(isWall) icons=\(iconTiles?.count ?? 0)",
             tracer: .label("tile")
         )
     }

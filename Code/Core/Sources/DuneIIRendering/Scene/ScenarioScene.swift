@@ -35,6 +35,12 @@ public final class ScenarioScene: SKScene {
     public let runtime: ScenarioRuntime
     private let scenarioName: String
     private var tileNodes: [SKSpriteNode] = []
+    /// Parallel cache of the `groundTileID` currently rendered on
+    /// each `tileNodes[i]`. Lets `syncGroundTiles` skip unchanged
+    /// tiles cheaply and update only the cells where
+    /// `runtime.tileGrid` diverged (placements, slabs, damage
+    /// eventually).
+    private var renderedGroundTileIDs: [UInt16] = []
 
     /// Cached ICN tile → `SKTexture`. Built lazily from `assets.loadIcn()`.
     private var tileTextures: [SKTexture] = []
@@ -121,6 +127,7 @@ public final class ScenarioScene: SKScene {
             frameCounter = 0
             runtime.tick()
             syncVisualsFromPool()
+            syncGroundTiles()
             validateSelectionHalo()
             refreshHud()
             refreshBuildSidebar()
@@ -212,6 +219,10 @@ public final class ScenarioScene: SKScene {
         case .placementCommitted:
             hidePlacementGhost()
             refreshBuildSidebar()
+            // Repaint the freshly-stamped tiles immediately so the
+            // slab / structure appears without waiting for the next
+            // 5-frame tick boundary.
+            syncGroundTiles()
         case .placementRejected:
             showPlacementToast("Can't build here — try concrete/adjacency")
             refreshBuildSidebar()
@@ -453,19 +464,50 @@ public final class ScenarioScene: SKScene {
     }
 
     private func addGroundTiles(world: ScenarioWorld) {
+        renderedGroundTileIDs.reserveCapacity(64 * 64)
         for y in 0..<64 {
             for x in 0..<64 {
                 let cell = world.map[x, y]
                 let tileID = cell.groundTileID
-                guard Int(tileID) < tileTextures.count else { continue }
-                let node = SKSpriteNode(texture: tileTextures[Int(tileID)])
+                let clampedID = Int(tileID) < tileTextures.count ? tileID : 0
+                let node = SKSpriteNode(texture: tileTextures[Int(clampedID)])
                 node.size = CGSize(width: Self.tileSize, height: Self.tileSize)
                 node.anchorPoint = .zero
                 node.position = screenPosition(x: x, y: y)
                 node.zPosition = 0
                 addChild(node)
                 tileNodes.append(node)
+                renderedGroundTileIDs.append(clampedID)
             }
+        }
+    }
+
+    /// Per-tick pass that re-textures any SKSpriteNode whose
+    /// `groundTileID` in the live `runtime.tileGrid` no longer matches
+    /// the cached value from last render. Covers runtime placements
+    /// (slabs, new structures) without a full scene teardown.
+    ///
+    /// The runtime's `tileGrid` uses a **top-left** indexing
+    /// convention (`cellIdx = y*64 + x`); `tileNodes` is flattened in
+    /// that same order by `addGroundTiles`, so the linear scan stays
+    /// in lock-step.
+    private func syncGroundTiles() {
+        let tiles = runtime.tileGrid
+        guard tiles.count == tileNodes.count else { return }
+        var updated = 0
+        for i in 0..<tiles.count {
+            let want = tiles[i].groundTileID
+            if renderedGroundTileIDs[i] == want { continue }
+            guard Int(want) < tileTextures.count else { continue }
+            tileNodes[i].texture = tileTextures[Int(want)]
+            renderedGroundTileIDs[i] = want
+            updated &+= 1
+        }
+        if updated > 0 {
+            Log.debug(
+                "ground-sync updated=\(updated) tiles",
+                tracer: .label("scene")
+            )
         }
     }
 

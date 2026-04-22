@@ -191,6 +191,54 @@ struct ScenarioRuntimeTests {
         #expect(yard.objectType == 0xFFFF)
     }
 
+    @Test("Placed structure stamps iconGroup tiles onto the runtime tileGrid")
+    func structureStampsIconGroupTiles() throws {
+        guard let r = try loadMission1() else { return }
+        let host = try #require(r.host)
+        let yardIdx = r.buildController.selectedYardIndex!
+
+        // Slab up 2x2 at (28..29, 25..26) so windtrap validity is fully valid.
+        for (x, y) in [(29, 25), (29, 26), (28, 25), (28, 26)] {
+            var pool = host.structures
+            _ = Simulation.Structures.startConstruction(
+                yardIndex: yardIdx, objectType: 0, pool: &pool
+            )
+            host.structures = pool
+            r.tick(30)
+            _ = r.sidebarClick(row: 0)
+            _ = r.leftClick(tileX: x, tileY: y)
+        }
+
+        // Build windtrap at (28, 25).
+        var pool = host.structures
+        _ = Simulation.Structures.startConstruction(
+            yardIndex: yardIdx, objectType: 9, pool: &pool
+        )
+        host.structures = pool
+        r.tick(100)
+        _ = r.sidebarClick(row: 1)
+        let commit = r.leftClick(tileX: 28, tileY: 25)
+        guard case .placementCommitted = commit else {
+            Issue.record("placement failed: \(commit)")
+            return
+        }
+
+        // After stamping, the windtrap's 4 footprint tiles should have
+        // non-default groundTileIDs drawn from the windtrap iconGroup.
+        let grid = r.tileGrid
+        let preSlabGroundID = Simulation.WorldSnapshot.Tile(
+            groundTileID: 0, overlayTileID: 0, houseID: 0,
+            isUnveiled: false, hasUnit: false, hasStructure: false,
+            hasAnimation: false, hasExplosion: false, objectRef: 0
+        ).groundTileID
+        for (fx, fy) in [(28, 25), (29, 25), (28, 26), (29, 26)] {
+            let cell = grid[fy * 64 + fx]
+            #expect(cell.hasStructure == true, "footprint (\(fx),\(fy)) hasStructure=true")
+            #expect(cell.groundTileID != preSlabGroundID, "footprint (\(fx),\(fy)) should carry a real sprite")
+            #expect(cell.houseID == Simulation.House.atreides)
+        }
+    }
+
     @Test("Building a windtrap requires 4 slabs of concrete; unlocks refinery type=12")
     func windtrapUnlocksRefinery() throws {
         guard let r = try loadMission1() else { return }
