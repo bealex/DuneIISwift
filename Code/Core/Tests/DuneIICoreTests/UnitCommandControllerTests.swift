@@ -36,7 +36,7 @@ struct UnitCommandControllerTests {
         #expect(controller.selectedUnitIndex == nil)
     }
 
-    @Test("left-click on friendly unit → .selectUnit")
+    @Test("left-click on friendly unit → .selectUnit(isFriendly=true)")
     func leftClickFriendly() {
         let (pool, friendly, _) = Self.makePool()
         var controller = UnitCommandController()
@@ -45,21 +45,39 @@ struct UnitCommandControllerTests {
             pool: pool,
             playerHouseID: Self.playerHouse
         )
-        #expect(action == .selectUnit(poolIndex: friendly))
+        #expect(action == .selectUnit(poolIndex: friendly, isFriendly: true))
         #expect(controller.selectedUnitIndex == friendly)
+        #expect(controller.isFriendlySelection == true)
     }
 
-    @Test("left-click on enemy unit with nothing selected → .none")
+    @Test("left-click on enemy unit → .selectUnit(isFriendly=false)")
     func leftClickEnemy() {
-        let (pool, _, _) = Self.makePool()
+        let (pool, _, enemy) = Self.makePool()
         var controller = UnitCommandController()
         let action = controller.handle(
             click: .leftMapTile(x: 20, y: 20),
             pool: pool,
             playerHouseID: Self.playerHouse
         )
+        #expect(action == .selectUnit(poolIndex: enemy, isFriendly: false))
+        #expect(controller.selectedUnitIndex == enemy)
+        #expect(controller.isFriendlySelection == false)
+    }
+
+    @Test("right-click with enemy selected is a no-op (info-only)")
+    func rightClickEnemySelectionInert() {
+        let (pool, _, enemy) = Self.makePool()
+        var controller = UnitCommandController(
+            selectedUnitIndex: enemy, isFriendlySelection: false
+        )
+        let action = controller.handle(
+            click: .rightMapTile(x: 5, y: 5),
+            pool: pool,
+            playerHouseID: Self.playerHouse
+        )
         #expect(action == .none)
-        #expect(controller.selectedUnitIndex == nil)
+        // Selection preserved.
+        #expect(controller.selectedUnitIndex == enemy)
     }
 
     @Test("left-click on empty tile with no selection → .none")
@@ -77,7 +95,7 @@ struct UnitCommandControllerTests {
     @Test("left-click on empty tile with a selection → .deselect")
     func leftClickEmptyWithSelection() {
         let (pool, friendly, _) = Self.makePool()
-        var controller = UnitCommandController(selectedUnitIndex: friendly)
+        var controller = UnitCommandController(selectedUnitIndex: friendly, isFriendlySelection: true)
         let action = controller.handle(
             click: .leftMapTile(x: 5, y: 5),
             pool: pool,
@@ -97,13 +115,15 @@ struct UnitCommandControllerTests {
         u2.positionY = 30 * 256 + 128
         pool[2] = u2
 
-        var controller = UnitCommandController(selectedUnitIndex: 0)
+        var controller = UnitCommandController(
+            selectedUnitIndex: 0, isFriendlySelection: true
+        )
         let action = controller.handle(
             click: .leftMapTile(x: 30, y: 30),
             pool: pool,
             playerHouseID: Self.playerHouse
         )
-        #expect(action == .selectUnit(poolIndex: 2))
+        #expect(action == .selectUnit(poolIndex: 2, isFriendly: true))
         #expect(controller.selectedUnitIndex == 2)
     }
 
@@ -122,7 +142,7 @@ struct UnitCommandControllerTests {
     @Test("right-click on map with a selection → .orderMove")
     func rightClickOrderMove() {
         let (pool, friendly, _) = Self.makePool()
-        var controller = UnitCommandController(selectedUnitIndex: friendly)
+        var controller = UnitCommandController(selectedUnitIndex: friendly, isFriendlySelection: true)
         let action = controller.handle(
             click: .rightMapTile(x: 40, y: 40),
             pool: pool,
@@ -136,7 +156,7 @@ struct UnitCommandControllerTests {
     @Test("selection auto-clears when the selected slot has been freed")
     func staleSelectionAutoClears() {
         var (pool, friendly, _) = Self.makePool()
-        var controller = UnitCommandController(selectedUnitIndex: friendly)
+        var controller = UnitCommandController(selectedUnitIndex: friendly, isFriendlySelection: true)
         pool.free(at: friendly)
 
         // Any subsequent click with a stale selection drops it.
@@ -154,7 +174,7 @@ struct UnitCommandControllerTests {
     @Test("right-click with a freed selection drops the selection, does not issue orderMove")
     func rightClickWithFreedSelection() {
         var (pool, friendly, _) = Self.makePool()
-        var controller = UnitCommandController(selectedUnitIndex: friendly)
+        var controller = UnitCommandController(selectedUnitIndex: friendly, isFriendlySelection: true)
         pool.free(at: friendly)
         let action = controller.handle(
             click: .rightMapTile(x: 40, y: 40),
@@ -170,7 +190,7 @@ struct UnitCommandControllerTests {
     @Test("right-click on enemy unit with friendly selected → .orderAttack")
     func rightClickEnemyOrderAttack() {
         let (pool, friendly, enemy) = Self.makePool()
-        var controller = UnitCommandController(selectedUnitIndex: friendly)
+        var controller = UnitCommandController(selectedUnitIndex: friendly, isFriendlySelection: true)
         let action = controller.handle(
             click: .rightMapTile(x: 20, y: 20),
             pool: pool,
@@ -204,7 +224,7 @@ struct UnitCommandControllerTests {
         u2.positionY = 30 * 256 + 128
         pool[2] = u2
 
-        var controller = UnitCommandController(selectedUnitIndex: 0)
+        var controller = UnitCommandController(selectedUnitIndex: 0, isFriendlySelection: true)
         let action = controller.handle(
             click: .rightMapTile(x: 30, y: 30),  // tile of friendly slot 2
             pool: pool,
@@ -216,7 +236,7 @@ struct UnitCommandControllerTests {
     @Test("right-click on empty tile with friendly selected → .orderMove (slice-1 regression guard)")
     func rightClickEmptyTileStillMoves() {
         let (pool, friendly, _) = Self.makePool()
-        var controller = UnitCommandController(selectedUnitIndex: friendly)
+        var controller = UnitCommandController(selectedUnitIndex: friendly, isFriendlySelection: true)
         let action = controller.handle(
             click: .rightMapTile(x: 50, y: 50),
             pool: pool,

@@ -92,13 +92,21 @@ struct ScenarioRuntimeTests {
         #expect(noop == .none)
     }
 
-    @Test("Left-click on enemy unit doesn't select it (friendly filter)")
-    func clickEnemyDoesNotSelect() throws {
+    @Test("Left-click on enemy unit selects it but as non-friendly (info-only)")
+    func clickEnemySelectsInfoOnly() throws {
         guard let r = try loadMission1() else { return }
         // Ordos SOLDIER at (30, 19).
         let outcome = r.leftClick(tileX: 30, tileY: 19)
-        #expect(outcome == .none)
-        #expect(r.commandController.selectedUnitIndex == nil)
+        if case .unitSelected = outcome {
+            // ok — selection happened
+        } else {
+            Issue.record("expected unitSelected, got \(outcome)")
+        }
+        #expect(r.commandController.selectedUnitIndex != nil)
+        #expect(r.commandController.isFriendlySelection == false)
+        // Right-click is now inert because selection is info-only.
+        let rOutcome = r.rightClick(tileX: 35, tileY: 35)
+        #expect(rOutcome == .none)
     }
 
     @Test("Right-click with selection on empty tile issues orderMove")

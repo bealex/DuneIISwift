@@ -206,8 +206,11 @@ public final class ScenarioRuntime {
                 playerHouseID: playerHouseID
             )
             switch action {
-            case .selectUnit(let idx):
-                Log.info("unit-select \(idx)", tracer: .label("unit-cmd"))
+            case .selectUnit(let idx, let isFriendly):
+                Log.info(
+                    "unit-select \(idx) friendly=\(isFriendly)",
+                    tracer: .label("unit-cmd")
+                )
                 return .unitSelected(idx)
             case .deselect:
                 Log.info("unit-deselect", tracer: .label("unit-cmd"))

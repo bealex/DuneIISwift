@@ -1,21 +1,32 @@
 import Foundation
 import DuneIICore
+import Memoirs
 
 /// Pure state machine bridging `ScenarioScene` mouse events to the unit
-/// pool. Testable without SpriteKit. Mirrors `BuildPanelController` in
-/// shape; stays narrow in scope — single-unit selection + move orders
-/// (slice 1). Drag-select, attack, harvest, shift-additive all deferred.
+/// pool. Testable without SpriteKit.
+///
+/// Left-click on any unit tile (friendly or enemy) selects that unit;
+/// the `isFriendlySelection` flag tells the scene whether to display
+/// action buttons. Right-click issues orders only when the selection
+/// is friendly — enemy selections are info-only.
 ///
 /// See `Documentation/Algorithms/UnitSelectionAndOrders.md`.
 public struct UnitCommandController: Equatable, Sendable {
-    /// Pool slot of the currently-selected friendly unit. `nil` when
-    /// nothing is selected, or when the last-selected slot has been
-    /// freed (the controller auto-clears stale references on the next
-    /// click).
+    /// Pool slot of the currently-selected unit (friendly OR enemy).
+    /// `nil` when nothing is selected or the last-selected slot has
+    /// been freed (auto-cleared on the next click).
     public var selectedUnitIndex: Int?
+    /// `true` when the selected unit is owned by the player, `false`
+    /// when it's an enemy / ally. Right-click actions are silently
+    /// dropped when this is `false` — enemy selections are info-only.
+    public var isFriendlySelection: Bool
 
-    public init(selectedUnitIndex: Int? = nil) {
+    public init(
+        selectedUnitIndex: Int? = nil,
+        isFriendlySelection: Bool = false
+    ) {
         self.selectedUnitIndex = selectedUnitIndex
+        self.isFriendlySelection = isFriendlySelection
     }
 
     /// Mouse events the scene forwards. Bound to `mouseDown` /
@@ -26,13 +37,12 @@ public struct UnitCommandController: Equatable, Sendable {
         case rightMapTile(x: Int, y: Int)
     }
 
-    /// Scene-observable result. `selectUnit` / `deselect` are
-    /// selection-state changes the scene renders as a halo; `orderMove`
-    /// and `orderAttack` are pool mutations the scene applies via
-    /// `Simulation.Units.orderMove` / `Simulation.Units.orderAttack`.
+    /// Scene-observable result.
     public enum Action: Equatable, Sendable {
         case none
-        case selectUnit(poolIndex: Int)
+        /// Unit selected. `isFriendly` tells the scene whether to render
+        /// action affordances (only friendly units show them).
+        case selectUnit(poolIndex: Int, isFriendly: Bool)
         case deselect
         case orderMove(poolIndex: Int, tileX: Int, tileY: Int)
         case orderAttack(attackerIndex: Int, targetIndex: Int)
@@ -44,36 +54,52 @@ public struct UnitCommandController: Equatable, Sendable {
         playerHouseID: UInt8
     ) -> Action {
         // Auto-clear a stale selection (e.g. a unit died between the
-        // last and current click). This keeps the controller robust
-        // without requiring the scene to push pool-state deltas.
+        // last and current click).
         if let sel = selectedUnitIndex,
            sel < 0 || sel >= pool.slots.count || !pool.slots[sel].isUsed {
+            Log.debug(
+                "unit-cmd stale selection \(sel) cleared",
+                tracer: .label("unit-cmd")
+            )
             selectedUnitIndex = nil
+            isFriendlySelection = false
         }
 
         switch click {
         case .leftMapTile(let x, let y):
-            if let friendly = Self.friendlyUnitAtTile(
-                x: x, y: y, pool: pool, playerHouseID: playerHouseID
+            // Prefer friendly under the click so right-click commands
+            // work without needing a second click; fall back to any
+            // unit for info-only enemy selection.
+            if let friendly = Self.unitAtTile(
+                x: x, y: y, pool: pool,
+                matching: { $0.houseID == playerHouseID }
             ) {
                 selectedUnitIndex = friendly
-                return .selectUnit(poolIndex: friendly)
+                isFriendlySelection = true
+                return .selectUnit(poolIndex: friendly, isFriendly: true)
             }
-            // No friendly under the click: if something was selected,
-            // clear it; otherwise this is an inert click.
+            if let other = Self.unitAtTile(
+                x: x, y: y, pool: pool,
+                matching: { $0.houseID != playerHouseID }
+            ) {
+                selectedUnitIndex = other
+                isFriendlySelection = false
+                return .selectUnit(poolIndex: other, isFriendly: false)
+            }
             if selectedUnitIndex != nil {
                 selectedUnitIndex = nil
+                isFriendlySelection = false
                 return .deselect
             }
             return .none
 
         case .rightMapTile(let x, let y):
-            guard let sel = selectedUnitIndex else { return .none }
-            // Enemy under the click → attack order. Self-tile guarded so
-            // a unit standing on its own tile doesn't issue an attack
-            // against itself in the rare case the pool scan returns it.
-            if let enemy = Self.enemyUnitAtTile(
-                x: x, y: y, pool: pool, playerHouseID: playerHouseID
+            guard let sel = selectedUnitIndex, isFriendlySelection else {
+                return .none
+            }
+            if let enemy = Self.unitAtTile(
+                x: x, y: y, pool: pool,
+                matching: { $0.houseID != playerHouseID }
             ), enemy != sel {
                 return .orderAttack(attackerIndex: sel, targetIndex: enemy)
             }
@@ -81,44 +107,22 @@ public struct UnitCommandController: Equatable, Sendable {
         }
     }
 
-    /// Scans the pool's `findArray` for a friendly unit whose position
-    /// tile matches `(x, y)`. Returns the pool slot index, or `nil`.
-    /// Enemy units are deliberately invisible to this query — left-click
-    /// on an enemy tile collapses to the "empty terrain" path in slice
-    /// 1 (attack orders land in slice 2 via `enemyUnitAtTile`).
-    private static func friendlyUnitAtTile(
-        x: Int, y: Int, pool: Simulation.UnitPool, playerHouseID: UInt8
+    /// Finds the first unit in `pool.findArray` sitting on `(x, y)`
+    /// that satisfies `predicate`. Generalises the previous
+    /// friendly/enemy helpers into one scan.
+    private static func unitAtTile(
+        x: Int, y: Int,
+        pool: Simulation.UnitPool,
+        matching predicate: (Simulation.UnitSlot) -> Bool
     ) -> Int? {
         guard (0..<64).contains(x), (0..<64).contains(y) else { return nil }
         for idx in pool.findArray {
             let slot = pool.slots[idx]
             if !slot.isUsed { continue }
-            if slot.houseID != playerHouseID { continue }
             let tx = Int(slot.positionX) / 256
             let ty = Int(slot.positionY) / 256
-            if tx == x && ty == y { return idx }
-        }
-        return nil
-    }
-
-    /// Mirror of `friendlyUnitAtTile` — returns the pool slot of any
-    /// non-player unit on `(x, y)`. Used by the right-click branch to
-    /// promote a move order into an attack order when the click lands
-    /// on an enemy. Allies-of-player are not enemies; OpenDUNE's
-    /// `House_AreAllied` distinction (Fremen↔Atreides) is not modelled
-    /// here yet — the next slice can swap this for an alliance check
-    /// if it matters.
-    private static func enemyUnitAtTile(
-        x: Int, y: Int, pool: Simulation.UnitPool, playerHouseID: UInt8
-    ) -> Int? {
-        guard (0..<64).contains(x), (0..<64).contains(y) else { return nil }
-        for idx in pool.findArray {
-            let slot = pool.slots[idx]
-            if !slot.isUsed { continue }
-            if slot.houseID == playerHouseID { continue }
-            let tx = Int(slot.positionX) / 256
-            let ty = Int(slot.positionY) / 256
-            if tx == x && ty == y { return idx }
+            guard tx == x, ty == y else { continue }
+            if predicate(slot) { return idx }
         }
         return nil
     }
