@@ -543,11 +543,21 @@ extension Simulation {
                 guard slot.actionID == Simulation.ActionID.harvest else { continue }
                 guard !slot.inTransport else { continue }
                 let before = slot.amount
+                // Slice 9: when `apply` transitions a cell between
+                // bare / thin / thick, fire the host's repaint
+                // notifier so `ScenarioRuntime` can rewrite the
+                // matching `tileGrid.groundTileID` and the scene /
+                // minimap / screenshot see the drain in real time.
+                let notifier = host.spiceLevelDidChange
                 _ = Simulation.Units.harvestSpiceStep(
                     harvesterIndex: idx,
                     units: &host.units,
                     landscapeAt: { spiceMap.landscapeByte(at: $0) },
-                    changeSpice: { packed, delta in spiceMap.apply(delta: delta, at: packed) },
+                    changeSpice: { packed, delta in
+                        let levelBefore = spiceMap[packed]
+                        let levelAfter = spiceMap.apply(delta: delta, at: packed)
+                        if levelBefore != levelAfter { notifier?(packed, levelAfter) }
+                    },
                     rng: rng
                 )
                 if host.units.slots[idx].amount != before { harvestedCount += 1 }

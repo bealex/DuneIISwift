@@ -11,7 +11,7 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**None — carryall pickup loop (slices 8a/8b/8c) is fully shipped as of 2026-04-22. Pick from "Next up".**
+**Playtest follow-up batch (user-requested).** (1) **Attack animation** — no visible muzzle flash / projectile trail / impact when a friendly unit fires on an enemy. Need to port OpenDUNE's muzzle-flash + bullet sprite passes (`src/unit.c` fire path → `src/script/unit.c` Script_Unit_Fire). (2) **Action shortcut keys** — after selecting a unit, press `A`/`M`/`H`/`R` to stage "next left-click issues Attack/Move/Harvest/Return" (Harvest/Return are harvester-only; Attack/Move are generic). (3) **Spice bloom interaction** — walking into or attacking a spice bloom detonates it into spice; port OpenDUNE's bloom explosion (`Map_Bloom_*`). Consult OpenDUNE for each algorithm before coding.
 
 What works now:
 - CYARD pre-selected at scene load; build panel shows buildables.
@@ -30,7 +30,7 @@ Latest session (2026-04-22) shipped tasks 1-9 + the minimap; all details in toda
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → implement → tests → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **Scene repaint on `SpiceMap.apply`** (slice 9). Cosmetic; lets the player see spice thick→thin→bare drain in real time.
+1. **Attack animation + action shortcuts + spice-bloom interaction** (see Active task — three-part playtest follow-up).
 2. **STARPORT case** — port `Structure_GetBuildable` `-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.
 3. **Mentat briefing screen** — scenario intro text, voice cue. Intro WSA + jukebox already shipped.
 4. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline's `gameSpeed` factor.
@@ -44,6 +44,12 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-22 — Slice 9: scene repaint on SpiceMap.apply.** New `Host.spiceLevelDidChange` callback; scheduler fires on level transitions; runtime rewrites tileGrid groundTileID per `Map_ChangeSpiceAmount`'s offsets. 3 new tests. 815 green / 81 suites / zero warnings.
+- **2026-04-22 — Scene tile rendering: per-house palette remap.** `ScenarioScene` lazy-caches house-remapped `SKTexture`s via the same `(tileID, houseID)` path used by `ScreenshotRenderer`; `syncGroundTiles` runs right after `runtime.load` so Atreides CY renders in blue on first frame.
+- **2026-04-22 — Structure ICN tiles get per-house palette remap (renderer).** New `Formats.Icn.TileSet.pixels(forTile:houseID:)` applies OpenDUNE vanilla's `(c & 0xF0) == 0x90` 0x90..0x9F remap. `ScreenshotRenderer` routes structure cells through a lazy `(tileID, houseID) → CGImage` cache. New headless `dump icntile` / `dump iconmap` debug commands.
+- **2026-04-22 — Screenshot test suite + shared `ScreenshotRenderer`.** 5 golden tests (initial, unit halo, structure halo, slab placement, windtrap placement). `DUNEII_REGENERATE_GOLDENS=1` rewrites fixtures. Shared renderer consumed by both the headless `screenshot` command and the tests. Also fixed a gap where `ScenarioRuntime.load` didn't stamp iconGroup tiles for scenario-placed structures.
+- **2026-04-22 — Headless screenshot command.** `screenshot x y w h path` on `duneii-headless` writes a PNG of a tile region (16 px/tile, ground layer only; pre-renderer extraction).
+- **2026-04-22 — Playtest bug-fix batch (5 issues).** Sidebar click Y offset, speed multiplier (`,`/`.`), iconGroup frame pick (`Structure_UpdateMap` offset), structure house-colour outline centre, harvester STOP→HARVEST pin.
 - **2026-04-22 — Carryall pickup 8c.** `Simulation.Units.dropCarryall` detaches the ferried harvester + frees the carryall on arrival. New `Scheduler.tickCarryallFerry` pass (between tickMovement and tickUnits) picks up carryalls whose `targetMove` just cleared, invokes drop. Closes the carryall pickup loop. 5 new tests. 807 green / 79 suites / zero warnings.
 - **2026-04-22 — Carryall pickup 8b.** `Simulation.Units.callCarryall` spawns a CARRYALL in-pool at the harvester's tile with `inTransport=true` + `linkedID=harvester` + `targetMove=encoded(refinery)`. `tickHarvesting` picks between free-refinery (8a), carryall-ferry (new), and on-foot-only-option branches; `countRefineries(houseID:structures:)` gates ferry on ≥ 2 refineries. 4 new tests, 1 superseded. 802 green / 79 suites / zero warnings.
 - **2026-04-22 — Carryall pickup 8a.** `findFreeRefinery` + tickHarvesting preference for free refineries over nearest. Observable: two harvesters parallelise across two refineries. 9 new tests. 798 green / 79 suites / zero warnings.
@@ -140,7 +146,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **807 tests across 79 suites, all green** as of 2026-04-22 (post-carryall-loop). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **815 tests across 81 suites, all green** as of 2026-04-22 (post-slice-9). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 

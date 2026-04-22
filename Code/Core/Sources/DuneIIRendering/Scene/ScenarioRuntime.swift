@@ -172,6 +172,7 @@ public final class ScenarioRuntime {
         let scorer = Self.makeTileEnterScorer(ref: tileGridRef, resolver: resolver)
         let landscapeLookup = Self.makeLandscapeLookup(ref: tileGridRef, resolver: resolver)
         let spiceMap = Self.makeSpiceMap(snapshot: snapshot, resolver: resolver)
+        let repaint = Self.makeSpiceRepaint(ref: tileGridRef, resolver: resolver)
         Log.info(
             "runtime spicemap seeded thick=\(spiceMap.cells.filter { $0 == .thick }.count) thin=\(spiceMap.cells.filter { $0 == .thin }.count)",
             tracer: .label("runtime")
@@ -191,7 +192,8 @@ public final class ScenarioRuntime {
             isValidPosition: nil,
             isPositionUnveiled: nil,
             landscapeAt: landscapeLookup,
-            spiceMap: spiceMap
+            spiceMap: spiceMap,
+            spiceLevelDidChange: repaint
         )
         let source = Scripting.RandomSource(
             lcgSeed: UInt16(truncatingIfNeeded: scenario.mapField.seed),
@@ -995,6 +997,47 @@ public final class ScenarioRuntime {
                 hasStructure: cell.hasStructure
             )
             return UInt8(truncatingIfNeeded: landscape.rawValue)
+        }
+    }
+
+    /// Slice 9 helper. Builds the `spiceLevelDidChange` closure wired
+    /// into `Scripting.Host` — on every transition, overwrites the
+    /// matching `tileGrid` cell's `groundTileID` with the level's
+    /// canonical landscape-group sprite (bare=0, spice=49, thick=65;
+    /// ports `Map_ChangeSpiceAmount`'s offsets at `src/map.c:786`).
+    /// The scene's `syncGroundTiles` picks up the change on the next
+    /// tick. Edge-fixup (`Map_FixupSpiceEdges`) is deferred.
+    private static func makeSpiceRepaint(
+        ref: TileGridRef,
+        resolver: TileResolver
+    ) -> (UInt16, Simulation.SpiceMap.Level) -> Void {
+        let iconMap = resolver.iconMap
+        let sandID = iconMap.tileId(in: .landscape, offset: 0)
+        let thinID = iconMap.tileId(in: .landscape, offset: 49)
+        let thickID = iconMap.tileId(in: .landscape, offset: 65)
+        return { [ref] packed, level in
+            let idx = Int(packed)
+            guard idx < ref.tiles.count else { return }
+            let newID: UInt16
+            switch level {
+            case .bare:      newID = sandID
+            case .thin:      newID = thinID
+            case .thick:     newID = thickID
+            case .notSand:   return
+            }
+            let old = ref.tiles[idx]
+            if old.groundTileID == newID { return }
+            ref.tiles[idx] = Simulation.WorldSnapshot.Tile(
+                groundTileID: newID,
+                overlayTileID: old.overlayTileID,
+                houseID: old.houseID,
+                isUnveiled: old.isUnveiled,
+                hasUnit: old.hasUnit,
+                hasStructure: old.hasStructure,
+                hasAnimation: old.hasAnimation,
+                hasExplosion: old.hasExplosion,
+                objectRef: old.objectRef
+            )
         }
     }
 

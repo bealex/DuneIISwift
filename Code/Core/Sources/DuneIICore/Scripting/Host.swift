@@ -62,6 +62,14 @@ extension Scripting {
         /// `Documentation/Algorithms/HarvesterSpiceDeposit.md`.
         public var spiceMap: Simulation.SpiceMap?
 
+        /// Notifier fired by the scheduler whenever `spiceMap.apply`
+        /// actually changes a cell's level (bare ↔ thin ↔ thick). Used
+        /// by the runtime to rewrite the matching `tileGrid` cell's
+        /// `groundTileID` so the scene / minimap / screenshot see
+        /// drained tiles degrade in real time. `nil` = no repaint.
+        /// See `Documentation/Algorithms/SpiceRepaint.md`.
+        public var spiceLevelDidChange: ((_ packed: UInt16, _ level: Simulation.SpiceMap.Level) -> Void)?
+
         public enum ObjectRef: Sendable, Equatable {
             case unit(poolIndex: Int)
             case structure(poolIndex: Int)
@@ -98,7 +106,8 @@ extension Scripting {
             isValidPosition: ((_ packed: UInt16) -> Bool)? = nil,
             isPositionUnveiled: ((_ packed: UInt16) -> Bool)? = nil,
             landscapeAt: ((_ packed: UInt16) -> UInt8)? = nil,
-            spiceMap: Simulation.SpiceMap? = nil
+            spiceMap: Simulation.SpiceMap? = nil,
+            spiceLevelDidChange: ((_ packed: UInt16, _ level: Simulation.SpiceMap.Level) -> Void)? = nil
         ) {
             self.units = units
             self.structures = structures
@@ -115,6 +124,7 @@ extension Scripting {
             self.isPositionUnveiled = isPositionUnveiled
             self.landscapeAt = landscapeAt
             self.spiceMap = spiceMap
+            self.spiceLevelDidChange = spiceLevelDidChange
         }
 
         // MARK: Convenience queries
