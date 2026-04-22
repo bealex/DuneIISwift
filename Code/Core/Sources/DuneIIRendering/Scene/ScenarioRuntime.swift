@@ -43,6 +43,9 @@ public final class ScenarioRuntime {
         case orderMove(unitIdx: Int, tileX: Int, tileY: Int, ok: Bool)
         case orderAttack(attacker: Int, target: Int, ok: Bool)
         case yardSelected(Int)
+        /// A structure was selected via map click — any owner, any
+        /// type. The info panel reads the pool slot directly.
+        case structureSelected(Int)
         case placementStarted(type: UInt8)
         case placementCommitted(type: UInt8, slot: Int, tileX: Int, tileY: Int, degraded: Bool)
         case placementRejected(type: UInt8, tileX: Int, tileY: Int)
@@ -60,6 +63,14 @@ public final class ScenarioRuntime {
     public private(set) var scheduler: Simulation.Scheduler?
     public var buildController = BuildPanelController()
     public var commandController = UnitCommandController()
+    /// Pool slot of the currently-inspected structure. Set on any
+    /// left-click that lands on a structure footprint — regardless of
+    /// owner — so the scene's info panel can render name / HP / state.
+    /// Independent of `buildController.selectedYardIndex`, which drives
+    /// the build sidebar for player-owned CYARD / factories only.
+    /// `nil` when no structure is selected or the last-selected slot
+    /// has been freed.
+    public var selectedStructureIndex: Int?
     /// Live tile grid. Held in a class box so closures captured by the
     /// scheduler's `landscapeAt` + `tileEnterScore` see runtime
     /// mutations (placed slabs, new structures) without being rebuilt.
@@ -184,12 +195,26 @@ public final class ScenarioRuntime {
             scheduler?.tick()
             tickCounter += 1
         }
-        // Keep the build-panel controller's surface (yardState,
-        // countDown, queuedType, availableTypes) in sync with the
-        // live pool so subsequent clicks + dumps read fresh state.
-        // The scene's `update(_:)` does this per-frame; the headless
-        // harness ticks then reads state, so we do it here too.
         refreshBuildState()
+        validateSelections()
+    }
+
+    /// Drops stale structure / unit selections when the underlying
+    /// slot has been freed. Called every tick; cheap no-op when
+    /// nothing's selected.
+    public func validateSelections() {
+        guard let host else { return }
+        if let idx = selectedStructureIndex {
+            if idx < 0 || idx >= host.structures.slots.count ||
+               !host.structures.slots[idx].isUsed
+            {
+                Log.info(
+                    "selection: stale structure=\(idx) cleared",
+                    tracer: .label("selection")
+                )
+                selectedStructureIndex = nil
+            }
+        }
     }
 
     // MARK: Click intent
@@ -211,9 +236,15 @@ public final class ScenarioRuntime {
                     "unit-select \(idx) friendly=\(isFriendly)",
                     tracer: .label("unit-cmd")
                 )
+                // Unit and structure selections are mutually exclusive —
+                // clicking a unit tile drops any structure selection.
+                selectedStructureIndex = nil
                 return .unitSelected(idx)
             case .deselect:
                 Log.info("unit-deselect", tracer: .label("unit-cmd"))
+                // Don't clear selectedStructureIndex here — a click on
+                // empty that "deselects a unit" shouldn't unseat a
+                // structure selection made on the same click path.
                 return .unitDeselected
             case .orderMove(let idx, let tx, let ty):
                 let ok = Simulation.Units.orderMove(
@@ -238,7 +269,29 @@ public final class ScenarioRuntime {
             }
         }
 
-        // 2. Yard select (when not mid-placement).
+        // 2. Generic structure selection — any owner, any type. Sets
+        //    `selectedStructureIndex` so the info panel can render
+        //    name / HP / state. Runs before the yard-select step so
+        //    non-yard buildings and enemy structures get highlighted
+        //    too (enemy → info-only, player non-yard → info + status).
+        if buildController.placementType == nil,
+           let structIdx = Self.structureAtTile(
+               tileX: tileX, tileY: tileY, pool: host.structures
+           ),
+           structIdx != selectedStructureIndex
+        {
+            selectedStructureIndex = structIdx
+            let s = host.structures.slots[structIdx]
+            Log.info(
+                "structure-select \(structIdx) type=\(s.type) house=\(s.houseID) friendly=\(s.houseID == playerHouseID)",
+                tracer: .label("selection")
+            )
+            // Fall through so the yard-select step below still gets a
+            // chance to wire the build sidebar for player-owned
+            // CYARD / factories.
+        }
+
+        // 3. Yard select (when not mid-placement).
         if buildController.placementType == nil,
            let newYardIdx = Simulation.Structures.selectableYardAt(
                tileX: tileX, tileY: tileY, pool: host.structures, playerHouseID: playerHouseID
@@ -254,9 +307,37 @@ public final class ScenarioRuntime {
             return .yardSelected(newYardIdx)
         }
 
-        // 3. Build-panel click-through (placement commits).
+        // If we selected a non-yard structure (or the same yard as
+        // before) return structureSelected rather than falling through
+        // to the build-panel placeholder branch.
+        if let selIdx = selectedStructureIndex {
+            return .structureSelected(selIdx)
+        }
+
+        // 4. Build-panel click-through (placement commits).
         let action = buildController.handle(click: .mapTile(x: tileX, y: tileY))
         return applyBuildAction(action)
+    }
+
+    /// Returns the pool index of a structure whose footprint covers
+    /// `(tileX, tileY)`, or `nil`. Walks `findArray` — reserved
+    /// aggregate slots (slabs, walls) aren't selectable.
+    private static func structureAtTile(
+        tileX: Int, tileY: Int, pool: Simulation.StructurePool
+    ) -> Int? {
+        for idx in pool.findArray {
+            let s = pool.slots[idx]
+            guard s.isUsed, s.isAllocated else { continue }
+            let ax = Int(s.positionX) / 256
+            let ay = Int(s.positionY) / 256
+            let footprint = Simulation.Structures.footprintTiles(
+                type: s.type, anchorX: ax, anchorY: ay
+            )
+            if footprint.contains(where: { $0.0 == tileX && $0.1 == tileY }) {
+                return idx
+            }
+        }
+        return nil
     }
 
     @discardableResult

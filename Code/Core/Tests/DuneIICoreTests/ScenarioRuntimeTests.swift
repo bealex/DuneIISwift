@@ -282,8 +282,37 @@ struct ScenarioRuntimeTests {
         guard let r = try loadMission1() else { return }
         let before = r.buildController.selectedYardIndex
         let outcome = r.leftClick(tileX: 30, tileY: 25)
-        #expect(outcome == .none)
+        // The generic structure-select pass sets selectedStructureIndex
+        // to the CYARD too, so the outcome reports structureSelected.
+        if case .structureSelected = outcome {
+            // ok
+        } else if outcome == .none {
+            // also acceptable — if selectedStructureIndex was already set
+        } else {
+            Issue.record("expected structureSelected or none, got \(outcome)")
+        }
         #expect(r.buildController.selectedYardIndex == before)
+        #expect(r.selectedStructureIndex == before)
+    }
+
+    @Test("Left-click on any structure sets selectedStructureIndex (info surface)")
+    func clickStructureSetsSelection() throws {
+        guard let r = try loadMission1() else { return }
+        // CYARD footprint includes (30, 25). Click on any tile.
+        _ = r.leftClick(tileX: 30, tileY: 25)
+        let host = try #require(r.host)
+        let cyIdx = host.structures.findArray.first { host.structures.slots[$0].type == 8 }!
+        #expect(r.selectedStructureIndex == cyIdx)
+    }
+
+    @Test("Clicking a unit after selecting a structure clears the structure selection")
+    func clickUnitClearsStructureSelection() throws {
+        guard let r = try loadMission1() else { return }
+        _ = r.leftClick(tileX: 30, tileY: 25)        // select CYARD
+        #expect(r.selectedStructureIndex != nil)
+        _ = r.leftClick(tileX: 29, tileY: 23)        // select friendly TRIKE
+        #expect(r.selectedStructureIndex == nil)
+        #expect(r.commandController.selectedUnitIndex != nil)
     }
 
     @Test("BuildController.yardState surface stays in sync after tick() — no stale UI state")

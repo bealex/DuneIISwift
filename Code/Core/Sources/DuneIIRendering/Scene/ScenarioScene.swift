@@ -203,6 +203,10 @@ public final class ScenarioScene: SKScene {
         case .yardSelected:
             refreshBuildSidebar()
             refreshRallyMarker()
+            refreshSelectionHalo()
+        case .structureSelected:
+            refreshBuildSidebar()
+            refreshSelectionHalo()
         case .placementStarted:
             refreshBuildSidebar()
         case .placementCommitted:
