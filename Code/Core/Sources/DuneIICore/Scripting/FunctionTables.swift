@@ -92,7 +92,8 @@ extension Scripting.Functions {
         // 0x27 — Script_Unit_DisplayDestroyedText (not ported; GUI)
         // 0x28 — Script_Unit_RemoveFog (not ported; fog)
         // 0x29 — Script_General_SearchSpice (not ported; map search)
-        // 0x2A — Script_Unit_Harvest (not ported; economy)
+        // 0x2A — Script_Unit_Harvest (needs host.spiceMap; no-ops when nil)
+        table[0x2A] = Scripting.Functions.makeHarvestUnit(host: host, source: source)
         // 0x2B — NoOp
         table[0x2B] = Scripting.Functions.noOperation
         // 0x2C — Script_General_GetLinkedUnitType

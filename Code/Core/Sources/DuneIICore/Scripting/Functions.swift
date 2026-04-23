@@ -1541,6 +1541,64 @@ extension Scripting {
             }
         }
 
+        /// `Script_Unit_Harvest` (unit slot 0x2A) — port of
+        /// `src/script/unit.c:1640..1670`. Advances a harvester's
+        /// `amount` on a spice tile and probabilistically decrements
+        /// the tile's spice level.
+        ///
+        /// Contract:
+        /// - Returns 0 if the unit isn't a HARVESTER, if its `amount`
+        ///   is already ≥ 100, or if it isn't currently on a spice
+        ///   tile (per `host.spiceMap`).
+        /// - Otherwise consumes **exactly 2 `tools.next()` bytes** —
+        ///   the first is `amount += (rand & 1)`, the second decides
+        ///   "keep harvesting" (return 1) vs "drain tile + end"
+        ///   (return 0). Both draws happen unconditionally once the
+        ///   guards pass, so RNG stays in lockstep with OpenDUNE.
+        /// - Flips `inTransport = true` on first pickup (same flag
+        ///   OpenDUNE uses as the "has cargo" signal).
+        /// - Returns 1 with probability 31/32 (the `& 0x1F != 0`
+        ///   branch), else 0 after calling `spiceMap.apply(delta:-1,at:)`.
+        ///
+        /// Needs `host.spiceMap` wired (parity harness loads it from
+        /// the save's tile grid; gameplay runtime sets it in
+        /// `ScenarioRuntime`). Without it the function returns 0 and
+        /// takes no side effects — matching the old `noOperation`
+        /// behaviour so gameplay code that hasn't wired spiceMap yet
+        /// doesn't regress.
+        public static func makeHarvestUnit(host: Host, source: RandomSource) -> VM.Function {
+            return { _ in
+                guard let (poolIndex, slot) = currentUnit(host: host) else { return 0 }
+                if slot.type != 16 /* UNIT_HARVESTER */ { return 0 }
+                if slot.amount >= 100 { return 0 }
+                guard var spiceMap = host.spiceMap else { return 0 }
+                let tileX = Int(slot.positionX) / 256
+                let tileY = Int(slot.positionY) / 256
+                guard (0..<64).contains(tileX), (0..<64).contains(tileY) else { return 0 }
+                let packed = UInt16(tileY * 64 + tileX)
+                let level = spiceMap[packed]
+                guard level == .thin || level == .thick else { return 0 }
+
+                var updated = slot
+                // Consume RNG byte #1 — low bit is the amount bump.
+                let bump = source.tools.next() & 1
+                updated.amount = updated.amount &+ bump
+                updated.inTransport = true
+                if updated.amount > 100 { updated.amount = 100 }
+                host.units[poolIndex] = updated
+                // Consume RNG byte #2 — 31/32 chance of "keep going".
+                if (source.tools.next() & 0x1F) != 0 {
+                    return 1
+                }
+                // Drain one spice level on this tile. `spiceMap` is a
+                // value type so we must write through `host.spiceMap`.
+                _ = spiceMap.apply(delta: -1, at: packed)
+                host.spiceMap = spiceMap
+                host.spiceLevelDidChange?(packed, spiceMap[packed], spiceMap)
+                return 0
+            }
+        }
+
         // MARK: Helpers
 
         private static func currentUnit(host: Host) -> (Int, Simulation.UnitSlot)? {

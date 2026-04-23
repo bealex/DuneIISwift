@@ -166,21 +166,41 @@ struct ParityHarnessTests {
 
         let data = try Data(contentsOf: saveURL)
         let game = try Formats.Save.Game.decode(data)
-        let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: Map.empty())
         let golden = try Data(contentsOf: goldenURL)
 
         var unitProgram = Formats.Emc.Program.empty
         var structureProgram = Formats.Emc.Program.empty
         var teamProgram = Formats.Emc.Program.empty
         let label: String
+        var snapshot: Simulation.WorldSnapshot
+        var spiceMap: Simulation.SpiceMap?
         if withRealEmc {
             let install = try Installation(rootDirectory: root)
             let assets = try AssetLoader(installation: install)
             unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
             structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
             teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+            // Real map baseline so the spiceMap reports actual landscape
+            // (Script_Unit_Harvest reads this to decide "is the harvester
+            // on a spice tile?"). `Map.empty()` leaves everything marked
+            // `.notSand`, so the harvest function would always return 0.
+            let resolver = assets.tileResolver
+            let baseline = Map.Generator.generate(
+                seed: game.info.scenario.mapSeed,
+                resolver: resolver
+            )
+            snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
+            spiceMap = Simulation.SpiceMap { i in
+                let tile = snapshot.tiles[i]
+                return resolver.landscapeType(
+                    groundTileID: tile.groundTileID,
+                    overlayTileID: tile.overlayTileID,
+                    hasStructure: tile.hasStructure
+                )
+            }
             label = "\(save)+UNIT.EMC"
         } else {
+            snapshot = try Simulation.WorldSnapshot(loading: game, baseline: Map.empty())
             label = "\(save)+empty-EMC"
         }
 
@@ -192,7 +212,8 @@ struct ParityHarnessTests {
                 unitProgram: unitProgram,
                 structureProgram: structureProgram,
                 teamProgram: teamProgram,
-                seedScriptsFrom: withRealEmc ? game : nil
+                seedScriptsFrom: withRealEmc ? game : nil,
+                spiceMap: spiceMap
             )
             Issue.record("unexpected: tick 1 matched for \(label) — widen tickLimit and remove this expectation")
         } catch let d as Simulation.ParityHarness.Divergence {

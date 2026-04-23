@@ -75,7 +75,8 @@ extension Simulation {
             structureProgram: Formats.Emc.Program = .empty,
             teamProgram: Formats.Emc.Program = .empty,
             rngSeed: UInt32 = 0,
-            seedScriptsFrom game: Formats.Save.Game? = nil
+            seedScriptsFrom game: Formats.Save.Game? = nil,
+            spiceMap: Simulation.SpiceMap? = nil
         ) throws {
             let goldenTicks = try parseGolden(golden)
             guard !goldenTicks.isEmpty else { throw ParseError.goldenEmpty }
@@ -93,7 +94,8 @@ extension Simulation {
                 houses: snapshot.houses,
                 currentObject: nil,
                 texts: [],
-                textLog: []
+                textLog: [],
+                spiceMap: spiceMap
             )
             let source = Scripting.RandomSource(
                 lcgSeed: UInt16(truncatingIfNeeded: rngSeed),
