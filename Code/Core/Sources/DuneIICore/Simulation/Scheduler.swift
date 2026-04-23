@@ -126,19 +126,19 @@ extension Simulation {
                 }
             }
             // Unit occupancy. OpenDUNE's `Unit_GetTileEnterScore`
-            // (`src/unit.c:2335`) flags a tile impassable when any
-            // other unit sits on it; our simplified rule treats every
-            // ground / infantry foothold as a wall. Skips the mover
-            // itself so the source tile of a route is walkable.
-            // Projectiles (bullets / missiles) don't block movement.
+            // (`src/unit.c:2335..2355`) blocks unit-occupied tiles EXCEPT
+            // that tracked + harvester movers can enter foot-occupied
+            // tiles (crush semantics: tanks + harvesters drive over
+            // infantry). Projectiles and wingers never block.
+            let canCrushFoot = movementType == .tracked || movementType == .harvester
             for idx in host.units.findArray {
                 if idx == excludingUnit { continue }
                 let u = host.units.slots[idx]
                 guard u.isUsed else { continue }
                 if Self.isProjectileType(u.type) { continue }
-                // Wingers fly above the ground layer — don't block.
-                if let info = Simulation.UnitInfo.lookup(u.type),
-                   info.movementType == .winger { continue }
+                let occupantMT = Simulation.UnitInfo.lookup(u.type)?.movementType
+                if occupantMT == .winger { continue }
+                if occupantMT == .foot, canCrushFoot { continue }
                 let utx = Int(u.positionX) / 256
                 let uty = Int(u.positionY) / 256
                 if utx == tileX && uty == tileY { return false }
@@ -1193,6 +1193,32 @@ extension Simulation {
                         let next = Pos32.moved(
                             from, orientation: orient, distance: distance
                         )
+                        // Fallback-slide obstacle gate. The route-step
+                        // branch validates the next tile before picking
+                        // it up (~L1003), but a fallback slide flies
+                        // straight at `targetMove` with no intermediate
+                        // checks — so a building between start and goal
+                        // gets clipped unless we re-check the tile
+                        // we're about to enter. Halt and keep
+                        // `targetMove` so the script's `CalculateRoute`
+                        // replans around it on its next dispatch.
+                        if goalSource != "route", !Self.isProjectileType(slot.type) {
+                            let oldTX = Int(from.x) / 256
+                            let oldTY = Int(from.y) / 256
+                            let newTX = Int(next.x) / 256
+                            let newTY = Int(next.y) / 256
+                            if (newTX != oldTX || newTY != oldTY) {
+                                let mt = Simulation.UnitInfo.lookup(slot.type)?.movementType ?? .foot
+                                if !isTilePassable(tileX: newTX, tileY: newTY, movementType: mt, excludingUnit: idx) {
+                                    Log.info(
+                                        "move-halt-slide u\(idx) impassable new-tile=(\(newTX),\(newTY)) mt=\(mt) — holding pos, keeping targetMove=\(String(format: "0x%04X", slot.targetMove)) for replan",
+                                        tracer: .label("move")
+                                    )
+                                    host.units[idx] = slot
+                                    continue
+                                }
+                            }
+                        }
                         slot.positionX = next.x
                         slot.positionY = next.y
                         didStep = true

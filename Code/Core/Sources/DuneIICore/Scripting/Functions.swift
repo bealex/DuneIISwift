@@ -853,10 +853,13 @@ extension Scripting {
                     // the closure can scan peers cheaply.
                     let selfIndex = poolIndex
                     let unitsSnapshot = host.units
+                    let canCrushFoot = movement == .tracked || movement == .harvester
                     let scoreFn: Simulation.Pathfinder.TileEnterScore = { packed, orient in
                         // Unit-occupancy gate — port of OpenDUNE's
-                        // `Unit_GetTileEnterScore` (src/unit.c:2335)
-                        // "other unit on this tile → return 256".
+                        // `Unit_GetTileEnterScore` (src/unit.c:2335..2355).
+                        // Tiles occupied by another unit are impassable
+                        // EXCEPT that tracked / harvester movers may
+                        // enter foot-occupied tiles (crush).
                         // Skips the mover itself; skips projectiles
                         // and wingers (they don't block ground).
                         let tx = Int(packed & 0x3F)
@@ -865,8 +868,9 @@ extension Scripting {
                             if i == selfIndex { continue }
                             guard u.isUsed else { continue }
                             if Simulation.Scheduler.isProjectileType(u.type) { continue }
-                            if let info = Simulation.UnitInfo.lookup(u.type),
-                               info.movementType == .winger { continue }
+                            let occupantMT = Simulation.UnitInfo.lookup(u.type)?.movementType
+                            if occupantMT == .winger { continue }
+                            if occupantMT == .foot, canCrushFoot { continue }
                             let utx = Int(u.positionX) / 256
                             let uty = Int(u.positionY) / 256
                             if utx == tx && uty == ty { return 256 }

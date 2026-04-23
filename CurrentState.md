@@ -11,7 +11,7 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**Movement polish — continue investigating jagged / non-continuous movement.** The replan-on-block fix just landed (units no longer wedge in concave corners); the user also reports jagged diagonals when buildings sit between start and goal, and occasional "didn't reach target." New `move-track` tracer now emits one compact line per moving tick — use `duneii-headless` + the `move-track` / `move` / `route` labels to reproduce and diff against expected OpenDUNE motion. Likely next steps: (a) investigate the per-tick overshoot-snap that jumps the unit to tile centre when `distance = speed*16` is larger than a tile, which produces a visible stutter on diagonals; (b) audit the `currentDestination` set at route-pop so consecutive diagonal route steps don't re-orient the unit by 45° every tile.
+**STARPORT case — port `Structure_GetBuildable`'s `-1` sentinel + `g_starportAvailable` runtime state + CHOAM trade UI.** Next item from the "Next up" queue; the movement-polish arc is closed (per-tile slide gate + crush parity landed today). Pointers: OpenDUNE `Structure_GetBuildable` (`src/structure.c`) returns `-1` for STARPORT's "buildable set is dynamic based on frigate availability", driven by `g_starportAvailable[]` (populated by the Frigate arrival script). We already have the basic factory-buildable pipeline (`Simulation.Structures.buildable(type:houseID:)` → `StructureInfo`) — add the starport path, then layer the CHOAM UI (order, credit, deliver-on-frigate). Immediate next step: read `src/structure.c` `Structure_GetBuildable` + `src/scenario.c` starport-init + `src/gui/gui_widget.c` CHOAM panel to scope the port; decide whether to split into starport-buildable + starport-UI + frigate-delivery as three sub-tasks.
 
 What works now:
 - Player CY + sidebar build panel + slab / windtrap / refinery chain.
@@ -31,7 +31,7 @@ What works now:
 - Unit sprites render at native pixel size (harvester > trike > infantry). Units pathfind around each other.
 - Attack visuals: muzzle flash + impact dimmed to 30% alpha so they're a hint, not a clutter.
 
-Test status: **832 / 83** suites green, zero warnings. 5 golden screenshot fixtures (`Fixtures/Screenshots/`).
+Test status: **859 / 86** suites green, zero warnings. 5 golden screenshot fixtures (`Fixtures/Screenshots/`).
 
 Latest session (2026-04-22) shipped 27 commits. Details in today's `Documentation/History/2026-04.md` bullets.
 
@@ -54,6 +54,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-23 — Fallback slide per-tile gate + OpenDUNE crush semantics.** `tickMovement`'s fallback slide now samples `isTilePassable` on each tile-boundary entry and halts (keeping `targetMove`) when the next tile is blocked — closes the post-`move-halt` clip-through-structure gap. Separately, `isTilePassable` + `CalculateRoute`'s scorer gained the crush rule from `Unit_GetTileEnterScore` (`src/unit.c:2354`): tracked + harvester movers may enter foot-occupied tiles. 2 new tests (crush parity, wheeled still detours), 1 flipped test (`fallbackSlideHaltsAtStructure`), 1 updated (`routeStepBlockedByUnitKeepsTargetMove` — blocker switched TROOPER→TANK). **859 / 86 / zero warnings.**
+- **2026-04-23 — Movement long-run tracking suite.** New `MovementLongRunTests` drives `Scheduler.tick()` across hundreds of ticks and pins: 8-direction fallback-slide reachability, per-tick delta ≤ 1 tile (no teleport), octant-locked route-driven orientation, and pathfinder detours around refineries + mountain blocks without ever entering a blocked tile. A `KNOWN GAP` test documents that after a `move-halt`, the fallback slide walks straight through intermediate structure tiles — flip the assertion when the scheduler grows per-tile passability in the slide branch or an on-halt pathfinder replan. 13 new tests (19 with the 8-octant parameterisation). **857 / 86 / zero warnings.**
 - **2026-04-23 — Harvester continuous loop + fullness bar.** `tickHarvesting` used `!inTransport` as the anti-reharvest gate, but `harvestSpiceStep` sets `inTransport=true` on the first pickup — so ordered harvesters picked up 1 unit then froze. New `Scheduler.isHarvesterDocked` walks the refinery → harvester `linkedID` chain; the real "don't harvest" gate. Added small cyan fullness bar above every harvester marker (`amount / 100`). New `HarvesterContinuousLoopTests` (6 tests) pin the invariants.
 - **2026-04-22 — Movement keeps targetMove on halt + move-track + regression tests.** `tickMovement` now clears only `route` + `currentDestination` when a planned step becomes impassable, keeping `targetMove` live so the next tick's fallback slide (or the script's next `CalculateRoute`) rescues the unit. Hunt enemies no longer wedge in concave building angles; user-ordered moves re-route around transient blockers instead of stalling. Two `MovementPassabilityTests` updated + new `MovementSelfHealTests` suite (6 tests). New `move-track` tracer streams per-tick tile / pos / orient / goal for every moving ground unit. (An earlier in-flight attempt that ran `Pathfinder.findRoute` inline inside `tickMovement` was reverted — it pre-empted the script's `CalculateRoute` + `setSpeed` and stalled fresh user-ordered moves.) **838 / 84 / zero warnings.**
 - **2026-04-22 — Harvester pin widens.** Any non-HARVEST idle harvester flips back to HARVEST so user-ordered harvests don't strand in STOP / GUARD after arrival. Test updated.
@@ -176,7 +178,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **832 tests across 83 suites, all green** as of 2026-04-22 (post-muzzle-flash, end of day). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **859 tests across 86 suites, all green** as of 2026-04-23 (post-slide-gate + crush parity). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 

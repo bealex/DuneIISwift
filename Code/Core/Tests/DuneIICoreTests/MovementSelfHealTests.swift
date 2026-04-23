@@ -128,8 +128,10 @@ struct MovementSelfHealTests {
     @Test("Route step blocked by another unit on the tile clears route but keeps targetMove")
     func routeStepBlockedByUnitKeepsTargetMove() {
         var s = scheduler()
-        // Blocker unit sitting on tile (6, 5).
-        let blockerIdx = s.host.units.allocateForType(type: TROOPER, houseID: Simulation.House.harkonnen)!
+        // Blocker unit sitting on tile (6, 5). Use a TANK (tracked) so
+        // the OpenDUNE crush rule doesn't apply — tracked movers crush
+        // foot units but block each other.
+        let blockerIdx = s.host.units.allocateForType(type: TANK, houseID: Simulation.House.harkonnen)!
         var b = s.host.units[blockerIdx]
         b.positionX = UInt16(6 * 256 + 128)
         b.positionY = UInt16(5 * 256 + 128)
