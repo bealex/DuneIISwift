@@ -39,6 +39,33 @@ public enum Scripting {
                 halted: false
             )
         }
+
+        /// Reconstructs an `Engine` from a save-file `ScriptState`.
+        /// Mirrors OpenDUNE's `src/saveload/unit.c:86` fix-up where the
+        /// on-disk word offset gets re-attached to the script code
+        /// base after load. Our `pc` is already a word index into
+        /// `program.code`, so the offset maps directly.
+        ///
+        /// Arrays are padded to the canonical sizes (5 variables, 15
+        /// stack entries) if the save gives fewer; that never happens
+        /// for a well-formed save but keeps the constructor total.
+        public static func fromSave(_ s: Formats.Save.ScriptState) -> Engine {
+            var vars = s.variables
+            while vars.count < 5 { vars.append(0) }
+            var stack = s.stack
+            while stack.count < 15 { stack.append(0) }
+            return Engine(
+                pc: Int(s.scriptOffset),
+                delay: s.delay,
+                returnValue: s.returnValue,
+                framePointer: s.framePointer,
+                stackPointer: s.stackPointer,
+                variables: Array(vars.prefix(5)),
+                stack: Array(stack.prefix(15)),
+                isSubroutine: s.isSubroutine != 0,
+                halted: false
+            )
+        }
     }
 
     /// Result of executing a single opcode.

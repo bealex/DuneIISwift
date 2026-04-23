@@ -27,6 +27,14 @@ extension Simulation {
     /// `unitCountMax`, `harvestersIncoming`) are present in the golden but
     /// currently skipped by the diff. They land on the Swift side as we
     /// close gaps; each addition flips its `skip` entry into a comparison.
+    ///
+    /// Script-engine state (`scriptDelay`, `scriptPc`, `scriptSP`, `scriptFP`)
+    /// is dumped in the golden but diffed selectively: `scriptDelay` is
+    /// compared (small, stable, uncovered drift surfaces fast); `scriptPc`
+    /// and the stack pointers are NOT compared yet because the same
+    /// observable pool state can be reached via slightly different script
+    /// paths and PC-level parity is strictly stronger than we currently
+    /// need.
     public enum ParityHarness {
         /// First divergence found. Halts the run.
         public struct Divergence: Error, Equatable, CustomStringConvertible {
@@ -66,7 +74,8 @@ extension Simulation {
             unitProgram: Formats.Emc.Program = .empty,
             structureProgram: Formats.Emc.Program = .empty,
             teamProgram: Formats.Emc.Program = .empty,
-            rngSeed: UInt32 = 0
+            rngSeed: UInt32 = 0,
+            seedScriptsFrom game: Formats.Save.Game? = nil
         ) throws {
             let goldenTicks = try parseGolden(golden)
             guard !goldenTicks.isEmpty else { throw ParseError.goldenEmpty }
@@ -104,6 +113,29 @@ extension Simulation {
                 teamVM: teamVM,
                 harvestRNG: { source.tools.next() }
             )
+            // OpenDUNE loads `g_gameConfig.gameSpeed` from OPTIONS.CFG
+            // on startup; our install has it pinned at 4 (Fastest), but
+            // any save's golden will dump its own value. Read from the
+            // golden's tick-0 entry so `Tools_AdjustToGameSpeed` scales
+            // `speedPerTick` increments the same way OpenDUNE did.
+            scheduler.gameSpeed = goldenTicks[0].gameSpeed
+            // OpenDUNE's per-tick opcode budget: `SCRIPT_UNIT_OPCODES_PER_TICK + 2`
+            // (= 52, `src/unit.c:292` + `src/script/script.h:7`). Our
+            // gameplay default is 7 — parity needs the real budget so
+            // scripts reach the same opcodes per tick (e.g. the carryall's
+            // `Script_Unit_SetSpeed(u, 255)` call that bumps movingSpeed).
+            scheduler.unitOpcodeBudget = 52
+            scheduler.structureOpcodeBudget = 52
+            scheduler.teamOpcodeBudget = 52
+            // Disable stopgap passes that pre-empt real EMC. Our
+            // tickAttackHold clears `targetMove` inside fire range —
+            // OpenDUNE lets the script's `Script_Unit_MoveToTarget` +
+            // `Script_Unit_Fire` path own that decision, so with real
+            // UNIT.EMC our clear produces drift.
+            scheduler.tickAttackHoldEnabled = false
+            if let game = game {
+                scheduler.seedFromSave(game)
+            }
 
             Log.debug("parity: \(goldenTicks.count) golden ticks loaded; tickLimit=\(tickLimit)",
                       tracer: .label("parity"))
@@ -139,6 +171,11 @@ extension Simulation {
 
         struct GoldenTick: Decodable, Equatable {
             let tick: Int
+            /// OpenDUNE's `g_gameConfig.gameSpeed` at dump time — loaded
+            /// from OPTIONS.CFG (0..4, where 2=Normal and 4=Fastest).
+            /// `Tools_AdjustToGameSpeed` uses this to scale `speedPerTick`
+            /// increments, so our `Scheduler.gameSpeed` must match.
+            let gameSpeed: UInt8
             let houses: [GoldenHouse]
             let structures: [GoldenStructure]
             let units: [GoldenUnit]
@@ -210,6 +247,10 @@ extension Simulation {
             let blinkCounter: UInt8
             let team: UInt8
             let timer: UInt16
+            let scriptDelay: UInt16
+            let scriptPc: UInt32
+            let scriptSP: UInt8
+            let scriptFP: UInt8
         }
 
         // MARK: - Diff

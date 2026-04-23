@@ -173,20 +173,32 @@ struct EmcHostBatch67Tests {
         #expect(host.units[0].spriteOffset == -10)
     }
 
-    @Test("SetTargetUnit writes targetAttack and faces the target")
-    func setTargetWritesAndFaces() throws {
+    @Test("SetTargetUnit writes targetAttack (and targetMove for non-turreted)")
+    func setTargetWritesTargetMove() throws {
         var units = Simulation.UnitPool()
-        units.allocate(at: 0, type: 0, houseID: 0)
+        units.allocate(at: 0, type: 0, houseID: 0)  // CARRYALL — hasTurret=false
         units.allocate(at: 1, type: 0, houseID: 1)
-        var u0 = units[0]; u0.positionX = 1000; u0.positionY = 1000; units[0] = u0
+        var u0 = units[0]
+        u0.positionX = 1000; u0.positionY = 1000
+        u0.orientationCurrent = 17  // sentinel; must not change
+        units[0] = u0
         var u1 = units[1]; u1.positionX = 2000; u1.positionY = 1000; units[1] = u1
         let host = makeHost(units: units, current: .unit(poolIndex: 0))
         var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
         functions[0] = Scripting.Functions.makeSetTargetUnit(host: host)
         _ = dispatch(functions: functions, words: ins(3, Scripting.EncodedIndex.unit(1).raw) + ins(14, 0))
-        #expect(host.units[0].targetAttack == Scripting.EncodedIndex.unit(1).raw)
-        // Target is due east → orientation 64.
-        #expect(host.units[0].orientationCurrent == 64)
+        let expected = Scripting.EncodedIndex.unit(1).raw
+        #expect(host.units[0].targetAttack == expected)
+        // Non-turreted: targetMove also set (OpenDUNE
+        // `src/script/unit.c:855-858`).
+        #expect(host.units[0].targetMove == expected)
+        // Body orientation stays at its prior value — OpenDUNE's
+        // `Unit_SetOrientation(u, dir, rotateInstantly=false, 0)` writes
+        // `orientation[0].target + .speed`, not `.current`; `tickRotation`
+        // updates `.current` gradually. We don't track `target/speed` on
+        // slots yet (see ParityHarness skip-list), so the correct
+        // observable at this layer is "orientationCurrent unchanged".
+        #expect(host.units[0].orientationCurrent == 17)
     }
 
     @Test("SetTargetUnit clears targetAttack for raw=0 / invalid")

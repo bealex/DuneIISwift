@@ -11,8 +11,8 @@ struct ParityHarnessTests {
     @Test("parseGolden decodes a 2-line dump with all field names")
     func parseGoldenHappy() throws {
         let body = """
-        {"tick":0,"houses":[],"structures":[],"units":[]}
-        {"tick":1,"houses":[{"index":0,"credits":100,"creditsStorage":1000,"creditsQuota":0,"powerProduction":0,"powerUsage":0,"unitCount":0,"unitCountMax":0,"harvestersIncoming":0,"starportTimeLeft":0,"starportLinkedID":65535}],"structures":[],"units":[]}
+        {"tick":0,"gameSpeed":2,"houses":[],"structures":[],"units":[]}
+        {"tick":1,"gameSpeed":2,"houses":[{"index":0,"credits":100,"creditsStorage":1000,"creditsQuota":0,"powerProduction":0,"powerUsage":0,"unitCount":0,"unitCountMax":0,"harvestersIncoming":0,"starportTimeLeft":0,"starportLinkedID":65535}],"structures":[],"units":[]}
         """
         let ticks = try Simulation.ParityHarness.parseGolden(Data(body.utf8))
         #expect(ticks.count == 2)
@@ -24,8 +24,8 @@ struct ParityHarnessTests {
     @Test("parseGolden rejects malformed JSON with line index")
     func parseGoldenMalformed() {
         let body = """
-        {"tick":0,"houses":[],"structures":[],"units":[]}
-        {"tick":1,"houses":[
+        {"tick":0,"gameSpeed":2,"houses":[],"structures":[],"units":[]}
+        {"tick":1,"gameSpeed":2,"houses":[
         """
         do {
             _ = try Simulation.ParityHarness.parseGolden(Data(body.utf8))
@@ -77,17 +77,31 @@ struct ParityHarnessTests {
         )
     }
 
-    /// Stepping past tick 0 is expected to diverge on today's sim because
-    /// the EMC scripts are stubbed (`Formats.Emc.Program.empty` by default)
-    /// and `GameLoop_Unit` / `GameLoop_Structure` on OpenDUNE side runs
-    /// `UNIT.EMC` / `BUILD.EMC`. This test documents *where* the first
-    /// drift lands so progress closing divergences is visible. When the
-    /// Swift side can match OpenDUNE at tick 1+, flip this assertion to
-    /// expect no throw and widen `tickLimit`.
-    @Test("_SAVE001.DAT tick 1 currently diverges (expected until EMC runs)")
+    /// Stepping past tick 0 with empty EMC programs is expected to
+    /// diverge on today's sim — `GameLoop_Unit` / `GameLoop_Structure`
+    /// on OpenDUNE side runs `UNIT.EMC` / `BUILD.EMC` while the
+    /// harness default is `Formats.Emc.Program.empty`. This pins
+    /// *where* the empty-EMC drift lands; the real-EMC variant below
+    /// threads the install's programs through and captures the next
+    /// frontier.
+    @Test("_SAVE001.DAT tick 1 with empty EMC currently diverges")
     @MainActor
     func saveOneParityTickOneDiverges() throws {
         try expectTickOneDivergence(save: "_SAVE001.DAT", golden: "save001_200ticks.jsonl")
+    }
+
+    /// Same as `saveOneParityTickOneDiverges` but with real `UNIT.EMC`
+    /// / `BUILD.EMC` / `TEAM.EMC` loaded via `AssetLoader`. Expected to
+    /// still diverge (more sim surface is covered = more drift
+    /// opportunities), just on a different field. The log line in the
+    /// output pins whichever field is "next" to close.
+    @Test("_SAVE001.DAT tick 1 with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
+    @MainActor
+    func saveOneParityTickOneRealEmc() throws {
+        try expectTickOneDivergence(
+            save: "_SAVE001.DAT", golden: "save001_200ticks.jsonl",
+            withRealEmc: true
+        )
     }
 
     /// SAVE007 is a richer mid-mission save: harvester actively harvesting,
@@ -101,10 +115,19 @@ struct ParityHarnessTests {
         try runTickZeroAgainstGolden(save: "_SAVE007.DAT", golden: "save007_200ticks.jsonl")
     }
 
-    @Test("_SAVE007.DAT tick 1 currently diverges (expected until EMC runs)")
+    @Test("_SAVE007.DAT tick 1 with empty EMC currently diverges")
     @MainActor
     func saveSevenParityTickOneDiverges() throws {
         try expectTickOneDivergence(save: "_SAVE007.DAT", golden: "save007_200ticks.jsonl")
+    }
+
+    @Test("_SAVE007.DAT tick 1 with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
+    @MainActor
+    func saveSevenParityTickOneRealEmc() throws {
+        try expectTickOneDivergence(
+            save: "_SAVE007.DAT", golden: "save007_200ticks.jsonl",
+            withRealEmc: true
+        )
     }
 
     // MARK: Shared helpers
@@ -130,7 +153,11 @@ struct ParityHarnessTests {
     }
 
     @MainActor
-    private func expectTickOneDivergence(save: String, golden goldenName: String) throws {
+    private func expectTickOneDivergence(
+        save: String,
+        golden goldenName: String,
+        withRealEmc: Bool = false
+    ) throws {
         guard let root = TestInstall.locate() else { return }
         let saveURL = root.appendingPathComponent(save)
         guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
@@ -142,16 +169,35 @@ struct ParityHarnessTests {
         let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: Map.empty())
         let golden = try Data(contentsOf: goldenURL)
 
+        var unitProgram = Formats.Emc.Program.empty
+        var structureProgram = Formats.Emc.Program.empty
+        var teamProgram = Formats.Emc.Program.empty
+        let label: String
+        if withRealEmc {
+            let install = try Installation(rootDirectory: root)
+            let assets = try AssetLoader(installation: install)
+            unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+            structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
+            teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+            label = "\(save)+UNIT.EMC"
+        } else {
+            label = "\(save)+empty-EMC"
+        }
+
         do {
             try Simulation.ParityHarness.runAgainst(
                 snapshot: snapshot,
                 golden: golden,
-                tickLimit: 1
+                tickLimit: 1,
+                unitProgram: unitProgram,
+                structureProgram: structureProgram,
+                teamProgram: teamProgram,
+                seedScriptsFrom: withRealEmc ? game : nil
             )
-            Issue.record("unexpected: tick 1 matched for \(save) — widen tickLimit and remove this expectation")
+            Issue.record("unexpected: tick 1 matched for \(label) — widen tickLimit and remove this expectation")
         } catch let d as Simulation.ParityHarness.Divergence {
             #expect(d.tick == 1)
-            print("parity first drift (\(save)) at tick 1: \(d)")
+            print("parity first drift (\(label)) at tick 1: \(d)")
         }
     }
 

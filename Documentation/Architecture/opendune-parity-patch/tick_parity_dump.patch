@@ -172,10 +172,10 @@ index 3afb968..672ba6f 100644
  	if (IniFile_GetString("scalefilter", NULL, filter_text, sizeof(filter_text)) != NULL) {
 diff --git a/src/parity.c b/src/parity.c
 new file mode 100644
-index 0000000..41502bd
+index 0000000..6b6a78e
 --- /dev/null
 +++ b/src/parity.c
-@@ -0,0 +1,268 @@
+@@ -0,0 +1,277 @@
 +/** @file src/parity.c Tick-parity golden-dump harness (patch).
 + *
 + * See Documentation/Architecture/TickParityHarness.md for the design.
@@ -354,7 +354,8 @@ index 0000000..41502bd
 +			"\"currentDestX\":%u,\"currentDestY\":%u,"
 +			"\"route0\":%u,\"route1\":%u,\"route2\":%u,\"route3\":%u,"
 +			"\"spriteOffset\":%d,\"fireDelay\":%u,"
-+			"\"wobbleIndex\":%u,\"blinkCounter\":%u,\"team\":%u,\"timer\":%u}",
++			"\"wobbleIndex\":%u,\"blinkCounter\":%u,\"team\":%u,\"timer\":%u,"
++			"\"scriptDelay\":%u,\"scriptPc\":%u,\"scriptSP\":%u,\"scriptFP\":%u}",
 +			(unsigned)u->o.index, (unsigned)u->o.type, (unsigned)u->o.houseID,
 +			(unsigned)u->o.position.x, (unsigned)u->o.position.y,
 +			(unsigned)u->o.hitpoints,
@@ -369,14 +370,22 @@ index 0000000..41502bd
 +			(unsigned)u->route[0], (unsigned)u->route[1], (unsigned)u->route[2], (unsigned)u->route[3],
 +			(int)u->spriteOffset, (unsigned)u->fireDelay,
 +			(unsigned)u->wobbleIndex, (unsigned)u->blinkCounter,
-+			(unsigned)u->team, (unsigned)u->timer);
++			(unsigned)u->team, (unsigned)u->timer,
++			(unsigned)u->o.script.delay,
++			(unsigned)(u->o.script.scriptInfo != NULL && u->o.script.script != NULL
++				? (uint32)(u->o.script.script - u->o.script.scriptInfo->start)
++				: 0),
++			(unsigned)u->o.script.stackPointer,
++			(unsigned)u->o.script.framePointer);
 +	}
 +	fputc(']', f);
 +}
 +
 +static void Parity_DumpTick(FILE *f, uint32 tick)
 +{
-+	fprintf(f, "{\"tick\":%u,", (unsigned)tick);
++	fprintf(f,
++		"{\"tick\":%u,\"gameSpeed\":%u,",
++		(unsigned)tick, (unsigned)g_gameConfig.gameSpeed);
 +	Parity_DumpHouses(f);
 +	Parity_DumpStructures(f);
 +	Parity_DumpUnits(f);

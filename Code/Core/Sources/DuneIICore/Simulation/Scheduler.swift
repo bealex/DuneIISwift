@@ -29,9 +29,35 @@ extension Simulation {
         private var loadedStructureType: [Int]
         private var loadedTeamAction: [Int]
 
+        /// Default per-tick opcode budget for unit EMC engines. Kept at 7
+        /// for playable gameplay cadence (our sim ticks ~12 Hz; OpenDUNE
+        /// runs 52 opcodes *every 5 game ticks*, i.e. ~10 / tick average).
+        /// The parity harness bumps this to OpenDUNE's `SCRIPT_UNIT_OPCODES_PER_TICK + 2 = 52`
+        /// via `unitOpcodesPerTick` override so tick-1 dispatch matches.
         public static let unitOpcodesPerTick = 7
         public static let structureOpcodesPerTick = 3
         public static let teamOpcodesPerTick = 5
+
+        /// Per-instance override of `unitOpcodesPerTick`. When non-nil,
+        /// `dispatch(engine:vm:budget:)` uses this instead of the static.
+        /// Used by `Simulation.ParityHarness` to match OpenDUNE's 52-opcode
+        /// burst (`SCRIPT_UNIT_OPCODES_PER_TICK + 2`, `src/script/script.h:7`).
+        public var unitOpcodeBudget: Int
+        public var structureOpcodeBudget: Int
+        public var teamOpcodeBudget: Int
+
+        /// Gating toggles for sim passes that are stopgaps for unwired
+        /// EMC paths. With real `UNIT.EMC` loaded (parity harness), these
+        /// stopgaps become counterproductive because they pre-empt the
+        /// script's own decisions. Gameplay tests keep them on (default
+        /// `true`); the parity harness flips them off.
+        ///
+        /// `tickAttackHoldEnabled`: our manual "face target + halt at
+        /// fire range" pass for ATTACK units. OpenDUNE's UNIT.EMC does
+        /// this via `Script_Unit_MoveToTarget` + `Script_Unit_Fire`; with
+        /// real EMC, our manual clear of `targetMove` inside fire range
+        /// conflicts with the script's own target tracking.
+        public var tickAttackHoldEnabled: Bool = true
         /// One harvest / refine call every N scheduler ticks. Our tick
         /// rate is ~12 Hz; OpenDUNE's `Script_Unit_Harvest` runs with
         /// `script.delay = 6` at a ~30 Hz cadence (~200 ms between
@@ -519,6 +545,52 @@ extension Simulation {
             self.loadedUnitAction = Array(repeating: -1, count: Simulation.UnitPool.capacity)
             self.loadedStructureType = Array(repeating: -1, count: Simulation.StructurePool.capacityHard)
             self.loadedTeamAction = Array(repeating: -1, count: Simulation.TeamPool.capacity)
+            self.unitOpcodeBudget = Self.unitOpcodesPerTick
+            self.structureOpcodeBudget = Self.structureOpcodesPerTick
+            self.teamOpcodeBudget = Self.teamOpcodesPerTick
+        }
+
+        /// Seeds per-entity `Scripting.Engine` state from a decoded save
+        /// file so post-load script state picks up where the save paused,
+        /// instead of getting clobbered by `VM.load(engine:typeID:)` on
+        /// the first tick. Mirrors OpenDUNE's save-load flow: the save
+        /// writes each `ScriptEngine`'s word-offset PC + stack + frame
+        /// + variables + delay; on load, `scriptInfo` gets re-attached
+        /// and execution resumes from the saved PC.
+        ///
+        /// Also seeds `loadedUnitAction / loadedStructureType /
+        /// loadedTeamAction` so the first tick's delta-check sees "no
+        /// change" and does NOT call `VM.load(...)` (which would reset
+        /// the engine we just populated).
+        ///
+        /// Safe to call once, right after `init`, before the first
+        /// `tick()`. Calling it mid-run is undefined — engines in
+        /// flight would be clobbered.
+        public mutating func seedFromSave(_ game: Formats.Save.Game) {
+            for s in game.units.slots {
+                let idx = Int(s.object.index)
+                guard idx >= 0, idx < unitEngines.count else { continue }
+                var engine = Scripting.Engine.fromSave(s.object.script)
+                // OpenDUNE `src/saveload/unit.c:84` explicitly zeroes
+                // `script.delay = 0` (and `timer = 0`) for every loaded
+                // unit after decoding the save — so the first post-load
+                // tick runs the script immediately regardless of the
+                // saved delay. Preserving the saved delay leaves GUARD
+                // units (e.g. SAVE007 u30, save-delay=11) frozen for 11
+                // ticks before `Script_Unit_FindBestTarget` fires.
+                engine.delay = 0
+                unitEngines[idx] = engine
+                loadedUnitAction[idx] = Int(s.actionID)
+            }
+            for s in game.structures.slots {
+                let idx = Int(s.object.index)
+                guard idx >= 0, idx < structureEngines.count else { continue }
+                structureEngines[idx] = .fromSave(s.object.script)
+                loadedStructureType[idx] = Int(s.object.type)
+            }
+            // TEAM chunk decoder is deferred (save-chunk TEAM decoder is
+            // queued as P6 work per Plans/01.Initial.md §6 + queued item
+            // in CurrentState.md); team engine seeding lands alongside it.
         }
 
         public mutating func tick() {
@@ -538,8 +610,9 @@ extension Simulation {
             // fire range and snap orientation toward the target so
             // the fire gate can pass. Runs before `tickMovement` so
             // any movement cleared here doesn't produce a stale step
-            // this tick.
-            tickAttackHold()
+            // this tick. Parity harness disables this — real UNIT.EMC
+            // runs the equivalent via `Script_Unit_MoveToTarget`.
+            if tickAttackHoldEnabled { tickAttackHold() }
             // Route-follower runs BEFORE script dispatch so scripts (e.g.
             // `CalculateRoute`) observe the updated position when deciding
             // whether to pop the next step or re-plan.
@@ -1426,18 +1499,19 @@ extension Simulation {
                 guard let info = Simulation.UnitInfo.lookup(slot.type) else { continue }
                 switch info.displayMode {
                 case .infantry3, .infantry4:
-                    // Only animate while actually *in motion* — an
-                    // active route step or a live currentDestination
-                    // or an outstanding targetMove. `slot.speed` alone
-                    // stays non-zero after arrival (tile-hop clamp is
-                    // set on order, not reset on stop), which left
-                    // GUARD-action infantry ticking their walk cycle
-                    // forever after finishing a move.
-                    let hasRoute = slot.route[0] != 0xFF
-                    let hasCurDest = slot.currentDestinationX != 0
-                        || slot.currentDestinationY != 0
-                    let hasTargetMove = slot.targetMove != 0
-                    guard hasRoute || hasCurDest || hasTargetMove else { continue }
+                    // OpenDUNE `src/unit.c:241`: animation advances only
+                    // when `(movementType == MOVEMENT_FOOT && u->speed != 0)
+                    // || u->o.flags.s.isSmoking`. `u->speed` is the tile-hop
+                    // clamp that `Unit_SetSpeed` writes — non-zero iff the
+                    // unit is actually mid-move. A parked HUNT trooper
+                    // with a stale `targetMove` pointing at a distant
+                    // enemy still has `speed == 0` and must NOT animate
+                    // (SAVE007 unit[25]). `isSmoking` isn't on our slots
+                    // yet; land it alongside explosion-damage flagging.
+                    guard slot.speed != 0 else { continue }
+                    // `spriteOffset < 0` is OpenDUNE's "don't animate"
+                    // marker for specific states (spawning, dying); skip.
+                    guard slot.spriteOffset >= 0 else { continue }
                     let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
                     slot.spriteOffset = Int8(bitPattern: bumped)
                     host.units[idx] = slot
@@ -1500,8 +1574,26 @@ extension Simulation {
 
                 if !hasDestination && !hasRoute && !hasTargetMove { continue }
 
+                // Track whether THIS tick populated currentDestination
+                // from `route[0]`. Only on that code path do we lock
+                // orientation to `route[0] * 32` — mid-step units with
+                // an existing currentDestination keep their own
+                // orientation (which may have been script-set
+                // independently of route, e.g. SAVE007 u36: route[0]=7
+                // (NW) but orientation=0 (N, pure-north glide)).
+                var routeStepPopulatedThisTick = false
+
                 // Populate `currentDestination` from the next route step.
-                if !hasDestination, hasRoute {
+                //
+                // OpenDUNE doesn't do this — `Unit_StartMovement`
+                // (`src/unit.c:1118`) writes `unit->currentDestination`
+                // when a script's `Script_Unit_CalculateRoute` aligns
+                // orientation + starts moving. We auto-populate here
+                // as a gameplay stopgap for when EMC wasn't wired, but
+                // it fires for parked (speed=0) units too — leaving
+                // currentDest set on a unit OpenDUNE keeps at 0.
+                // Gate on `speed != 0` so parked units stay parked.
+                if !hasDestination, hasRoute, slot.speed != 0 {
                     let delta = Pathfinder.mapDirection[Int(slot.route[0])]
                     let currentPacked = Pathfinder.packedTile(x: slot.positionX, y: slot.positionY)
                     let nextPacked = UInt16(truncatingIfNeeded: Int32(currentPacked) + delta)
@@ -1536,6 +1628,7 @@ extension Simulation {
                     }
                     slot.currentDestinationX = UInt16(tileX) &* 256 &+ 128
                     slot.currentDestinationY = UInt16(tileY) &* 256 &+ 128
+                    routeStepPopulatedThisTick = true
                     Log.debug(
                         "move-step u\(idx) picked route[0]=\(slot.route[0]) → dest=(\(tileX),\(tileY))",
                         tracer: .label("move")
@@ -1672,16 +1765,46 @@ extension Simulation {
 
                 // Orientation first: the subpixel step uses
                 // `orientation[0].current` to pick the `_stepX/_stepY`
-                // direction, so it must be set before we move. Route
-                // steps lock to `route[0] * 32` (octant midpoint);
-                // targetMove fallback computes the continuous heading.
+                // direction, so it must be set before we move.
+                //   - Route-driven step: lock to `route[0] * 32`
+                //     (octant midpoint). The pathfinder produces octant
+                //     indices; the sprite locks to those even if the
+                //     pos32 delta to `currentDestination` wouldn't
+                //     exactly match.
+                //   - targetMove fallback: recompute the continuous
+                //     heading toward the goal.
+                //   - `currentDestination` set but no route: DO NOT
+                //     touch orientation. OpenDUNE's `Unit_MovementTick`
+                //     never recomputes orientation — the script sets
+                //     it (e.g. `Unit_SetOrientation`) before any
+                //     movement tick runs. Wingers whose scripts set a
+                //     direct pos32 destination + orientation are the
+                //     load-bearing case; recomputing from pos→dest
+                //     would flip their heading 180° on a unit that's
+                //     just past the destination for a fly-through,
+                //     which was the tick-parity SAVE007 tick-1 bug
+                //     (`unit[0].positionX` drift).
                 let priorOrient = slot.orientationCurrent
-                if goalSource == "route", slot.route[0] != 0xFF {
-                    slot.orientationCurrent = Int8(bitPattern: slot.route[0] &* 32)
-                } else {
-                    let from = Pos32(x: slot.positionX, y: slot.positionY)
-                    slot.orientationCurrent = Int8(bitPattern: Pos32.direction(from: from, to: goal))
+                // Orientation recompute is gated on `speed != 0`. OpenDUNE's
+                // `Unit_MovementTick` (`src/unit.c:98`) early-returns at
+                // `speed == 0` and never touches orientation for parked
+                // units. Our fallback-slide recompute used to fire for
+                // parked HUNT troopers whose targetMove pointed at a
+                // blocked tile — the `nearestPassableNeighbor` redirect
+                // picked an adjacent tile that happens to be in the
+                // wrong direction (SAVE007 unit[25] parked east-facing,
+                // targetMove on unit 26 blocked by a refinery, redirect
+                // to a north-side neighbor → our code rotated the unit
+                // north on tick 1 while OpenDUNE kept it east).
+                if slot.speed != 0 {
+                    if routeStepPopulatedThisTick, slot.route[0] != 0xFF {
+                        slot.orientationCurrent = Int8(bitPattern: slot.route[0] &* 32)
+                    } else if goalSource == "targetMove(fallback)" {
+                        let from = Pos32(x: slot.positionX, y: slot.positionY)
+                        slot.orientationCurrent = Int8(bitPattern: Pos32.direction(from: from, to: goal))
+                    }
                 }
+                // else: keep stored orientation (script-set).
 
                 // Subpixel movement — port of OpenDUNE's
                 // `Unit_MovementTick` (`src/unit.c:98`). speed is the
@@ -1801,9 +1924,33 @@ extension Simulation {
                     // Overshoot detection: if the post-move distance
                     // to goal is >= pre-move distance, we stepped past
                     // (or at least not closer) and should snap.
+                    //
+                    // Wingers are excluded — their script routinely
+                    // sets `currentDestination` to a fly-through
+                    // point and `orientation` to something unrelated
+                    // (e.g. carryall circling a landing pad, type=0
+                    // with actionID=stop). For those, post-move
+                    // distance-to-goal can legitimately grow every
+                    // tick without "overshoot" meaning anything, and
+                    // snapping would teleport the unit onto its
+                    // destination. OpenDUNE's `Unit_Move`
+                    // (`src/unit.c:1451`) only snaps to
+                    // `currentDestination` when `ui->flags.isGroundUnit`
+                    // is true; wingers fall through to the plain
+                    // `unit->o.position = newPosition` at line 1512.
+                    // Our position-drift was tick-parity SAVE007
+                    // `unit[0]` (CARRYALL) — see
+                    // `ParityHarnessTests.saveSevenParityTickZero`.
                     let after = Pos32(x: slot.positionX, y: slot.positionY)
                     let distAfter = Int32(Pos32.distance(after, goal))
-                    if distAfter >= distBefore || distAfter <= arrivalThreshold {
+                    // Bullets / missiles (movementType=.winger but
+                    // isProjectileType=true) still snap-and-detonate
+                    // on arrival; genuine wingers (carryall,
+                    // ornithopter, frigate) don't.
+                    let mt = Simulation.UnitInfo.lookup(slot.type)?.movementType
+                    let isFlier = mt == .winger && !Self.isProjectileType(slot.type)
+                    if !isFlier,
+                       distAfter >= distBefore || distAfter <= arrivalThreshold {
                         slot.positionX = goal.x
                         slot.positionY = goal.y
                         Log.debug(
@@ -1896,7 +2043,7 @@ extension Simulation {
                 dispatch(
                     engine: &unitEngines[idx],
                     vm: unitVM,
-                    budget: Self.unitOpcodesPerTick
+                    budget: unitOpcodeBudget
                 )
                 if unitEngines[idx].halted && priorPC != unitEngines[idx].pc {
                     Log.warning(
@@ -1924,7 +2071,7 @@ extension Simulation {
                 dispatch(
                     engine: &structureEngines[idx],
                     vm: structureVM,
-                    budget: Self.structureOpcodesPerTick
+                    budget: structureOpcodeBudget
                 )
             }
         }
@@ -1947,7 +2094,7 @@ extension Simulation {
                 dispatch(
                     engine: &teamEngines[idx],
                     vm: teamVM,
-                    budget: Self.teamOpcodesPerTick
+                    budget: teamOpcodeBudget
                 )
             }
         }
