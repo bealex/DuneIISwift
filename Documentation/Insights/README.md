@@ -110,3 +110,4 @@ OpenDUNE `src/...` or dunepak `src/...` or the raw bytes of
 ### Workflow
 
 - [workflow-tdd-loop](workflow-tdd-loop.md) — write the test first, implement, update history + insight. See CLAUDE.md for the full loop.
+- [workflow-opendune-parity-rng-reseed](workflow-opendune-parity-rng-reseed.md) — OpenDUNE's `SaveGame_LoadFile` never restores RNG state, and `OpenDune_Init` seeds the LCG from `time(NULL)`; parity harnesses must re-seed both RNGs *before and after* the save load to get reproducible replays.
