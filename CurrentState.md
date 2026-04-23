@@ -11,24 +11,25 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**None — attack chain works end-to-end (trike kills enemy + leaves corpse), camera + minimap polished. Pick from "Next up".**
+**None — combat + harvester AI + camera + sidebar polish are done. Pick from "Next up".** Top candidate: HP-bar visual on world markers (task was started and paused when playtest regressions surfaced).
 
 What works now:
 - Player CY + sidebar build panel + slab / windtrap / refinery chain.
-- Harvester loop: seek → drain → dock → deposit → repeat. Parallelises across refineries; full harvester + all-refineries-busy triggers carryall ferry (spawn → fly → drop → re-dock).
+- Harvester loop: seek → drain → dock → deposit → repeat. Parallelises across refineries; full harvester + all-refineries-busy triggers carryall ferry (spawn → fly → drop → re-dock). User `H`-ordered harvest correctly loops — pin flips any non-HARVEST idle back to HARVEST.
 - Spice tiles visibly deplete (thick → thin → bare).
 - Spice-bloom walk-into: tremor explosion + radius-5 spice spread + walker dies.
-- Right-click attack: unit approaches, stops at fire range, snaps orientation to target, fires bullets → bullet arrives → explosion + HP damage → on kill, dead-body sprite from `sandDeadBodies` iconGroup persists ~20s then fades.
-- Click any unit / structure → info panel shows name / house / HP bar (correctly capped at max) / state / action.
+- Right-click attack: unit approaches (around other units, not through), stops at fire range, snaps orientation to target, fires bullets → bullet arrives → explosion + HP damage → on kill, house-coloured dead-body sprite persists ~20s then fades, attacker reverts to GUARD.
+- Click any unit / structure → info panel shows name / house / HP bar (capped at max, correct percent) / state / action.
 - Green halo around friendly selection; red halo around enemy. Blue (Atreides) structure outlines use the same code path so they sit exactly on the footprint.
-- Per-house ICN palette remap applied in both `ScreenshotRenderer` + live scene (Atreides CY renders blue).
+- Per-house ICN palette remap applied in both `ScreenshotRenderer` + live scene; corpses use `.index0Transparent` + per-house remap so they show on sand in the owner's colour.
 - Windtrap vanes render grey (palette index 223 statically resolved to target 12 — animated vanes TODO).
 - Map trim: playable rect (`g_mapInfos[mapScale]`) renders with fully-veiled border around the scenario area.
-- Camera: `mapContainer` scaled 4× by default, centred on player CYARD at load. Arrow keys pan (clamped to playable rect). `=` / `-` zoom [1..16]×.
+- Camera: scene `.resizeFill` so the window can be any size (sidebar pinned right). `mapContainer` scaled 4× by default, centred on player CYARD at load. Arrow keys pan (clamped to playable rect). `=` / `-` zoom [1..16]×.
 - Minimap cropped to playable rect + viewport overlay (white outline tracks the camera view).
 - Keyboard: Escape (deselect + unstage), Tab (cycle player units), A/M/H/R (stage action), `,` / `.` (sim speed 1..16×), `=` / `-` (zoom), arrows (pan).
-- Headless: `screenshot x y w h path`; `dump icntile / iconmap`; `stage <name>`; `fire-gate` + `damage` + `attack-hold` + `carryall` + `bloom` tracers all emit to stderr.
-- Unit sprites render at native pixel size (harvester > trike > infantry).
+- Headless: `screenshot x y w h path`; `dump icntile / iconmap / explosions`; `stage <name>`; `fire-gate` + `damage` + `attack-hold` + `carryall` + `bloom` + `harvest-pin` + `scene` tracers all emit to stderr.
+- Unit sprites render at native pixel size (harvester > trike > infantry). Units pathfind around each other.
+- Attack visuals: muzzle flash + impact dimmed to 30% alpha so they're a hint, not a clutter.
 
 Test status: **832 / 83** suites green, zero warnings. 5 golden screenshot fixtures (`Fixtures/Screenshots/`).
 
@@ -53,6 +54,12 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-22 — Harvester pin widens.** Any non-HARVEST idle harvester flips back to HARVEST so user-ordered harvests don't strand in STOP / GUARD after arrival. Test updated.
+- **2026-04-22 — Pathfind around units.** `isTilePassable` + CalculateRoute scorer treat unit-occupied tiles as blocked (OpenDUNE `Unit_GetTileEnterScore`). Mover's own tile + projectiles + wingers skip.
+- **2026-04-22 — Scene fills window.** `.resizeFill` scaleMode; sidebar pinned right via dynamic `sidebarX` / `mapAreaWidth` / `mapAreaHeight`; `didChangeSize` re-lays everything and logs.
+- **2026-04-22 — Attacker flips to default on target death.** `tickAttackHold` now reverts to `actionsPlayer[3]` (GUARD/STOP) when targetAttack's slot has been freed. Logs under `attack-hold`.
+- **2026-04-22 — Corpse transparency + per-house palette + muzzle alpha.** `corpseTexture(houseID:)` builds per-house `.index0Transparent` CGImages so corpses show on sand without the black box and render in the owner's colour. IMPACT_SMALL alpha capped at 0.3 in the per-tick recompute.
+- **2026-04-22 — Regression pair (placement + corpse).** Stale `selectedStructureIndex` short-circuit blocked placement clicks when placementType was set. `stopAtPosition` wiped corpses on follow-up bullet impacts — now skips `corpseInfantry` entries. New headless `dump explosions` verb for diagnosing.
 - **2026-04-22 — Infantry corpse + dim muzzle flash.** `ExplosionType.corpseInfantry` drops a `sandDeadBodies` sprite on infantry death (240-tick lifetime, fades in final frames). `IMPACT_SMALL` alpha lowered from 0.9 → 0.3 so muzzle flashes stop cluttering the view.
 - **2026-04-22 — Playtest batch 3.** (a) HP percent conversion (`u->hitpoints = max * percent / 256`) — no more `HP: 256/100`. (b) Camera clamped to playable rect via `clampMapPan()`. (c) Minimap cropped to playable rect. (d) Minimap viewport overlay — white outline shows camera view.
 - **2026-04-22 — Unify structure marker / halo.** `syncStructures` switched to `SKShapeNode(rect:)` with the same `screenPosition(ax, ay+dims-1)` + explicit size the halo uses — single source of truth for the footprint rect.

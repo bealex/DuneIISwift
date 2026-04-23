@@ -182,6 +182,10 @@ public final class ScenarioScene: SKScene {
         // Re-apply the camera transform (clamp bounds depend on the
         // new view size) and rebuild the sidebar / HUD so they
         // re-anchor to the right edge.
+        Log.info(
+            "scene resize \(Int(oldSize.width))×\(Int(oldSize.height))→\(Int(size.width))×\(Int(size.height)) sidebarX=\(Int(sidebarX))",
+            tracer: .label("scene")
+        )
         refreshSelectionHalo()
         refreshRallyMarker()
         refreshBuildSidebar()
@@ -819,17 +823,23 @@ public final class ScenarioScene: SKScene {
         let texture = SKTexture(cgImage: cg)
         texture.filteringMode = .nearest
 
+        // Position is recomputed every tick so a window-resize
+        // (which changes `sidebarX`) re-anchors the minimap to the
+        // new right edge. Before this, the node retained its
+        // first-mount position and drifted off the sidebar.
+        let minimapPosition = CGPoint(
+            x: sidebarX + (Self.sidebarWidth - MinimapPanel.size) / 2,
+            y: MinimapPanel.baseY
+        )
         if let node = minimapNode {
             node.texture = texture
+            node.position = minimapPosition
             return
         }
         let node = SKSpriteNode(texture: texture)
         node.anchorPoint = .zero
         node.size = CGSize(width: MinimapPanel.size, height: MinimapPanel.size)
-        node.position = CGPoint(
-            x: sidebarX + (Self.sidebarWidth - MinimapPanel.size) / 2,
-            y: MinimapPanel.baseY
-        )
+        node.position = minimapPosition
         node.zPosition = 21
         addChild(node)
         minimapNode = node
