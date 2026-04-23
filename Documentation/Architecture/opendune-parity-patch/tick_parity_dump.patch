@@ -172,10 +172,10 @@ index 3afb968..672ba6f 100644
  	if (IniFile_GetString("scalefilter", NULL, filter_text, sizeof(filter_text)) != NULL) {
 diff --git a/src/parity.c b/src/parity.c
 new file mode 100644
-index 0000000..6b6a78e
+index 0000000..2e687c6
 --- /dev/null
 +++ b/src/parity.c
-@@ -0,0 +1,277 @@
+@@ -0,0 +1,304 @@
 +/** @file src/parity.c Tick-parity golden-dump harness (patch).
 + *
 + * See Documentation/Architecture/TickParityHarness.md for the design.
@@ -229,6 +229,13 @@ index 0000000..6b6a78e
 +const char *g_parityDataDir  = NULL;
 +uint32      g_parityTicks = 0;
 +
++/* Optional per-opcode script trace (set via --parity-script-trace=<path>).
++ * Writes one line per executed opcode for the unit picked by
++ * --parity-script-unit=<idx>. Hook lives in src/script/script.c. */
++extern FILE *g_parityScriptTrace;
++extern uint16 g_parityScriptTraceUnitIndex;
++static const char *g_parityScriptTracePath = NULL;
++
 +static bool startsWith(const char *s, const char *prefix)
 +{
 +	size_t n = strlen(prefix);
@@ -251,6 +258,13 @@ index 0000000..6b6a78e
 +			g_parityMode = true;
 +		} else if (startsWith(a, "--parity-data-dir=")) {
 +			g_parityDataDir = a + strlen("--parity-data-dir=");
++			g_parityMode = true;
++		} else if (startsWith(a, "--parity-script-trace=")) {
++			g_parityScriptTracePath = a + strlen("--parity-script-trace=");
++			g_parityMode = true;
++		} else if (startsWith(a, "--parity-script-unit=")) {
++			g_parityScriptTraceUnitIndex =
++				(uint16)strtoul(a + strlen("--parity-script-unit="), NULL, 10);
 +			g_parityMode = true;
 +		}
 +	}
@@ -381,11 +395,14 @@ index 0000000..6b6a78e
 +	fputc(']', f);
 +}
 +
++extern uint16 g_viewportPosition;
++
 +static void Parity_DumpTick(FILE *f, uint32 tick)
 +{
 +	fprintf(f,
-+		"{\"tick\":%u,\"gameSpeed\":%u,",
-+		(unsigned)tick, (unsigned)g_gameConfig.gameSpeed);
++		"{\"tick\":%u,\"gameSpeed\":%u,\"viewportPosition\":%u,",
++		(unsigned)tick, (unsigned)g_gameConfig.gameSpeed,
++		(unsigned)g_viewportPosition);
 +	Parity_DumpHouses(f);
 +	Parity_DumpStructures(f);
 +	Parity_DumpUnits(f);
@@ -432,6 +449,16 @@ index 0000000..6b6a78e
 +	if (f == NULL) {
 +		fprintf(stderr, "parity: cannot open dump file %s\n", g_parityDumpPath);
 +		exit(1);
++	}
++
++	if (g_parityScriptTracePath != NULL) {
++		g_parityScriptTrace = fopen(g_parityScriptTracePath, "w");
++		if (g_parityScriptTrace == NULL) {
++			fprintf(stderr, "parity: cannot open script trace %s\n", g_parityScriptTracePath);
++			exit(1);
++		}
++		fprintf(stderr, "parity: tracing script for unit %u to %s\n",
++			(unsigned)g_parityScriptTraceUnitIndex, g_parityScriptTracePath);
 +	}
 +
 +	/* tick 0 = post-load, pre-first-tick */
@@ -501,3 +528,58 @@ index 0000000..4c4bed9
 +extern void Parity_Run(void);
 +
 +#endif /* PARITY_H */
+diff --git a/src/script/script.c b/src/script/script.c
+index cbf89ed..5ba342a 100644
+--- a/src/script/script.c
++++ b/src/script/script.c
+@@ -14,6 +14,13 @@
+ 
+ #include "../file.h"
+ #include "../object.h"
++#include "../unit.h"
++
++/* Parity-harness script trace. When non-NULL, every Script_Run call
++ * on the selected unit writes a one-line entry to this file — used to
++ * diff bit-exactly against our Swift VM. Set via Parity_Run. */
++FILE *g_parityScriptTrace = NULL;
++uint16 g_parityScriptTraceUnitIndex = 0xFFFF;
+ 
+ struct Object *g_scriptCurrentObject;
+ struct Structure *g_scriptCurrentStructure;
+@@ -316,10 +323,19 @@ bool Script_Run(ScriptEngine *script)
+ 	ScriptInfo *scriptInfo;
+ 	uint16 current, parameter;
+ 	uint8 opcode;
++	uint32 tracePc = 0;
++	bool traceThis = false;
+ 
+ 	if (!Script_IsLoaded(script)) return false;
+ 	scriptInfo = script->scriptInfo;
+ 
++	if (g_parityScriptTrace != NULL
++	    && g_scriptCurrentUnit != NULL
++	    && g_scriptCurrentUnit->o.index == g_parityScriptTraceUnitIndex) {
++		traceThis = true;
++		tracePc = (uint32)(script->script - scriptInfo->start);
++	}
++
+ 	current = BETOH16(*script->script);
+ 	script->script++;
+ 
+@@ -339,6 +355,16 @@ bool Script_Run(ScriptEngine *script)
+ 		script->script++;
+ 	}
+ 
++	if (traceThis) {
++		fprintf(g_parityScriptTrace,
++			"pc=%u op=%u param=%d delay=%u SP=%u FP=%u return=%u current=0x%04x\n",
++			(unsigned)tracePc, (unsigned)opcode, (int)(int16)parameter,
++			(unsigned)script->delay, (unsigned)script->stackPointer,
++			(unsigned)script->framePointer, (unsigned)script->returnValue,
++			(unsigned)current);
++		fflush(g_parityScriptTrace);
++	}
++
+ 	switch (opcode) {
+ 		case SCRIPT_JUMP: {
+ 			script->script = scriptInfo->start + parameter;

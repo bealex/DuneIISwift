@@ -58,6 +58,33 @@ extension Simulation {
         /// real EMC, our manual clear of `targetMove` inside fire range
         /// conflicts with the script's own target tracking.
         public var tickAttackHoldEnabled: Bool = true
+
+        /// `offViewportSlowdownEnabled`: emulates OpenDUNE's off-viewport
+        /// 3-opcode cap on unit scripts (`src/unit.c:292..294`). When
+        /// true, units whose type has `scriptNoSlowdown == false` AND
+        /// that fall outside `viewportPackedPosition`'s visible rect
+        /// get `min(unitOpcodeBudget, 3)` opcodes per tick. Enabled by
+        /// the parity harness; off for gameplay (our SpriteKit scene
+        /// has its own camera state).
+        public var offViewportSlowdownEnabled: Bool = false
+
+        /// Packed 12-bit tile (y*64+x) of the viewport's top-left tile,
+        /// mirroring OpenDUNE's `g_viewportPosition`. Consumed by
+        /// `offViewportSlowdownEnabled` via `isInViewport(pos32X:pos32Y:)`.
+        /// Loaded from `save.info.minimapPosition` when available.
+        public var viewportPackedPosition: UInt16 = 0
+
+        /// Port of `Map_IsPositionInViewport` (`src/map.c:363`). The
+        /// viewport shows ~16 tiles wide × 11 tall (in 1/16-tile units:
+        /// x ∈ [-16, 256], y ∈ [-16, 176]) starting at the packed
+        /// tile origin.
+        public func isInViewport(pos32X: UInt16, pos32Y: UInt16) -> Bool {
+            let vx = Int32(viewportPackedPosition & 0x3F) &<< 4
+            let vy = Int32((viewportPackedPosition &>> 6) & 0x3F) &<< 4
+            let x = Int32(pos32X &>> 4) - vx
+            let y = Int32(pos32Y &>> 4) - vy
+            return x >= -16 && x <= 256 && y >= -16 && y <= 176
+        }
         /// One harvest / refine call every N scheduler ticks. Our tick
         /// rate is ~12 Hz; OpenDUNE's `Script_Unit_Harvest` runs with
         /// `script.delay = 6` at a ~30 Hz cadence (~200 ms between
@@ -2040,10 +2067,26 @@ extension Simulation {
                     loadedUnitAction[idx] = action
                 }
                 let priorPC = unitEngines[idx].pc
+                // Per-unit budget for OpenDUNE parity (`src/unit.c:292..294`):
+                //   if scriptNoSlowdown == true OR unit is in viewport:
+                //       opcodesLeft = SCRIPT_UNIT_OPCODES_PER_TICK + 2 = 52
+                //   else:
+                //       opcodesLeft = 3
+                // `unitOpcodeBudget` is the global cap (default 7 for
+                // gameplay, 52 for the parity harness). The per-unit
+                // slowdown only engages when the harness enables it.
+                let budget: Int
+                if offViewportSlowdownEnabled,
+                   !Simulation.UnitInfo.scriptNoSlowdown(type: slot.type),
+                   !isInViewport(pos32X: slot.positionX, pos32Y: slot.positionY) {
+                    budget = min(unitOpcodeBudget, 3)
+                } else {
+                    budget = unitOpcodeBudget
+                }
                 dispatch(
                     engine: &unitEngines[idx],
                     vm: unitVM,
-                    budget: unitOpcodeBudget
+                    budget: budget
                 )
                 if unitEngines[idx].halted && priorPC != unitEngines[idx].pc {
                     Log.warning(

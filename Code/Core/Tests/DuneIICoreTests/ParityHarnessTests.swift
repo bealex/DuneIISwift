@@ -11,8 +11,8 @@ struct ParityHarnessTests {
     @Test("parseGolden decodes a 2-line dump with all field names")
     func parseGoldenHappy() throws {
         let body = """
-        {"tick":0,"gameSpeed":2,"houses":[],"structures":[],"units":[]}
-        {"tick":1,"gameSpeed":2,"houses":[{"index":0,"credits":100,"creditsStorage":1000,"creditsQuota":0,"powerProduction":0,"powerUsage":0,"unitCount":0,"unitCountMax":0,"harvestersIncoming":0,"starportTimeLeft":0,"starportLinkedID":65535}],"structures":[],"units":[]}
+        {"tick":0,"gameSpeed":2,"viewportPosition":0,"houses":[],"structures":[],"units":[]}
+        {"tick":1,"gameSpeed":2,"viewportPosition":0,"houses":[{"index":0,"credits":100,"creditsStorage":1000,"creditsQuota":0,"powerProduction":0,"powerUsage":0,"unitCount":0,"unitCountMax":0,"harvestersIncoming":0,"starportTimeLeft":0,"starportLinkedID":65535}],"structures":[],"units":[]}
         """
         let ticks = try Simulation.ParityHarness.parseGolden(Data(body.utf8))
         #expect(ticks.count == 2)
@@ -24,8 +24,8 @@ struct ParityHarnessTests {
     @Test("parseGolden rejects malformed JSON with line index")
     func parseGoldenMalformed() {
         let body = """
-        {"tick":0,"gameSpeed":2,"houses":[],"structures":[],"units":[]}
-        {"tick":1,"gameSpeed":2,"houses":[
+        {"tick":0,"gameSpeed":2,"viewportPosition":0,"houses":[],"structures":[],"units":[]}
+        {"tick":1,"gameSpeed":2,"viewportPosition":0,"houses":[
         """
         do {
             _ = try Simulation.ParityHarness.parseGolden(Data(body.utf8))
@@ -209,5 +209,37 @@ struct ParityHarnessTests {
             .appendingPathComponent("Fixtures", isDirectory: true)
             .appendingPathComponent("ParityGoldens", isDirectory: true)
             .appendingPathComponent(name)
+    }
+}
+
+extension ParityHarnessTests {
+    @Test("debug: trace Swift VM for u37 on tick 1")
+    @MainActor
+    func debugSwiftTraceU37() throws {
+        guard let root = TestInstall.locate() else { return }
+        let install = try Installation(rootDirectory: root)
+        let assets = try AssetLoader(installation: install)
+        let game = try Formats.Save.Game.decode(try Data(contentsOf: root.appendingPathComponent("_SAVE007.DAT")))
+        let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: Map.empty())
+        let unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+        let host = Scripting.Host(units: snapshot.units, structures: snapshot.structures,
+            explosions: Simulation.ExplosionPool(), teams: snapshot.teams, houses: snapshot.houses,
+            currentObject: nil, texts: [], textLog: [])
+        let source = Scripting.RandomSource(lcgSeed: 0, toolsSeed: 0)
+        var unitVM = Scripting.VM(program: unitProgram, functions: Scripting.Functions.unitTable(host: host, source: source))
+        unitVM.trace = { pc, opcode, parameter, engine in
+            // Only log the u37 opcodes by inspecting currentObject.
+            if case .unit(let idx) = host.currentObject, idx == 37 {
+                print("SWIFT pc=\(pc) op=\(opcode) param=\(parameter) delay=\(engine.delay) SP=\(engine.stackPointer) FP=\(engine.framePointer) return=\(engine.returnValue)")
+            }
+        }
+        var scheduler = Simulation.Scheduler(host: host, unitVM: unitVM, structureVM: unitVM)
+        scheduler.unitOpcodeBudget = 52
+        scheduler.tickAttackHoldEnabled = false
+        scheduler.gameSpeed = 4
+        scheduler.seedFromSave(game)
+        print("SWIFT PRE u37: pc=\(scheduler.unitEngines[37].pc) delay=\(scheduler.unitEngines[37].delay) SP=\(scheduler.unitEngines[37].stackPointer) FP=\(scheduler.unitEngines[37].framePointer) return=\(scheduler.unitEngines[37].returnValue)")
+        scheduler.tick()
+        print("SWIFT POST u37: pc=\(scheduler.unitEngines[37].pc)")
     }
 }
