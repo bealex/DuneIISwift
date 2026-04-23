@@ -889,34 +889,34 @@ public final class ScenarioScene: SKScene {
                 continue
             }
             let dims = Simulation.StructureInfo.lookup(slot.type)?.layout.dimensions ?? (2, 2)
-            let marker: SKShapeNode
-            if let existing = structureMarkers[idx] {
-                marker = existing
-                marker.isHidden = false
-            } else {
-                marker = SKShapeNode(rectOf: CGSize(
-                    width: Self.tileSize * CGFloat(dims.0),
-                    height: Self.tileSize * CGFloat(dims.1)
-                ))
-                marker.fillColor = .clear
-                marker.lineWidth = 1
-                marker.zPosition = 1
-                mapContainer.addChild(marker)
-                structureMarkers[idx] = marker
-            }
-            marker.strokeColor = houseColorFor(houseID: slot.houseID).withAlphaComponent(0.8)
-            // Footprint centre in pos32 = anchor + dims * 128. The
-            // marker is an SKShapeNode(rectOf:) which centres its
-            // rect on position, so we feed it the footprint midpoint.
-            // (Earlier code used `(dims - 1) * 128` — the centre of
-            // the top-left tile — shifting the outline half a tile
-            // up-left from the actual footprint.)
-            let centeredX = Int32(slot.positionX) + Int32(dims.0) * 128
-            let centeredY = Int32(slot.positionY) + Int32(dims.1) * 128
-            marker.position = screenPositionPos32(
-                x: UInt16(clamping: centeredX),
-                y: UInt16(clamping: centeredY)
+            // Compute the footprint rect in scene coords using the
+            // exact same math as `refreshSelectionHalo` — origin is
+            // the bottom-left tile of the footprint, width/height
+            // scale with `dims`. Replacing the older
+            // `SKShapeNode(rectOf:)` + centered-position approach
+            // because it was producing a visibly offset outline on
+            // live renders despite matching in headless screenshots.
+            // Single-code-path removes the "two formulas must agree"
+            // assumption.
+            let ax = Int(slot.positionX) / 256
+            let ay = Int(slot.positionY) / 256
+            let origin = screenPosition(x: ax, y: ay + dims.1 - 1)
+            let rect = CGRect(
+                x: origin.x, y: origin.y,
+                width: CGFloat(dims.0) * Self.tileSize,
+                height: CGFloat(dims.1) * Self.tileSize
             )
+            // Re-create the shape whenever its rect changes so the
+            // node's path stays in lock-step with the computed rect.
+            // Cheap — there's one marker per structure.
+            structureMarkers[idx]?.removeFromParent()
+            let marker = SKShapeNode(rect: rect)
+            marker.fillColor = .clear
+            marker.lineWidth = 1
+            marker.zPosition = 1
+            marker.strokeColor = houseColorFor(houseID: slot.houseID).withAlphaComponent(0.8)
+            mapContainer.addChild(marker)
+            structureMarkers[idx] = marker
         }
     }
 
