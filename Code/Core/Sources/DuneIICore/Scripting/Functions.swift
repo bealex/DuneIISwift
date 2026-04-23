@@ -380,20 +380,23 @@ extension Scripting {
                     return 0
                 }
                 updated.targetAttack = raw
-                if let tgt = Pos32.of(encoded, host: host) {
-                    let from = Pos32(x: slot.positionX, y: slot.positionY)
-                    let orientation = Pos32.direction(from: from, to: tgt)
-                    let hasTurret = Simulation.UnitInfo.lookup(slot.type)?.hasTurret ?? false
-                    if !hasTurret {
-                        updated.targetMove = raw
-                        updated.orientationCurrent = Int8(bitPattern: orientation)
-                    } else {
-                        // Turreted: leave targetMove alone, rotate the
-                        // turret (level 1). We don't yet track a separate
-                        // turret orientation, so approximate by keeping
-                        // body orientation steady when turreted — still
-                        // better than rotating the body at the target.
-                    }
+                let hasTurret = Simulation.UnitInfo.lookup(slot.type)?.hasTurret ?? false
+                if !hasTurret {
+                    // Non-turreted: the unit walks toward its target.
+                    // OpenDUNE also calls `Unit_SetOrientation(u, dir,
+                    // rotateInstantly=false, 0)` which writes
+                    // `orientation[0].target + .speed` for gradual
+                    // rotation — we don't yet track target/speed
+                    // separately (see Swift-side gaps in
+                    // `Simulation.ParityHarness.compareUnit` skip-list).
+                    // Writing `orientationCurrent` directly would flip
+                    // the body instantly in one tick instead of rotating
+                    // gradually; parity diverges either way on
+                    // `orientation0Current` vs `orientation0Target`, but
+                    // leaving body orientation alone matches the
+                    // `orientation0Current` golden (which stays at its
+                    // save-loaded value until `tickRotation` lands).
+                    updated.targetMove = raw
                 }
                 host.units[poolIndex] = updated
                 return raw

@@ -570,7 +570,16 @@ extension Simulation {
             for s in game.units.slots {
                 let idx = Int(s.object.index)
                 guard idx >= 0, idx < unitEngines.count else { continue }
-                unitEngines[idx] = .fromSave(s.object.script)
+                var engine = Scripting.Engine.fromSave(s.object.script)
+                // OpenDUNE `src/saveload/unit.c:84` explicitly zeroes
+                // `script.delay = 0` (and `timer = 0`) for every loaded
+                // unit after decoding the save — so the first post-load
+                // tick runs the script immediately regardless of the
+                // saved delay. Preserving the saved delay leaves GUARD
+                // units (e.g. SAVE007 u30, save-delay=11) frozen for 11
+                // ticks before `Script_Unit_FindBestTarget` fires.
+                engine.delay = 0
+                unitEngines[idx] = engine
                 loadedUnitAction[idx] = Int(s.actionID)
             }
             for s in game.structures.slots {

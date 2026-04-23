@@ -27,6 +27,14 @@ extension Simulation {
     /// `unitCountMax`, `harvestersIncoming`) are present in the golden but
     /// currently skipped by the diff. They land on the Swift side as we
     /// close gaps; each addition flips its `skip` entry into a comparison.
+    ///
+    /// Script-engine state (`scriptDelay`, `scriptPc`, `scriptSP`, `scriptFP`)
+    /// is dumped in the golden but diffed selectively: `scriptDelay` is
+    /// compared (small, stable, uncovered drift surfaces fast); `scriptPc`
+    /// and the stack pointers are NOT compared yet because the same
+    /// observable pool state can be reached via slightly different script
+    /// paths and PC-level parity is strictly stronger than we currently
+    /// need.
     public enum ParityHarness {
         /// First divergence found. Halts the run.
         public struct Divergence: Error, Equatable, CustomStringConvertible {
@@ -228,6 +236,10 @@ extension Simulation {
             let blinkCounter: UInt8
             let team: UInt8
             let timer: UInt16
+            let scriptDelay: UInt16
+            let scriptPc: UInt32
+            let scriptSP: UInt8
+            let scriptFP: UInt8
         }
 
         // MARK: - Diff
