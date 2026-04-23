@@ -29,9 +29,22 @@ extension Simulation {
         private var loadedStructureType: [Int]
         private var loadedTeamAction: [Int]
 
+        /// Default per-tick opcode budget for unit EMC engines. Kept at 7
+        /// for playable gameplay cadence (our sim ticks ~12 Hz; OpenDUNE
+        /// runs 52 opcodes *every 5 game ticks*, i.e. ~10 / tick average).
+        /// The parity harness bumps this to OpenDUNE's `SCRIPT_UNIT_OPCODES_PER_TICK + 2 = 52`
+        /// via `unitOpcodesPerTick` override so tick-1 dispatch matches.
         public static let unitOpcodesPerTick = 7
         public static let structureOpcodesPerTick = 3
         public static let teamOpcodesPerTick = 5
+
+        /// Per-instance override of `unitOpcodesPerTick`. When non-nil,
+        /// `dispatch(engine:vm:budget:)` uses this instead of the static.
+        /// Used by `Simulation.ParityHarness` to match OpenDUNE's 52-opcode
+        /// burst (`SCRIPT_UNIT_OPCODES_PER_TICK + 2`, `src/script/script.h:7`).
+        public var unitOpcodeBudget: Int
+        public var structureOpcodeBudget: Int
+        public var teamOpcodeBudget: Int
         /// One harvest / refine call every N scheduler ticks. Our tick
         /// rate is ~12 Hz; OpenDUNE's `Script_Unit_Harvest` runs with
         /// `script.delay = 6` at a ~30 Hz cadence (~200 ms between
@@ -519,6 +532,43 @@ extension Simulation {
             self.loadedUnitAction = Array(repeating: -1, count: Simulation.UnitPool.capacity)
             self.loadedStructureType = Array(repeating: -1, count: Simulation.StructurePool.capacityHard)
             self.loadedTeamAction = Array(repeating: -1, count: Simulation.TeamPool.capacity)
+            self.unitOpcodeBudget = Self.unitOpcodesPerTick
+            self.structureOpcodeBudget = Self.structureOpcodesPerTick
+            self.teamOpcodeBudget = Self.teamOpcodesPerTick
+        }
+
+        /// Seeds per-entity `Scripting.Engine` state from a decoded save
+        /// file so post-load script state picks up where the save paused,
+        /// instead of getting clobbered by `VM.load(engine:typeID:)` on
+        /// the first tick. Mirrors OpenDUNE's save-load flow: the save
+        /// writes each `ScriptEngine`'s word-offset PC + stack + frame
+        /// + variables + delay; on load, `scriptInfo` gets re-attached
+        /// and execution resumes from the saved PC.
+        ///
+        /// Also seeds `loadedUnitAction / loadedStructureType /
+        /// loadedTeamAction` so the first tick's delta-check sees "no
+        /// change" and does NOT call `VM.load(...)` (which would reset
+        /// the engine we just populated).
+        ///
+        /// Safe to call once, right after `init`, before the first
+        /// `tick()`. Calling it mid-run is undefined — engines in
+        /// flight would be clobbered.
+        public mutating func seedFromSave(_ game: Formats.Save.Game) {
+            for s in game.units.slots {
+                let idx = Int(s.object.index)
+                guard idx >= 0, idx < unitEngines.count else { continue }
+                unitEngines[idx] = .fromSave(s.object.script)
+                loadedUnitAction[idx] = Int(s.actionID)
+            }
+            for s in game.structures.slots {
+                let idx = Int(s.object.index)
+                guard idx >= 0, idx < structureEngines.count else { continue }
+                structureEngines[idx] = .fromSave(s.object.script)
+                loadedStructureType[idx] = Int(s.object.type)
+            }
+            // TEAM chunk decoder is deferred (save-chunk TEAM decoder is
+            // queued as P6 work per Plans/01.Initial.md §6 + queued item
+            // in CurrentState.md); team engine seeding lands alongside it.
         }
 
         public mutating func tick() {
@@ -1937,7 +1987,7 @@ extension Simulation {
                 dispatch(
                     engine: &unitEngines[idx],
                     vm: unitVM,
-                    budget: Self.unitOpcodesPerTick
+                    budget: unitOpcodeBudget
                 )
                 if unitEngines[idx].halted && priorPC != unitEngines[idx].pc {
                     Log.warning(
@@ -1965,7 +2015,7 @@ extension Simulation {
                 dispatch(
                     engine: &structureEngines[idx],
                     vm: structureVM,
-                    budget: Self.structureOpcodesPerTick
+                    budget: structureOpcodeBudget
                 )
             }
         }
@@ -1988,7 +2038,7 @@ extension Simulation {
                 dispatch(
                     engine: &teamEngines[idx],
                     vm: teamVM,
-                    budget: Self.teamOpcodesPerTick
+                    budget: teamOpcodeBudget
                 )
             }
         }

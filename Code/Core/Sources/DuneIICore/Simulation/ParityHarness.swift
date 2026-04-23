@@ -66,7 +66,8 @@ extension Simulation {
             unitProgram: Formats.Emc.Program = .empty,
             structureProgram: Formats.Emc.Program = .empty,
             teamProgram: Formats.Emc.Program = .empty,
-            rngSeed: UInt32 = 0
+            rngSeed: UInt32 = 0,
+            seedScriptsFrom game: Formats.Save.Game? = nil
         ) throws {
             let goldenTicks = try parseGolden(golden)
             guard !goldenTicks.isEmpty else { throw ParseError.goldenEmpty }
@@ -104,6 +105,17 @@ extension Simulation {
                 teamVM: teamVM,
                 harvestRNG: { source.tools.next() }
             )
+            // OpenDUNE's per-tick opcode budget: `SCRIPT_UNIT_OPCODES_PER_TICK + 2`
+            // (= 52, `src/unit.c:292` + `src/script/script.h:7`). Our
+            // gameplay default is 7 — parity needs the real budget so
+            // scripts reach the same opcodes per tick (e.g. the carryall's
+            // `Script_Unit_SetSpeed(u, 255)` call that bumps movingSpeed).
+            scheduler.unitOpcodeBudget = 52
+            scheduler.structureOpcodeBudget = 52
+            scheduler.teamOpcodeBudget = 52
+            if let game = game {
+                scheduler.seedFromSave(game)
+            }
 
             Log.debug("parity: \(goldenTicks.count) golden ticks loaded; tickLimit=\(tickLimit)",
                       tracer: .label("parity"))
