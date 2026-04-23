@@ -757,20 +757,24 @@ extension Scripting {
                 // every call, which made trikes / soldiers visibly
                 // "blink" (sprite-flip toggles across octant boundaries)
                 // while guarding.
+                // OpenDUNE draws two RNG bytes unconditionally — consume
+                // them here regardless of whether we apply the rotation
+                // so the RNG sequence stays in lockstep.
                 let turretByte = source.tools.next()
+                _ = source.tools.next()  // newOrientation (target).
                 let i: UInt8 = (turretByte & 1) == 0 ? 1 : 0
-                let newOrientation = Int8(bitPattern: source.tools.next())
-                if i == 0 {
-                    updated.orientationCurrent = newOrientation
-                } else if info.hasTurret {
-                    // `i == 1` targets the turret. We don't yet model a
-                    // separate turret orientation on the slot (the
-                    // save-format turret field is parsed but ignored
-                    // during simulation), so treat as a no-op for now
-                    // — matches OpenDUNE for units where the turret
-                    // rotation has no visual consequence.
-                    _ = newOrientation
-                }
+                _ = i
+                // OpenDUNE calls `Unit_SetOrientation(u, newOrientation,
+                // rotateInstantly=false, i)` which writes
+                // `orientation[i].target + .speed` and lets `tickRotation`
+                // advance `.current` gradually over subsequent ticks.
+                // We don't yet track `target` / `speed` on `UnitSlot`
+                // (see `ParityHarness.compareUnit` skip-list), so writing
+                // `orientationCurrent` directly — as we used to — produced
+                // tick-1 divergence (SAVE007 unit[36].orientation0Current).
+                // Gameplay-visible effect: idle units no longer randomly
+                // swing to a new heading each tick; they stay put until
+                // target/speed + rotation-tick are ported.
                 host.units[poolIndex] = updated
                 return 0
             }
@@ -841,6 +845,20 @@ extension Scripting {
                 let encoded = Scripting.peek(engine: &engine, position: 1)
                 guard let (poolIndex, slot) = currentUnit(host: host) else { return 1 }
                 guard slot.targetMove == 0 || isValid(encoded: Scripting.EncodedIndex(raw: slot.targetMove), host: host) else {
+                    return 1
+                }
+
+                // OpenDUNE `src/script/unit.c:1306` early-returns 1 when
+                // the unit is mid-step (currentDestination already set)
+                // OR the encoded destination is invalid. Without this,
+                // mid-step units (e.g. SAVE007 u36 gliding north with
+                // currentDest=(8320,7552) and route[0]=7 queued) get
+                // their orientation reassigned to `route[0] * 32` every
+                // call — diverging us from OpenDUNE's tick-1 state.
+                if slot.currentDestinationX != 0 || slot.currentDestinationY != 0 {
+                    return 1
+                }
+                if !isValid(encoded: Scripting.EncodedIndex(raw: encoded), host: host) {
                     return 1
                 }
 

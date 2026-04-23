@@ -1574,8 +1574,26 @@ extension Simulation {
 
                 if !hasDestination && !hasRoute && !hasTargetMove { continue }
 
+                // Track whether THIS tick populated currentDestination
+                // from `route[0]`. Only on that code path do we lock
+                // orientation to `route[0] * 32` — mid-step units with
+                // an existing currentDestination keep their own
+                // orientation (which may have been script-set
+                // independently of route, e.g. SAVE007 u36: route[0]=7
+                // (NW) but orientation=0 (N, pure-north glide)).
+                var routeStepPopulatedThisTick = false
+
                 // Populate `currentDestination` from the next route step.
-                if !hasDestination, hasRoute {
+                //
+                // OpenDUNE doesn't do this — `Unit_StartMovement`
+                // (`src/unit.c:1118`) writes `unit->currentDestination`
+                // when a script's `Script_Unit_CalculateRoute` aligns
+                // orientation + starts moving. We auto-populate here
+                // as a gameplay stopgap for when EMC wasn't wired, but
+                // it fires for parked (speed=0) units too — leaving
+                // currentDest set on a unit OpenDUNE keeps at 0.
+                // Gate on `speed != 0` so parked units stay parked.
+                if !hasDestination, hasRoute, slot.speed != 0 {
                     let delta = Pathfinder.mapDirection[Int(slot.route[0])]
                     let currentPacked = Pathfinder.packedTile(x: slot.positionX, y: slot.positionY)
                     let nextPacked = UInt16(truncatingIfNeeded: Int32(currentPacked) + delta)
@@ -1610,6 +1628,7 @@ extension Simulation {
                     }
                     slot.currentDestinationX = UInt16(tileX) &* 256 &+ 128
                     slot.currentDestinationY = UInt16(tileY) &* 256 &+ 128
+                    routeStepPopulatedThisTick = true
                     Log.debug(
                         "move-step u\(idx) picked route[0]=\(slot.route[0]) → dest=(\(tileX),\(tileY))",
                         tracer: .label("move")
@@ -1778,7 +1797,7 @@ extension Simulation {
                 // to a north-side neighbor → our code rotated the unit
                 // north on tick 1 while OpenDUNE kept it east).
                 if slot.speed != 0 {
-                    if goalSource == "route", slot.route[0] != 0xFF {
+                    if routeStepPopulatedThisTick, slot.route[0] != 0xFF {
                         slot.orientationCurrent = Int8(bitPattern: slot.route[0] &* 32)
                     } else if goalSource == "targetMove(fallback)" {
                         let from = Pos32(x: slot.positionX, y: slot.positionY)

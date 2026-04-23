@@ -11,8 +11,8 @@ struct ParityHarnessTests {
     @Test("parseGolden decodes a 2-line dump with all field names")
     func parseGoldenHappy() throws {
         let body = """
-        {"tick":0,"houses":[],"structures":[],"units":[]}
-        {"tick":1,"houses":[{"index":0,"credits":100,"creditsStorage":1000,"creditsQuota":0,"powerProduction":0,"powerUsage":0,"unitCount":0,"unitCountMax":0,"harvestersIncoming":0,"starportTimeLeft":0,"starportLinkedID":65535}],"structures":[],"units":[]}
+        {"tick":0,"gameSpeed":2,"houses":[],"structures":[],"units":[]}
+        {"tick":1,"gameSpeed":2,"houses":[{"index":0,"credits":100,"creditsStorage":1000,"creditsQuota":0,"powerProduction":0,"powerUsage":0,"unitCount":0,"unitCountMax":0,"harvestersIncoming":0,"starportTimeLeft":0,"starportLinkedID":65535}],"structures":[],"units":[]}
         """
         let ticks = try Simulation.ParityHarness.parseGolden(Data(body.utf8))
         #expect(ticks.count == 2)
@@ -24,8 +24,8 @@ struct ParityHarnessTests {
     @Test("parseGolden rejects malformed JSON with line index")
     func parseGoldenMalformed() {
         let body = """
-        {"tick":0,"houses":[],"structures":[],"units":[]}
-        {"tick":1,"houses":[
+        {"tick":0,"gameSpeed":2,"houses":[],"structures":[],"units":[]}
+        {"tick":1,"gameSpeed":2,"houses":[
         """
         do {
             _ = try Simulation.ParityHarness.parseGolden(Data(body.utf8))

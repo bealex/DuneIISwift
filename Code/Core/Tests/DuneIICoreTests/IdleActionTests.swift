@@ -37,13 +37,14 @@ struct IdleActionTests {
         }
     }
 
-    @Test("IdleAction can randomise orientation on a tracked unit when random roll ≤ 2")
-    func tankRotation() throws {
-        // Find a seed where the LCG's first range(0..10) draw is ≤ 2.
-        // Rather than searching the seed space, pin behaviour against a
-        // stream we pre-roll: we need `lcg.range(0,10) ≤ 2` on the first
-        // call. The LCG is deterministic — seed 0x1234 produces 5 first;
-        // exhaustively try a handful.
+    @Test("IdleAction consumes 2 RNG bytes on the rotation branch even though orientation stays put")
+    func tankRotationConsumesRNG() throws {
+        // OpenDUNE's `Unit_SetOrientation(u, randomByte, rotateInstantly=false, i)`
+        // writes `orientation[i].target + .speed`, not `.current` — rotation
+        // applies gradually via `tickRotation`. We don't track target/speed
+        // on `UnitSlot` yet, so this IdleAction branch is a RNG-consuming
+        // no-op for now: two tools bytes drawn (turret-index selector +
+        // new target orientation), `orientationCurrent` unchanged.
         var seed: UInt16 = 0
         for candidate in 0..<10 {
             var lcg = RNG.BorlandLCG(seed: UInt16(candidate))
@@ -66,9 +67,8 @@ struct IdleActionTests {
         )
         var engine = Scripting.Engine.reset()
         _ = vm.step(&engine)
-        // Orientation must have moved off zero (matches the port's
-        // `Unit_SetOrientation(Tools_Random_256())` path).
-        #expect(host.units[0].orientationCurrent != 0)
+        // Orientation unchanged: we don't write current without target/speed.
+        #expect(host.units[0].orientationCurrent == 0)
     }
 
     @Test("IdleAction nudges spriteOffset on a foot unit when random > 8")

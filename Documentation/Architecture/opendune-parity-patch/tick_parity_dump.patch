@@ -172,10 +172,10 @@ index 3afb968..672ba6f 100644
  	if (IniFile_GetString("scalefilter", NULL, filter_text, sizeof(filter_text)) != NULL) {
 diff --git a/src/parity.c b/src/parity.c
 new file mode 100644
-index 0000000..8bda51f
+index 0000000..6b6a78e
 --- /dev/null
 +++ b/src/parity.c
-@@ -0,0 +1,275 @@
+@@ -0,0 +1,277 @@
 +/** @file src/parity.c Tick-parity golden-dump harness (patch).
 + *
 + * See Documentation/Architecture/TickParityHarness.md for the design.
@@ -383,7 +383,9 @@ index 0000000..8bda51f
 +
 +static void Parity_DumpTick(FILE *f, uint32 tick)
 +{
-+	fprintf(f, "{\"tick\":%u,", (unsigned)tick);
++	fprintf(f,
++		"{\"tick\":%u,\"gameSpeed\":%u,",
++		(unsigned)tick, (unsigned)g_gameConfig.gameSpeed);
 +	Parity_DumpHouses(f);
 +	Parity_DumpStructures(f);
 +	Parity_DumpUnits(f);

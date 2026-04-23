@@ -113,6 +113,12 @@ extension Simulation {
                 teamVM: teamVM,
                 harvestRNG: { source.tools.next() }
             )
+            // OpenDUNE loads `g_gameConfig.gameSpeed` from OPTIONS.CFG
+            // on startup; our install has it pinned at 4 (Fastest), but
+            // any save's golden will dump its own value. Read from the
+            // golden's tick-0 entry so `Tools_AdjustToGameSpeed` scales
+            // `speedPerTick` increments the same way OpenDUNE did.
+            scheduler.gameSpeed = goldenTicks[0].gameSpeed
             // OpenDUNE's per-tick opcode budget: `SCRIPT_UNIT_OPCODES_PER_TICK + 2`
             // (= 52, `src/unit.c:292` + `src/script/script.h:7`). Our
             // gameplay default is 7 — parity needs the real budget so
@@ -165,6 +171,11 @@ extension Simulation {
 
         struct GoldenTick: Decodable, Equatable {
             let tick: Int
+            /// OpenDUNE's `g_gameConfig.gameSpeed` at dump time — loaded
+            /// from OPTIONS.CFG (0..4, where 2=Normal and 4=Fastest).
+            /// `Tools_AdjustToGameSpeed` uses this to scale `speedPerTick`
+            /// increments, so our `Scheduler.gameSpeed` must match.
+            let gameSpeed: UInt8
             let houses: [GoldenHouse]
             let structures: [GoldenStructure]
             let units: [GoldenUnit]
