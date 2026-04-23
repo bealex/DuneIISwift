@@ -1742,11 +1742,24 @@ extension Simulation {
                 //     which was the tick-parity SAVE007 tick-1 bug
                 //     (`unit[0].positionX` drift).
                 let priorOrient = slot.orientationCurrent
-                if goalSource == "route", slot.route[0] != 0xFF {
-                    slot.orientationCurrent = Int8(bitPattern: slot.route[0] &* 32)
-                } else if goalSource == "targetMove(fallback)" {
-                    let from = Pos32(x: slot.positionX, y: slot.positionY)
-                    slot.orientationCurrent = Int8(bitPattern: Pos32.direction(from: from, to: goal))
+                // Orientation recompute is gated on `speed != 0`. OpenDUNE's
+                // `Unit_MovementTick` (`src/unit.c:98`) early-returns at
+                // `speed == 0` and never touches orientation for parked
+                // units. Our fallback-slide recompute used to fire for
+                // parked HUNT troopers whose targetMove pointed at a
+                // blocked tile — the `nearestPassableNeighbor` redirect
+                // picked an adjacent tile that happens to be in the
+                // wrong direction (SAVE007 unit[25] parked east-facing,
+                // targetMove on unit 26 blocked by a refinery, redirect
+                // to a north-side neighbor → our code rotated the unit
+                // north on tick 1 while OpenDUNE kept it east).
+                if slot.speed != 0 {
+                    if goalSource == "route", slot.route[0] != 0xFF {
+                        slot.orientationCurrent = Int8(bitPattern: slot.route[0] &* 32)
+                    } else if goalSource == "targetMove(fallback)" {
+                        let from = Pos32(x: slot.positionX, y: slot.positionY)
+                        slot.orientationCurrent = Int8(bitPattern: Pos32.direction(from: from, to: goal))
+                    }
                 }
                 // else: keep stored orientation (script-set).
 

@@ -211,4 +211,3 @@ struct ParityHarnessTests {
             .appendingPathComponent(name)
     }
 }
-
