@@ -308,17 +308,19 @@ extension Simulation {
         /// Harvester rule: when amount > 0, speed scales by
         /// `(255 - amount) / 256` — loaded harvesters crawl.
         ///
-        /// Deliberate simplifications vs. OpenDUNE:
-        /// - Game-speed factor (`Tools_AdjustToGameSpeed`) is skipped;
-        ///   we run at a fixed "normal" cadence. Absolute speed values
-        ///   will land ~1.5× OpenDUNE's normal-speed values but the
-        ///   *relative* speed between units (via movingSpeedFactor)
-        ///   and the terrain slowdown remain faithful.
+        /// `gameSpeed` (0..4, default 2 = normal) drives the
+        /// `Tools_AdjustToGameSpeed` adjustment. **Wingers bypass it**
+        /// — air units don't respond to gameSpeed in OpenDUNE
+        /// (`src/unit.c:1927`). At the default `gameSpeed == 2` the
+        /// adjust is identity, so callers that don't care can leave
+        /// the parameter at its default and the per-slot outputs are
+        /// unchanged from the pre-port behaviour.
         @discardableResult
         public static func setSpeed(
             poolIndex: Int,
             speedPercent: UInt16,
-            units: inout UnitPool
+            units: inout UnitPool,
+            gameSpeed: UInt8 = 2
         ) -> Bool {
             guard poolIndex >= 0, poolIndex < UnitPool.capacity else { return false }
             var u = units[poolIndex]
@@ -347,6 +349,14 @@ extension Simulation {
 
             // Apply the per-type factor (movingSpeedFactor 0..255).
             speed = UInt16(info.movingSpeedFactor) &* speed / 256
+
+            // Ground units feel gameSpeed; wingers don't.
+            if info.movementType != .winger {
+                speed = Tools.adjustToGameSpeed(
+                    normal: speed, minimum: 1, maximum: 255,
+                    inverseSpeed: false, gameSpeed: gameSpeed
+                )
+            }
 
             // OpenDUNE splits `speed` into high-nibble × 16 (tile-hop
             // clamp) + low-nibble << 4 (subpixel increment). When the

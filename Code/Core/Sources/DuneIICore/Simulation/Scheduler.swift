@@ -79,6 +79,15 @@ extension Simulation {
         /// schedulers leave it unset.
         public var bloomSandTileID: UInt16 = 0
 
+        /// Current game-speed bucket in OpenDUNE's 0..4 range (2 = the
+        /// canonical "normal" cadence). Drives `Tools_AdjustToGameSpeed`
+        /// in `Units.setSpeed` and the per-tick movement accumulator —
+        /// at the default 2 both calls are identity, so leaving this
+        /// alone keeps the scheduler bit-identical to the pre-port
+        /// behaviour. Non-default values are used by the tick-parity
+        /// harness to match OpenDUNE at other game-speed settings.
+        public var gameSpeed: UInt8 = 2
+
         /// Scenario playable rect — port of OpenDUNE
         /// `g_mapInfos[mapScale]` (`src/map.c:57`). Seeded by the
         /// scene / runtime from `Scenario.playableRect` at load so the
@@ -1686,7 +1695,21 @@ extension Simulation {
                 let priorY = slot.positionY
                 var didStep = false
                 if slot.speed != 0, slot.speedPerTick != 0 {
-                    let remainder = UInt16(slot.speedRemainder) &+ UInt16(slot.speedPerTick)
+                    // Match OpenDUNE `Unit_MovementTick` (`src/unit.c:107`):
+                    // ground units feel gameSpeed on the per-tick
+                    // increment; wingers add `speedPerTick` raw.
+                    let mt = Simulation.UnitInfo.lookup(slot.type)?.movementType
+                    let increment: UInt16
+                    if mt != .winger {
+                        increment = Simulation.Tools.adjustToGameSpeed(
+                            normal: UInt16(slot.speedPerTick),
+                            minimum: 1, maximum: 255,
+                            inverseSpeed: false, gameSpeed: gameSpeed
+                        )
+                    } else {
+                        increment = UInt16(slot.speedPerTick)
+                    }
+                    let remainder = UInt16(slot.speedRemainder) &+ increment
                     slot.speedRemainder = UInt8(truncatingIfNeeded: remainder & 0xFF)
                     if (remainder & 0xFF00) != 0 {
                         // `distance` in pos32 pixels: min(speed*16, dist+16).

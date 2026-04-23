@@ -11,7 +11,15 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**Tick-parity golden harness.** Next in the queue. Record OpenDUNE's sim state across N ticks (houses, units, structures, tiles, RNG), replay the same scenario through our scheduler for N ticks, diff the pools. Closes §6 of `Documentation/Plans/01.Initial.md` (sim-parity goal). Good time to also port the full `Unit_SetSpeed` pipeline's `gameSpeed` factor (`src/tools.c::Tools_AdjustToGameSpeed`) which we currently skip. Design-doc first per the CLAUDE.md workflow: decide format for the golden capture (JSON? binary?), whether it's per-tick or sparse, which state to include (minimal = pool find-arrays + positions; full = every slot byte + RNG state). Previous STARPORT + CHOAM work is fully wrapped (5a + 5b + 5c-sim + 5c-ui + cargo drop). Residual micro-follow-ups that can slip in opportunistically: briefing-music playback (hook `houseInfo.musicBriefing` into jukebox); frigate descent animation (needs FRIGATE.EMC host-fns).
+**Tick-parity golden harness — capture side + replay skeleton.** Design doc + `Unit_SetSpeed` gameSpeed pipeline shipped 2026-04-23 (see `Documentation/Architecture/TickParityHarness.md` — headless + deterministic-stepping requirements pinned there). Next concrete step: patch OpenDUNE (`Repositories/OpenDUNE`) with the `--parity-dump`, `--parity-load`, `--parity-ticks` CLI flags, dummy video driver (SDL `SDL_VIDEODRIVER=dummy`), audio / input / timer short-circuits, and the per-tick JSON dump hook at the end of a new deterministic fast-forward loop that replaces `for (;; sleepIdle())`. Deliver the patch as `Documentation/Architecture/opendune-parity-patch/tick_parity_dump.patch`. Once the golden fixture exists at `Core/Tests/DuneIICoreTests/Fixtures/ParityGoldens/save001_200ticks.jsonl`, land `Simulation.ParityHarness.runAgainst(save:golden:tickLimit:)` as a skeleton that loads both sides, diffs tick 0, then widens tick-by-tick as each divergence closes. Expect the first real run to diverge quickly — fog / sprite / RNG cascades are unported — and iterate from there.
+
+**Session resume note (paused 2026-04-23, end of day):** the session was paused before the OpenDUNE patch was written because of a sandbox blocker — SDL2 is not installed on this machine (`brew install sdl2` required) and OpenDUNE's README pre-dates Apple Silicon (unknown whether its old `configure` script works clean on macOS 26 arm64). The user is updating sandbox parameters to allow the next session to install SDL2 + attempt the OpenDUNE build. When you resume:
+1. `/opt/homebrew/bin/brew install sdl2` (and maybe `pkg-config`).
+2. `cd Repositories/OpenDUNE && ./configure && make -j` — confirm vanilla builds before writing any patch.
+3. If vanilla builds: write the patch per the design doc, apply, rebuild, run `./bin/opendune --parity-load=_SAVE001.DAT --parity-ticks=200 --parity-dump=/tmp/golden.jsonl`, commit patch + fixture.
+4. If vanilla doesn't build: fall back to option (c) from the conversation — capture our own sim's first N ticks as a regression fixture to validate the diff infrastructure, and defer real OpenDUNE capture.
+
+Previous STARPORT + CHOAM work is fully wrapped. Residual micro-follow-ups that can slip in opportunistically: briefing-music playback; frigate descent animation (needs FRIGATE.EMC host-fns).
 
 What works now:
 - Player CY + sidebar build panel + slab / windtrap / refinery chain.
@@ -31,7 +39,7 @@ What works now:
 - Unit sprites render at native pixel size (harvester > trike > infantry). Units pathfind around each other.
 - Attack visuals: muzzle flash + impact dimmed to 30% alpha so they're a hint, not a clutter.
 
-Test status: **958 / 94** suites green, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`).
+Test status: **971 / 95** suites green, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`).
 
 Latest session (2026-04-23) shipped, across two merged lines of work: (1) movement polish + STARPORT slices 5a/5b/5c-sim (fallback-slide per-tile gate, OpenDUNE crush parity, `[CHOAM]` INI loader + buildable mask, order commit + frigate delivery + availability bump, `StarportController` + pricing + runtime stock seeding); (2) harvester RETURN replan + adjacency dock + coherence pin + `Map_FixupSpiceEdges` port + CLAUDE.md "consult OpenDUNE" rule. Previous session (2026-04-22) shipped 27 commits. Details in today's `Documentation/History/2026-04.md` bullets.
 
@@ -39,10 +47,9 @@ Latest session (2026-04-23) shipped, across two merged lines of work: (1) moveme
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → implement → tests → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 of `Documentation/Plans/01.Initial.md`. Good time to also port the full `Unit_SetSpeed` pipeline's `gameSpeed` factor. (STARPORT cargo drop closed 2026-04-23. Residual micro-follow-ups: briefing-music playback; frigate descent animation.)
+1. **Tick-parity harness — capture + replay skeleton.** Design doc shipped 2026-04-23 (`Documentation/Architecture/TickParityHarness.md`); `Unit_SetSpeed` gameSpeed pipeline shipped same day. Next: patch OpenDUNE with `--parity-dump` / `--parity-load` / `--parity-ticks` flags + per-tick JSON hook, commit patch + golden fixture, land `Simulation.ParityHarness.runAgainst(...)` skeleton. Closes §6 of `Documentation/Plans/01.Initial.md`. (STARPORT cargo drop closed 2026-04-23. Residual micro-follow-ups: briefing-music playback; frigate descent animation.)
 2. **Frigate landing animation + cargo drop** — STARPORT follow-up. Script-driven via FRIGATE unit's EMC entry; can land opportunistically after Mentat. (CHOAM sim-side + cart UI shipped 2026-04-23 across slices 5a / 5b / 5c-sim / 5c-ui.)
-3. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline's `gameSpeed` factor.
-4. **`BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; the real script gives proper flight frames + sonic-beam propagation. Cosmetic.
+3. **`BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; the real script gives proper flight frames + sonic-beam propagation. Cosmetic.
 5. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder.
 6. **Sandworm `GetBestTarget`** — separate `Unit_Sandworm_GetTargetPriority`; slot 0x36.
 7. **HP-bar visual on world markers** — small bar above each unit/structure SKNode for at-a-glance status. Info panel already shows HP for the selection; this would make every entity show it.
@@ -52,6 +59,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
+
+- **2026-04-23 — Tick-parity harness design doc + `Unit_SetSpeed` gameSpeed pipeline.** Groundwork for §6 closure. Design doc at `Documentation/Architecture/TickParityHarness.md` pins the approach: start state is a mid-mission save (both engines load it natively — no input injection), golden capture is a per-tick `.jsonl` dump from a patched OpenDUNE, replay is a new `Simulation.ParityHarness` that diffs pool state field-by-field. `Simulation.Tools.adjustToGameSpeed` ports `Tools_AdjustToGameSpeed` (`src/tools.c:20`); `Units.setSpeed` + `Scheduler.tickMovement` apply it for non-winger units with a `Scheduler.gameSpeed: UInt8 = 2` knob. At default speed the adjustment is identity so nothing regresses — machinery is there so the harness can drive OpenDUNE at other speeds. 13 new `ToolsGameSpeedTests`. **971 / 95 / zero warnings.**
 
 - **2026-04-23 — STARPORT cargo drop (`tickFrigateUnload`).** Closes the CHOAM follow-up. New scheduler pass walks a spawned FRIGATE's `linkedID` chain, places each off-map cargo unit on a passable tile in the 12-tile ring around the 3×3 STARPORT, clears `inTransport`, and frees the frigate when the chain drains. Partial drops (ring-full) preserve the remaining chain for a later tick. House-ownership-gated. Cosmetic descent animation stays queued (needs FRIGATE.EMC host-fns). 5 new `FrigateUnloadTests`. **958 / 94 / zero warnings.**
 - **2026-04-23 — Mentat briefing slice 3: `.ENG` decoder + briefing text.** New `Formats.Strings.decode(_:compressed:)` ports OpenDUNE's string-table + byte-pair decompression (`src/string.c:42..81`) — uint16 LE offset table, couples-based 2-char expansion, 0x1B escape for extended literals, Latin-1 output. `MentatScene` loads `TEXT{H,A,O}.ENG` for the player house and renders the briefing string (local index `campaignID * 4 + 4`) as a word-wrapped label. No voice — OpenDUNE explicitly stops voice for briefings (`src/gui/mentat.c:102`); Dune II briefings are text + music only. 11 new tests (9 decoder + 2 resolver). Briefing-music playback deferred. **958 / 94 / zero warnings.**
@@ -189,7 +198,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **922 tests across 90 suites, all green** as of 2026-04-23 (STARPORT arc + harvester UX batch: bounded spice seek, playable-rect clamp, crush damage, manual-halt respected). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **971 tests across 95 suites, all green** as of 2026-04-23 (tick-parity groundwork: design doc + `Unit_SetSpeed` gameSpeed pipeline). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 
