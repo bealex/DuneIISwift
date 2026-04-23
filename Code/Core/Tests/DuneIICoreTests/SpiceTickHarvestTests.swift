@@ -77,7 +77,7 @@ struct SpiceTickHarvestTests {
         #expect(scheduler.host.units[hIdx].amount == 27)
     }
 
-    @Test("Non-HARVEST action harvesters are skipped")
+    @Test("Active MOVE-action harvester (with target) isn't harvested")
     func nonHarvestActionSkipped() {
         var scheduler = emptyScheduler(rng: { 1 })
         var map = scheduler.host.spiceMap!
@@ -90,9 +90,16 @@ struct SpiceTickHarvestTests {
         u.positionX = UInt16(10 * 256 + 128)
         u.positionY = UInt16(10 * 256 + 128)
         u.actionID = Simulation.ActionID.move  // not harvest
+        // `targetMove` != 0 so `idleState` is false — the harvest-pin
+        // (which now catches idle non-HARVEST harvesters so user-
+        // ordered harvests don't strand in STOP) skips this unit.
+        // A MOVE action with no target is a synthetic edge that
+        // doesn't appear in live gameplay.
+        u.targetMove = 0x4001
         scheduler.host.units[hIdx] = u
         scheduler.tickHarvesting()
         #expect(scheduler.host.units[hIdx].amount == 0)
+        #expect(scheduler.host.units[hIdx].actionID == Simulation.ActionID.move)
     }
 
     @Test("tick() fires harvest every harvestCadenceTicks, not every tick")

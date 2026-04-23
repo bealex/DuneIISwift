@@ -589,24 +589,32 @@ extension Simulation {
             for idx in host.units.findArray {
                 var slot = host.units.slots[idx]
                 guard slot.type == 16 else { continue }
-                // Pin: a genuinely idle harvester (not moving, not in
-                // transport, not carrying spice) gets flipped back to
-                // HARVEST so the auto-seek-spice branch below can
-                // reclaim it. OpenDUNE sets `actionsPlayer[3] = stop`
-                // for harvesters, so `Script_Unit_SetActionDefault`
-                // leaves a player-owned harvester stuck in STOP once
-                // its current task finishes. Without this nudge,
-                // `ensureHarvesterAvailable`'s freshly-spawned unit
-                // idles forever.
-                if slot.actionID == Simulation.ActionID.stop,
-                   !slot.inTransport, slot.amount < 100,
-                   slot.targetMove == 0, slot.route[0] == 0xFF,
-                   slot.currentDestinationX == 0, slot.currentDestinationY == 0
+                // Pin: ANY harvester in STOP / GUARD / default action
+                // flips back to HARVEST so the seek-spice / seek-refinery
+                // branches below can reclaim it. OpenDUNE sets
+                // `actionsPlayer[3] = stop` for harvesters, so
+                // `Script_Unit_SetActionDefault` leaves a player-owned
+                // harvester stuck in STOP once its current task finishes
+                // — and the user-`H` shortcut path also finishes movement
+                // in STOP because tickAttackHold's target-dead reset
+                // fires on any unit whose EMC-level targetAttack was
+                // cleared. The pin catches all of those. Skips when the
+                // harvester is mid-action (docked, moving, full and
+                // returning via tickMovement fallback).
+                let idleState = slot.targetMove == 0
+                    && slot.route[0] == 0xFF
+                    && slot.currentDestinationX == 0
+                    && slot.currentDestinationY == 0
+                if slot.actionID != Simulation.ActionID.harvest
+                    && slot.actionID != Simulation.ActionID.returnAction
+                    && !slot.inTransport
+                    && idleState
                 {
+                    let prior = slot.actionID
                     slot.actionID = Simulation.ActionID.harvest
                     host.units[idx] = slot
                     Log.info(
-                        "harvest-pin harvester=\(idx) STOP → HARVEST (idle)",
+                        "harvest-pin harvester=\(idx) \(prior) → HARVEST (idle, amount=\(slot.amount))",
                         tracer: .label("harvest-tick")
                     )
                 }
