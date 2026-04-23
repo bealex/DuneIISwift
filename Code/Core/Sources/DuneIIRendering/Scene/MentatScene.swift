@@ -35,6 +35,26 @@ public final class MentatScene: SKScene {
     private var briefFrameIndex: Int = 0
     private var briefFrameCounter: Int = 0
 
+    // Slice 2 — mentat face animation.
+    private var animator = MentatAnimator()
+    private var eyeTextures: [SKTexture] = []
+    private var mouthTextures: [SKTexture] = []
+    private var otherTextures: [SKTexture] = []
+    private var shoulderTexture: SKTexture?
+    private var eyeSprite: SKSpriteNode?
+    private var mouthSprite: SKSpriteNode?
+    private var otherSprite: SKSpriteNode?
+    private var shoulderSprite: SKSpriteNode?
+    /// GUI tick counter — 1 per render frame to match OpenDUNE's
+    /// `g_timerGUI` (60 Hz).
+    private var animationTick: UInt32 = 0
+    /// Per-session `BorlandLCG` seed — mirrors OpenDUNE's
+    /// `Tools_RandomLCG_Range` caller semantics. Kept stable across
+    /// ticks so the cadence looks natural; re-seeded per scene open
+    /// off the scenario name so different missions produce visibly
+    /// different idle patterns.
+    private var animationRNG: RNG.BorlandLCG = RNG.BorlandLCG(seed: 1)
+
     public init(
         assets: AssetLoader,
         playerHouseID: UInt8 = Simulation.House.atreides,
@@ -56,12 +76,14 @@ public final class MentatScene: SKScene {
     public override func didMove(to view: SKView) {
         removeAllChildren()
         installBackdrop()
+        installMentatAnimation()
         installBriefingAnimation()
         installCaption()
     }
 
     public override func update(_ currentTime: TimeInterval) {
         advanceBriefingFrame()
+        advanceMentatAnimation()
     }
 
     public override func mouseDown(with event: NSEvent) {
@@ -88,6 +110,133 @@ public final class MentatScene: SKScene {
             sprite.size = Self.nativeSize
             addChild(sprite)
             return
+        }
+    }
+
+    // MARK: - Mentat face animation (slice 2)
+
+    /// Per-house sprite offsets from the `MENSHP{H,A,O,M}.SHP` atlas.
+    /// Port of `s_mentatSpritePositions` at `src/gui/mentat.c:40..47`:
+    /// `{eyeX, eyeY, mouthX, mouthY, otherX, otherY, shoulderX, shoulderY}`.
+    /// Native 320×200 Dune II coords; we flip Y when positioning into
+    /// the scene since SpriteKit's origin is bottom-left.
+    private static let spritePositions: [UInt8: (eye: (Int, Int), mouth: (Int, Int), other: (Int, Int), shoulder: (Int, Int))] = [
+        Simulation.House.harkonnen: (eye: (0x20, 0x58), mouth: (0x20, 0x68), other: (0x00, 0x00), shoulder: (0x80, 0x68)),
+        Simulation.House.atreides:  (eye: (0x28, 0x50), mouth: (0x28, 0x60), other: (0x48, 0x98), shoulder: (0x80, 0x80)),
+        Simulation.House.ordos:     (eye: (0x10, 0x50), mouth: (0x10, 0x60), other: (0x58, 0x90), shoulder: (0x80, 0x80)),
+        Simulation.House.mercenary: (eye: (0x40, 0x50), mouth: (0x38, 0x60), other: (0x00, 0x00), shoulder: (0x00, 0x00)),
+    ]
+
+    /// `MENSHP{letter}.SHP` — the 15-frame atlas OpenDUNE loads at
+    /// `src/sprites.c:495..500`. Frames 0..4 = eyes, 5..9 = mouth,
+    /// 10 = shoulder, 11..14 = other (book / ring).
+    private static func menshpName(forHouse houseID: UInt8) -> String {
+        switch houseID {
+        case Simulation.House.harkonnen: return "MENSHPH.SHP"
+        case Simulation.House.atreides:  return "MENSHPA.SHP"
+        case Simulation.House.ordos:     return "MENSHPO.SHP"
+        default:                         return "MENSHPM.SHP"   // Mercenary / Fremen / Sardaukar share this
+        }
+    }
+
+    private func installMentatAnimation() {
+        let shpName = Self.menshpName(forHouse: playerHouseID)
+        guard let frames = try? assets.loadShp(named: shpName), frames.count >= 15 else {
+            Log.info(
+                "mentat face SHP missing or short: \(shpName)",
+                tracer: .label("mentat")
+            )
+            return
+        }
+        let textures: [SKTexture] = frames.map {
+            let t = SKTexture(cgImage: $0)
+            t.filteringMode = .nearest
+            return t
+        }
+        eyeTextures    = Array(textures[0..<5])
+        mouthTextures  = Array(textures[5..<10])
+        shoulderTexture = textures[10]
+        otherTextures  = Array(textures[11..<15])
+
+        // Seed the RNG off the scenario name so different missions
+        // produce visibly different blink / mouth cadence — but
+        // deterministic within a session (helpful for manual debug).
+        let seed = UInt16(truncatingIfNeeded: scenarioName.hashValue)
+        animationRNG = RNG.BorlandLCG(seed: seed == 0 ? 1 : seed)
+
+        // The "other" frame count reflects how many distinct house-
+        // object sprites this mentat has. Harkonnen = 0 (no object);
+        // Atreides book + Ordos ring = 2 frames in practice even though
+        // OpenDUNE carries 4 slots per house in the SHP.
+        animator = MentatAnimator(
+            otherFrameCount: (playerHouseID == Simulation.House.atreides ||
+                              playerHouseID == Simulation.House.ordos) ? 2 : 0
+        )
+
+        guard let positions = Self.spritePositions[playerHouseID] else { return }
+
+        // Shoulder first (drawn behind eyes / mouth in OpenDUNE's
+        // `GUI_DrawSprite(SCREEN_1, shoulder, …)` pass at mentat.c:545).
+        shoulderSprite = makeOverlay(
+            texture: shoulderTexture, atDunePoint: positions.shoulder, zPos: 1
+        )
+        eyeSprite = makeOverlay(
+            texture: eyeTextures.first, atDunePoint: positions.eye, zPos: 2
+        )
+        mouthSprite = makeOverlay(
+            texture: mouthTextures.first, atDunePoint: positions.mouth, zPos: 2
+        )
+        if positions.other != (0, 0), !otherTextures.isEmpty {
+            otherSprite = makeOverlay(
+                texture: otherTextures.first, atDunePoint: positions.other, zPos: 2
+            )
+        }
+    }
+
+    /// Builds an SKSpriteNode positioned at Dune II's native (320×200)
+    /// top-left coordinate `(x, y)`. Inverts Y for SpriteKit's
+    /// bottom-left origin so the sprite draws at the expected pixel.
+    private func makeOverlay(
+        texture: SKTexture?, atDunePoint p: (Int, Int), zPos: CGFloat
+    ) -> SKSpriteNode? {
+        guard let tex = texture else { return nil }
+        let size = tex.size()
+        let sprite = SKSpriteNode(texture: tex)
+        sprite.anchorPoint = CGPoint(x: 0, y: 1)    // top-left anchor
+        sprite.size = size
+        sprite.position = CGPoint(
+            x: CGFloat(p.0),
+            y: Self.nativeSize.height - CGFloat(p.1)
+        )
+        sprite.zPosition = zPos
+        addChild(sprite)
+        return sprite
+    }
+
+    private func advanceMentatAnimation() {
+        guard !eyeTextures.isEmpty else { return }
+        animationTick &+= 1
+        var rng = animationRNG
+        animator.tick(
+            now: animationTick,
+            // Slice 2 has no voice yet, so we pick `.speaking` to give
+            // the mentat a lifelike mouth while waiting for the click.
+            // Slice 3 will gate this on actual voice playback.
+            speakingMode: .speaking,
+            playerHouseID: playerHouseID,
+            rng: { lo, hi in rng.range(lo, hi) }
+        )
+        animationRNG = rng
+
+        if let eye = eyeSprite, animator.eyesFrame < eyeTextures.count {
+            eye.texture = eyeTextures[animator.eyesFrame]
+        }
+        if let mouth = mouthSprite, animator.mouthFrame < mouthTextures.count {
+            mouth.texture = mouthTextures[animator.mouthFrame]
+        }
+        if let other = otherSprite, !otherTextures.isEmpty {
+            let idx = abs(animator.otherFrame) % otherTextures.count
+            other.texture = otherTextures[idx]
         }
     }
 
