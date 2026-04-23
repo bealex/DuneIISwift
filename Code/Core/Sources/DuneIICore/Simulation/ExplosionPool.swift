@@ -25,9 +25,18 @@ extension Simulation {
         case carryallCrash        = 17
         case miniRocket           = 18
         case spiceBloomTremor     = 19
+        /// Our-own: a corpse sprite placed where an infantry unit
+        /// died. Not in OpenDUNE's enum (vanilla uses the unit's
+        /// ACTION_DIE script + a ground-overlay mechanism instead),
+        /// but we don't have the ACTION_DIE / overlay pipeline yet
+        /// — this is the minimum visual to let the player see
+        /// "something died here" before we port the real path.
+        case corpseInfantry       = 20
 
-        /// OpenDUNE `EXPLOSIONTYPE_MAX = 20`. Values `≥ 20` are invalid.
-        public static let max: UInt16 = 20
+        /// Upper bound for the original OpenDUNE range + our
+        /// extensions. `< max` is a valid type. Bumped from 20 → 21
+        /// when we added `corpseInfantry`.
+        public static let max: UInt16 = 21
         public static let invalid: UInt16 = 0xFFFF
     }
 

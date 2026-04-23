@@ -51,8 +51,9 @@ extension Simulation {
                 // that reads `ui->explosionType` before `Unit_Remove`.
                 let type = slot.type
                 let deathPos = Pos32(x: slot.positionX, y: slot.positionY)
+                let houseID = slot.houseID
                 Log.info(
-                    "unit \(unitIndex) (type \(type) house \(slot.houseID)) destroyed by \(damage) dmg",
+                    "unit \(unitIndex) (type \(type) house \(houseID)) destroyed by \(damage) dmg",
                     tracer: .label("damage")
                 )
                 host.units.free(at: unitIndex)
@@ -70,6 +71,24 @@ extension Simulation {
                         hitpoints: 0,
                         unitOriginEncoded: 0,
                         host: host
+                    )
+                }
+                // Infantry get a persistent corpse sprite — the type's
+                // `displayMode` tells us whether it walked on foot (3-
+                // or 4-frame cycle) so this detection stays cheap.
+                if let info = UnitInfo.lookup(type),
+                   info.displayMode == .infantry3 || info.displayMode == .infantry4
+                {
+                    host.explosions.add(
+                        type: ExplosionType.corpseInfantry.rawValue,
+                        positionX: deathPos.x,
+                        positionY: deathPos.y,
+                        houseID: houseID,
+                        frames: 240  // ~20 seconds at 12 Hz sim tick
+                    )
+                    Log.debug(
+                        "corpse spawned type=\(type) at (\(deathPos.x),\(deathPos.y)) house=\(houseID)",
+                        tracer: .label("damage")
                     )
                 }
                 return true

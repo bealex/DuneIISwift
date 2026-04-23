@@ -64,7 +64,10 @@ public final class ScenarioScene: SKScene {
     /// Per-unit-pool-slot marker nodes, keyed by pool index.
     private var unitMarkers: [Int: SKSpriteNode] = [:]
     private var structureMarkers: [Int: SKShapeNode] = [:]
-    private var explosionMarkers: [Int: SKShapeNode] = [:]
+    /// Explosion slot → scene node. Discs for most `ExplosionType`s,
+    /// `SKSpriteNode` for `corpseInfantry` (renders the dead-body
+    /// ICN tile from the `sandDeadBodies` group).
+    private var explosionMarkers: [Int: SKNode] = [:]
     private var unitAtlas: UnitSpriteAtlas?
     private var fallbackMarkerTexture: SKTexture?
 
@@ -1018,18 +1021,50 @@ public final class ScenarioScene: SKScene {
                 mapContainer.addChild(marker)
             }
             marker.position = screenPositionPos32(x: slot.positionX, y: slot.positionY)
-            // Simple lifetime fade: alpha falls as `remainingFrames → 0`.
+            // Lifetime fade for disc explosions (30 ticks ≈ full
+            // opacity). Corpses keep full alpha most of their life
+            // and only dim in the last few ticks so they read as
+            // persistent scenery.
             let frames = max(Double(slot.remainingFrames), 1)
-            marker.alpha = CGFloat(min(1.0, frames / 30.0))
+            if slot.type == Simulation.ExplosionType.corpseInfantry.rawValue {
+                marker.alpha = CGFloat(min(1.0, frames / 20.0))
+            } else {
+                marker.alpha = CGFloat(min(1.0, frames / 30.0))
+            }
         }
     }
 
-    private func makeExplosionMarker(for slot: Simulation.ExplosionSlot) -> SKShapeNode {
+    private func makeExplosionMarker(for slot: Simulation.ExplosionSlot) -> SKNode {
+        // Corpse: render the first `sandDeadBodies` iconGroup tile as
+        // a sprite. If that group or the iconmap tile is missing
+        // (shouldn't happen on a valid install), fall back to the
+        // disc so at least something shows.
+        if slot.type == Simulation.ExplosionType.corpseInfantry.rawValue {
+            let corpseTiles = assets.iconMap.tileIds(in: .sandDeadBodies)
+            if let tileID = corpseTiles.first,
+               Int(tileID) < tileTextures.count
+            {
+                let sprite = SKSpriteNode(texture: tileTextures[Int(tileID)])
+                sprite.size = CGSize(width: Self.tileSize, height: Self.tileSize)
+                sprite.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+                sprite.zPosition = 1.5   // above ground, below live units
+                return sprite
+            }
+        }
         let marker = SKShapeNode(circleOfRadius: Self.tileSize * 0.5)
         marker.lineWidth = 0
         marker.zPosition = 3
         marker.fillColor = explosionColor(for: slot.type)
-        marker.alpha = 0.9
+        // IMPACT_SMALL is used both for the muzzle-flash at the
+        // shooter's tile and for bullet-arrival impact at the target.
+        // Full-opacity yellow discs on both made attacks feel
+        // cluttered; dimmed to a subtle hint so the bullet sprite
+        // and damage numbers carry the story.
+        if slot.type == Simulation.ExplosionType.impactSmall.rawValue {
+            marker.alpha = 0.3
+        } else {
+            marker.alpha = 0.9
+        }
         return marker
     }
 

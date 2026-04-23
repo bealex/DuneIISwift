@@ -229,8 +229,15 @@ struct ExplosionTests {
 
         let killed = Simulation.Explosions.applyUnitDamage(unitIndex: 30, damage: 50, host: host)
         #expect(killed == true)
-        let active = host.explosions.slots.filter(\.isActive)
-        #expect(active.isEmpty)
+        // Infantry don't spawn a combustion explosion (no
+        // `explodeOnDeath` flag set), but they DO leave a corpse
+        // sprite in the explosion pool so the scene can show a
+        // "dead body" for a few seconds. Filter corpses out of the
+        // check.
+        let combustion = host.explosions.slots.filter {
+            $0.isActive && $0.type != Simulation.ExplosionType.corpseInfantry.rawValue
+        }
+        #expect(combustion.isEmpty)
     }
 
     @Test("applyUnitDamage skips visual when explosionType is nil (e.g. harvester)")
