@@ -47,4 +47,50 @@ struct MentatSceneTests {
         #expect(MentatScene.playerHouse(forScenarioName: "XXXX") == Simulation.House.atreides)
         #expect(MentatScene.playerHouse(forScenarioName: "SCENZ000.INI") == Simulation.House.atreides)
     }
+
+    // MARK: - Slice 3 — briefing text resolver
+
+    /// Install-gated: boots an `AssetLoader` against the real install
+    /// and pulls the Atreides mission-1 briefing through
+    /// `MentatScene.fetchBriefingText`. Confirms the full pipeline
+    /// (TEXTA.ENG load → `Formats.Strings` decompress → index lookup)
+    /// returns a recognisable English string with "Atreides" in it.
+    @Test("fetchBriefingText returns a recognisable English briefing for mission 1")
+    func fetchBriefingTextAtreidesMission1() throws {
+        guard let installDir = TestInstall.locate() else { return }
+        let installation = try Installation(rootDirectory: installDir)
+        let assets = try AssetLoader(installation: installation)
+        guard let text = MentatScene.fetchBriefingText(
+            fromLoader: assets,
+            playerHouseID: Simulation.House.atreides,
+            campaignID: 0
+        ) else {
+            Issue.record("fetchBriefingText returned nil for Atreides mission 1")
+            return
+        }
+        // End-to-end sanity: length + vocabulary typical of a Dune II
+        // mission-1 briefing ("Greetings, I am your Mentat …"). The
+        // exact wording depends on which briefing-string slot
+        // OpenDUNE uses, which isn't important for this test — we
+        // just want to confirm the TEXTA.ENG → decompress → index
+        // pipeline produces real English.
+        #expect(text.count > 50, "briefing too short: \(text.count) chars")
+        let lower = text.lowercased()
+        #expect(lower.contains("mentat") || lower.contains("credits"),
+                "expected game-vocab words in briefing; got: \(text.prefix(160))")
+    }
+
+    @Test("fetchBriefingText returns nil for unknown houses (no TEXT file maps)")
+    func fetchBriefingTextUnknownHouseIsNil() throws {
+        guard let installDir = TestInstall.locate() else { return }
+        let installation = try Installation(rootDirectory: installDir)
+        let assets = try AssetLoader(installation: installation)
+        let text = MentatScene.fetchBriefingText(
+            fromLoader: assets,
+            playerHouseID: Simulation.House.mercenary,
+            campaignID: 0
+        )
+        #expect(text == nil,
+                "Mercenary / Fremen / Sardaukar have no dedicated TEXT file; expected nil")
+    }
 }

@@ -78,7 +78,7 @@ public final class MentatScene: SKScene {
         installBackdrop()
         installMentatAnimation()
         installBriefingAnimation()
-        installCaption()
+        installBriefingText()
     }
 
     public override func update(_ currentTime: TimeInterval) {
@@ -282,14 +282,63 @@ public final class MentatScene: SKScene {
 
     // MARK: - Caption
 
-    private func installCaption() {
-        let caption = SKLabelNode(text: "Mentat briefing — click to continue")
-        caption.fontColor = .white
-        caption.fontSize = 10
-        caption.position = CGPoint(x: Self.nativeSize.width / 2, y: 12)
-        caption.horizontalAlignmentMode = .center
-        caption.zPosition = 2
-        addChild(caption)
+    // MARK: - Briefing text (slice 3)
+
+    /// Looks up the English briefing string for the current mission +
+    /// player house from `TEXT{H,A,O}.ENG` and renders it at the
+    /// bottom of the mentat screen. Indexing mirrors OpenDUNE's
+    /// `GUI_Mentat_ShowBriefing` (`src/gui/mentat.c:462..481`):
+    /// within each per-house 40-string block, the briefing string for
+    /// campaign N sits at local index `N * 4 + 4`. Until campaign
+    /// selection lands (P7), we pin `campaignID = 0` → local string
+    /// index 4.
+    ///
+    /// Falls back to a short placeholder caption when the install
+    /// can't supply the string (stripped install / missing file) so
+    /// the click-to-continue hint stays visible.
+    private func installBriefingText() {
+        let text = Self.fetchBriefingText(
+            fromLoader: assets,
+            playerHouseID: playerHouseID,
+            campaignID: 0
+        ) ?? "Mentat briefing — click to continue"
+
+        let label = SKLabelNode(text: text)
+        label.fontColor = .white
+        label.fontSize = 8
+        label.fontName = "Menlo"
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .bottom
+        label.numberOfLines = 0                               // wrap
+        label.preferredMaxLayoutWidth = Self.nativeSize.width - 16
+        label.lineBreakMode = .byWordWrapping
+        label.position = CGPoint(x: Self.nativeSize.width / 2, y: 8)
+        label.zPosition = 2
+        addChild(label)
+    }
+
+    /// Loads the right `TEXT{H,A,O}.ENG` for the house, decompresses it,
+    /// and picks the string at local index `campaignID * 4 + 4`.
+    /// Static so tests can verify the resolver without an SKScene.
+    public static func fetchBriefingText(
+        fromLoader assets: AssetLoader,
+        playerHouseID: UInt8,
+        campaignID: Int
+    ) -> String? {
+        let fileName: String
+        switch playerHouseID {
+        case Simulation.House.harkonnen: fileName = "TEXTH.ENG"
+        case Simulation.House.atreides:  fileName = "TEXTA.ENG"
+        case Simulation.House.ordos:     fileName = "TEXTO.ENG"
+        default:                         return nil
+        }
+        guard let strings = (try? assets.loadStrings(
+            named: fileName, compressed: true
+        )) ?? nil else { return nil }
+        let idx = campaignID * 4 + 4
+        guard idx >= 0, idx < strings.count else { return nil }
+        let text = strings[idx]
+        return text.isEmpty ? nil : text
     }
 
     // MARK: - House / scenario helpers (pure; tested in MentatSceneTests)
