@@ -68,7 +68,12 @@ extension Scripting {
         /// `groundTileID` so the scene / minimap / screenshot see
         /// drained tiles degrade in real time. `nil` = no repaint.
         /// See `Documentation/Algorithms/SpiceRepaint.md`.
-        public var spiceLevelDidChange: ((_ packed: UInt16, _ level: Simulation.SpiceMap.Level) -> Void)?
+        ///
+        /// The full `SpiceMap` is passed so `Map_FixupSpiceEdges`-style
+        /// edge smoothing can read the 4 cardinal neighbours of the
+        /// changed cell (and repaint them too, since their bitfield
+        /// variants shift when this cell flips level).
+        public var spiceLevelDidChange: ((_ packed: UInt16, _ level: Simulation.SpiceMap.Level, _ map: Simulation.SpiceMap) -> Void)?
 
         /// Direct override for a cell's `groundTileID`. Fired from the
         /// bloom-detonation path to reset a spice-bloom tile back to
@@ -114,7 +119,7 @@ extension Scripting {
             isPositionUnveiled: ((_ packed: UInt16) -> Bool)? = nil,
             landscapeAt: ((_ packed: UInt16) -> UInt8)? = nil,
             spiceMap: Simulation.SpiceMap? = nil,
-            spiceLevelDidChange: ((_ packed: UInt16, _ level: Simulation.SpiceMap.Level) -> Void)? = nil,
+            spiceLevelDidChange: ((_ packed: UInt16, _ level: Simulation.SpiceMap.Level, _ map: Simulation.SpiceMap) -> Void)? = nil,
             groundTileOverride: ((_ packed: UInt16, _ tileID: UInt16) -> Void)? = nil
         ) {
             self.units = units

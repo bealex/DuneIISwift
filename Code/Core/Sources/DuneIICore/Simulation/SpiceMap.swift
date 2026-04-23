@@ -116,6 +116,50 @@ extension Simulation {
             return after
         }
 
+        /// 4-neighbor bitfield for `Map_FixupSpiceEdges`-style edge
+        /// smoothing (`src/map.c:725..764`). Order matches OpenDUNE's
+        /// `g_table_mapDiff`: bit 0 = top (−64), bit 1 = right (+1),
+        /// bit 2 = bottom (+64), bit 3 = left (−1). Out-of-map
+        /// neighbours count as "matching" so map edges render as solid
+        /// patches, not isolated dots.
+        ///
+        /// For `.thin` tiles a neighbour counts if it's `.thin` OR
+        /// `.thick`; for `.thick` tiles a neighbour only counts if it's
+        /// also `.thick`. Returns `nil` for non-spice tiles (caller
+        /// should render plain sand, not look up a variant sprite).
+        ///
+        /// Callers add this to the base offset (49 for thin, 65 for
+        /// thick) to get the spice sprite index inside the landscape
+        /// icon group.
+        public func edgeBitfield(at packed: UInt16) -> UInt8? {
+            guard Int(packed) < Self.cellCount else { return nil }
+            let level = cells[Int(packed)]
+            guard level == .thin || level == .thick else { return nil }
+            let x = Int(packed) % Self.width
+            let y = Int(packed) / Self.width
+            var bits: UInt8 = 0
+            let offsets: [(dx: Int, dy: Int, bit: UInt8)] = [
+                (0, -1, 0), (1, 0, 1), (0, 1, 2), (-1, 0, 3)
+            ]
+            for n in offsets {
+                let nx = x + n.dx
+                let ny = y + n.dy
+                if nx < 0 || nx >= Self.width || ny < 0 || ny >= Self.height {
+                    bits |= (1 << n.bit)
+                    continue
+                }
+                let nLevel = cells[ny * Self.width + nx]
+                switch level {
+                case .thin:
+                    if nLevel == .thin || nLevel == .thick { bits |= (1 << n.bit) }
+                case .thick:
+                    if nLevel == .thick { bits |= (1 << n.bit) }
+                default: break
+                }
+            }
+            return bits
+        }
+
         /// Bridge for `harvestSpiceStep`'s `landscapeAt` closure —
         /// returns the `LandscapeType.rawValue` matching the current
         /// spice level, or a sentinel `normalSand` for notSand / bare
