@@ -66,6 +66,19 @@ public final class ScenarioRuntime {
         /// current selection.
         case actionStaged(UnitCommandController.StagedAction)
         case actionStageRejected
+        /// STARPORT slice 5c-ui outcomes. The `Opened` case wires the
+        /// scene's sidebar into cart-panel mode (by reading
+        /// `runtime.starportController`); mutation cases are cheap
+        /// redraws; `Committed` carries the count of successfully
+        /// chained units (may be fewer than requested if the unit
+        /// pool ran out) and drops the panel; `Cancelled` just drops
+        /// the panel with no commit and no credit change (credits
+        /// already auto-refunded because the controller's drain is
+        /// purely virtual until Send).
+        case starportOpened(structureIndex: Int)
+        case starportCartUpdated
+        case starportCommitted(chained: Int)
+        case starportCancelled
     }
 
     public let assets: AssetLoader
@@ -81,6 +94,12 @@ public final class ScenarioRuntime {
     /// `nil` when no structure is selected or the last-selected slot
     /// has been freed.
     public var selectedStructureIndex: Int?
+    /// Live CHOAM cart panel (STARPORT slice 5c-ui). `nil` when no
+    /// starport panel is open. Instantiated in `leftClick` when the
+    /// player clicks a friendly STARPORT; mutated by the
+    /// `starportIncrement` / `starportDecrement` entry points; cleared
+    /// on `starportCommit` / `starportCancel`.
+    public var starportController: StarportController?
     /// Live tile grid. Held in a class box so closures captured by the
     /// scheduler's `landscapeAt` + `tileEnterScore` see runtime
     /// mutations (placed slabs, new structures) without being rebuilt.
@@ -441,6 +460,49 @@ public final class ScenarioRuntime {
                 "structure-select \(structIdx) type=\(s.type) house=\(s.houseID) friendly=\(s.houseID == playerHouseID)",
                 tracer: .label("selection")
             )
+            // STARPORT slice 5c-ui: friendly STARPORT click opens the
+            // CHOAM cart panel. Only one panel at a time — clicking a
+            // different STARPORT replaces the controller. Left-click
+            // on the same structure is handled by the `!= selected`
+            // guard above; left-click elsewhere while a panel is open
+            // drops it via `starportController = nil` in the fall-
+            // through below.
+            if s.type == 11 /* STARPORT */, s.houseID == playerHouseID {
+                let stock = scheduler?.starportStock ?? [Int16](repeating: 0, count: 27)
+                let credits = host.houses.slots[Int(playerHouseID)].credits
+                // Deterministic per-panel price seed. Ports the
+                // `(scenarioID + playerHouseID + secondsElapsed/3600)`
+                // spirit of OpenDUNE's `GUI_FactoryWindow_InitItems`
+                // (`src/gui/gui.c:2749..2754`) without needing the
+                // 60-second wall-clock — tickCounter is our proxy and
+                // the seed just needs to be deterministic within a
+                // session.
+                let seed = UInt16(truncatingIfNeeded: tickCounter)
+                    &+ UInt16(playerHouseID)
+                    &+ UInt16(truncatingIfNeeded: scenarioName?.hashValue ?? 0)
+                starportController = StarportController.open(
+                    houseID: playerHouseID,
+                    starportIndex: structIdx,
+                    houseCredits: credits,
+                    stock: stock,
+                    priceSeed: seed
+                )
+                // Drop any build-panel yard selection so the sidebar
+                // flips from "BUILD" mode to "CHOAM" mode cleanly.
+                buildController.selectedYardIndex = nil
+                refreshBuildState()
+                Log.info(
+                    "starport-open struct=\(structIdx) rows=\(starportController?.rows.count ?? 0) credits=\(credits)",
+                    tracer: .label("starport")
+                )
+                return .starportOpened(structureIndex: structIdx)
+            }
+            // Any non-starport click drops a live panel (clicking
+            // away cancels the cart).
+            if starportController != nil {
+                starportController = nil
+                Log.info("starport-close (clicked away)", tracer: .label("starport"))
+            }
             // Fall through so the yard-select step below still gets a
             // chance to wire the build sidebar for player-owned
             // CYARD / factories.
@@ -564,6 +626,112 @@ public final class ScenarioRuntime {
     public func sidebarClick(row: Int) -> ClickOutcome {
         let action = buildController.handle(click: .sidebarSlot(index: row))
         return applyBuildAction(action)
+    }
+
+    // MARK: - STARPORT slice 5c-ui
+
+    /// Add one unit of `typeID` to the cart. Fails silently when no
+    /// panel is open, the row doesn't exist, stock is exhausted, or
+    /// the house can't afford the unit. Returns `.starportCartUpdated`
+    /// on success for the scene to redraw; `.none` otherwise.
+    @discardableResult
+    public func starportIncrement(typeID: UInt8) -> ClickOutcome {
+        guard var controller = starportController else { return .none }
+        let ok = controller.increment(typeID: typeID)
+        starportController = controller
+        Log.debug(
+            "starport-inc type=\(typeID) ok=\(ok) cartTotal=\(controller.cartTotal) credits=\(controller.availableCredits)",
+            tracer: .label("starport")
+        )
+        return ok ? .starportCartUpdated : .none
+    }
+
+    /// Remove one unit of `typeID` from the cart. Fails silently when
+    /// the panel isn't open, the row doesn't exist, or the cart has 0
+    /// of that type.
+    @discardableResult
+    public func starportDecrement(typeID: UInt8) -> ClickOutcome {
+        guard var controller = starportController else { return .none }
+        let ok = controller.decrement(typeID: typeID)
+        starportController = controller
+        Log.debug(
+            "starport-dec type=\(typeID) ok=\(ok) cartTotal=\(controller.cartTotal) credits=\(controller.availableCredits)",
+            tracer: .label("starport")
+        )
+        return ok ? .starportCartUpdated : .none
+    }
+
+    /// Commit the cart. Port of the Send-button handler from the
+    /// OpenDUNE factory-window commit loop: for every pending row,
+    /// call `Simulation.Structures.commitStarportOrder(...)` which
+    /// chains off-map units onto the house's `starportLinkedID` and
+    /// decrements the live `Scheduler.starportStock`. Applies the
+    /// virtual credit drain by writing `controller.availableCredits`
+    /// back to the house. Clears the panel on success.
+    @discardableResult
+    public func starportCommit() -> ClickOutcome {
+        guard let controller = starportController else { return .none }
+        guard var scheduler else { return .none }
+        guard let host else { return .none }
+        let orders = controller.pendingOrders()
+        if orders.isEmpty {
+            Log.info("starport-commit empty cart — dropping panel", tracer: .label("starport"))
+            starportController = nil
+            return .starportCancelled
+        }
+        let deliveryTime = Simulation.Scheduler.starportDeliveryTimeByHouse[Int(playerHouseID)]
+        var houses = host.houses
+        var units = host.units
+        var stock = scheduler.starportStock
+        let chained = Simulation.Structures.commitStarportOrder(
+            houseID: playerHouseID,
+            orders: orders.map { ($0.typeID, $0.count) },
+            houses: &houses,
+            units: &units,
+            stock: &stock,
+            deliveryTime: deliveryTime
+        )
+        // Apply the cart's virtual credit drain. Controller tracks
+        // `availableCredits` as the house's credits minus the cart
+        // total, so writing that value back is a faithful "credits
+        // spent" commit.
+        var h = houses[Int(playerHouseID)]
+        h.credits = controller.availableCredits
+        houses[Int(playerHouseID)] = h
+        host.houses = houses
+        host.units = units
+        scheduler.starportStock = stock
+        self.scheduler = scheduler
+        Log.info(
+            "starport-commit requested=\(orders.reduce(0) { $0 + $1.count }) chained=\(chained) credits→\(h.credits)",
+            tracer: .label("starport")
+        )
+        starportController = nil
+        return .starportCommitted(chained: chained)
+    }
+
+    /// Discard the cart. Credits auto-refund because the controller's
+    /// drain was virtual — we simply drop it without writing anything
+    /// back to the house.
+    @discardableResult
+    public func starportCancel() -> ClickOutcome {
+        guard starportController != nil else { return .none }
+        starportController = nil
+        Log.info("starport-cancel", tracer: .label("starport"))
+        return .starportCancelled
+    }
+
+    /// Test-shaped setter for the live CHOAM stock. Scenarios pre-seed
+    /// via `choamInventory` on load; mid-session mutation happens
+    /// through `commitStarportOrder` + `tickStarportAvailability`.
+    /// Tests that want a specific stock shape without re-loading can
+    /// call this directly. No-ops when no scheduler has been loaded.
+    public func setStarportStock(typeID: UInt8, count: Int16) {
+        guard var scheduler else { return }
+        let idx = Int(typeID)
+        guard idx >= 0, idx < scheduler.starportStock.count else { return }
+        scheduler.starportStock[idx] = count
+        self.scheduler = scheduler
     }
 
     /// Keyboard shortcut — primes the next left-click to resolve as

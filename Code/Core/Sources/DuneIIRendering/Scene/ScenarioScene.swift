@@ -251,6 +251,29 @@ public final class ScenarioScene: SKScene {
 
     public override func mouseDown(with event: NSEvent) {
         let location = event.location(in: self)
+        // STARPORT slice 5c-ui — while a CHOAM cart panel is live,
+        // sidebar clicks route to +/- / SEND / CANCEL slots instead of
+        // the BUILD sidebar. Map clicks still fall through to
+        // `leftClick`, which drops the panel on any non-starport tile.
+        if runtime.starportController != nil, location.x >= sidebarX,
+           let hit = starportHitTest(atY: location.y, x: location.x)
+        {
+            let outcome: ScenarioRuntime.ClickOutcome
+            switch hit {
+            case .decrement(let rowIdx):
+                let typeID = runtime.starportController?.rows[rowIdx].typeID ?? 0
+                outcome = runtime.starportDecrement(typeID: typeID)
+            case .increment(let rowIdx):
+                let typeID = runtime.starportController?.rows[rowIdx].typeID ?? 0
+                outcome = runtime.starportIncrement(typeID: typeID)
+            case .send:
+                outcome = runtime.starportCommit()
+            case .cancel:
+                outcome = runtime.starportCancel()
+            }
+            handleOutcome(outcome)
+            return
+        }
         let click = classifyClick(at: location)
         switch click {
         case .mapTile(let x, let y):
@@ -390,6 +413,13 @@ public final class ScenarioScene: SKScene {
             refreshSelectionHalo()
             refreshHud()
         case .actionStaged, .actionStageRejected:
+            refreshHud()
+        case .starportOpened,
+             .starportCartUpdated,
+             .starportCommitted,
+             .starportCancelled:
+            refreshBuildSidebar()
+            refreshSelectionHalo()
             refreshHud()
         case .none:
             break
@@ -1268,7 +1298,15 @@ public final class ScenarioScene: SKScene {
     /// animate.
     private func refreshBuildSidebar() {
         runtime.refreshBuildState()
-        renderSidebar()
+        // STARPORT slice 5c-ui: when a CHOAM cart panel is live, the
+        // sidebar renders the cart + Send/Cancel instead of the build
+        // rows. Opening a STARPORT already cleared `selectedYardIndex`
+        // so there's no "BUILD" state to rebuild here either way.
+        if runtime.starportController != nil {
+            renderStarportPanel()
+        } else {
+            renderSidebar()
+        }
     }
 
     /// Layout constants for the info panel at the bottom of the
@@ -1745,6 +1783,257 @@ public final class ScenarioScene: SKScene {
         // Info panel for the current selection — anchored to the
         // bottom of the sidebar.
         renderInfoPanel(into: container)
+    }
+
+    // MARK: - STARPORT / CHOAM cart panel (slice 5c-ui)
+
+    /// Result of hit-testing a click in the starport sidebar.
+    enum StarportHit: Equatable {
+        /// Decrement cart count for the row at `rowIndex` (maps to the
+        /// controller's `rows[rowIndex].typeID`).
+        case decrement(rowIndex: Int)
+        /// Increment cart count for the row at `rowIndex`.
+        case increment(rowIndex: Int)
+        /// Commit the cart. Scene routes to `runtime.starportCommit()`.
+        case send
+        /// Drop the cart. Scene routes to `runtime.starportCancel()`.
+        case cancel
+    }
+
+    /// Draws the CHOAM cart panel into the right sidebar. Replaces the
+    /// BUILD sidebar while `runtime.starportController != nil`. Layout:
+    ///   - "CHOAM" header (y = size.height - 18)
+    ///   - One row per controller row (sprite + name + price + inCart)
+    ///   - Separator
+    ///   - "CREDITS: $X" + "TOTAL: $Y" display rows
+    ///   - "SEND" + "CANCEL" button rows
+    /// Click routing: `starportHitTest(atY:x:)` maps scene-local
+    /// coordinates back to a `StarportHit`. The +/- split on cart rows
+    /// is horizontal: left half of the row = decrement, right half =
+    /// increment.
+    private func renderStarportPanel() {
+        guard let controller = runtime.starportController else { return }
+        sidebarNode?.removeFromParent()
+        let container = SKNode()
+        container.zPosition = 20
+        addChild(container)
+        sidebarNode = container
+
+        let bgSize = CGSize(width: Self.sidebarWidth, height: size.height)
+        let bg = SKShapeNode(rect: CGRect(
+            x: sidebarX, y: 0,
+            width: bgSize.width, height: bgSize.height
+        ))
+        bg.fillColor = NSColor(calibratedWhite: 0.08, alpha: 1.0)
+        bg.strokeColor = NSColor(calibratedRed: 0.35, green: 0.30, blue: 0.10, alpha: 1.0)
+        bg.lineWidth = 1
+        container.addChild(bg)
+
+        let header = SKLabelNode(text: "CHOAM")
+        header.fontColor = NSColor(calibratedRed: 1.0, green: 0.9, blue: 0.4, alpha: 1.0)
+        header.fontSize = 12
+        header.fontName = "Menlo-Bold"
+        header.horizontalAlignmentMode = .center
+        header.position = CGPoint(
+            x: sidebarX + Self.sidebarWidth / 2,
+            y: size.height - 18
+        )
+        container.addChild(header)
+
+        for (rowIndex, row) in controller.rows.enumerated() {
+            let slotY = starportRowY(forIndex: rowIndex)
+            let slotFrame = CGRect(
+                x: sidebarX + Self.sidebarPadding,
+                y: slotY,
+                width: Self.sidebarWidth - 2 * Self.sidebarPadding,
+                height: Self.sidebarRowHeight - Self.sidebarPadding
+            )
+            let slotNode = SKShapeNode(rect: slotFrame)
+            slotNode.fillColor = row.inCart > 0
+                ? NSColor(calibratedRed: 0.25, green: 0.20, blue: 0.08, alpha: 1.0)
+                : NSColor(calibratedWhite: 0.12, alpha: 1.0)
+            slotNode.strokeColor = NSColor(calibratedWhite: 0.3, alpha: 1.0)
+            slotNode.lineWidth = 1
+            container.addChild(slotNode)
+
+            // Unit sprite (left, 24×24). Uses the north-facing idle
+            // frame via `UnitInfo.groundSpriteID`.
+            if let info = Simulation.UnitInfo.lookup(row.typeID),
+               let texture = unitAtlas?.texture(
+                   at: Int(info.groundSpriteID), houseID: playerHouseID
+               )
+            {
+                let icon = SKSpriteNode(texture: texture)
+                icon.size = CGSize(width: 20, height: 20)
+                icon.position = CGPoint(
+                    x: slotFrame.minX + 14,
+                    y: slotFrame.midY
+                )
+                container.addChild(icon)
+            }
+
+            // Short name + unit price stacked; stockRemaining + inCart
+            // shown on the right.
+            let name = SKLabelNode(text: Self.shortUnitName(for: row.typeID))
+            name.fontColor = .white
+            name.fontSize = 9
+            name.fontName = "Menlo-Bold"
+            name.horizontalAlignmentMode = .left
+            name.verticalAlignmentMode = .baseline
+            name.position = CGPoint(
+                x: slotFrame.minX + 28,
+                y: slotFrame.midY + 2
+            )
+            container.addChild(name)
+
+            let price = SKLabelNode(text: "$\(row.unitPrice)")
+            price.fontColor = NSColor(calibratedRed: 1.0, green: 0.85, blue: 0.3, alpha: 1.0)
+            price.fontSize = 9
+            price.fontName = "Menlo"
+            price.horizontalAlignmentMode = .left
+            price.verticalAlignmentMode = .top
+            price.position = CGPoint(
+                x: slotFrame.minX + 28,
+                y: slotFrame.midY - 1
+            )
+            container.addChild(price)
+
+            // Right-anchored: "[inCart]/stockRemaining"
+            let stockLabel = SKLabelNode(
+                text: row.inCart > 0
+                    ? "\(row.inCart)←\(row.stockRemaining)"
+                    : "·\(row.stockRemaining)"
+            )
+            stockLabel.fontColor = row.inCart > 0
+                ? NSColor(calibratedRed: 0.6, green: 1.0, blue: 0.6, alpha: 1.0)
+                : NSColor(calibratedWhite: 0.7, alpha: 1.0)
+            stockLabel.fontSize = 10
+            stockLabel.fontName = "Menlo-Bold"
+            stockLabel.horizontalAlignmentMode = .right
+            stockLabel.verticalAlignmentMode = .center
+            stockLabel.position = CGPoint(
+                x: slotFrame.maxX - 4,
+                y: slotFrame.midY
+            )
+            container.addChild(stockLabel)
+        }
+
+        // Footer: CREDITS + TOTAL display rows, then SEND + CANCEL.
+        let footerStart = starportFooterStartY(rowCount: controller.rows.count)
+        drawStarportFooterLabel(
+            container: container, y: footerStart,
+            text: "CREDITS $\(controller.availableCredits)",
+            color: NSColor(calibratedWhite: 0.85, alpha: 1.0)
+        )
+        drawStarportFooterLabel(
+            container: container, y: footerStart - Self.sidebarRowHeight,
+            text: "TOTAL   $\(controller.cartTotal)",
+            color: NSColor(calibratedRed: 1.0, green: 0.85, blue: 0.3, alpha: 1.0)
+        )
+
+        let sendY = footerStart - 2 * Self.sidebarRowHeight
+        drawStarportButton(
+            container: container, y: sendY, text: "SEND",
+            fill: NSColor(calibratedRed: 0.12, green: 0.4, blue: 0.15, alpha: 1.0),
+            stroke: NSColor(calibratedRed: 0.3, green: 1.0, blue: 0.35, alpha: 1.0)
+        )
+        let cancelY = sendY - Self.sidebarRowHeight
+        drawStarportButton(
+            container: container, y: cancelY, text: "CANCEL",
+            fill: NSColor(calibratedRed: 0.3, green: 0.1, blue: 0.1, alpha: 1.0),
+            stroke: NSColor(calibratedRed: 0.9, green: 0.4, blue: 0.3, alpha: 1.0)
+        )
+
+        // Keep the info panel (bottom 200pt region) so selection
+        // details stay visible during trade.
+        renderInfoPanel(into: container)
+    }
+
+    /// CHOAM row Y position (top-down, matches `sidebarSlotY`).
+    private func starportRowY(forIndex row: Int) -> CGFloat {
+        let topMargin: CGFloat = 36
+        let topY = size.height - topMargin
+        return topY - CGFloat(row + 1) * Self.sidebarRowHeight
+    }
+
+    /// Y for the first CHOAM footer row (CREDITS). Footer rows grow
+    /// downward from this anchor.
+    private func starportFooterStartY(rowCount: Int) -> CGFloat {
+        let topMargin: CGFloat = 36
+        let topY = size.height - topMargin
+        let separatorGap: CGFloat = 6
+        return topY - CGFloat(rowCount + 1) * Self.sidebarRowHeight - separatorGap
+    }
+
+    private func drawStarportFooterLabel(
+        container: SKNode, y: CGFloat, text: String, color: NSColor
+    ) {
+        let frame = CGRect(
+            x: sidebarX + Self.sidebarPadding, y: y,
+            width: Self.sidebarWidth - 2 * Self.sidebarPadding,
+            height: Self.sidebarRowHeight - Self.sidebarPadding
+        )
+        let node = SKShapeNode(rect: frame)
+        node.fillColor = .clear
+        node.strokeColor = .clear
+        container.addChild(node)
+        let label = SKLabelNode(text: text)
+        label.fontColor = color
+        label.fontSize = 10
+        label.fontName = "Menlo-Bold"
+        label.horizontalAlignmentMode = .left
+        label.verticalAlignmentMode = .center
+        label.position = CGPoint(x: frame.minX + 4, y: frame.midY)
+        container.addChild(label)
+    }
+
+    private func drawStarportButton(
+        container: SKNode, y: CGFloat, text: String,
+        fill: NSColor, stroke: NSColor
+    ) {
+        let frame = CGRect(
+            x: sidebarX + Self.sidebarPadding, y: y,
+            width: Self.sidebarWidth - 2 * Self.sidebarPadding,
+            height: Self.sidebarRowHeight - Self.sidebarPadding
+        )
+        let node = SKShapeNode(rect: frame)
+        node.fillColor = fill
+        node.strokeColor = stroke
+        node.lineWidth = 2
+        container.addChild(node)
+        let label = SKLabelNode(text: text)
+        label.fontColor = .white
+        label.fontSize = 11
+        label.fontName = "Menlo-Bold"
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .center
+        label.position = CGPoint(x: frame.midX, y: frame.midY)
+        container.addChild(label)
+    }
+
+    /// Maps a sidebar click (assumed `x >= sidebarX`) to a
+    /// `StarportHit`. Row splits: left half = decrement, right half =
+    /// increment. Footer: SEND + CANCEL buttons are the last two
+    /// slots; CREDITS / TOTAL display rows are non-interactive.
+    /// Returns nil when the click lands outside any interactive slot.
+    func starportHitTest(atY y: CGFloat, x: CGFloat) -> StarportHit? {
+        guard let controller = runtime.starportController else { return nil }
+        let visibleHeight = Self.sidebarRowHeight - Self.sidebarPadding
+        // Cart rows.
+        for (i, _) in controller.rows.enumerated() {
+            let rowY = starportRowY(forIndex: i)
+            if y >= rowY, y <= rowY + visibleHeight {
+                let midX = sidebarX + Self.sidebarWidth / 2
+                return x < midX ? .decrement(rowIndex: i) : .increment(rowIndex: i)
+            }
+        }
+        // Skip CREDITS + TOTAL display rows; pick SEND + CANCEL.
+        let footerStart = starportFooterStartY(rowCount: controller.rows.count)
+        let sendY = footerStart - 2 * Self.sidebarRowHeight
+        if y >= sendY, y <= sendY + visibleHeight { return .send }
+        let cancelY = sendY - Self.sidebarRowHeight
+        if y >= cancelY, y <= cancelY + visibleHeight { return .cancel }
+        return nil
     }
 
     /// Top-to-bottom sidebar row placement. Row 0 lives just below the

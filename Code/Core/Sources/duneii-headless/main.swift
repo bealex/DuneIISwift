@@ -424,6 +424,10 @@ final class Harness {
         case .orderReturn(let u, let r, let ok): return "orderReturn(unit=\(u) refinery=\(r.map(String.init) ?? "nil") ok=\(ok))"
         case .actionStaged(let a): return "actionStaged(\(a))"
         case .actionStageRejected: return "actionStageRejected"
+        case .starportOpened(let i): return "starportOpened(struct=\(i))"
+        case .starportCartUpdated: return "starportCartUpdated"
+        case .starportCommitted(let c): return "starportCommitted(chained=\(c))"
+        case .starportCancelled: return "starportCancelled"
         }
     }
 

@@ -11,7 +11,7 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**STARPORT slice 5c-ui — CHOAM cart panel in `ScenarioScene`.** 5c-sim just landed (2026-04-23): the pure `StarportController` + pricing + runtime wiring is in place and tested. What's left is the SpriteKit rendering side — no sim logic, just piping input through the controller and drawing the cart rows. Scope: (a) detect a friendly STARPORT left-click in `ScenarioScene` (follow the existing selection path for yards) and open a modal panel that caches a `StarportController` via `StarportController.open(...)`; (b) render one row per buildable unit with sprite + per-unit price + "−" / "+" buttons + in-cart count; (c) show running `cartTotal` + `availableCredits`; (d) "Send" button commits via `Simulation.Structures.commitStarportOrder(...)` + applies `house.credits = controller.availableCredits`, "Cancel" simply drops the controller (refund is automatic — `increment` drained, `decrement`/cancel restores); (e) the panel closes on Send + re-opens on next click. Per `DuneIIRendering/CLAUDE.md`, render-layer tests are manual; land a manual-verification checklist in `Documentation/Algorithms/Starport.md` (new file) that calls out the visual cases. Script-driven frigate-landing animation + cargo drop stays as a follow-up.
+**Mentat briefing screen.** STARPORT slice 5c-ui is closed — CHOAM arc is done end-to-end (INI load → buildable mask → order commit → frigate delivery timer → availability bump → cart UI + manual-verification doc). Next item from the queue: port the scenario-intro Mentat briefing screen. The intro WSA + jukebox already ship; this would wire the Mentat WSA + briefing text + voice cue to play after intro and before the scenario starts. Relevant OpenDUNE pointers: `src/mentat.c`, `src/gui/mentat.c` for dialogue / picture selection; `src/string.c` for the briefing text offsets. Start with a design doc in `Documentation/Algorithms/` before touching code. Frigate landing animation + cargo drop (the CHOAM follow-up) stays queued below this — it's script-driven and can land opportunistically after Mentat.
 
 What works now:
 - Player CY + sidebar build panel + slab / windtrap / refinery chain.
@@ -31,7 +31,7 @@ What works now:
 - Unit sprites render at native pixel size (harvester > trike > infantry). Units pathfind around each other.
 - Attack visuals: muzzle flash + impact dimmed to 30% alpha so they're a hint, not a clutter.
 
-Test status: **906 / 88** suites green post-merge, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`).
+Test status: **908 / 88** suites green, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`).
 
 Latest session (2026-04-23) shipped, across two merged lines of work: (1) movement polish + STARPORT slices 5a/5b/5c-sim (fallback-slide per-tile gate, OpenDUNE crush parity, `[CHOAM]` INI loader + buildable mask, order commit + frigate delivery + availability bump, `StarportController` + pricing + runtime stock seeding); (2) harvester RETURN replan + adjacency dock + coherence pin + `Map_FixupSpiceEdges` port + CLAUDE.md "consult OpenDUNE" rule. Previous session (2026-04-22) shipped 27 commits. Details in today's `Documentation/History/2026-04.md` bullets.
 
@@ -39,8 +39,8 @@ Latest session (2026-04-23) shipped, across two merged lines of work: (1) moveme
 
 Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc → implement → tests → full suite green → history entry → insight if non-obvious → update this file).
 
-1. **STARPORT slice 5c-ui** — CHOAM cart panel rendering in `ScenarioScene` (input → `StarportController`, rows + buttons, commit on Send). Slices 5a / 5b / 5c-sim shipped 2026-04-23.
-2. **Mentat briefing screen** — scenario intro text, voice cue. Intro WSA + jukebox already shipped.
+1. **Mentat briefing screen** — scenario intro text, voice cue. Intro WSA + jukebox already shipped.
+2. **Frigate landing animation + cargo drop** — STARPORT follow-up. Script-driven via FRIGATE unit's EMC entry; can land opportunistically after Mentat. (CHOAM sim-side + cart UI shipped 2026-04-23 across slices 5a / 5b / 5c-sim / 5c-ui.)
 3. **Tick-parity golden harness** — record OpenDUNE for N ticks; replay in our sim; diff pool state. Closes §6 sim-parity goal. Also a good time to port the full `Unit_SetSpeed` pipeline's `gameSpeed` factor.
 4. **`BULLET.EMC` script wiring** — bullets detonate via a scheduler shortcut; the real script gives proper flight frames + sonic-beam propagation. Cosmetic.
 5. **Save-chunk TEAM decoder** — when we ship save compat (P6), TEAM chunk needs a body decoder.
@@ -53,6 +53,7 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-23 — STARPORT slice 5c-ui: CHOAM cart panel in `ScenarioScene`.** Closes the CHOAM arc. Left-click a friendly STARPORT → sidebar flips from BUILD to CHOAM (yellow header, one row per stocked unit with sprite + name + price + stock + in-cart count). Left half of a row = decrement, right half = increment; SEND commits via `Simulation.Structures.commitStarportOrder(...)` and drains `house.credits`, CANCEL drops the controller (credits auto-refund because the drain was virtual). Stray map clicks or non-STARPORT structure clicks auto-cancel. 4 new `ClickOutcome` cases, `runtime.starportController: StarportController?`, `renderStarportPanel()` + `starportHitTest(atY:x:)` in scene. 2 new `ScenarioRuntimeTests` for end-to-end flow. Manual-verification checklist at `Documentation/Algorithms/Starport.md`. Frigate landing animation stays deferred. **908 / 88 / zero warnings.**
 - **2026-04-23 — STARPORT slice 5c-sim: `StarportController` + CHOAM pricing + runtime wiring.** `ScenarioRuntime.load` now seeds `Scheduler.starportStock` from `scenario.choamInventory`. New `DuneIIRendering.StarportController` is the pure cart state machine: `open(...)` builds one row per house-available listed unit type, computes a deterministic per-session `unitPrice` via a `BorlandLCG`-seeded draw, and exposes `increment` / `decrement` that atomically track `inCart`, `stockRemaining`, `availableCredits`, and `cartTotal`. `pendingOrders()` → `[Order]` flows into `Structures.commitStarportOrder`. Pricing is an exact port of `src/gui/gui.c:2726` (`(bc/10)*4 + (bc/10)*(rng(0..6)+rng(0..6))`, cap 999, exactly two LCG draws per call). 14 new tests in `StarportControllerTests`. Scene rendering stays for slice 5c-ui.
 - **2026-04-23 — STARPORT slice 5b: order commit + frigate delivery + availability bump.** `Scheduler.starportStock: [Int16]` + new `HouseSlot.starportTimeLeft` complete the sim side of CHOAM. `Simulation.Structures.commitStarportOrder(...)` ports the cart-commit block (chains units off-map on `HouseSlot.starportLinkedID`, decrements stock to `-1` on drain, seeds the countdown). Two new scheduler passes: `tickStarportDelivery` counts down per house and spawns a FRIGATE when zero (moving the linked chain onto `frigate.linkedID` with `inTransport=true`); `tickStarportAvailability` draws a random type and bumps stock (`-1→1`, else `+1` cap 10). `WorldSnapshot` reads `starportTimeLeft` from the save chunk. 12 new tests (StarportDeliveryTests). UI + credit drain remain for slice 5c.
 - **2026-04-23 — STARPORT slice 5a: `[CHOAM]` loader + starport buildable mask.** `Scenario.choamInventory` (27-entry `Int16` array indexed by `UnitType.typeID`) now populates from the scenario INI's `[CHOAM]` section via `loadChoam` — port of OpenDUNE's `Scenario_Load_Choam` (`src/scenario.c:473`). New `Simulation.Structures.starportBuildableUnits(inventory:houseID:)` returns a `UInt32` bitmask of currently-orderable units after honouring `UnitInfo.availableHouse` gating. 9 new tests (4 INI + 5 buildable-mask). Runtime mutation + UI stay in slices 5b/5c.
@@ -182,7 +183,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **906 tests across 88 suites, all green** as of 2026-04-23 (post-merge from main: STARPORT 5a/5b/5c-sim + movement polish on our side, harvester RETURN replan + `Map_FixupSpiceEdges` on main's). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **908 tests across 88 suites, all green** as of 2026-04-23 (STARPORT arc complete across slices 5a / 5b / 5c-sim / 5c-ui). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 
