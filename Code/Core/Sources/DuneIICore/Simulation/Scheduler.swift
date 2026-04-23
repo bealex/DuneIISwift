@@ -578,6 +578,13 @@ extension Simulation {
             starportDeliveryTickCounter &+= 1
             if starportDeliveryTickCounter % Self.starportDeliveryCadenceTicks == 0 {
                 tickStarportDelivery()
+                // Immediately after the delivery pass spawns the
+                // FRIGATE, unload its chain. OpenDUNE drives this via
+                // FRIGATE.EMC's landing script (descent, per-unit
+                // drop, takeoff). Our port does a scheduler-side
+                // placement without the descent — units materialise
+                // next to the pad.
+                tickFrigateUnload()
             }
             starportAvailabilityTickCounter &+= 1
             if starportAvailabilityTickCounter % Self.starportAvailabilityCadenceTicks == 0 {
@@ -837,6 +844,132 @@ extension Simulation {
                 "tickStarportAvailability type=\(type) \(stock)→\(starportStock[type])",
                 tracer: .label("starport")
             )
+        }
+
+        /// STARPORT slice 5b follow-up — frigate-unload pass. Fires
+        /// right after `tickStarportDelivery`. For every spawned
+        /// FRIGATE that still carries a linked-unit chain, walks the
+        /// chain, drops each unit on a passable adjacent tile of the
+        /// STARPORT, clears `inTransport`, and frees the frigate slot
+        /// once the chain is empty.
+        ///
+        /// OpenDUNE drives this via FRIGATE.EMC (descent → per-unit
+        /// drop → takeoff); the landing animation itself is purely
+        /// cosmetic and lives in the script. Our port fast-forwards
+        /// the mechanical half — units arrive around the pad — and
+        /// defers the visual descent until the EMC port lands.
+        public mutating func tickFrigateUnload() {
+            // Snapshot findArray — `units.free` mutates it mid-loop.
+            let snapshot = host.units.findArray
+            for fidx in snapshot {
+                guard fidx < host.units.slots.count else { continue }
+                let f = host.units.slots[fidx]
+                guard f.isUsed, f.type == 26 /* FRIGATE */ else { continue }
+                guard f.inTransport, f.linkedID != 0xFF else { continue }
+                // Frigate must be at a same-house STARPORT's pad; our
+                // tickStarportDelivery spawns it directly on the
+                // structure anchor, so the check is straightforward.
+                let fx = Int(f.positionX) / 256
+                let fy = Int(f.positionY) / 256
+                guard let starport = nearestStarport(
+                    forHouse: f.houseID, nearTile: (fx, fy)
+                ) else { continue }
+                let sx = Int(starport.positionX) / 256
+                let sy = Int(starport.positionY) / 256
+
+                // Drop every chained unit on a free adjacent tile of
+                // the STARPORT footprint (3×3). Breaks the chain
+                // one link at a time so a partial drop (no more free
+                // tiles) leaves the remaining units on the frigate
+                // for a later retry — matching OpenDUNE's "try again
+                // next tick" semantic.
+                var chainHead = Int(f.linkedID)
+                var dropped = 0
+                let candidates = starportAdjacentTiles(anchor: (sx, sy))
+                var available = candidates
+                while chainHead != 0xFF, !available.isEmpty {
+                    guard chainHead < host.units.slots.count else { break }
+                    var cargo = host.units.slots[chainHead]
+                    guard cargo.isUsed else { break }
+                    // Pick the first tile that's passable for this
+                    // unit's movement type. OpenDUNE's frigate drops
+                    // at fixed offsets; we're looser — any passable
+                    // ring tile works.
+                    let mt = Simulation.UnitInfo.lookup(cargo.type)?.movementType ?? .foot
+                    guard let tile = available.first(where: {
+                        isTilePassable(tileX: $0.0, tileY: $0.1, movementType: mt)
+                    }) else { break }
+                    available.removeAll { $0 == tile }
+                    let nextLink = cargo.linkedID
+                    cargo.positionX = UInt16(tile.0 * 256 + 128)
+                    cargo.positionY = UInt16(tile.1 * 256 + 128)
+                    cargo.inTransport = false
+                    cargo.linkedID = 0xFF
+                    host.units[chainHead] = cargo
+                    Log.info(
+                        "frigate-unload frigate=\(fidx) cargo=\(chainHead) (type \(cargo.type)) → tile=(\(tile.0),\(tile.1))",
+                        tracer: .label("starport")
+                    )
+                    chainHead = Int(nextLink)
+                    dropped += 1
+                }
+
+                // Re-write the frigate's remaining chain head (or
+                // clear it when everything dropped).
+                var newFrigate = host.units.slots[fidx]
+                newFrigate.linkedID = UInt8(truncatingIfNeeded: chainHead & 0xFF)
+                host.units[fidx] = newFrigate
+                if newFrigate.linkedID == 0xFF {
+                    Log.info(
+                        "frigate-unload frigate=\(fidx) chain drained after \(dropped) drops — freeing",
+                        tracer: .label("starport")
+                    )
+                    host.units.free(at: fidx)
+                }
+            }
+        }
+
+        /// Ring of 12 tiles immediately outside a 3×3 STARPORT's
+        /// footprint — 4 edges × 3 tiles, corners excluded (corners
+        /// touch two footprint tiles and are awkward to path into).
+        private func starportAdjacentTiles(
+            anchor: (x: Int, y: Int)
+        ) -> [(Int, Int)] {
+            var ring: [(Int, Int)] = []
+            // North + south edges.
+            for dx in 0..<3 {
+                ring.append((anchor.x + dx, anchor.y - 1))
+                ring.append((anchor.x + dx, anchor.y + 3))
+            }
+            // East + west edges.
+            for dy in 0..<3 {
+                ring.append((anchor.x - 1, anchor.y + dy))
+                ring.append((anchor.x + 3, anchor.y + dy))
+            }
+            // Clamp to map bounds.
+            return ring.filter { (0..<64).contains($0.0) && (0..<64).contains($0.1) }
+        }
+
+        /// Nearest STARPORT (type 11) owned by `houseID` by
+        /// squared-distance from `nearTile`. Returns nil when the
+        /// house has no STARPORT.
+        private func nearestStarport(
+            forHouse houseID: UInt8, nearTile: (x: Int, y: Int)
+        ) -> Simulation.StructureSlot? {
+            var best: (slot: Simulation.StructureSlot, d2: Int)?
+            for idx in host.structures.findArray {
+                let s = host.structures.slots[idx]
+                guard s.isUsed, s.type == 11, s.houseID == houseID else { continue }
+                let sx = Int(s.positionX) / 256
+                let sy = Int(s.positionY) / 256
+                let dx = sx - nearTile.x
+                let dy = sy - nearTile.y
+                let d2 = dx * dx + dy * dy
+                if best == nil || d2 < best!.d2 {
+                    best = (s, d2)
+                }
+            }
+            return best?.slot
         }
 
         /// Carryall arrival pass (slice 8c). Walks the unit pool once
