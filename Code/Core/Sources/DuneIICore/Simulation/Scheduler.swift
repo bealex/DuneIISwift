@@ -372,6 +372,31 @@ extension Simulation {
         ///  - Snap `orientationCurrent` to the direction of the
         ///    target (no gradual rotation — a stand-in for the
         ///    deferred `turningSpeed` interpolator).
+        /// Returns true when the encoded index resolves to a still-
+        /// allocated unit / structure. Used by the attack-hold pass
+        /// to detect "target just died" so the attacker can flip
+        /// back to its default action. Tile-kind targets always
+        /// read as alive (they reference a map position, not a
+        /// pool slot).
+        private static func isTargetAlive(
+            encoded: Scripting.EncodedIndex, host: Scripting.Host
+        ) -> Bool {
+            switch encoded.kind {
+            case .unit:
+                let idx = Int(encoded.decoded)
+                guard idx >= 0, idx < host.units.slots.count else { return false }
+                return host.units.slots[idx].isUsed
+            case .structure:
+                let idx = Int(encoded.decoded)
+                guard idx >= 0, idx < host.structures.slots.count else { return false }
+                return host.structures.slots[idx].isUsed
+            case .tile:
+                return true  // tile targets don't "die".
+            case .none:
+                return false
+            }
+        }
+
         public mutating func tickAttackHold() {
             for idx in host.units.findArray {
                 var slot = host.units.slots[idx]
@@ -382,8 +407,36 @@ extension Simulation {
                 // don't apply to bullets / missiles / sonic blasts.
                 if Self.isProjectileType(slot.type) { continue }
                 guard let info = Simulation.UnitInfo.lookup(slot.type) else { continue }
-                let encoded = Scripting.EncodedIndex(raw: slot.targetAttack)
+                // An ACTION_ATTACK with `targetAttack == 0` means the
+                // caller is using ATTACK as a generic "move toward
+                // tile and opportunistically fire" (same as OpenDUNE
+                // HUNT scripts before they find a target). Leave those
+                // alone — don't touch movement or action.
                 guard slot.targetAttack != 0 else { continue }
+
+                // targetAttack pointed at a unit / structure that got
+                // freed → drop back to the unit's default action so
+                // the attacker doesn't linger forever in ATTACK with
+                // a stale encoded index. `actionsPlayer[3]` is the
+                // GUARD / STOP fallback per OpenDUNE's
+                // `Script_Unit_SetActionDefault` (src/script/unit.c:896).
+                let encoded = Scripting.EncodedIndex(raw: slot.targetAttack)
+                if !Self.isTargetAlive(encoded: encoded, host: host) {
+                    let defaultAction = info.actionsPlayer[3]
+                    let prior = slot.actionID
+                    slot.actionID = defaultAction
+                    slot.targetAttack = 0
+                    slot.targetMove = 0
+                    slot.currentDestinationX = 0
+                    slot.currentDestinationY = 0
+                    slot.route = [UInt8](repeating: 0xFF, count: 14)
+                    host.units[idx] = slot
+                    Log.info(
+                        "attack-hold u\(idx) target-dead: action \(prior)→\(defaultAction), cleared move + target",
+                        tracer: .label("attack-hold")
+                    )
+                    continue
+                }
                 guard let targetPos = Pos32.of(encoded, host: host) else { continue }
                 let shooterPos = Pos32(x: slot.positionX, y: slot.positionY)
                 let distance = UInt32(Pos32.distance(shooterPos, targetPos))
