@@ -78,13 +78,23 @@ public enum Scripting {
     /// `SCRIPT_FUNCTION` opcode dispatches into.
     public struct VM {
         public typealias Function = (inout Engine) -> UInt16
+
+        /// Opcode-level trace closure. Called right after decoding the
+        /// opcode + parameter but BEFORE `execute` runs. Used by the
+        /// parity harness to diff per-opcode execution against a trace
+        /// dumped by OpenDUNE's `Script_Run`. Non-sendable on purpose
+        /// — tests + debug only.
+        public typealias TraceHook = (_ pc: Int, _ opcode: UInt8, _ parameter: Int, _ engine: Engine) -> Void
+
         public let program: Formats.Emc.Program
         public var functions: [Function?]
+        public var trace: TraceHook?
 
         public init(program: Formats.Emc.Program, functions: [Function?]) {
             precondition(functions.count == 64, "EMC function table is exactly 64 slots")
             self.program = program
             self.functions = functions
+            self.trace = nil
         }
 
         /// Sets `engine.pc` to `program.entryPoints[typeID]` and zeroes
@@ -122,6 +132,7 @@ public enum Scripting {
                 return .halted
             }
 
+            let pcAtEntry = engine.pc
             let current = program.code[engine.pc]
             engine.pc += 1
 
@@ -140,6 +151,10 @@ public enum Scripting {
                 }
                 parameter = Int(program.code[engine.pc])
                 engine.pc += 1
+            }
+
+            if let trace = trace {
+                trace(pcAtEntry, opcode, parameter, engine)
             }
 
             return execute(opcode: opcode, parameter: parameter, engine: &engine)

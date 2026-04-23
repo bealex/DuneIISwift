@@ -511,6 +511,27 @@ extension Simulation {
             return table[i]
         }
 
+        /// Port of the `scriptNoSlowdown` flag on each row of OpenDUNE's
+        /// `g_table_unitInfo` (`src/table/unitinfo.c`). When `true`, the
+        /// unit's EMC script runs a full `SCRIPT_UNIT_OPCODES_PER_TICK + 2 = 52`
+        /// opcodes per unit-tick; when `false`, off-viewport units are
+        /// capped at `3` opcodes per tick (`src/unit.c:292..294`). Extracted
+        /// as a dense table here rather than a full column on `UnitInfo`
+        /// to avoid touching 27 UnitInfo rows — flip the individual row if
+        /// any of these values ever needs updating.
+        public static func scriptNoSlowdown(type: UInt8) -> Bool {
+            // Row order matches `src/table/unitinfo.c` 27-unit table.
+            // Lines cited: 32, 105, 178, 251, 324, 397, 470, 543, 616,
+            // 689, 762, 835, 908, 981, 1054, 1127, 1200, 1273, 1346,
+            // 1419, 1492, 1565, 1638, 1711, 1784, 1857, 1930.
+            switch type {
+            case 0, 1, 6, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26:
+                return true   // CARRYALL, THOPTER, HARVESTER, MCV, bullet + projectile family
+            default:
+                return false  // everything else (ground combat + infantry)
+            }
+        }
+
         /// Decodes a bitmask (from `Structures.buildableUnitsFromFactory`)
         /// into an ordered list of UNIT type IDs. Ascending order; bits
         /// 27..31 are ignored (only IDs 0..26 are valid unit types).

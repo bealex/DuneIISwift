@@ -119,6 +119,7 @@ extension Simulation {
             // golden's tick-0 entry so `Tools_AdjustToGameSpeed` scales
             // `speedPerTick` increments the same way OpenDUNE did.
             scheduler.gameSpeed = goldenTicks[0].gameSpeed
+            scheduler.viewportPackedPosition = goldenTicks[0].viewportPosition
             // OpenDUNE's per-tick opcode budget: `SCRIPT_UNIT_OPCODES_PER_TICK + 2`
             // (= 52, `src/unit.c:292` + `src/script/script.h:7`). Our
             // gameplay default is 7 — parity needs the real budget so
@@ -133,6 +134,10 @@ extension Simulation {
             // `Script_Unit_Fire` path own that decision, so with real
             // UNIT.EMC our clear produces drift.
             scheduler.tickAttackHoldEnabled = false
+            // Parity runs headless (no viewport), so every unit that
+            // doesn't have `scriptNoSlowdown=true` falls into the
+            // off-viewport 3-opcode cap (OpenDUNE `src/unit.c:292..294`).
+            scheduler.offViewportSlowdownEnabled = true
             if let game = game {
                 scheduler.seedFromSave(game)
             }
@@ -176,6 +181,11 @@ extension Simulation {
             /// `Tools_AdjustToGameSpeed` uses this to scale `speedPerTick`
             /// increments, so our `Scheduler.gameSpeed` must match.
             let gameSpeed: UInt8
+            /// OpenDUNE's `g_viewportPosition` (packed 12-bit tile,
+            /// y*64+x). Used by `Map_IsPositionInViewport` (`src/map.c:363`)
+            /// to decide whether a unit's script gets the full 52-opcode
+            /// budget or the off-viewport 3-opcode cap.
+            let viewportPosition: UInt16
             let houses: [GoldenHouse]
             let structures: [GoldenStructure]
             let units: [GoldenUnit]

@@ -98,6 +98,7 @@ OpenDUNE `src/...` or dunepak `src/...` or the raw bytes of
 - [simulation-getbuildable-signed-int-campaign-gate](simulation-getbuildable-signed-int-campaign-gate.md) — `Structure_GetBuildable`'s `availableCampaign - 1` promotes to signed int; ROCKET_TURRET's `availableCampaign = 0` passes the gate, and the upgrade-level requirement is what actually keeps it locked.
 - [simulation-action-id-drives-script-reload](simulation-action-id-drives-script-reload.md) — writing `slot.actionID` is enough to re-enter the unit script; the scheduler's per-tick `loadedUnitAction` delta-check reloads the engine without explicit `Script_Reset` / `Script_Load` calls.
 - [simulation-route-orientation-locked-to-step](simulation-route-orientation-locked-to-step.md) — while following a pathfinder route, `tickMovement` must pin `orientationCurrent = route[0] * 32` (canonical octant midpoint); recomputing from continuous pos32 delta made the sprite flicker across octant boundaries when the unit was off-axis.
+- [simulation-off-viewport-3-opcode-cap](simulation-off-viewport-3-opcode-cap.md) — OpenDUNE caps unit scripts at 3 opcodes/tick for off-viewport units with `scriptNoSlowdown=false` (`src/unit.c:292..294`); a 17× script-throughput difference that only showed up via opcode-level VM tracing.
 
 ### Render
 
