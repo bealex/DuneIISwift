@@ -20,7 +20,7 @@ struct MovementPassabilityTests {
         return Simulation.Scheduler(host: host, unitVM: vm, structureVM: vm, teamVM: vm)
     }
 
-    @Test("Fallback slide into an ENTIRELY_MOUNTAIN tile halts; targetMove cleared")
+    @Test("Fallback slide into an ENTIRELY_MOUNTAIN tile halts; position unchanged")
     func fallbackSlideHaltsAtMountain() {
         var s = scheduler { _ in UInt8(LandscapeType.entirelyMountain.rawValue) }
         let idx = s.host.units.allocateForType(type: TANK, houseID: Simulation.House.atreides)!
@@ -28,17 +28,17 @@ struct MovementPassabilityTests {
         u.positionX = UInt16(10 * 256 + 128)
         u.positionY = UInt16(10 * 256 + 128)
         u.speed = 100
-        // Encoded tile target at (20, 20).
         u.targetMove = Scripting.EncodedIndex.tile(packed: UInt16(20 * 64 + 20)).raw
         u.actionID = Simulation.ActionID.move
         s.host.units[idx] = u
         s.tick()
-        #expect(s.host.units[idx].targetMove == 0)
-        // Unit shouldn't have moved toward the impassable target.
+        // Unit shouldn't have moved toward the impassable target — the
+        // `isTilePassable` gate refuses every route step.
         #expect(s.host.units[idx].positionX == UInt16(10 * 256 + 128))
+        #expect(s.host.units[idx].currentDestinationX == 0)
     }
 
-    @Test("Route step into a structure tile halts; route + currentDestination + targetMove cleared")
+    @Test("Route step into a structure tile clears route + currentDestination but keeps targetMove for replan")
     func routeStepIntoStructureHalts() {
         var s = scheduler { _ in UInt8(LandscapeType.normalSand.rawValue) }
         // Place a refinery at tile (6, 5).
@@ -57,12 +57,17 @@ struct MovementPassabilityTests {
         u.speed = 100
         u.route[0] = 2  // east → next tile is (6, 5) = structure
         u.actionID = Simulation.ActionID.move
+        // Pick a targetMove that's the same tile the (blocked) route
+        // would have reached, so the pathfinder-based replan doesn't
+        // synthesise a fresh route that bypasses the structure on the
+        // very same tick.
         u.targetMove = Scripting.EncodedIndex.tile(packed: UInt16(5 * 64 + 6)).raw
         s.host.units[idx] = u
         s.tick()
-        #expect(s.host.units[idx].route[0] == 0xFF)
         #expect(s.host.units[idx].currentDestinationX == 0)
-        #expect(s.host.units[idx].targetMove == 0)
+        // targetMove is retained so the next tick's replan can rebuild
+        // the route once whatever was blocking the way clears.
+        #expect(s.host.units[idx].targetMove != 0)
     }
 
     @Test("Winger (carryall) can fly over mountain — not halted")

@@ -1001,6 +1001,60 @@ public final class ScenarioScene: SKScene {
                 }
                 marker.xScale = abs(marker.xScale) * (frame.flipHorizontal ? -1 : 1)
             }
+            // Harvester fullness bar — small cyan fill above the
+            // marker showing `amount / 100` so the player can see
+            // cargo level without clicking. Task #41 precursor; the
+            // full HP-bar on every unit / structure will land as a
+            // generalisation of this.
+            if slot.type == 16 /* HARVESTER */ {
+                updateHarvesterFullnessBar(on: marker, amount: slot.amount)
+            } else if let bar = marker.childNode(withName: "fullnessBar") {
+                bar.isHidden = true
+            }
+        }
+    }
+
+    private static let fullnessBarWidth: CGFloat = 14
+    private static let fullnessBarHeight: CGFloat = 2
+    private static let fullnessBarY: CGFloat = 14  // above the sprite
+
+    private func updateHarvesterFullnessBar(on marker: SKSpriteNode, amount: UInt8) {
+        let bar: SKNode
+        if let existing = marker.childNode(withName: "fullnessBar") {
+            bar = existing
+        } else {
+            let container = SKNode()
+            container.name = "fullnessBar"
+            container.zPosition = 5
+            let outline = SKShapeNode(rect: CGRect(
+                x: -Self.fullnessBarWidth / 2, y: 0,
+                width: Self.fullnessBarWidth, height: Self.fullnessBarHeight
+            ))
+            outline.name = "outline"
+            outline.strokeColor = .black
+            outline.fillColor = .clear
+            outline.lineWidth = 0.5
+            container.addChild(outline)
+            let fill = SKShapeNode(rect: CGRect(
+                x: -Self.fullnessBarWidth / 2, y: 0,
+                width: Self.fullnessBarWidth, height: Self.fullnessBarHeight
+            ))
+            fill.name = "fill"
+            fill.strokeColor = .clear
+            fill.fillColor = .cyan
+            container.addChild(fill)
+            marker.addChild(container)
+            bar = container
+        }
+        bar.position = CGPoint(x: 0, y: Self.fullnessBarY)
+        bar.isHidden = amount == 0
+        if let fill = bar.childNode(withName: "fill") as? SKShapeNode {
+            let pct = min(CGFloat(amount), 100) / 100
+            let w = Self.fullnessBarWidth * pct
+            fill.path = CGPath(rect: CGRect(
+                x: -Self.fullnessBarWidth / 2, y: 0,
+                width: w, height: Self.fullnessBarHeight
+            ), transform: nil)
         }
     }
 

@@ -11,7 +11,7 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**None — combat + harvester AI + camera + sidebar polish are done. Pick from "Next up".** Top candidate: HP-bar visual on world markers (task was started and paused when playtest regressions surfaced).
+**Movement polish — continue investigating jagged / non-continuous movement.** The replan-on-block fix just landed (units no longer wedge in concave corners); the user also reports jagged diagonals when buildings sit between start and goal, and occasional "didn't reach target." New `move-track` tracer now emits one compact line per moving tick — use `duneii-headless` + the `move-track` / `move` / `route` labels to reproduce and diff against expected OpenDUNE motion. Likely next steps: (a) investigate the per-tick overshoot-snap that jumps the unit to tile centre when `distance = speed*16` is larger than a tile, which produces a visible stutter on diagonals; (b) audit the `currentDestination` set at route-pop so consecutive diagonal route steps don't re-orient the unit by 45° every tile.
 
 What works now:
 - Player CY + sidebar build panel + slab / windtrap / refinery chain.
@@ -54,6 +54,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-23 — Harvester continuous loop + fullness bar.** `tickHarvesting` used `!inTransport` as the anti-reharvest gate, but `harvestSpiceStep` sets `inTransport=true` on the first pickup — so ordered harvesters picked up 1 unit then froze. New `Scheduler.isHarvesterDocked` walks the refinery → harvester `linkedID` chain; the real "don't harvest" gate. Added small cyan fullness bar above every harvester marker (`amount / 100`). New `HarvesterContinuousLoopTests` (6 tests) pin the invariants.
+- **2026-04-22 — Movement keeps targetMove on halt + move-track + regression tests.** `tickMovement` now clears only `route` + `currentDestination` when a planned step becomes impassable, keeping `targetMove` live so the next tick's fallback slide (or the script's next `CalculateRoute`) rescues the unit. Hunt enemies no longer wedge in concave building angles; user-ordered moves re-route around transient blockers instead of stalling. Two `MovementPassabilityTests` updated + new `MovementSelfHealTests` suite (6 tests). New `move-track` tracer streams per-tick tile / pos / orient / goal for every moving ground unit. (An earlier in-flight attempt that ran `Pathfinder.findRoute` inline inside `tickMovement` was reverted — it pre-empted the script's `CalculateRoute` + `setSpeed` and stalled fresh user-ordered moves.) **838 / 84 / zero warnings.**
 - **2026-04-22 — Harvester pin widens.** Any non-HARVEST idle harvester flips back to HARVEST so user-ordered harvests don't strand in STOP / GUARD after arrival. Test updated.
 - **2026-04-22 — Pathfind around units.** `isTilePassable` + CalculateRoute scorer treat unit-occupied tiles as blocked (OpenDUNE `Unit_GetTileEnterScore`). Mover's own tile + projectiles + wingers skip.
 - **2026-04-22 — Scene fills window.** `.resizeFill` scaleMode; sidebar pinned right via dynamic `sidebarX` / `mapAreaWidth` / `mapAreaHeight`; `didChangeSize` re-lays everything and logs.

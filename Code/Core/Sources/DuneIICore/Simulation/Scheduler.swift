@@ -259,6 +259,44 @@ extension Simulation {
             return n
         }
 
+        /// Is this harvester currently chain-linked inside any refinery?
+        /// "Docked" means `Structures.dockHarvester` wired the
+        /// harvester into a refinery's `linkedID` chain and
+        /// `undockHarvester` hasn't broken that link yet.
+        ///
+        /// This is the real anti-reharvest gate — `inTransport` can't
+        /// serve that role because `harvestSpiceStep` sets
+        /// `inTransport=true` on the very first successful pickup
+        /// (port of OpenDUNE's `Script_Unit_Harvest`), so gating on
+        /// `!inTransport` would let the harvester pick up exactly one
+        /// unit and then freeze.
+        ///
+        /// Walks the `refinery.linkedID → harvester.linkedID → …`
+        /// chain for every same-house refinery. Chains are typically
+        /// length 1 — the safety valve caps at 8 hops.
+        static func isHarvesterDocked(
+            harvesterIndex: Int,
+            structures: StructurePool,
+            units: UnitPool
+        ) -> Bool {
+            guard harvesterIndex >= 0 else { return false }
+            let target = UInt8(truncatingIfNeeded: harvesterIndex)
+            for idx in structures.findArray {
+                let s = structures.slots[idx]
+                guard s.type == 12 /* REFINERY */ else { continue }
+                var next = s.linkedID
+                var hops = 0
+                while next != 0xFF, hops < 8 {
+                    if next == target { return true }
+                    let uIdx = Int(next)
+                    guard uIdx >= 0, uIdx < units.slots.count else { break }
+                    next = units.slots[uIdx].linkedID
+                    hops &+= 1
+                }
+            }
+            return false
+        }
+
         /// Slice 6b helper. Returns the refinery pool index whose 3×2
         /// footprint covers `tile` and belongs to `houseID`, else nil.
         static func refineryAt(
@@ -589,25 +627,32 @@ extension Simulation {
             for idx in host.units.findArray {
                 var slot = host.units.slots[idx]
                 guard slot.type == 16 else { continue }
+                // Physical dock check replaces `!inTransport` gates on
+                // every branch below — `inTransport` flips to true on
+                // the first successful `harvestSpiceStep` (port of
+                // OpenDUNE's `Script_Unit_Harvest` which uses it as a
+                // "has cargo" flag), so guarding on `!inTransport` used
+                // to short-circuit the loop after a single pickup.
+                // The true "don't touch this harvester" signal is
+                // whether it's currently chain-linked to a refinery.
+                let isDocked = Self.isHarvesterDocked(
+                    harvesterIndex: idx,
+                    structures: host.structures,
+                    units: host.units
+                )
                 // Pin: ANY harvester in STOP / GUARD / default action
                 // flips back to HARVEST so the seek-spice / seek-refinery
                 // branches below can reclaim it. OpenDUNE sets
                 // `actionsPlayer[3] = stop` for harvesters, so
                 // `Script_Unit_SetActionDefault` leaves a player-owned
-                // harvester stuck in STOP once its current task finishes
-                // — and the user-`H` shortcut path also finishes movement
-                // in STOP because tickAttackHold's target-dead reset
-                // fires on any unit whose EMC-level targetAttack was
-                // cleared. The pin catches all of those. Skips when the
-                // harvester is mid-action (docked, moving, full and
-                // returning via tickMovement fallback).
+                // harvester stuck in STOP once its current task finishes.
                 let idleState = slot.targetMove == 0
                     && slot.route[0] == 0xFF
                     && slot.currentDestinationX == 0
                     && slot.currentDestinationY == 0
                 if slot.actionID != Simulation.ActionID.harvest
                     && slot.actionID != Simulation.ActionID.returnAction
-                    && !slot.inTransport
+                    && !isDocked
                     && idleState
                 {
                     let prior = slot.actionID
@@ -619,7 +664,7 @@ extension Simulation {
                     )
                 }
                 if slot.actionID == Simulation.ActionID.harvest,
-                   slot.amount >= 100, !slot.inTransport
+                   slot.amount >= 100, !isDocked
                 {
                     // Slice 8a: prefer a free refinery (no harvester
                     // docked) over the absolute nearest so two
@@ -684,7 +729,7 @@ extension Simulation {
                         )
                     }
                 } else if slot.actionID == Simulation.ActionID.harvest,
-                          slot.amount < 100, !slot.inTransport
+                          slot.amount < 100, !isDocked
                 {
                     let hx = Int(slot.positionX) / 256
                     let hy = Int(slot.positionY) / 256
@@ -715,7 +760,7 @@ extension Simulation {
                         )
                     }
                 } else if slot.actionID == Simulation.ActionID.returnAction,
-                          !slot.inTransport
+                          !isDocked
                 {
                     let tx = Int(slot.positionX) / 256
                     let ty = Int(slot.positionY) / 256
@@ -746,7 +791,16 @@ extension Simulation {
                 let slot = host.units.slots[idx]
                 guard slot.type == 16 /* HARVESTER */ else { continue }
                 guard slot.actionID == Simulation.ActionID.harvest else { continue }
-                guard !slot.inTransport else { continue }
+                // Skip docked harvesters — they're being refined, not
+                // harvesting. `inTransport` alone is unreliable (port
+                // of OpenDUNE's `Script_Unit_Harvest` sets it to true
+                // on the first successful pickup) — a docked-chain
+                // check is the authoritative gate.
+                if Self.isHarvesterDocked(
+                    harvesterIndex: idx,
+                    structures: host.structures,
+                    units: host.units
+                ) { continue }
                 let before = slot.amount
                 // Slice 9: when `apply` transitions a cell between
                 // bare / thin / thick, fire the host's repaint
@@ -948,14 +1002,21 @@ extension Simulation {
                     if !Self.isProjectileType(slot.type),
                        !isTilePassable(tileX: tileX, tileY: tileY, movementType: mt, excludingUnit: idx)
                     {
+                        // Clear the route but KEEP `targetMove` so the
+                        // next UNIT.EMC tick re-runs CalculateRoute and
+                        // replans around whatever's now sitting on the
+                        // planned step (typically a transient — another
+                        // unit crossing the path). Without this, two
+                        // hunt-action enemies whose routes cross wedge
+                        // each other into concave building angles and
+                        // never recover.
                         Log.info(
-                            "move-halt u\(idx) impassable tile=(\(tileX),\(tileY)) mt=\(mt) — clearing route + target",
+                            "move-halt u\(idx) impassable tile=(\(tileX),\(tileY)) mt=\(mt) — clearing route, keeping targetMove=\(String(format: "0x%04X", slot.targetMove)) for replan",
                             tracer: .label("move")
                         )
                         slot.route = [UInt8](repeating: 0xFF, count: 14)
                         slot.currentDestinationX = 0
                         slot.currentDestinationY = 0
-                        slot.targetMove = 0
                         host.units[idx] = slot
                         continue
                     }
@@ -1162,6 +1223,19 @@ extension Simulation {
                         "move-tick u\(idx) (t=\(slot.type) a=\(slot.actionID)) pos=(\(priorX),\(priorY))→(\(slot.positionX),\(slot.positionY)) o=\(priorOrient)→\(slot.orientationCurrent) goal=(\(goal.x),\(goal.y)) via=\(goalSource) speedPT=\(slot.speedPerTick) rem=\(slot.speedRemainder) dist=\(distBefore)→\(distAfter)",
                         tracer: .label("move")
                     )
+                    // `move-track`: compact per-tick position stream so
+                    // a playtester can eyeball jagged / non-continuous
+                    // movement without decoding the full `move-tick`
+                    // line. Emitted only while the unit actually moved
+                    // this tick.
+                    if !Self.isProjectileType(slot.type) {
+                        let tx = Int(slot.positionX) / 256
+                        let ty = Int(slot.positionY) / 256
+                        Log.debug(
+                            "move-track u\(idx) tile=(\(tx),\(ty)) pos=(\(slot.positionX),\(slot.positionY)) o=\(slot.orientationCurrent) dir=\(slot.route[0]) goal=(\(Int(goal.x)/256),\(Int(goal.y)/256))@(\(goal.x),\(goal.y)) via=\(goalSource)",
+                            tracer: .label("move-track")
+                        )
+                    }
                 }
                 host.units[idx] = slot
             }
