@@ -509,4 +509,148 @@ struct ScenarioRuntimeTests {
         // Without the tick-refresh fix, controller would still say BUSY here.
         #expect(r.buildController.yardState == .ready)
     }
+
+    // MARK: - STARPORT slice 5c-ui — end-to-end click flow
+
+    /// Builds mission 1, manually stamps a STARPORT for the player, and
+    /// seeds the scheduler's `starportStock` so the panel has rows.
+    /// Then: click the STARPORT tile, add two items to the cart,
+    /// commit. Asserts the controller opens / mutates / commits + the
+    /// simulation state settles correctly (house credits drained,
+    /// stock decremented, units allocated off-map + chained onto
+    /// `starportLinkedID`, delivery timer seeded).
+    @Test("leftClick on friendly STARPORT opens the cart; commit drains credits, chains units, and decrements stock")
+    func starportClickOpenAddCommit() throws {
+        guard let r = try loadMission1() else { return }
+        let host = try #require(r.host)
+
+        // Stamp a STARPORT (type 11) for Atreides at tile (20, 20).
+        // Reserved slot index 0 is free post-load (CYARD / factories
+        // get allocated into the factory range).
+        var structures = host.structures
+        // Pick any free slot in the dynamic range (0..<capacitySoft).
+        // Mission 1 occupies a few slots at load; we take the first
+        // free one.
+        guard let sIdx = structures.allocate(
+            in: 0...78, type: 11, houseID: Simulation.House.atreides
+        ) else {
+            Issue.record("could not allocate STARPORT structure")
+            return
+        }
+        var starport = structures[sIdx]
+        starport.positionX = UInt16(20 * 256)
+        starport.positionY = UInt16(20 * 256)
+        starport.linkedID = 0xFF
+        structures[sIdx] = starport
+        host.structures = structures
+
+        // Seed the live stock.
+        #expect(r.scheduler != nil)
+        r.setStarportStock(typeID: UnitType.trike.typeID, count: 5)
+        r.setStarportStock(typeID: UnitType.tank.typeID, count: 3)
+
+        // Pre-flight credit snapshot.
+        let creditsBefore = host.houses.slots[Int(Simulation.House.atreides)].credits
+
+        // Click the STARPORT — opens the panel.
+        let openOutcome = r.leftClick(tileX: 20, tileY: 20)
+        if case .starportOpened(let structureIndex) = openOutcome {
+            #expect(structureIndex == sIdx)
+        } else {
+            Issue.record("expected .starportOpened, got \(openOutcome)")
+            return
+        }
+        let controller = try #require(r.starportController)
+        #expect(!controller.rows.isEmpty, "panel should have at least one row")
+
+        // Add two TRIKEs + one TANK to the cart.
+        let trikeType = UnitType.trike.typeID
+        let tankType = UnitType.tank.typeID
+        let priceTrike = controller.rows.first(where: { $0.typeID == trikeType })?.unitPrice ?? 0
+        let priceTank = controller.rows.first(where: { $0.typeID == tankType })?.unitPrice ?? 0
+        let addTrike1 = r.starportIncrement(typeID: trikeType)
+        let addTrike2 = r.starportIncrement(typeID: trikeType)
+        let addTank = r.starportIncrement(typeID: tankType)
+        #expect(addTrike1 == .starportCartUpdated)
+        #expect(addTrike2 == .starportCartUpdated)
+        #expect(addTank == .starportCartUpdated)
+
+        // Mid-cart state reflects the pre-commit drain + chained rows.
+        let mid = try #require(r.starportController)
+        #expect(mid.cartTotal == priceTrike * 2 + priceTank)
+        #expect(mid.availableCredits == creditsBefore - (priceTrike * 2 + priceTank))
+
+        // Commit.
+        let commitOutcome = r.starportCommit()
+        if case .starportCommitted(let chained) = commitOutcome {
+            #expect(chained == 3, "expected 3 chained units (2 trike + 1 tank), got \(chained)")
+        } else {
+            Issue.record("expected .starportCommitted, got \(commitOutcome)")
+            return
+        }
+        // Panel cleared after commit.
+        #expect(r.starportController == nil)
+
+        // House credits drained.
+        let creditsAfter = host.houses.slots[Int(Simulation.House.atreides)].credits
+        #expect(creditsAfter == creditsBefore - (priceTrike * 2 + priceTank))
+
+        // Stock decremented.
+        let sched = try #require(r.scheduler)
+        #expect(sched.starportStock[Int(trikeType)] == 3, "trike stock 5 → 3 after ordering 2")
+        #expect(sched.starportStock[Int(tankType)] == 2, "tank stock 3 → 2 after ordering 1")
+
+        // Delivery countdown seeded (non-zero → timer running).
+        let h = host.houses.slots[Int(Simulation.House.atreides)]
+        #expect(h.starportLinkedID != Simulation.HousePool.invalidIndex,
+                "chain head must be set after commit")
+        #expect(h.starportTimeLeft > 0, "delivery timer must be seeded")
+
+        // Three off-map units allocated (trike + trike + tank).
+        let chainedUnits = host.units.slots.filter {
+            $0.isUsed && ($0.type == trikeType || $0.type == tankType)
+                && $0.inTransport
+                && $0.positionX == 0xFFFF
+                && $0.positionY == 0xFFFF
+        }
+        #expect(chainedUnits.count == 3)
+    }
+
+    @Test("starportCancel drops the panel without touching credits or stock")
+    func starportCancelIsPureDiscard() throws {
+        guard let r = try loadMission1() else { return }
+        let host = try #require(r.host)
+
+        var structures = host.structures
+        // Pick any free slot in the dynamic range (0..<capacitySoft).
+        // Mission 1 occupies a few slots at load; we take the first
+        // free one.
+        guard let sIdx = structures.allocate(
+            in: 0...78, type: 11, houseID: Simulation.House.atreides
+        ) else {
+            Issue.record("could not allocate STARPORT"); return
+        }
+        var starport = structures[sIdx]
+        starport.positionX = UInt16(20 * 256)
+        starport.positionY = UInt16(20 * 256)
+        structures[sIdx] = starport
+        host.structures = structures
+        r.setStarportStock(typeID: UnitType.trike.typeID, count: 5)
+
+        let creditsBefore = host.houses.slots[Int(Simulation.House.atreides)].credits
+        let stockBefore = r.scheduler?.starportStock[Int(UnitType.trike.typeID)] ?? 0
+
+        _ = r.leftClick(tileX: 20, tileY: 20)
+        _ = r.starportIncrement(typeID: UnitType.trike.typeID)
+        _ = r.starportIncrement(typeID: UnitType.trike.typeID)
+
+        let cancel = r.starportCancel()
+        #expect(cancel == .starportCancelled)
+        #expect(r.starportController == nil)
+
+        let creditsAfter = host.houses.slots[Int(Simulation.House.atreides)].credits
+        #expect(creditsAfter == creditsBefore, "cancel must not drain credits")
+        let stockAfter = r.scheduler?.starportStock[Int(UnitType.trike.typeID)] ?? 0
+        #expect(stockAfter == stockBefore, "cancel must not touch stock")
+    }
 }

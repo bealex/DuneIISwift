@@ -654,6 +654,56 @@ struct MovementLongRunTests {
 
     // MARK: - 9. Final sanity — no teleport across any test's setup
 
+    // MARK: - 11. Route-driven motion has no Δ=0 stalls at tile boundaries
+
+    /// Regression for the 2026-04-23 "jumps in movement" fix. Before
+    /// the inline route-pop in `tickMovement`'s overshoot-snap branch,
+    /// a route-driven tank stalled for one tick at every tile center:
+    /// Δ=32 (step + snap), Δ=0 (arrival branch pops route without
+    /// firing a step), Δ=16, Δ=16, … → visible stutter every 16 ticks.
+    /// After the fix the arrival branch fires the route-pop inline, so
+    /// the very next tick picks up the new leg and advances normally.
+    ///
+    /// The invariant: across a long route-driven move, the number of
+    /// zero-axis-delta ticks (Δx==Δy==0) between the "unit is moving
+    /// now" boundary and arrival stays bounded by a small slack — we
+    /// allow up to the number of tile boundaries crossed (= one Δ=0
+    /// per setSpeed call from `CalculateRoute`) and the warm-up tick.
+    @Test("Route-driven tank has no per-tile-boundary Δ=0 stall")
+    func routeDrivenMovementNoPerTileStall() {
+        var s = scheduler()
+        let idx = spawn(&s, type: TANK, at: (x: 5, y: 20))
+        stampRoute(&s, unit: idx, to: (x: 18, y: 20))
+        #expect(s.host.units[idx].route[0] != 0xFF)
+        let trace = driveUntilArrival(&s, unit: idx, maxTicks: 1500)
+        // Count ticks where the unit was actively moving (speed>0)
+        // but didn't advance position on either axis.
+        var stalls = 0
+        var first = true
+        for i in 1..<trace.count {
+            let p = trace[i - 1]
+            let c = trace[i]
+            // Only count during the motion phase (speed > 0 implies
+            // targetMove still active earlier). Simpler: only count
+            // ticks where the *previous* tick already had targetMove
+            // set.
+            if p.targetMove == 0 { continue }
+            let dx = Int(c.posX) - Int(p.posX)
+            let dy = Int(c.posY) - Int(p.posY)
+            if dx == 0 && dy == 0 {
+                stalls += 1
+                if first {
+                    first = false
+                }
+            }
+        }
+        // Tile boundaries crossed ≈ 13. Allow up to 3 stalls total
+        // (warm-up + occasional CalculateRoute reset). Pre-fix this
+        // was ~13 — one per tile boundary. The fix brings it under 4.
+        #expect(stalls <= 3,
+                "route-driven move stalled \(stalls) times — expected ≤ 3 (pre-fix this was ~13, one per tile)")
+    }
+
     @Test("Fallback slide arrival snap never skips > 1 tile in a single tick")
     func arrivalSnapDoesNotTeleport() {
         // Pick a starting sub-tile position so the final step's

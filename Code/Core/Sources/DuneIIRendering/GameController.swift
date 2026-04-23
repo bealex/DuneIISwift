@@ -34,32 +34,35 @@ public final class GameController: NSObject, SceneCoordinator {
         if playIntroOnBoot, assets.installation.body(of: "INTRO.WSA") != nil {
             route(to: .intro)
         } else {
-            routeToDefaultScenario()
+            routeToDefaultScenarioViaMentat()
         }
     }
 
     // MARK: SceneCoordinator
 
     public func advance(from scene: SKScene) {
-        // Boot flow goes Intro → Scenario directly. MainMenu + Mentat
-        // scenes still exist but aren't in the boot chain — the user
-        // wants to land on the map and play, not click through
-        // briefings. They'll be reintroduced once P7 campaign glue
-        // lands and there's somewhere meaningful to route back to.
+        // Boot flow: Intro → Mentat(scenario) → Scenario. MainMenu is
+        // still out of the chain until P7 campaign glue lands; today
+        // the coordinator jumps straight to the default scenario's
+        // briefing. A click in the Mentat screen advances to that
+        // scenario's map.
         switch scene {
-        case is IntroScene: routeToDefaultScenario()
-        case is MainMenuScene: routeToDefaultScenario()
-        case is MentatScene: routeToDefaultScenario()
-        default: routeToDefaultScenario()
+        case is IntroScene: routeToDefaultScenarioViaMentat()
+        case is MainMenuScene: routeToDefaultScenarioViaMentat()
+        case let mentat as MentatScene:
+            route(to: .scenario(name: mentat.scenarioName))
+        default: routeToDefaultScenarioViaMentat()
         }
     }
 
-    private func routeToDefaultScenario() {
-        if let scenario = defaultScenarios.first(where: { assets.installation.body(of: $0) != nil }) {
-            route(to: .scenario(name: scenario))
-        } else {
+    private func routeToDefaultScenarioViaMentat() {
+        guard let scenario = defaultScenarios.first(where: {
+            assets.installation.body(of: $0) != nil
+        }) else {
             route(to: .mainMenu)
+            return
         }
+        route(to: .mentat(scenarioName: scenario))
     }
 
     public func route(to route: Route) {
@@ -72,8 +75,20 @@ public final class GameController: NSObject, SceneCoordinator {
             // replaces the current song.
             _ = try? jukebox.play(named: "DUNE0.XMI")
             present(MainMenuScene(assets: assets))
-        case .mentat:
-            present(MentatScene(assets: assets))
+        case .mentat(let scenarioName):
+            // Pre-load the scenario just to read the briefing-picture
+            // name; failures degrade gracefully to a briefing without
+            // the sub-screen animation.
+            let scenarioHit = (try? assets.loadScenario(named: scenarioName)) ?? nil
+            let rawBrief = scenarioHit?.briefing.briefPicture ?? ""
+            let briefingWsa: String? = rawBrief.isEmpty ? nil : rawBrief
+            let scene = MentatScene(
+                assets: assets,
+                playerHouseID: MentatScene.playerHouse(forScenarioName: scenarioName),
+                scenarioName: scenarioName,
+                briefingWsaName: briefingWsa
+            )
+            present(scene)
         case .scenario(let name):
             // Kick off background music on scenario entry as well,
             // since the main-menu detour is no longer in the boot path.

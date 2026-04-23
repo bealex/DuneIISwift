@@ -18,6 +18,10 @@ public protocol SceneCoordinator: AnyObject {
 public enum Route: Sendable, Equatable {
     case intro
     case mainMenu
-    case mentat
+    /// Pre-scenario Mentat briefing. Carries the target scenario so
+    /// the coordinator knows where to route after the briefing clicks
+    /// through. Player house + briefing WSA are derived from the
+    /// scenario at scene-build time.
+    case mentat(scenarioName: String)
     case scenario(name: String)
 }
