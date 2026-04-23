@@ -79,6 +79,25 @@ extension Simulation {
         /// schedulers leave it unset.
         public var bloomSandTileID: UInt16 = 0
 
+        /// Scenario playable rect — port of OpenDUNE
+        /// `g_mapInfos[mapScale]` (`src/map.c:57`). Seeded by the
+        /// scene / runtime from `Scenario.playableRect` at load so the
+        /// auto-harvester's spice seek never strays outside the
+        /// scenario's authoritative boundary. Default covers the whole
+        /// 64×64 grid so tests that don't care can leave it unset.
+        public var playableRect: (originX: Int, originY: Int, width: Int, height: Int) = (0, 0, 64, 64)
+
+        /// Auto-harvester spice-seek radius (tiles) — how far away the
+        /// `tickHarvesting` pass is willing to look for a fresh spice
+        /// patch when a harvester stands idle off-spice. OpenDUNE's
+        /// `Map_SearchSpice` calls from C pass radius 10 (harvester
+        /// spawn); the in-EMC seek logic uses a larger effective
+        /// radius since it loops. Picking 20 is a conservative middle
+        /// ground: covers a reasonable fraction of the playable rect
+        /// without letting harvesters trundle across the whole map to
+        /// a distant patch they'd never reasonably pick on foot.
+        public static let autoHarvestSpiceSearchRadius = 20
+
         /// Structure type IDs that have no script and are skipped during
         /// dispatch. Mirrors OpenDUNE's `STRUCTURE_SLAB_1x1`,
         /// `STRUCTURE_SLAB_2x2`, `STRUCTURE_WALL`.
@@ -181,32 +200,111 @@ extension Simulation {
             return info.movementSpeed[mt] != 0
         }
 
-        /// Slice 7 helper. Nearest `thin` or `thick` spice tile to
-        /// `from` by squared distance. Returns nil when the SpiceMap
-        /// holds no spice anywhere (fully drained or scenario seed
-        /// without spice in range). Scans all 4096 cells — cheap at
-        /// 12 Hz scheduler cadence and slice-cadence 3.
-        static func findNearestSpiceTile(
+        /// Port of OpenDUNE `Map_SearchSpice` (`src/map.c:1117`). Picks
+        /// the best spice tile within `radius` (Chebyshev + Euclidean
+        /// blend via `Tile_GetDistancePacked`) of `from`, clamped to
+        /// `playableRect` — harvesters never stray off the scenario's
+        /// authoritative playable area, matching OpenDUNE's
+        /// `g_mapInfos[mapScale]` bounding box used throughout
+        /// `Map_SearchSpice`.
+        ///
+        /// Two preference trackers:
+        /// - `packed2` / `radius2`: best **thick** spice within a tight
+        ///   radius (4 tiles, per the reference — a quality bonus that
+        ///   steers harvesters toward fat patches even if there's thin
+        ///   spice closer).
+        /// - `packed1` / `radius1`: best **thin** (or fallback) spice
+        ///   within `radius`.
+        ///
+        /// Tiles are skipped when they hold a structure or a
+        /// non-projectile / non-winger unit (matches OpenDUNE's
+        /// `hasStructure` + `Unit_Get_ByPackedTile` gates). The mover
+        /// itself is skipped via `excludingUnit`.
+        ///
+        /// Returns nil when no spice exists in range.
+        static func findSpiceNear(
             from: (x: Int, y: Int),
-            map: SpiceMap
+            radius: Int,
+            playableRect: (originX: Int, originY: Int, width: Int, height: Int),
+            map: SpiceMap,
+            structures: StructurePool,
+            units: UnitPool,
+            excludingUnit: Int
         ) -> (x: Int, y: Int)? {
-            var bestIdx: Int?
-            var bestDist = Int.max
-            for i in 0..<SpiceMap.cellCount {
-                let level = map.cells[i]
-                guard level == .thin || level == .thick else { continue }
-                let tx = i % SpiceMap.width
-                let ty = i / SpiceMap.width
-                let dx = tx - from.x
-                let dy = ty - from.y
-                let d = dx * dx + dy * dy
-                if d < bestDist {
-                    bestDist = d
-                    bestIdx = i
+            // Clamp the search window to the intersection of
+            // (from ± radius) and the playable rect.
+            let rectMaxX = playableRect.originX + playableRect.width - 1
+            let rectMaxY = playableRect.originY + playableRect.height - 1
+            let xmin = max(from.x - radius, playableRect.originX)
+            let xmax = min(from.x + radius, rectMaxX)
+            let ymin = max(from.y - radius, playableRect.originY)
+            let ymax = min(from.y + radius, rectMaxY)
+            if xmin > xmax || ymin > ymax { return nil }
+
+            // Precompute occupied tiles so the inner loop stays tight.
+            // Structures: every footprint tile of every allocated
+            // structure contributes. Walls / concrete / ruins are in
+            // `findArray` (not the reserved aggregates), so the scan is
+            // bounded.
+            var structureOccupied = Set<Int>()
+            for sIdx in structures.findArray {
+                let s = structures.slots[sIdx]
+                let ax = Int(s.positionX) / 256
+                let ay = Int(s.positionY) / 256
+                let fp = Structures.footprintTiles(type: s.type, anchorX: ax, anchorY: ay)
+                for (fx, fy) in fp {
+                    structureOccupied.insert(fy * 64 + fx)
                 }
             }
-            guard let idx = bestIdx else { return nil }
-            return (idx % SpiceMap.width, idx / SpiceMap.width)
+            var unitOccupied = Set<Int>()
+            for uIdx in units.findArray {
+                if uIdx == excludingUnit { continue }
+                let u = units.slots[uIdx]
+                guard u.isUsed else { continue }
+                if Self.isProjectileType(u.type) { continue }
+                if let info = UnitInfo.lookup(u.type),
+                   info.movementType == .winger { continue }
+                let utx = Int(u.positionX) / 256
+                let uty = Int(u.positionY) / 256
+                unitOccupied.insert(uty * 64 + utx)
+            }
+
+            // OpenDUNE's `Tile_GetDistancePacked`: max(|dx|,|dy|) +
+            // min(…)/2. Matches the metric used by the pathfinder cost,
+            // so our seek stays consistent with the route it picks.
+            @inline(__always)
+            func packedDistance(_ ax: Int, _ ay: Int, _ bx: Int, _ by: Int) -> Int {
+                let dx = abs(ax - bx), dy = abs(ay - by)
+                return max(dx, dy) + min(dx, dy) / 2
+            }
+
+            var radius1 = radius + 1         // best thin/thick within `radius`
+            var radius2 = radius + 1         // best thick (d < 4) tracker
+            var packed1: Int? = nil
+            var packed2: Int? = nil
+
+            for ty in ymin...ymax {
+                for tx in xmin...xmax {
+                    let tile = ty * 64 + tx
+                    if structureOccupied.contains(tile) { continue }
+                    if unitOccupied.contains(tile) { continue }
+                    let level = map.cells[ty * SpiceMap.width + tx]
+                    let isThick = (level == .thick)
+                    let isThin = (level == .thin)
+                    guard isThick || isThin else { continue }
+                    let d = packedDistance(tx, ty, from.x, from.y)
+                    if isThick, d < 4, d < radius2 {
+                        radius2 = d; packed2 = tile
+                    }
+                    if d <= radius, d < radius1 {
+                        radius1 = d; packed1 = tile
+                    }
+                }
+            }
+            // Thick within 4 wins; else nearest thin/thick inside radius.
+            let chosen = packed2 ?? packed1
+            guard let c = chosen else { return nil }
+            return (c % 64, c / 64)
         }
 
         /// Slice 6b helper. Nearest same-house REFINERY for a full
@@ -818,20 +916,38 @@ extension Simulation {
                 // to RETURN via `Script_Unit_GoToClosestStructure`.
                 // Since slot 0x2A is not yet ported (halts on call),
                 // the EMC script can flip action to bogus values
-                // (STOP, RETURN-while-not-full) and strand the
+                // (GUARD / ATTACK / ambush) and strand a half-loaded
                 // harvester. The pin defends against those drifts
-                // without stealing the harvest/return/move trio's
+                // without stealing the harvest/return/move/stop trio's
                 // organic transitions (which our own branches below
                 // handle correctly).
                 //
+                // `.stop` is treated as ORGANIC: a harvester that
+                // arrives via a player-ordered `orderMove` flips
+                // through the UNIT.EMC MOVE script to
+                // `actionsPlayer[3]` (= `.stop` for HARVESTER) on
+                // arrival. Respecting that means manual moves halt
+                // the harvester instead of auto-resuming the seek
+                // cycle. The player must press `H` (or right-click
+                // spice, which `orderHarvest` maps to `action=.harvest`)
+                // to explicitly resume auto-harvest.
+                //
+                // Exception: `.stop` + `amount >= 100` flips to
+                // `.returnAction` — a full harvester still needs to
+                // deposit regardless of what sent it to stop, so we
+                // override this case so the user doesn't have to
+                // hand-pilot full harvesters back to a refinery.
+                //
                 // Rule:
-                //   {.harvest, .returnAction, .move} → leave alone;
-                //     the branches below own these transitions.
-                //   anything else + idle               → override:
+                //   {.harvest, .returnAction, .move, .stop} → leave
+                //     alone (organic); the branches below own these.
+                //   .stop + full                          → flip to
+                //     .returnAction (auto-return when loaded).
+                //   other non-organic + idle              → override:
                 //     .returnAction if amount≥100, else .harvest.
-                //   RETURN + idle + amount<100         → demote to
-                //     .harvest (the EMC-driven bogus-RETURN case
-                //     that strands the harvester mid-load on spice).
+                //   RETURN + idle + amount<100            → demote to
+                //     .harvest (EMC-driven bogus-RETURN case that
+                //     strands a partly-loaded harvester off spice).
                 let idleState = slot.targetMove == 0
                     && slot.route[0] == 0xFF
                     && slot.currentDestinationX == 0
@@ -839,7 +955,17 @@ extension Simulation {
                 let isOrganicAction = slot.actionID == Simulation.ActionID.harvest
                     || slot.actionID == Simulation.ActionID.returnAction
                     || slot.actionID == Simulation.ActionID.move
-                if !isDocked, !isOrganicAction, idleState {
+                    || slot.actionID == Simulation.ActionID.stop
+                if !isDocked, slot.actionID == Simulation.ActionID.stop,
+                   slot.amount >= 100, idleState
+                {
+                    slot.actionID = Simulation.ActionID.returnAction
+                    host.units[idx] = slot
+                    Log.info(
+                        "harvest-pin harvester=\(idx) STOP → RETURN (full, idle) amount=\(slot.amount)",
+                        tracer: .label("harvest-tick")
+                    )
+                } else if !isDocked, !isOrganicAction, idleState {
                     let prior = slot.actionID
                     slot.actionID = slot.amount >= 100
                         ? Simulation.ActionID.returnAction
@@ -947,8 +1073,14 @@ extension Simulation {
                             || lb == UInt8(LandscapeType.thickSpice.rawValue)
                     }()
                     if idle, !onSpice,
-                       let spice = Self.findNearestSpiceTile(
-                           from: (x: hx, y: hy), map: spiceMap
+                       let spice = Self.findSpiceNear(
+                           from: (x: hx, y: hy),
+                           radius: Self.autoHarvestSpiceSearchRadius,
+                           playableRect: playableRect,
+                           map: spiceMap,
+                           structures: host.structures,
+                           units: host.units,
+                           excludingUnit: idx
                        )
                     {
                         _ = Simulation.Units.orderMove(
@@ -1466,6 +1598,50 @@ extension Simulation {
                 }
 
                 if didStep {
+                    // Crush check. Port of OpenDUNE's
+                    // `Unit_Move`'s tracked-on-foot branch
+                    // (`src/unit.c:1328..1349`): a tracked or
+                    // harvester mover that crosses onto a foot-unit's
+                    // tile kills the foot unit (`Unit_SetAction(u,
+                    // ACTION_DIE)`; we short-circuit to
+                    // `applyUnitDamage` which frees the slot + drops
+                    // the infantry corpse sprite). Fires only on the
+                    // tick we cross into a new tile, not every subpixel
+                    // step.
+                    let moverInfo = Simulation.UnitInfo.lookup(slot.type)
+                    let moverMT = moverInfo?.movementType ?? .foot
+                    let canCrush = moverMT == .tracked || moverMT == .harvester
+                    if canCrush {
+                        let oldTX = Int(priorX) / 256
+                        let oldTY = Int(priorY) / 256
+                        let newTX = Int(slot.positionX) / 256
+                        let newTY = Int(slot.positionY) / 256
+                        if newTX != oldTX || newTY != oldTY {
+                            let newTile = (newTX, newTY)
+                            // Snapshot findArray — applyUnitDamage
+                            // frees slots and mutates the array.
+                            for footIdx in host.units.findArray.reversed() {
+                                if footIdx == idx { continue }
+                                let u = host.units.slots[footIdx]
+                                guard u.isUsed else { continue }
+                                guard let info = Simulation.UnitInfo.lookup(u.type),
+                                      info.movementType == .foot else { continue }
+                                let utx = Int(u.positionX) / 256
+                                let uty = Int(u.positionY) / 256
+                                if utx == newTile.0, uty == newTile.1 {
+                                    Log.info(
+                                        "crush u\(idx) (type \(slot.type) \(moverMT)) squashed u\(footIdx) (type \(u.type) foot) at tile=(\(newTX),\(newTY))",
+                                        tracer: .label("crush")
+                                    )
+                                    _ = Simulation.Explosions.applyUnitDamage(
+                                        unitIndex: footIdx,
+                                        damage: u.hitpoints,
+                                        host: host
+                                    )
+                                }
+                            }
+                        }
+                    }
                     // Overshoot detection: if the post-move distance
                     // to goal is >= pre-move distance, we stepped past
                     // (or at least not closer) and should snap.

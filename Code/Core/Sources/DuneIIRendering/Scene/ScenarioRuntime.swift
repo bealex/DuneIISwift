@@ -291,6 +291,11 @@ public final class ScenarioRuntime {
         // mutated thereafter by commitStarportOrder / tickStarport*
         // passes (STARPORT slice 5b).
         s.starportStock = scenario.choamInventory
+        // Clamp auto-harvester spice-seek + future per-tick passes to
+        // the scenario's playable rect (`g_mapInfos[mapScale]`). Prior
+        // to this, `findNearestSpiceTile` scanned all 4096 cells and
+        // happily returned tiles outside the playable border.
+        s.playableRect = rect
         scheduler = s
         tickCounter = 0
         scenarioName = name
