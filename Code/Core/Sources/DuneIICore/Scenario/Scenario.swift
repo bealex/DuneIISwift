@@ -352,6 +352,16 @@ public struct Scenario: Sendable {
     public var structures: [StructureSpawn] = []
     public var teams: [TeamSpawn] = []
 
+    /// Initial CHOAM (STARPORT) inventory. Port of OpenDUNE
+    /// `g_starportAvailable` (`src/unit.c:57`) + its INI loader
+    /// `Scenario_Load_Choam` (`src/scenario.c:473`). Indexed by unit-type
+    /// ID (`UnitInfo.lookup` / `UnitType.typeID`); the 27-entry backing
+    /// matches the save-format `SaveInfo.starportAvailable` array and
+    /// OpenDUNE's UNIT_MAX. Non-listed entries stay at 0 (no stock),
+    /// matching the `memset(..., 0, sizeof)` baseline at `opendune.c:1518`.
+    /// Scenarios without a `[CHOAM]` section keep the all-zero default.
+    public var choamInventory: [Int16] = [Int16](repeating: 0, count: 27)
+
     /// Playable tile rect for the scenario's `MapScale`. Port of
     /// OpenDUNE `g_mapInfos[3]` (`src/map.c:57`):
     ///   scale 0 → 62×62 at (1,1)   (large — campaign end-game)
@@ -386,6 +396,7 @@ public struct Scenario: Sendable {
         try loadUnits(doc)
         try loadStructures(doc)
         try loadTeams(doc)
+        loadChoam(doc)
     }
 
     private mutating func loadBasic(_ doc: Formats.Ini.Document) throws {
@@ -557,6 +568,35 @@ public struct Scenario: Sendable {
                 minMembers: UInt16(clamping: minMembers),
                 maxMembers: UInt16(clamping: maxMembers)
             ))
+        }
+    }
+
+    /// Port of OpenDUNE `Scenario_Load_Choam` (`src/scenario.c:473`).
+    /// Reads the `[CHOAM]` section's `UnitTypeName=count` rows and
+    /// stores each count at `choamInventory[unitTypeID]`. Unknown
+    /// unit-type strings are silently skipped (matches OpenDUNE's
+    /// `Unit_StringToType == UNIT_INVALID` guard). Counts are parsed
+    /// as `Int16` and saturated; out-of-range or malformed values drop
+    /// to zero rather than throwing, since CHOAM is cosmetic during
+    /// scenario load — bad data degrades gracefully to "no stock".
+    private mutating func loadChoam(_ doc: Formats.Ini.Document) {
+        guard let s = doc["CHOAM"] else { return }
+        for entry in s.entries {
+            guard let kind = UnitType.parse(entry.key) else {
+                Log.debug(
+                    "CHOAM row '\(entry.key)=\(entry.value)' — unknown unit type, skipping",
+                    tracer: .label("scenario")
+                )
+                continue
+            }
+            let typeID = Int(kind.typeID)
+            guard typeID >= 0, typeID < choamInventory.count else { continue }
+            let count = Int16(clamping: Int(entry.value) ?? 0)
+            choamInventory[typeID] = count
+            Log.debug(
+                "CHOAM \(kind.rawValue) (type=\(typeID)) → \(count)",
+                tracer: .label("scenario")
+            )
         }
     }
 

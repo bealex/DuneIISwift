@@ -149,4 +149,83 @@ struct ScenarioTests {
         #expect(scenario.units.count >= 10)
         #expect(scenario.structures.count >= 1)
     }
+
+    // MARK: - [CHOAM] section — STARPORT slice 5a
+
+    @Test("CHOAM section fills choamInventory by unit-type ID; unknown keys skipped")
+    func choamInventoryPopulates() throws {
+        let src = """
+        [BASIC]
+        MapScale=1
+
+        [CHOAM]
+        Trike=5
+        Quad=5
+        Tank=4
+        Launcher=3
+        Harvester=2
+        MCV=2
+        Carryall=2
+        Bogus=9
+        """
+        let scenario = try Scenario(iniData: Data(src.utf8))
+        #expect(scenario.choamInventory.count == 27)
+        #expect(scenario.choamInventory[Int(UnitType.trike.typeID)] == 5)
+        #expect(scenario.choamInventory[Int(UnitType.quad.typeID)] == 5)
+        #expect(scenario.choamInventory[Int(UnitType.tank.typeID)] == 4)
+        #expect(scenario.choamInventory[Int(UnitType.launcher.typeID)] == 3)
+        #expect(scenario.choamInventory[Int(UnitType.harvester.typeID)] == 2)
+        #expect(scenario.choamInventory[Int(UnitType.mcv.typeID)] == 2)
+        #expect(scenario.choamInventory[Int(UnitType.carryall.typeID)] == 2)
+        // Sum of listed stock: 5+5+4+3+2+2+2 = 23.
+        let total = scenario.choamInventory.reduce(Int16(0), +)
+        #expect(total == 23)
+    }
+
+    @Test("Scenarios without a CHOAM section keep the all-zero default")
+    func choamAbsentDefaultsZero() throws {
+        let src = """
+        [BASIC]
+        MapScale=1
+        """
+        let scenario = try Scenario(iniData: Data(src.utf8))
+        #expect(scenario.choamInventory.count == 27)
+        #expect(scenario.choamInventory.allSatisfy { $0 == 0 })
+    }
+
+    @Test("CHOAM values parse as Int16 and saturate on overflow / bad input")
+    func choamSaturates() throws {
+        // OpenDUNE's `-1` means "unknown stock — frigate will populate
+        // on first arrival"; preserve it faithfully.
+        let src = """
+        [BASIC]
+        MapScale=1
+
+        [CHOAM]
+        Trike=-1
+        Tank=99999
+        Quad=abc
+        """
+        let scenario = try Scenario(iniData: Data(src.utf8))
+        #expect(scenario.choamInventory[Int(UnitType.trike.typeID)] == -1)
+        // 99999 saturates to Int16.max (32767).
+        #expect(scenario.choamInventory[Int(UnitType.tank.typeID)] == Int16.max)
+        // "abc" fails parse → defaults to 0.
+        #expect(scenario.choamInventory[Int(UnitType.quad.typeID)] == 0)
+    }
+
+    @Test("real SCENA015.INI loads its CHOAM block")
+    func realChoamScenario() throws {
+        guard let url = TestInstall.locate()?.appendingPathComponent("SCENARIO.PAK"),
+              FileManager.default.fileExists(atPath: url.path) else { return }
+        let archive = try Formats.Pak.Archive(contentsOf: url)
+        // SCENA015 ships Trike=5, Quad=5, Tank=4, Launcher=3,
+        // Harvester=2, MCV=2, Carryall=2 — verified against the
+        // extracted `Resources/Scenarios/SCENA015.INI`.
+        guard let body = archive.body(named: "SCENA015.INI") else { return }
+        let scenario = try Scenario(iniData: body)
+        #expect(scenario.choamInventory[Int(UnitType.trike.typeID)] == 5)
+        #expect(scenario.choamInventory[Int(UnitType.tank.typeID)] == 4)
+        #expect(scenario.choamInventory[Int(UnitType.harvester.typeID)] == 2)
+    }
 }

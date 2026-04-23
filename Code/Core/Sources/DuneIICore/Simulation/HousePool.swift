@@ -4,8 +4,17 @@ extension Simulation {
     public struct HouseSlot: Sendable, Equatable {
         public var isUsed: Bool
         public var index: UInt8
-        /// `0xFFFF` when no starport-linked unit (mirrors OpenDUNE).
+        /// Head of the chain of units waiting for the next frigate.
+        /// `0xFFFF` when no order is pending (mirrors OpenDUNE's
+        /// `UNIT_INDEX_INVALID`). Each linked unit stores the next in
+        /// `UnitSlot.linkedID`, chain-terminated by `0xFF`.
         public var starportLinkedID: UInt16
+        /// Countdown in `tickStarport` cadence units (OpenDUNE fires
+        /// this every 180 game ticks). On order commit, re-seeded to
+        /// `HouseInfo.starportDeliveryTime` (= 10 for houses 0..2).
+        /// When it reaches 0 with a live `starportLinkedID`, a frigate
+        /// is spawned and the linked-ID chain moves onto it.
+        public var starportTimeLeft: UInt16
         /// Spending cash on hand. Drained per tick by BUSY yards
         /// (slice 6b); refunded on cancel. Seeded from
         /// `Scenario.HouseLayout.credits` or the save's `PLYR` record.
@@ -23,6 +32,7 @@ extension Simulation {
             isUsed: Bool = false,
             index: UInt8 = 0,
             starportLinkedID: UInt16 = 0,
+            starportTimeLeft: UInt16 = 0,
             credits: UInt16 = 0,
             creditsStorage: UInt16 = 0,
             creditsQuota: UInt16 = 0
@@ -30,6 +40,7 @@ extension Simulation {
             self.isUsed = isUsed
             self.index = index
             self.starportLinkedID = starportLinkedID
+            self.starportTimeLeft = starportTimeLeft
             self.credits = credits
             self.creditsStorage = creditsStorage
             self.creditsQuota = creditsQuota

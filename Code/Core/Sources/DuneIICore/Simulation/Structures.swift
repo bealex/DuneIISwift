@@ -56,9 +56,11 @@ extension Simulation {
         ///   Ordos-owned HV factories.
         ///
         /// CONSTRUCTION_YARD (8), STARPORT (11), and non-factory types
-        /// return 0. STARPORT in OpenDUNE returns `-1` as an
-        /// "everything available" sentinel backed by `g_starportAvailable`;
-        /// deferred to a later slice.
+        /// return 0. STARPORT is dynamic — its inventory changes over
+        /// a mission as the player orders units and frigates arrive;
+        /// query `starportBuildableUnits(inventory:houseID:)` for the
+        /// current bitmask instead (the OpenDUNE `-1` sentinel collapses
+        /// onto a dedicated entry point in Swift's unsigned world).
         public static func buildableUnitsFromFactory(
             factoryType: UInt8,
             factoryHouseID: UInt8,
@@ -100,6 +102,110 @@ extension Simulation {
                 result |= UInt32(1) << UInt32(unitType)
             }
             return result
+        }
+
+        /// STARPORT slice of `Structure_GetBuildable` (`src/structure.c:1495..1525`).
+        /// OpenDUNE returns the `-1` sentinel and the caller walks
+        /// `g_starportAvailable[0..UNIT_MAX]` to build the visible-unit
+        /// list. We collapse both steps here: given the live inventory
+        /// (stock per unit-type; positive counts = orderable, -1 in
+        /// OpenDUNE means "unknown/pending first frigate") and the
+        /// house's `availableHouse` gate, emit the bitmask of types the
+        /// player may add to a CHOAM order this session.
+        ///
+        /// The inventory is treated as an opaque count vector — the
+        /// caller owns whether it came from `Scenario.choamInventory`
+        /// at load, got mutated by an order commit, or was patched by
+        /// a frigate-arrival event.
+        public static func starportBuildableUnits(
+            inventory: [Int16], houseID: UInt8
+        ) -> UInt32 {
+            var result: UInt32 = 0
+            let houseBit = UInt8(1) << houseID
+            // Walk every entry; positive stock makes a unit orderable
+            // provided the house is allowed to field it.
+            for (typeIDRaw, stock) in inventory.enumerated() {
+                guard stock > 0 else { continue }
+                let typeID = UInt8(truncatingIfNeeded: typeIDRaw)
+                guard let info = UnitInfo.lookup(typeID) else { continue }
+                if (info.availableHouse & houseBit) == 0 { continue }
+                result |= UInt32(1) << UInt32(typeID)
+            }
+            return result
+        }
+
+        /// STARPORT slice 5b — order commit. Port of the STARPORT
+        /// branch of `Structure_BuildObject` (`src/structure.c:1583..1632`):
+        /// for every `(typeID, count)` in the cart, allocate that many
+        /// units in the unit pool (at off-map tile 0xFFFF so the
+        /// frigate-delivery tick is the one that materialises them),
+        /// chain each via `linkedID` onto the house's
+        /// `starportLinkedID`, decrement `stock[typeID]` (clamping to
+        /// `-1` when the order drains the last unit), and seed
+        /// `starportTimeLeft` on the first successful allocation so the
+        /// delivery countdown starts ticking.
+        ///
+        /// Returns the count of successfully chained units (may be
+        /// less than the total requested if the unit pool fills up —
+        /// mirrors OpenDUNE's credit-refund + display-message on
+        /// `Unit_Create == NULL`, minus the GUI bits).
+        ///
+        /// Credit drain stays with the UI layer (OpenDUNE drains as
+        /// the user adds items to the cart, refunds on cancel); this
+        /// helper is about the inventory + chain topology only.
+        @discardableResult
+        public static func commitStarportOrder(
+            houseID: UInt8,
+            orders: [(typeID: UInt8, count: Int)],
+            houses: inout HousePool,
+            units: inout UnitPool,
+            stock: inout [Int16],
+            deliveryTime: UInt16
+        ) -> Int {
+            guard houseID < HousePool.capacity else { return 0 }
+            guard houses.slots[Int(houseID)].isUsed else { return 0 }
+            var h = houses[Int(houseID)]
+            var chained = 0
+            for order in orders {
+                guard order.count > 0 else { continue }
+                let typeID = Int(order.typeID)
+                guard typeID >= 0, typeID < stock.count else { continue }
+                for _ in 0..<order.count {
+                    guard let uidx = units.allocateForType(
+                        type: order.typeID, houseID: houseID
+                    ) else {
+                        Log.info(
+                            "commitStarportOrder house=\(houseID) type=\(order.typeID) — unit pool full, stopping",
+                            tracer: .label("starport")
+                        )
+                        houses[Int(houseID)] = h
+                        return chained
+                    }
+                    // OpenDUNE parks the waiting unit off-map at
+                    // (0xFFFF, 0xFFFF); we clamp to those to match.
+                    var u = units[uidx]
+                    u.positionX = 0xFFFF
+                    u.positionY = 0xFFFF
+                    // Chain onto the house's starport queue. The old
+                    // head becomes the new unit's next pointer.
+                    u.linkedID = UInt8(truncatingIfNeeded: h.starportLinkedID & 0xFF)
+                    u.inTransport = true
+                    units[uidx] = u
+                    h.starportLinkedID = UInt16(uidx)
+                    // Seed the delivery countdown on the first order
+                    // that finds it idle — matches OpenDUNE.
+                    if h.starportTimeLeft == 0 { h.starportTimeLeft = deliveryTime }
+                    stock[typeID] -= 1
+                    if stock[typeID] <= 0 { stock[typeID] = -1 }
+                    chained += 1
+                }
+            }
+            houses[Int(houseID)] = h
+            Log.info(
+                "commitStarportOrder house=\(houseID) chained=\(chained) head=\(String(format: "0x%04X", h.starportLinkedID)) timeLeft=\(h.starportTimeLeft)",
+                tracer: .label("starport")
+            )
+            return chained
         }
 
         /// Port of the `STRUCTURE_CONSTRUCTION_YARD` case of

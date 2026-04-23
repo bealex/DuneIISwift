@@ -255,6 +255,7 @@ extension Simulation {
                 houses.allocate(at: idx)
                 var h = houses[idx]
                 h.starportLinkedID = slot.starportLinkedID
+                h.starportTimeLeft = slot.starportTimeLeft
                 // Slice 6a: plumb credit state from the save record.
                 h.credits = slot.credits
                 h.creditsStorage = slot.creditsStorage
