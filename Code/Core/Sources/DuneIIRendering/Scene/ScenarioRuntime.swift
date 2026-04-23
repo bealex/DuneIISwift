@@ -89,6 +89,10 @@ public final class ScenarioRuntime {
     public private(set) var tickCounter: Int = 0
     public private(set) var currentYardKind: YardKind = .structure
     public private(set) var scenarioName: String?
+    /// Playable tile rect for the loaded scenario — port of
+    /// OpenDUNE's `g_mapInfos[mapScale]`. Defaults to the full grid
+    /// before a scenario is loaded.
+    public private(set) var playableRect: (originX: Int, originY: Int, width: Int, height: Int) = (0, 0, 64, 64)
 
     private final class TileGridRef: @unchecked Sendable {
         var tiles: [Simulation.WorldSnapshot.Tile] = []
@@ -119,6 +123,7 @@ public final class ScenarioRuntime {
         // offset 16) sprite so the scene, minimap, and screenshot
         // renderer all show a black border matching the in-game look.
         let rect = scenario.playableRect
+        playableRect = rect
         let veiled = resolver.veiledTileID
         var trimmedCount = 0
         for y in 0..<64 {

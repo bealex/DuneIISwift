@@ -460,11 +460,57 @@ public final class ScenarioScene: SKScene {
     }
 
     /// Applies the current `mapZoom` + `mapPan` to the mapContainer.
-    /// Called after any zoom / pan change. Cheap — SpriteKit handles
-    /// the transform on next draw without repositioning children.
+    /// Clamps `mapPan` first so the visible window stays inside the
+    /// scenario's playable rect (veiled borders don't scroll into
+    /// view). Cheap — SpriteKit handles the transform on next draw
+    /// without repositioning children.
     private func applyMapTransform() {
+        clampMapPan()
         mapContainer.setScale(mapZoom)
         mapContainer.position = mapPan
+    }
+
+    /// Restricts `mapPan` so the visible scene area `[0, mapSize)` on
+    /// both axes maps to content inside the playable rect (in scene-
+    /// content coords). Algebra: the visible content x-range is
+    /// `[-pan.x / zoom, (mapSize - pan.x) / zoom)`. For that to sit
+    /// inside `[rectMinX, rectMaxX)` (content coords):
+    ///
+    ///   pan.x ≤ -rectMinX × zoom   (leftmost visible ≥ rectMinX)
+    ///   pan.x ≥ mapSize - rectMaxX × zoom   (rightmost visible ≤ rectMaxX)
+    ///
+    /// When the playable rect is smaller than the visible window
+    /// (low zoom), those bounds cross — resolve by centring the
+    /// content in the window.
+    private func clampMapPan() {
+        let rect = runtime.playableRect
+        let tilePx = Self.tileSize
+        let rectMinX = CGFloat(rect.originX) * tilePx
+        let rectMaxX = CGFloat(rect.originX + rect.width) * tilePx
+        // Scene y is flipped: tile y=0 is at content y = 64*tilePx;
+        // tile y=N is at content y = (64-N)*tilePx. Playable rect
+        // in content-y: [(64 - originY - height) × tilePx,
+        //                 (64 - originY) × tilePx].
+        let rectMinY = CGFloat(64 - rect.originY - rect.height) * tilePx
+        let rectMaxY = CGFloat(64 - rect.originY) * tilePx
+
+        let mapSize = Self.mapSize
+        let panMaxX = -rectMinX * mapZoom
+        let panMinX = mapSize - rectMaxX * mapZoom
+        let panMaxY = -rectMinY * mapZoom
+        let panMinY = mapSize - rectMaxY * mapZoom
+
+        if panMinX <= panMaxX {
+            mapPan.x = min(panMaxX, max(panMinX, mapPan.x))
+        } else {
+            // Content narrower than visible window — centre it.
+            mapPan.x = (panMinX + panMaxX) / 2
+        }
+        if panMinY <= panMaxY {
+            mapPan.y = min(panMaxY, max(panMinY, mapPan.y))
+        } else {
+            mapPan.y = (panMinY + panMaxY) / 2
+        }
     }
 
     /// Keeps the centre of the visible map area stable across a zoom
@@ -679,12 +725,47 @@ public final class ScenarioScene: SKScene {
             let b = UInt8(clamping: Int((ns.blueComponent * 255).rounded()))
             return Minimap.ColorRGBA(r: r, g: g, b: b)
         }
+        // Crop the minimap to the scenario's playable rect so the
+        // veiled off-map border doesn't eat visual real-estate.
+        let rect = runtime.playableRect
+        let minimapRect = Minimap.Rect(
+            originX: rect.originX,
+            originY: rect.originY,
+            width: rect.width,
+            height: rect.height
+        )
+        // Viewport overlay — show the current camera view as a
+        // white outline on the minimap. Derive the visible tile
+        // range from (mapPan, mapZoom): visible content-x range is
+        // [-pan.x / zoom, (mapSize - pan.x) / zoom). Convert content
+        // coords to tile coords via tileSize + y-flip.
+        let viewport: Minimap.Rect?
+        if mapZoom > 0 {
+            let visContentMinX = -mapPan.x / mapZoom
+            let visContentMaxX = (Self.mapSize - mapPan.x) / mapZoom
+            let visContentMinY = -mapPan.y / mapZoom
+            let visContentMaxY = (Self.mapSize - mapPan.y) / mapZoom
+            let tilePx = Self.tileSize
+            let vx0 = max(0, min(63, Int(floor(visContentMinX / tilePx))))
+            let vx1 = max(0, min(64, Int(ceil(visContentMaxX / tilePx))))
+            // Flip y back: tile y = 64 - (content y / tilePx).
+            let vy0 = max(0, min(63, 64 - Int(ceil(visContentMaxY / tilePx))))
+            let vy1 = max(0, min(64, 64 - Int(floor(visContentMinY / tilePx))))
+            viewport = Minimap.Rect(
+                originX: vx0, originY: vy0,
+                width: max(1, vx1 - vx0), height: max(1, vy1 - vy0)
+            )
+        } else {
+            viewport = nil
+        }
         let pixels = Minimap.render(
             tileGrid: tiles,
             landscapeAt: landscape,
             units: host.units,
             structures: host.structures,
-            houseColor: houseColor
+            houseColor: houseColor,
+            rect: minimapRect,
+            viewport: viewport
         )
         guard let cg = try? CGImageFactory.makeRGBAImage(
             bytes: pixels, width: Minimap.size, height: Minimap.size

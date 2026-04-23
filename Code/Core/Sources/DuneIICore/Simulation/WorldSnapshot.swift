@@ -133,7 +133,16 @@ extension Simulation {
                 let pos = Pos32.centered(at: spawn.position)
                 slot.positionX = pos.x
                 slot.positionY = pos.y
-                slot.hitpoints = UInt16(clamping: spawn.hitPoints)
+                // Scenario INI hitpoints is a 0..256 percentage of the
+                // unit type's max HP — port of OpenDUNE's
+                // `u->hitpoints = ui->o.hitpoints * atoi(split[4]) / 256`
+                // (`src/scenario.c`). Mission 1 spawns with HP=256 which
+                // means "full" (100%), not literally 256 HP; prior code
+                // assigned the raw percent and produced "HP: 256/100"
+                // readings in the info panel.
+                let hpMax = UnitInfo.lookup(typeID)?.hitpoints ?? 1
+                let hpPercent = UInt32(clamping: spawn.hitPoints)
+                slot.hitpoints = UInt16(clamping: UInt32(hpMax) &* hpPercent / 256)
                 slot.byScenario = true   // every scenario-spawned unit qualifies
                 // Units that spawn standing-still need speed = 0 (already
                 // the default). MOVEMENT_WINGER types (carryalls, frigate,
