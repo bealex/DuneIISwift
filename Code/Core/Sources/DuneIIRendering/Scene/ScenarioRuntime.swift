@@ -459,8 +459,13 @@ public final class ScenarioRuntime {
 
         // If we selected a non-yard structure (or the same yard as
         // before) return structureSelected rather than falling through
-        // to the build-panel placeholder branch.
-        if let selIdx = selectedStructureIndex {
+        // to the build-panel placeholder branch. BUT skip this short
+        // circuit when the player is mid-placement — the click on the
+        // map is meant to commit, not to re-announce the (stale)
+        // structure selection that persists from autoSelectPlayerYard.
+        if buildController.placementType == nil,
+           let selIdx = selectedStructureIndex
+        {
             return .structureSelected(selIdx)
         }
 

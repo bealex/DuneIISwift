@@ -79,15 +79,15 @@ extension Simulation {
                 if let info = UnitInfo.lookup(type),
                    info.displayMode == .infantry3 || info.displayMode == .infantry4
                 {
-                    host.explosions.add(
+                    let corpseIdx = host.explosions.add(
                         type: ExplosionType.corpseInfantry.rawValue,
                         positionX: deathPos.x,
                         positionY: deathPos.y,
                         houseID: houseID,
                         frames: 240  // ~20 seconds at 12 Hz sim tick
                     )
-                    Log.debug(
-                        "corpse spawned type=\(type) at (\(deathPos.x),\(deathPos.y)) house=\(houseID)",
+                    Log.info(
+                        "corpse spawned type=\(type) at (\(deathPos.x),\(deathPos.y)) house=\(houseID) slot=\(corpseIdx.map(String.init) ?? "FULL") activeAfter=\(host.explosions.slots.filter { $0.isActive }.count)",
                         tracer: .label("damage")
                     )
                 }

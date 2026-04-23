@@ -257,6 +257,14 @@ final class Harness {
             let ids = runtime.assets.iconMap.tileIds(in: group)
             writeLine("iconmap group=\(raw) count=\(ids.count) ids=[\(ids.map(String.init).joined(separator: " "))]")
             writeLine("ok dump iconmap")
+        case "explosions":
+            guard let host = runtime.host else { writeLine("! no host"); return }
+            var count = 0
+            for (i, slot) in host.explosions.slots.enumerated() where slot.isActive {
+                writeLine("explosion idx=\(i) type=\(slot.type) pos=(\(slot.positionX),\(slot.positionY)) house=\(slot.houseID) frames=\(slot.remainingFrames)")
+                count &+= 1
+            }
+            writeLine("ok dump explosions count=\(count)")
         case "selection":
             let unitIdx = runtime.commandController.selectedUnitIndex
             let friendly = runtime.commandController.isFriendlySelection

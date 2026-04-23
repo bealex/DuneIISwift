@@ -86,9 +86,15 @@ extension Simulation {
         /// Frees every active slot whose position packs to `packed`.
         /// Mirrors OpenDUNE's `Explosion_StopAtPosition` — when a new
         /// explosion starts on a tile that already has one, the old
-        /// one is replaced rather than stacked.
+        /// one is replaced rather than stacked. Corpse entries are
+        /// persistent scenery (not transient explosions) and are
+        /// preserved; without this skip, every bullet impact at a
+        /// dead infantry's last tile would wipe the corpse it just
+        /// dropped.
         public mutating func stopAtPosition(packed: UInt16) {
+            let corpseType = ExplosionType.corpseInfantry.rawValue
             for i in 0..<slots.count where slots[i].isActive {
+                if slots[i].type == corpseType { continue }
                 let sPacked = Pathfinder.packedTile(x: slots[i].positionX, y: slots[i].positionY)
                 if sPacked == packed {
                     slots[i] = ExplosionSlot()
