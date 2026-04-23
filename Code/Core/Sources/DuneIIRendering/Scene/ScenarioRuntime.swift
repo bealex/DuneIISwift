@@ -267,6 +267,11 @@ public final class ScenarioRuntime {
             harvestRNG: harvestRNG
         )
         s.bloomSandTileID = resolver.landscapeTileID
+        // Seed the live CHOAM stock from the scenario's [CHOAM]
+        // section. Keeps the per-game stock vector in one place —
+        // mutated thereafter by commitStarportOrder / tickStarport*
+        // passes (STARPORT slice 5b).
+        s.starportStock = scenario.choamInventory
         scheduler = s
         tickCounter = 0
         scenarioName = name
