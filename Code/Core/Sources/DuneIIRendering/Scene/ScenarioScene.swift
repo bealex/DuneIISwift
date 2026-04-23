@@ -68,6 +68,9 @@ public final class ScenarioScene: SKScene {
     /// `SKSpriteNode` for `corpseInfantry` (renders the dead-body
     /// ICN tile from the `sandDeadBodies` group).
     private var explosionMarkers: [Int: SKNode] = [:]
+    /// Lazy per-house corpse textures — palette-remapped +
+    /// transparent. Built on first corpse spawn.
+    private var corpseTextures: [UInt8: SKTexture] = [:]
     private var unitAtlas: UnitSpriteAtlas?
     private var fallbackMarkerTexture: SKTexture?
 
@@ -1021,35 +1024,67 @@ public final class ScenarioScene: SKScene {
                 mapContainer.addChild(marker)
             }
             marker.position = screenPositionPos32(x: slot.positionX, y: slot.positionY)
-            // Lifetime fade for disc explosions (30 ticks ≈ full
-            // opacity). Corpses keep full alpha most of their life
-            // and only dim in the last few ticks so they read as
-            // persistent scenery.
+            // Lifetime fade. Corpses keep full alpha most of their
+            // life and only dim in the last 20 frames. IMPACT_SMALL
+            // is muzzle flash / bullet impact — noisy if fully opaque
+            // on every fire — so we cap its alpha at 0.3. Other
+            // explosion types keep the original fade.
             let frames = max(Double(slot.remainingFrames), 1)
-            if slot.type == Simulation.ExplosionType.corpseInfantry.rawValue {
+            switch slot.type {
+            case Simulation.ExplosionType.corpseInfantry.rawValue:
                 marker.alpha = CGFloat(min(1.0, frames / 20.0))
-            } else {
+            case Simulation.ExplosionType.impactSmall.rawValue:
+                // max 0.3 for most of life; dim to 0 in last 30 frames.
+                marker.alpha = CGFloat(min(0.3, frames / 30.0 * 0.3))
+            default:
                 marker.alpha = CGFloat(min(1.0, frames / 30.0))
             }
         }
     }
 
+    /// Builds (or fetches) a per-house corpse texture — first tile of
+    /// the `sandDeadBodies` iconGroup, rendered through the raw
+    /// `TileSet.pixels(forTile:houseID:)` path with
+    /// `.index0Transparent` so sand shows through between limbs.
+    private func corpseTexture(houseID: UInt8) -> SKTexture? {
+        if let cached = corpseTextures[houseID] { return cached }
+        guard let tileSet = icnTileSet else { return nil }
+        let tileIds = assets.iconMap.tileIds(in: .sandDeadBodies)
+        guard let tileID = tileIds.first, Int(tileID) < tileSet.tileCount else {
+            return nil
+        }
+        let pixels = tileSet.pixels(forTile: Int(tileID), houseID: houseID)
+        guard let cg = try? CGImageFactory.makeImage(
+            indices: pixels,
+            width: tileSet.tileWidth, height: tileSet.tileHeight,
+            palette: assets.palette, mode: .index0Transparent
+        ) else { return nil }
+        let tx = SKTexture(cgImage: cg)
+        tx.filteringMode = .nearest
+        corpseTextures[houseID] = tx
+        return tx
+    }
+
     private func makeExplosionMarker(for slot: Simulation.ExplosionSlot) -> SKNode {
-        // Corpse: render the first `sandDeadBodies` iconGroup tile as
-        // a sprite. If that group or the iconmap tile is missing
-        // (shouldn't happen on a valid install), fall back to the
-        // disc so at least something shows.
-        if slot.type == Simulation.ExplosionType.corpseInfantry.rawValue {
-            let corpseTiles = assets.iconMap.tileIds(in: .sandDeadBodies)
-            if let tileID = corpseTiles.first,
-               Int(tileID) < tileTextures.count
-            {
-                let sprite = SKSpriteNode(texture: tileTextures[Int(tileID)])
-                sprite.size = CGSize(width: Self.tileSize, height: Self.tileSize)
-                sprite.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-                sprite.zPosition = 1.5   // above ground, below live units
-                return sprite
-            }
+        // Corpse: render the first `sandDeadBodies` iconGroup tile
+        // as a sprite. Two things the shared `tileTextures` atlas
+        // doesn't give us:
+        //   * transparency — `loadIcn` uses `.opaque`, so palette
+        //     index 0 renders as black. The corpse drops index 0 =
+        //     "no pixel" in OpenDUNE, so we need `.index0Transparent`.
+        //   * per-house palette — the dying unit's house colours
+        //     should remap through `pixels(forTile:houseID:)` so an
+        //     Ordos corpse is green, not a Harkonnen-default red.
+        // We build a one-off CGImage on demand (cached by
+        // `corpseTextures[houseID]`) that resolves both.
+        if slot.type == Simulation.ExplosionType.corpseInfantry.rawValue,
+           let texture = corpseTexture(houseID: slot.houseID)
+        {
+            let sprite = SKSpriteNode(texture: texture)
+            sprite.size = CGSize(width: Self.tileSize, height: Self.tileSize)
+            sprite.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+            sprite.zPosition = 1.5   // above ground, below live units
+            return sprite
         }
         let marker = SKShapeNode(circleOfRadius: Self.tileSize * 0.5)
         marker.lineWidth = 0
