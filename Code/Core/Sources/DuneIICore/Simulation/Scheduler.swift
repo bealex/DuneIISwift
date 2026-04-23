@@ -1672,16 +1672,33 @@ extension Simulation {
 
                 // Orientation first: the subpixel step uses
                 // `orientation[0].current` to pick the `_stepX/_stepY`
-                // direction, so it must be set before we move. Route
-                // steps lock to `route[0] * 32` (octant midpoint);
-                // targetMove fallback computes the continuous heading.
+                // direction, so it must be set before we move.
+                //   - Route-driven step: lock to `route[0] * 32`
+                //     (octant midpoint). The pathfinder produces octant
+                //     indices; the sprite locks to those even if the
+                //     pos32 delta to `currentDestination` wouldn't
+                //     exactly match.
+                //   - targetMove fallback: recompute the continuous
+                //     heading toward the goal.
+                //   - `currentDestination` set but no route: DO NOT
+                //     touch orientation. OpenDUNE's `Unit_MovementTick`
+                //     never recomputes orientation — the script sets
+                //     it (e.g. `Unit_SetOrientation`) before any
+                //     movement tick runs. Wingers whose scripts set a
+                //     direct pos32 destination + orientation are the
+                //     load-bearing case; recomputing from pos→dest
+                //     would flip their heading 180° on a unit that's
+                //     just past the destination for a fly-through,
+                //     which was the tick-parity SAVE007 tick-1 bug
+                //     (`unit[0].positionX` drift).
                 let priorOrient = slot.orientationCurrent
                 if goalSource == "route", slot.route[0] != 0xFF {
                     slot.orientationCurrent = Int8(bitPattern: slot.route[0] &* 32)
-                } else {
+                } else if goalSource == "targetMove(fallback)" {
                     let from = Pos32(x: slot.positionX, y: slot.positionY)
                     slot.orientationCurrent = Int8(bitPattern: Pos32.direction(from: from, to: goal))
                 }
+                // else: keep stored orientation (script-set).
 
                 // Subpixel movement — port of OpenDUNE's
                 // `Unit_MovementTick` (`src/unit.c:98`). speed is the
@@ -1801,9 +1818,33 @@ extension Simulation {
                     // Overshoot detection: if the post-move distance
                     // to goal is >= pre-move distance, we stepped past
                     // (or at least not closer) and should snap.
+                    //
+                    // Wingers are excluded — their script routinely
+                    // sets `currentDestination` to a fly-through
+                    // point and `orientation` to something unrelated
+                    // (e.g. carryall circling a landing pad, type=0
+                    // with actionID=stop). For those, post-move
+                    // distance-to-goal can legitimately grow every
+                    // tick without "overshoot" meaning anything, and
+                    // snapping would teleport the unit onto its
+                    // destination. OpenDUNE's `Unit_Move`
+                    // (`src/unit.c:1451`) only snaps to
+                    // `currentDestination` when `ui->flags.isGroundUnit`
+                    // is true; wingers fall through to the plain
+                    // `unit->o.position = newPosition` at line 1512.
+                    // Our position-drift was tick-parity SAVE007
+                    // `unit[0]` (CARRYALL) — see
+                    // `ParityHarnessTests.saveSevenParityTickZero`.
                     let after = Pos32(x: slot.positionX, y: slot.positionY)
                     let distAfter = Int32(Pos32.distance(after, goal))
-                    if distAfter >= distBefore || distAfter <= arrivalThreshold {
+                    // Bullets / missiles (movementType=.winger but
+                    // isProjectileType=true) still snap-and-detonate
+                    // on arrival; genuine wingers (carryall,
+                    // ornithopter, frigate) don't.
+                    let mt = Simulation.UnitInfo.lookup(slot.type)?.movementType
+                    let isFlier = mt == .winger && !Self.isProjectileType(slot.type)
+                    if !isFlier,
+                       distAfter >= distBefore || distAfter <= arrivalThreshold {
                         slot.positionX = goal.x
                         slot.positionY = goal.y
                         Log.debug(
