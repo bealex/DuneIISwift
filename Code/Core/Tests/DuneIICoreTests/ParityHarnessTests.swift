@@ -211,35 +211,3 @@ struct ParityHarnessTests {
             .appendingPathComponent(name)
     }
 }
-
-extension ParityHarnessTests {
-    @Test("debug: trace Swift VM for u37 on tick 1")
-    @MainActor
-    func debugSwiftTraceU37() throws {
-        guard let root = TestInstall.locate() else { return }
-        let install = try Installation(rootDirectory: root)
-        let assets = try AssetLoader(installation: install)
-        let game = try Formats.Save.Game.decode(try Data(contentsOf: root.appendingPathComponent("_SAVE007.DAT")))
-        let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: Map.empty())
-        let unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
-        let host = Scripting.Host(units: snapshot.units, structures: snapshot.structures,
-            explosions: Simulation.ExplosionPool(), teams: snapshot.teams, houses: snapshot.houses,
-            currentObject: nil, texts: [], textLog: [])
-        let source = Scripting.RandomSource(lcgSeed: 0, toolsSeed: 0)
-        var unitVM = Scripting.VM(program: unitProgram, functions: Scripting.Functions.unitTable(host: host, source: source))
-        unitVM.trace = { pc, opcode, parameter, engine in
-            // Only log the u37 opcodes by inspecting currentObject.
-            if case .unit(let idx) = host.currentObject, idx == 37 {
-                print("SWIFT pc=\(pc) op=\(opcode) param=\(parameter) delay=\(engine.delay) SP=\(engine.stackPointer) FP=\(engine.framePointer) return=\(engine.returnValue)")
-            }
-        }
-        var scheduler = Simulation.Scheduler(host: host, unitVM: unitVM, structureVM: unitVM)
-        scheduler.unitOpcodeBudget = 52
-        scheduler.tickAttackHoldEnabled = false
-        scheduler.gameSpeed = 4
-        scheduler.seedFromSave(game)
-        print("SWIFT PRE u37: pc=\(scheduler.unitEngines[37].pc) delay=\(scheduler.unitEngines[37].delay) SP=\(scheduler.unitEngines[37].stackPointer) FP=\(scheduler.unitEngines[37].framePointer) return=\(scheduler.unitEngines[37].returnValue)")
-        scheduler.tick()
-        print("SWIFT POST u37: pc=\(scheduler.unitEngines[37].pc)")
-    }
-}
