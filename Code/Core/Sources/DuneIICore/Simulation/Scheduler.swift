@@ -44,6 +44,34 @@ extension Simulation {
         public let harvestRNG: (() -> UInt8)?
         private var harvestTickCounter: Int = 0
 
+        /// STARPORT slice 5b — live per-game stock. Indexed by
+        /// `UnitInfo.typeID` (27 entries). Seeded from
+        /// `Scenario.choamInventory` at load; mutated by order commits
+        /// (`Simulation.Structures.commitStarportOrder(...)`) and the
+        /// per-game "random new-stock bump" pass that runs every
+        /// `starportAvailabilityCadenceTicks`. The save chunk's
+        /// `SaveInfo.starportAvailable` also feeds this array.
+        ///
+        /// Port of OpenDUNE's global `g_starportAvailable[UNIT_MAX]`
+        /// (`src/unit.c:57`); we keep it on the scheduler rather than
+        /// at module scope so tests can spin up fresh worlds without
+        /// cross-talk.
+        public var starportStock: [Int16] = [Int16](repeating: 0, count: 27)
+
+        /// Cadence of `tickStarportDelivery`. OpenDUNE fires this every
+        /// 180 game ticks; our sim runs at a lower rate so we use a
+        /// matching "every 30 sim ticks ≈ 5 seconds" budget.
+        public static let starportDeliveryCadenceTicks = 30
+        /// Cadence of `tickStarportAvailability` — the random stock
+        /// refresh. OpenDUNE fires every 1800 game ticks (~60 s); our
+        /// cadence is every 300 sim ticks, same wall-clock ballpark.
+        public static let starportAvailabilityCadenceTicks = 300
+        /// Port of `HouseInfo.starportDeliveryTime` (= 10 for houses
+        /// 0..2, 0 for 3..5). Counts in `tickStarport` units.
+        public static let starportDeliveryTimeByHouse: [UInt16] = [10, 10, 10, 0, 0, 0]
+        private var starportDeliveryTickCounter: Int = 0
+        private var starportAvailabilityTickCounter: Int = 0
+
         /// Landscape-iconGroup sprite used to reset a spice-bloom
         /// tile's `groundTileID` after detonation (OpenDUNE
         /// `Map_Bloom_ExplodeSpice` at `src/map.c:675`). `0` disables
@@ -411,6 +439,18 @@ extension Simulation {
             {
                 tickHarvesting()
             }
+            // STARPORT passes. Delivery countdown runs at the faster
+            // cadence (mirrors OpenDUNE's `tickStarport` at every 180
+            // game ticks); availability-bump is the slower random
+            // refresh (1800 game ticks in OpenDUNE).
+            starportDeliveryTickCounter &+= 1
+            if starportDeliveryTickCounter % Self.starportDeliveryCadenceTicks == 0 {
+                tickStarportDelivery()
+            }
+            starportAvailabilityTickCounter &+= 1
+            if starportAvailabilityTickCounter % Self.starportAvailabilityCadenceTicks == 0 {
+                tickStarportAvailability()
+            }
             host.currentObject = nil
         }
 
@@ -568,6 +608,103 @@ extension Simulation {
                     rng: rng
                 )
             }
+        }
+
+        // MARK: - STARPORT slice 5b — delivery + availability-refresh passes
+
+        /// Per-house delivery countdown. Port of OpenDUNE's
+        /// `tickStarport` block in `GameLoop_House` (`src/house.c:219..258`).
+        /// For each allocated house with a live `starportLinkedID`:
+        ///
+        /// 1. Decrement `starportTimeLeft`; clamp at 0 (underflow guard
+        ///    — OpenDUNE uses `(int16)h->starportTimeLeft < 0 → 0`).
+        /// 2. On reaching 0, look up one of the house's STARPORT
+        ///    structures and spawn a `UNIT_FRIGATE` via
+        ///    `Units.createUnit` (type 27 — see `UnitType.frigate`).
+        ///    Move the waiting unit-chain onto the frigate (`u.linkedID
+        ///    = h.starportLinkedID`), clear `h.starportLinkedID`, flip
+        ///    `u.inTransport = true`.
+        /// 3. Reseed `starportTimeLeft` (`starportDeliveryTimeByHouse`
+        ///    on successful spawn; `1` to retry next tick otherwise).
+        ///
+        /// Only fires when at least one STARPORT of the house is
+        /// present; without one, the countdown still runs (so the chain
+        /// is never orphaned on demolish) but the frigate spawn is
+        /// skipped and the timer resets to 1.
+        public mutating func tickStarportDelivery() {
+            for houseIdx in host.houses.findArray {
+                var h = host.houses.slots[houseIdx]
+                guard h.isUsed else { continue }
+                if h.starportLinkedID == HousePool.invalidIndex { continue }
+                // Underflow-safe decrement.
+                if h.starportTimeLeft > 0 { h.starportTimeLeft -= 1 }
+                guard h.starportTimeLeft == 0 else {
+                    host.houses[houseIdx] = h
+                    continue
+                }
+                // Find the first STARPORT (type 11) owned by this house
+                // that isn't already ferrying a delivery.
+                let houseID = UInt8(truncatingIfNeeded: houseIdx)
+                var frigateIdx: Int? = nil
+                for sIdx in host.structures.findArray {
+                    let s = host.structures.slots[sIdx]
+                    guard s.isUsed, s.type == 11 /* STARPORT */, s.houseID == houseID else { continue }
+                    // OpenDUNE skips starports whose `linkedID != 0xFF` —
+                    // they already have a frigate in flight.
+                    if s.linkedID != 0xFF { continue }
+                    // Spawn a frigate (`UNIT_FRIGATE` = 26) at the
+                    // structure centre; the actual landing animation is
+                    // a script concern to be wired later.
+                    let fidx = Simulation.Units.createUnit(
+                        type: 26 /* FRIGATE */, houseID: houseID,
+                        tileX: Int(s.positionX) / 256, tileY: Int(s.positionY) / 256,
+                        pool: &host.units
+                    )
+                    if let fidx = fidx {
+                        frigateIdx = fidx
+                        // Move the waiting chain onto the frigate.
+                        var f = host.units[fidx]
+                        f.linkedID = UInt8(truncatingIfNeeded: h.starportLinkedID & 0xFF)
+                        f.inTransport = true
+                        host.units[fidx] = f
+                        h.starportLinkedID = HousePool.invalidIndex
+                    }
+                    break
+                }
+                h.starportTimeLeft = (frigateIdx != nil)
+                    ? Self.starportDeliveryTimeByHouse[houseIdx]
+                    : 1
+                host.houses[houseIdx] = h
+                Log.info(
+                    "tickStarportDelivery house=\(houseIdx) frigate=\(frigateIdx.map(String.init) ?? "none") timeLeft→\(h.starportTimeLeft)",
+                    tracer: .label("starport")
+                )
+            }
+        }
+
+        /// Port of OpenDUNE's `tickStarportAvailability` block at
+        /// `src/house.c:101..115`. Every `starportAvailabilityCadenceTicks`
+        /// picks a random unit type and bumps the global stock:
+        ///
+        /// - `stock == 0`  → leave (type is simply not for sale here).
+        /// - `stock == -1` → set to 1 (first frigate discovers stock).
+        /// - `stock in 1..9` → increment (frigates bring more).
+        /// - `stock >= 10` → cap (OpenDUNE's cap; keeps CHOAM stock
+        ///   bounded).
+        ///
+        /// Gated on `harvestRNG` availability (we reuse the same
+        /// `Tools_Random_256` port — no separate starport RNG needed).
+        public mutating func tickStarportAvailability() {
+            guard let rng = harvestRNG else { return }
+            // Draw a type in 0..26 (UNIT_MAX-1 in OpenDUNE terms).
+            let type = Int(rng()) % starportStock.count
+            let stock = starportStock[type]
+            guard stock != 0, stock < 10 else { return }
+            starportStock[type] = (stock == -1) ? 1 : stock + 1
+            Log.debug(
+                "tickStarportAvailability type=\(type) \(stock)→\(starportStock[type])",
+                tracer: .label("starport")
+            )
         }
 
         /// Carryall arrival pass (slice 8c). Walks the unit pool once
