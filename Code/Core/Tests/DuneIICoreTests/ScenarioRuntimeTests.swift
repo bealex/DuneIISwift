@@ -397,9 +397,11 @@ struct ScenarioRuntimeTests {
 
         // Inspect the trike's route — at least one step should not be
         // "all direction 3" (SE). A clear path around the CYARD requires
-        // mixing E + SE + S steps.
+        // mixing E + SE + S steps. Trike at tile (29, 23) spawns in
+        // the vehicle bucket (22..101 via `allocateForType`); in
+        // mission 1 it lands at slot 26.
         let host = try #require(r.host)
-        let u = host.units.slots[4]
+        let u = host.units.slots[26]
         let routeBytes = u.route.prefix { $0 != 0xFF }
         #expect(!routeBytes.isEmpty)
         let seCount = routeBytes.filter { $0 == 3 }.count
@@ -479,14 +481,16 @@ struct ScenarioRuntimeTests {
     @Test("cycleToNextPlayerUnit steps through friendly units, skipping enemies")
     func cycleSelection() throws {
         guard let r = try loadMission1() else { return }
-        // Atreides units in mission 1: slots 2, 4, 5, 6, 8 (from the
-        // scenario dump). Cycling should walk through them in order.
+        // Player (Atreides) units in mission 1 allocate into the
+        // vehicle-and-infantry bucket (22..101) via `allocateForType`.
+        // Spawn-order filtered to friendlies gives 24, 26, 27, 28,
+        // 30 for Atreides. Cycling walks `findArray` order.
         let first = r.cycleToNextPlayerUnit()
-        #expect(first == 2)
+        #expect(first == 24)
         let second = r.cycleToNextPlayerUnit()
-        #expect(second == 4)
+        #expect(second == 26)
         let third = r.cycleToNextPlayerUnit()
-        #expect(third == 5)
+        #expect(third == 27)
     }
 
     @Test("BuildController.yardState surface stays in sync after tick() — no stale UI state")

@@ -224,14 +224,17 @@ struct SimulationWorldSnapshotTests {
         #expect(snap.houses[1].isUsed)   // Atreides typeID == 1
         #expect(snap.houses[0].isUsed)   // Harkonnen typeID == 0
 
-        // Units: two allocated in spawn order, at slots 0 and 1.
-        #expect(snap.units.findArray == [0, 1])
-        #expect(snap.units[0].type == 17)           // MCV
-        #expect(snap.units[0].houseID == 1)         // Atreides
-        #expect(snap.units[0].orientationCurrent == 64)
-        #expect(snap.units[1].type == 9)            // Tank
-        #expect(snap.units[1].houseID == 0)         // Harkonnen
-        #expect(snap.units[1].orientationCurrent == 0)
+        // Units: two allocated by per-type range (`UnitInfo.indexStart..indexEnd`).
+        // MCV (type 17) and Tank (type 9) both land in 22..101 — the
+        // vehicle bucket. Bullet slots 12..15 stay free so
+        // `createBullet` can allocate them later.
+        #expect(snap.units.findArray == [22, 23])
+        #expect(snap.units[22].type == 17)          // MCV
+        #expect(snap.units[22].houseID == 1)        // Atreides
+        #expect(snap.units[22].orientationCurrent == 64)
+        #expect(snap.units[23].type == 9)           // Tank
+        #expect(snap.units[23].houseID == 0)        // Harkonnen
+        #expect(snap.units[23].orientationCurrent == 0)
 
         // Structures: one allocated (GEN-slab is skipped).
         #expect(snap.structures.findArray == [0])

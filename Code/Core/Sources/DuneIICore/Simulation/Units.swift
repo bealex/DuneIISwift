@@ -211,9 +211,27 @@ extension Simulation {
         ) -> Int? {
             // Target must be valid.
             let encoded = Scripting.EncodedIndex(raw: target)
-            guard isValid(encoded: encoded, host: host) else { return nil }
-            guard let info = UnitInfo.lookup(type) else { return nil }
-            guard let targetPos = Pos32.of(encoded, host: host) else { return nil }
+            guard isValid(encoded: encoded, host: host) else {
+                Log.debug(
+                    "createBullet type=\(type) FAIL target-invalid raw=\(String(format: "0x%04X", target))",
+                    tracer: .label("fire")
+                )
+                return nil
+            }
+            guard let info = UnitInfo.lookup(type) else {
+                Log.debug(
+                    "createBullet type=\(type) FAIL no-info",
+                    tracer: .label("fire")
+                )
+                return nil
+            }
+            guard let targetPos = Pos32.of(encoded, host: host) else {
+                Log.debug(
+                    "createBullet type=\(type) FAIL target-pos",
+                    tracer: .label("fire")
+                )
+                return nil
+            }
 
             switch type {
             case 18, 19, 20, 21, 22:
@@ -253,6 +271,10 @@ extension Simulation {
                 let stepped1 = Pos32.moved(position, orientation: 0, distance: 32)
                 let spawn = Pos32.moved(stepped1, orientation: orientation, distance: 128)
                 guard let bulletIdx = host.units.allocateForType(type: type, houseID: houseID) else {
+                    Log.debug(
+                        "createBullet type=\(type) house=\(houseID) FAIL allocateForType (pool full)",
+                        tracer: .label("fire")
+                    )
                     return nil
                 }
                 var bullet = host.units[bulletIdx]

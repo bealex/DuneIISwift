@@ -306,6 +306,12 @@ extension Simulation {
             // a single frame counter since we don't run the command
             // stream yet.
             tickExplosions()
+            // Attack hold: stop an ACTION_ATTACK unit at its weapon's
+            // fire range and snap orientation toward the target so
+            // the fire gate can pass. Runs before `tickMovement` so
+            // any movement cleared here doesn't produce a stale step
+            // this tick.
+            tickAttackHold()
             // Route-follower runs BEFORE script dispatch so scripts (e.g.
             // `CalculateRoute`) observe the updated position when deciding
             // whether to pop the next step or re-plan.
@@ -347,6 +353,68 @@ extension Simulation {
                 tickHarvesting()
             }
             host.currentObject = nil
+        }
+
+        /// Attack-hold pass. OpenDUNE's UNIT.EMC handles this via per-
+        /// tick range + orientation checks; our scripts run but don't
+        /// reliably stop a non-turret attacker at fire range, and we
+        /// don't have an `Orientation_Tick` rotator yet. Without
+        /// either, a right-click attack has the attacker walk on top
+        /// of its target and keep facing whichever direction it last
+        /// moved in — so `Script_Unit_Fire`'s orientation gate never
+        /// opens.
+        ///
+        /// For every used unit with `actionID == attack`, a valid
+        /// `targetAttack`, and a resolvable target position:
+        ///  - If within `fireDistance << 8` pixels: clear `targetMove`
+        ///    / `currentDestination` / `route` so `tickMovement`
+        ///    skips it this tick (the unit holds its tile).
+        ///  - Snap `orientationCurrent` to the direction of the
+        ///    target (no gradual rotation — a stand-in for the
+        ///    deferred `turningSpeed` interpolator).
+        public mutating func tickAttackHold() {
+            for idx in host.units.findArray {
+                var slot = host.units.slots[idx]
+                guard slot.isUsed else { continue }
+                guard slot.actionID == Simulation.ActionID.attack else { continue }
+                // Skip projectiles — they're ACTION_ATTACK units by
+                // pool convention but the "hold + face target" rules
+                // don't apply to bullets / missiles / sonic blasts.
+                if Self.isProjectileType(slot.type) { continue }
+                guard let info = Simulation.UnitInfo.lookup(slot.type) else { continue }
+                let encoded = Scripting.EncodedIndex(raw: slot.targetAttack)
+                guard slot.targetAttack != 0 else { continue }
+                guard let targetPos = Pos32.of(encoded, host: host) else { continue }
+                let shooterPos = Pos32(x: slot.positionX, y: slot.positionY)
+                let distance = UInt32(Pos32.distance(shooterPos, targetPos))
+                let fireRange = UInt32(info.fireDistance) &<< 8
+                // Face the target regardless of range (also gives
+                // turreted units a sensible facing).
+                let desired = Pos32.direction(from: shooterPos, to: targetPos)
+                let priorOrient = slot.orientationCurrent
+                slot.orientationCurrent = Int8(bitPattern: desired)
+                // Within fire range: halt approach.
+                var cleared = false
+                if distance <= fireRange {
+                    if slot.targetMove != 0
+                        || slot.currentDestinationX != 0 || slot.currentDestinationY != 0
+                        || slot.route[0] != 0xFF
+                    {
+                        slot.targetMove = 0
+                        slot.currentDestinationX = 0
+                        slot.currentDestinationY = 0
+                        slot.route = [UInt8](repeating: 0xFF, count: 14)
+                        cleared = true
+                    }
+                }
+                host.units[idx] = slot
+                if cleared || priorOrient != slot.orientationCurrent {
+                    Log.debug(
+                        "attack-hold u\(idx) dist=\(distance) fireRange=\(fireRange) orient=\(priorOrient)→\(slot.orientationCurrent) cleared=\(cleared)",
+                        tracer: .label("attack-hold")
+                    )
+                }
+            }
         }
 
         /// Spice-bloom detonation pass. For every used unit that is

@@ -105,8 +105,22 @@ extension Simulation {
             )
 
             var units = UnitPool()
-            for (i, spawn) in scenario.units.enumerated() where i < UnitPool.capacity {
-                units.allocate(at: i, type: spawn.unitType.typeID, houseID: spawn.house.typeID)
+            for spawn in scenario.units {
+                // Allocate in the per-type `UnitInfo.indexStart..indexEnd`
+                // range — port of OpenDUNE's `Unit_Allocate(UNIT_INDEX_INVALID)`.
+                // Sequential `allocate(at:)` starting at 0 clobbered the
+                // 12..15 bullet range, so every `createBullet` on an
+                // enemy soldier-heavy scenario failed with "pool full".
+                let typeID = spawn.unitType.typeID
+                let houseID = spawn.house.typeID
+                guard let i = units.allocateForType(type: typeID, houseID: houseID)
+                else {
+                    Log.warning(
+                        "WorldSnapshot spawn type=\(typeID) house=\(houseID) pool full — unit dropped",
+                        tracer: .label("worldsnapshot")
+                    )
+                    continue
+                }
                 var slot = units[i]
                 slot.orientationCurrent = Int8(truncatingIfNeeded: spawn.orientation)
                 // Seed the action from the scenario INI's 6th field
