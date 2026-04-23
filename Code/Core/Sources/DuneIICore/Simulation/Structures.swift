@@ -56,9 +56,11 @@ extension Simulation {
         ///   Ordos-owned HV factories.
         ///
         /// CONSTRUCTION_YARD (8), STARPORT (11), and non-factory types
-        /// return 0. STARPORT in OpenDUNE returns `-1` as an
-        /// "everything available" sentinel backed by `g_starportAvailable`;
-        /// deferred to a later slice.
+        /// return 0. STARPORT is dynamic — its inventory changes over
+        /// a mission as the player orders units and frigates arrive;
+        /// query `starportBuildableUnits(inventory:houseID:)` for the
+        /// current bitmask instead (the OpenDUNE `-1` sentinel collapses
+        /// onto a dedicated entry point in Swift's unsigned world).
         public static func buildableUnitsFromFactory(
             factoryType: UInt8,
             factoryHouseID: UInt8,
@@ -98,6 +100,36 @@ extension Simulation {
                 if factoryUpgradeLevel < upgradeLevelRequired { continue }
 
                 result |= UInt32(1) << UInt32(unitType)
+            }
+            return result
+        }
+
+        /// STARPORT slice of `Structure_GetBuildable` (`src/structure.c:1495..1525`).
+        /// OpenDUNE returns the `-1` sentinel and the caller walks
+        /// `g_starportAvailable[0..UNIT_MAX]` to build the visible-unit
+        /// list. We collapse both steps here: given the live inventory
+        /// (stock per unit-type; positive counts = orderable, -1 in
+        /// OpenDUNE means "unknown/pending first frigate") and the
+        /// house's `availableHouse` gate, emit the bitmask of types the
+        /// player may add to a CHOAM order this session.
+        ///
+        /// The inventory is treated as an opaque count vector — the
+        /// caller owns whether it came from `Scenario.choamInventory`
+        /// at load, got mutated by an order commit, or was patched by
+        /// a frigate-arrival event.
+        public static func starportBuildableUnits(
+            inventory: [Int16], houseID: UInt8
+        ) -> UInt32 {
+            var result: UInt32 = 0
+            let houseBit = UInt8(1) << houseID
+            // Walk every entry; positive stock makes a unit orderable
+            // provided the house is allowed to field it.
+            for (typeIDRaw, stock) in inventory.enumerated() {
+                guard stock > 0 else { continue }
+                let typeID = UInt8(truncatingIfNeeded: typeIDRaw)
+                guard let info = UnitInfo.lookup(typeID) else { continue }
+                if (info.availableHouse & houseBit) == 0 { continue }
+                result |= UInt32(1) << UInt32(typeID)
             }
             return result
         }

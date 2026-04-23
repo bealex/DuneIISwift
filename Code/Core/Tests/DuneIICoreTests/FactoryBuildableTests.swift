@@ -271,13 +271,99 @@ struct FactoryBuildableTests {
         #expect(mask == 0)
     }
 
-    @Test("STARPORT returns 0 (deferred; OpenDUNE uses -1 sentinel which needs g_starportAvailable)")
-    func starportReturnsZero() {
+    @Test("STARPORT buildableUnitsFromFactory returns 0 — starport is dynamic, not bitmask-computable from static tables")
+    func starportReturnsZeroFromFactoryEntry() {
         let mask = Simulation.Structures.buildableUnitsFromFactory(
             factoryType: STARPORT,
             factoryHouseID: Simulation.House.atreides,
             factoryUpgradeLevel: 0,
             structuresBuilt: 0
+        )
+        #expect(mask == 0)
+    }
+
+    // MARK: - starportBuildableUnits — the STARPORT-specific entry
+
+    @Test("starportBuildableUnits: SCENA015 Atreides CHOAM → Trike + Quad + Tank + Launcher + Harvester + MCV + Carryall")
+    func starportBuildable_scenA015Atreides() {
+        // Scenario-authored inventory for SCENA015. Indices per
+        // UnitType.typeID.
+        var inv = [Int16](repeating: 0, count: 27)
+        inv[Int(UnitType.trike.typeID)] = 5
+        inv[Int(UnitType.quad.typeID)] = 5
+        inv[Int(UnitType.tank.typeID)] = 4
+        inv[Int(UnitType.launcher.typeID)] = 3
+        inv[Int(UnitType.harvester.typeID)] = 2
+        inv[Int(UnitType.mcv.typeID)] = 2
+        inv[Int(UnitType.carryall.typeID)] = 2
+        let mask = Simulation.Structures.starportBuildableUnits(
+            inventory: inv, houseID: Simulation.House.atreides
+        )
+        #expect((mask & (UInt32(1) << UInt32(UnitType.trike.typeID))) != 0)
+        #expect((mask & (UInt32(1) << UInt32(UnitType.quad.typeID))) != 0)
+        #expect((mask & (UInt32(1) << UInt32(UnitType.tank.typeID))) != 0)
+        #expect((mask & (UInt32(1) << UInt32(UnitType.launcher.typeID))) != 0)
+        #expect((mask & (UInt32(1) << UInt32(UnitType.harvester.typeID))) != 0)
+        #expect((mask & (UInt32(1) << UInt32(UnitType.mcv.typeID))) != 0)
+        #expect((mask & (UInt32(1) << UInt32(UnitType.carryall.typeID))) != 0)
+    }
+
+    @Test("starportBuildableUnits: stock == 0 excludes the unit from the mask")
+    func starportBuildable_zeroStockOmitted() {
+        var inv = [Int16](repeating: 0, count: 27)
+        inv[Int(UnitType.trike.typeID)] = 0  // out of stock
+        inv[Int(UnitType.tank.typeID)] = 3
+        let mask = Simulation.Structures.starportBuildableUnits(
+            inventory: inv, houseID: Simulation.House.atreides
+        )
+        #expect((mask & (UInt32(1) << UInt32(UnitType.trike.typeID))) == 0)
+        #expect((mask & (UInt32(1) << UInt32(UnitType.tank.typeID))) != 0)
+    }
+
+    @Test("starportBuildableUnits: -1 stock (OpenDUNE 'unknown') is treated as unavailable until a frigate arrives")
+    func starportBuildable_negativeStockOmitted() {
+        var inv = [Int16](repeating: 0, count: 27)
+        inv[Int(UnitType.tank.typeID)] = -1
+        inv[Int(UnitType.quad.typeID)] = 1
+        let mask = Simulation.Structures.starportBuildableUnits(
+            inventory: inv, houseID: Simulation.House.atreides
+        )
+        #expect((mask & (UInt32(1) << UInt32(UnitType.tank.typeID))) == 0,
+                "tank stock=-1 must not appear in current-orderable mask")
+        #expect((mask & (UInt32(1) << UInt32(UnitType.quad.typeID))) != 0)
+    }
+
+    @Test("starportBuildableUnits honours UnitInfo.availableHouse (Launcher excluded for Ordos; Quad/Harvester for all)")
+    func starportBuildable_honoursAvailableHouse() {
+        var inv = [Int16](repeating: 0, count: 27)
+        inv[Int(UnitType.launcher.typeID)] = 3
+        inv[Int(UnitType.quad.typeID)] = 5
+        inv[Int(UnitType.harvester.typeID)] = 2
+        let atreidesMask = Simulation.Structures.starportBuildableUnits(
+            inventory: inv, houseID: Simulation.House.atreides
+        )
+        let ordosMask = Simulation.Structures.starportBuildableUnits(
+            inventory: inv, houseID: Simulation.House.ordos
+        )
+        let launcherBit = UInt32(1) << UInt32(UnitType.launcher.typeID)
+        let quadBit = UInt32(1) << UInt32(UnitType.quad.typeID)
+        let harvesterBit = UInt32(1) << UInt32(UnitType.harvester.typeID)
+        // Launcher: availableHouse=59 (no Ordos). Keep it out of the
+        // Ordos mask but in the Atreides one.
+        #expect((atreidesMask & launcherBit) != 0)
+        #expect((ordosMask & launcherBit) == 0,
+                "Launcher has availableHouse bits that exclude Ordos — mask must honour it")
+        // Quad + Harvester have the default all-houses bitmask, so
+        // both masks include them.
+        #expect((atreidesMask & quadBit) != 0 && (ordosMask & quadBit) != 0)
+        #expect((atreidesMask & harvesterBit) != 0 && (ordosMask & harvesterBit) != 0)
+    }
+
+    @Test("starportBuildableUnits: empty inventory yields empty mask")
+    func starportBuildable_emptyInventory() {
+        let inv = [Int16](repeating: 0, count: 27)
+        let mask = Simulation.Structures.starportBuildableUnits(
+            inventory: inv, houseID: Simulation.House.atreides
         )
         #expect(mask == 0)
     }
