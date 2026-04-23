@@ -361,9 +361,13 @@ extension Scripting {
             }
         }
 
-        /// `Script_Unit_SetTarget` — writes peek(1) to `targetAttack` and
-        /// turns the unit to face the target if it has a turret (we skip
-        /// the turret check; just update orientation regardless).
+        /// `Script_Unit_SetTarget` — port of `src/script/unit.c:834`.
+        /// Writes peek(1) to `targetAttack`. For **non-turreted** units
+        /// (infantry, trike, quad, etc.) also writes `targetMove = target`
+        /// so the unit will walk toward its attack target; for turreted
+        /// units (tank, siege, devastator) only the turret rotates. Both
+        /// branches set the base orientation via `Unit_SetOrientation`
+        /// (level 1 — turret). Returns the encoded target.
         public static func makeSetTargetUnit(host: Host) -> VM.Function {
             return { engine in
                 let raw = Scripting.peek(engine: &engine, position: 1)
@@ -378,7 +382,18 @@ extension Scripting {
                 updated.targetAttack = raw
                 if let tgt = Pos32.of(encoded, host: host) {
                     let from = Pos32(x: slot.positionX, y: slot.positionY)
-                    updated.orientationCurrent = Int8(bitPattern: Pos32.direction(from: from, to: tgt))
+                    let orientation = Pos32.direction(from: from, to: tgt)
+                    let hasTurret = Simulation.UnitInfo.lookup(slot.type)?.hasTurret ?? false
+                    if !hasTurret {
+                        updated.targetMove = raw
+                        updated.orientationCurrent = Int8(bitPattern: orientation)
+                    } else {
+                        // Turreted: leave targetMove alone, rotate the
+                        // turret (level 1). We don't yet track a separate
+                        // turret orientation, so approximate by keeping
+                        // body orientation steady when turreted — still
+                        // better than rotating the body at the target.
+                    }
                 }
                 host.units[poolIndex] = updated
                 return raw

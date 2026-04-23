@@ -11,15 +11,19 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**Tick-parity harness — SAVE007 tick 1 almost there (spriteOffset off-by-one).** Closed the `unit[25].orientation0Current` drift by gating `tickMovement`'s orientation-recompute on `speed != 0`. OpenDUNE's `Unit_MovementTick` (`src/unit.c:98`) early-returns at `speed == 0` and never touches orientation for parked units; we were recomputing unconditionally. The culprit scenario: parked HUNT trooper (unit 25) with `targetMove` pointing at an enemy trike that's blocked on its east side by a refinery footprint → `nearestPassableNeighbor` redirected the goal to a NORTH neighbour → our recompute rotated the unit north (direction=0) while OpenDUNE kept it east (direction=64).
+**Tick-parity harness — drilling into unit[30] target acquisition.** Three more closures this slice brought SAVE007 tick-1 real-EMC drift from `unit[25]` → `unit[26]` → `unit[30]`. Fixes landed:
+
+- **`tickSpriteOffsets` overshoot**: was incrementing infantry `spriteOffset` for any unit with `targetMove`/`currentDest`/`route`, including parked HUNT troopers with speed=0. OpenDUNE `src/unit.c:241` requires `movementType == FOOT && speed != 0` (or `isSmoking`). Gated on `speed != 0 && spriteOffset >= 0`.
+- **`Script_Unit_SetTarget` missing targetMove write**: our port wrote `targetAttack` but skipped OpenDUNE's `if (!hasTurret) { u->targetMove = target; Unit_SetOrientation(...) }` block (`src/script/unit.c:855-858`). For non-turreted units this means the unit walks toward its attack target; we'd frozen them in place.
+- **`tickAttackHold` pre-emption**: our manual "halt at fire range + face target" pass clears `targetMove` when in range — a stopgap for stubbed EMC that pre-empts OpenDUNE's `Script_Unit_MoveToTarget` + `Script_Unit_Fire` decisions. Added `Scheduler.tickAttackHoldEnabled: Bool = true` (gameplay default) / `false` (parity harness).
 
 Parity status now:
 - SAVE001 & SAVE007 tick 0: byte-identical.
-- SAVE001 tick 1 (empty + real EMC): `unit[22].targetMove` expected `54957`, actual `0`. Harvester script write. Real EMC alone doesn't close; likely the every-5-ticks `s_tickUnitScript` cadence missing, or a host-function slot gap.
-- SAVE007 tick 1 (empty EMC): `unit[0].movingSpeed` expected `255`, actual `76` (script-driven).
-- SAVE007 tick 1 (real EMC): drift is now **`unit[25].spriteOffset` expected `14`, actual `15` — off by one**. Our `tickSpriteOffsets` increments differently from OpenDUNE. Small delta.
+- SAVE007 tick 1 (real EMC): **`unit[30].targetMove` expected `16420` (encoded unit 36), actual `0`**. Player trike on GUARD, OpenDUNE's target-acquisition found u36 (enemy infantry at far distance) — our `Script_Unit_FindBestTarget` likely returns 0 or a different unit.
+- SAVE001 tick 1: `unit[22].targetMove` drift (harvester RETURN script).
+- SAVE007 tick 1 (empty EMC): `unit[0].movingSpeed` drift (carryall script).
 
-Next concrete step: inspect `tickSpriteOffsets` vs OpenDUNE's `Unit_UpdateMap` / sprite-offset increment path; fix off-by-one so SAVE007 tick 1 matches byte-identical. Then widen `tickLimit` past 1.
+Next concrete step: audit `Simulation.TargetAcquisition.findBestTarget` / our `makeFindBestTargetUnit` (slot 0x1C) against OpenDUNE's `Script_Unit_FindBestTarget` (`src/script/unit.c:107`) — target-priority scoring is the most likely gap. For unit 30 (player trike, GUARD), OpenDUNE scans enemy units, computes priority via `Unit_GetTargetUnitPriority`, picks u36. Our version may weigh differently.
 
 **Known Swift gaps the harness will surface in rough order** (from the `compareUnit` skip-list): `nextActionID`, `orientation0Target`, `orientation0Speed`, `orientation1*` turret track, `wobbleIndex`, `timer`, structure `upgradeTimeLeft`, house `powerProduction`/`powerUsage`/`unitCount`/`unitCountMax`/`harvestersIncoming`. Each is a `public var` addition to the relevant slot + save/scenario load paths + a flipped `compareX` line. RNG globals stay out of the schema by design (no `src/tools.c` exposure). Map-tile parity is deferred — current test uses `Map.empty()` for the baseline so tile grid isn't compared yet; the harness's pool-state diff is the load-bearing part.
 
@@ -63,6 +67,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
+
+- **2026-04-23 — SAVE007 tick-1 parity: spriteOffset + SetTarget + AttackHold gated for real EMC.** Three closures moved the SAVE007 tick-1 real-EMC drift from `unit[25]` → `unit[26]` → `unit[30]`. (1) `tickSpriteOffsets` gate tightened to match OpenDUNE `src/unit.c:241`: animate only when `speed != 0` (parked units with stale targetMove shouldn't tick the walk cycle). (2) `Script_Unit_SetTarget` (slot 0x3A) — our port wrote only `targetAttack`; added the OpenDUNE `if (!hasTurret)` block at `src/script/unit.c:855-858` that also writes `targetMove = target` + snaps body orientation for non-turreted units (infantry / trike / quad). Turreted units (tank / siege) keep targetMove untouched. (3) `Scheduler.tickAttackHoldEnabled: Bool` — new toggle, default true for gameplay, false for parity. Our `tickAttackHold` manually clears `targetMove` when an attacker is in fire range — a stopgap for stubbed EMC that pre-empts OpenDUNE's `Script_Unit_MoveToTarget` + `Script_Unit_Fire` decisions once real EMC is loaded. ParityHarness flips the toggle. New drift at `unit[30].targetMove` (expected encoded u36 via `FindBestTarget`, actual 0) needs target-priority audit next. **979 / 96 / zero warnings.**
 
 - **2026-04-23 — Closed SAVE007 tick-1 orientation drift: `tickMovement` orientation-recompute gated on `speed != 0`.** OpenDUNE's `Unit_MovementTick` early-returns when `speed == 0` (`src/unit.c:98`) and never touches orientation for parked units. Our `tickMovement` unconditionally recomputed orientation for any unit with a targetMove/currentDestination/route — even parked ones. SAVE007 unit[25] (parked enemy trooper, actionID=HUNT, `speed=0`) had `targetMove` encoding unit 26 (a trike), blocked by a refinery footprint at tile (25, 23). `nearestPassableNeighbor` redirected the goal NORTH to (25, 21) since the south-side adjacencies of the trike tile were structure-blocked. Our orientation recompute then rotated unit 25 north (`direction=0`) while OpenDUNE kept it stored east (`64`). Fix: wrap the orientation-recompute block in `if slot.speed != 0 { ... }`. Three-line change. SAVE007 tick-1 drift advanced to `unit[25].spriteOffset` (off-by-one in `tickSpriteOffsets` — next slice). **979 / 96 / zero warnings.**
 

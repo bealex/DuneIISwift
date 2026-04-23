@@ -45,6 +45,19 @@ extension Simulation {
         public var unitOpcodeBudget: Int
         public var structureOpcodeBudget: Int
         public var teamOpcodeBudget: Int
+
+        /// Gating toggles for sim passes that are stopgaps for unwired
+        /// EMC paths. With real `UNIT.EMC` loaded (parity harness), these
+        /// stopgaps become counterproductive because they pre-empt the
+        /// script's own decisions. Gameplay tests keep them on (default
+        /// `true`); the parity harness flips them off.
+        ///
+        /// `tickAttackHoldEnabled`: our manual "face target + halt at
+        /// fire range" pass for ATTACK units. OpenDUNE's UNIT.EMC does
+        /// this via `Script_Unit_MoveToTarget` + `Script_Unit_Fire`; with
+        /// real EMC, our manual clear of `targetMove` inside fire range
+        /// conflicts with the script's own target tracking.
+        public var tickAttackHoldEnabled: Bool = true
         /// One harvest / refine call every N scheduler ticks. Our tick
         /// rate is ~12 Hz; OpenDUNE's `Script_Unit_Harvest` runs with
         /// `script.delay = 6` at a ~30 Hz cadence (~200 ms between
@@ -588,8 +601,9 @@ extension Simulation {
             // fire range and snap orientation toward the target so
             // the fire gate can pass. Runs before `tickMovement` so
             // any movement cleared here doesn't produce a stale step
-            // this tick.
-            tickAttackHold()
+            // this tick. Parity harness disables this — real UNIT.EMC
+            // runs the equivalent via `Script_Unit_MoveToTarget`.
+            if tickAttackHoldEnabled { tickAttackHold() }
             // Route-follower runs BEFORE script dispatch so scripts (e.g.
             // `CalculateRoute`) observe the updated position when deciding
             // whether to pop the next step or re-plan.
@@ -1476,18 +1490,19 @@ extension Simulation {
                 guard let info = Simulation.UnitInfo.lookup(slot.type) else { continue }
                 switch info.displayMode {
                 case .infantry3, .infantry4:
-                    // Only animate while actually *in motion* — an
-                    // active route step or a live currentDestination
-                    // or an outstanding targetMove. `slot.speed` alone
-                    // stays non-zero after arrival (tile-hop clamp is
-                    // set on order, not reset on stop), which left
-                    // GUARD-action infantry ticking their walk cycle
-                    // forever after finishing a move.
-                    let hasRoute = slot.route[0] != 0xFF
-                    let hasCurDest = slot.currentDestinationX != 0
-                        || slot.currentDestinationY != 0
-                    let hasTargetMove = slot.targetMove != 0
-                    guard hasRoute || hasCurDest || hasTargetMove else { continue }
+                    // OpenDUNE `src/unit.c:241`: animation advances only
+                    // when `(movementType == MOVEMENT_FOOT && u->speed != 0)
+                    // || u->o.flags.s.isSmoking`. `u->speed` is the tile-hop
+                    // clamp that `Unit_SetSpeed` writes — non-zero iff the
+                    // unit is actually mid-move. A parked HUNT trooper
+                    // with a stale `targetMove` pointing at a distant
+                    // enemy still has `speed == 0` and must NOT animate
+                    // (SAVE007 unit[25]). `isSmoking` isn't on our slots
+                    // yet; land it alongside explosion-damage flagging.
+                    guard slot.speed != 0 else { continue }
+                    // `spriteOffset < 0` is OpenDUNE's "don't animate"
+                    // marker for specific states (spawning, dying); skip.
+                    guard slot.spriteOffset >= 0 else { continue }
                     let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
                     slot.spriteOffset = Int8(bitPattern: bumped)
                     host.units[idx] = slot

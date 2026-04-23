@@ -113,6 +113,12 @@ extension Simulation {
             scheduler.unitOpcodeBudget = 52
             scheduler.structureOpcodeBudget = 52
             scheduler.teamOpcodeBudget = 52
+            // Disable stopgap passes that pre-empt real EMC. Our
+            // tickAttackHold clears `targetMove` inside fire range —
+            // OpenDUNE lets the script's `Script_Unit_MoveToTarget` +
+            // `Script_Unit_Fire` path own that decision, so with real
+            // UNIT.EMC our clear produces drift.
+            scheduler.tickAttackHoldEnabled = false
             if let game = game {
                 scheduler.seedFromSave(game)
             }
