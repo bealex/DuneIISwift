@@ -118,10 +118,25 @@ public final class ScenarioScene: SKScene {
         self.scenarioName = scenarioName
         let size = CGSize(width: Self.mapSize + Self.sidebarWidth, height: Self.mapSize)
         super.init(size: size)
-        scaleMode = .aspectFit
+        // `.resizeFill` keeps the scene's point size in lock-step
+        // with the host view: when the window resizes, `self.size`
+        // grows / shrinks and our dynamic layout (sidebar pinned
+        // right, map area = window − sidebar) re-lays itself in
+        // `didChangeSize`. Prior `.aspectFit` left black bars on any
+        // window whose aspect didn't match the initial 1152×1024.
+        scaleMode = .resizeFill
         backgroundColor = .black
         anchorPoint = .zero
     }
+
+    /// Width of the map-viewing area in scene points. Equal to the
+    /// current scene width minus the fixed-width sidebar. Never less
+    /// than one tile — callers that need to divide by this don't get
+    /// NaN during startup when size may transiently be zero.
+    private var mapAreaWidth: CGFloat { max(Self.tileSize, size.width - Self.sidebarWidth) }
+    private var mapAreaHeight: CGFloat { max(Self.tileSize, size.height) }
+    /// X coordinate of the sidebar's left edge.
+    private var sidebarX: CGFloat { size.width - Self.sidebarWidth }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
 
@@ -160,6 +175,29 @@ public final class ScenarioScene: SKScene {
             label.position = CGPoint(x: size.width / 2, y: size.height / 2)
             addChild(label)
         }
+    }
+
+    public override func didChangeSize(_ oldSize: CGSize) {
+        super.didChangeSize(oldSize)
+        // Re-apply the camera transform (clamp bounds depend on the
+        // new view size) and rebuild the sidebar / HUD so they
+        // re-anchor to the right edge.
+        refreshSelectionHalo()
+        refreshRallyMarker()
+        refreshBuildSidebar()
+        refreshMinimap()
+        applyMapTransform()
+        repositionHudBannerCredits()
+    }
+
+    /// Re-lays HUD labels after a window resize — banner centres on
+    /// the map area, credits label re-centres over the sidebar.
+    private func repositionHudBannerCredits() {
+        hud?.position = CGPoint(x: 12, y: size.height - 16)
+        creditsLabel?.position = CGPoint(
+            x: sidebarX + Self.sidebarWidth / 2,
+            y: size.height - 16
+        )
     }
 
     public override func update(_ currentTime: TimeInterval) {
@@ -500,11 +538,13 @@ public final class ScenarioScene: SKScene {
         let rectMinY = CGFloat(64 - rect.originY - rect.height) * tilePx
         let rectMaxY = CGFloat(64 - rect.originY) * tilePx
 
-        let mapSize = Self.mapSize
+        // Visible map-area dimensions (window − sidebar).
+        let viewW = mapAreaWidth
+        let viewH = mapAreaHeight
         let panMaxX = -rectMinX * mapZoom
-        let panMinX = mapSize - rectMaxX * mapZoom
+        let panMinX = viewW - rectMaxX * mapZoom
         let panMaxY = -rectMinY * mapZoom
-        let panMinY = mapSize - rectMaxY * mapZoom
+        let panMinY = viewH - rectMaxY * mapZoom
 
         if panMinX <= panMaxX {
             mapPan.x = min(panMaxX, max(panMinX, mapPan.x))
@@ -527,7 +567,7 @@ public final class ScenarioScene: SKScene {
     /// `c - p * zoom_after`.
     private func adjustPanForZoom(from oldZoom: CGFloat, to newZoom: CGFloat) {
         guard oldZoom != newZoom else { return }
-        let centre = CGPoint(x: Self.mapSize / 2, y: Self.mapSize / 2)
+        let centre = CGPoint(x: mapAreaWidth / 2, y: mapAreaHeight / 2)
         let contentX = (centre.x - mapPan.x) / oldZoom
         let contentY = (centre.y - mapPan.y) / oldZoom
         mapPan.x = centre.x - contentX * newZoom
@@ -553,8 +593,8 @@ public final class ScenarioScene: SKScene {
         }
         // Desired: tile t centred in the [0, mapSize) horizontal
         // window + the full vertical window.
-        let centreScreenX = Self.mapSize / 2
-        let centreScreenY = Self.mapSize / 2
+        let centreScreenX = mapAreaWidth / 2
+        let centreScreenY = mapAreaHeight / 2
         let contentX = (CGFloat(t.x) + 0.5) * Self.tileSize
         let contentY = (CGFloat(63 - t.y) + 0.5) * Self.tileSize
         mapPan.x = centreScreenX - contentX * mapZoom
@@ -568,7 +608,7 @@ public final class ScenarioScene: SKScene {
 
     /// Pure translation from a scene-local point to a controller click.
     private func classifyClick(at p: CGPoint) -> BuildPanelController.Click {
-        if p.x >= Self.mapSize {
+        if p.x >= sidebarX {
             if let index = sidebarSlotIndex(atY: p.y) {
                 return .sidebarSlot(index: index)
             }
@@ -634,7 +674,7 @@ public final class ScenarioScene: SKScene {
         let banner = SKLabelNode(text: "\(scenarioName) · click elsewhere to return")
         banner.fontColor = .white
         banner.fontSize = 14
-        banner.position = CGPoint(x: Self.mapSize / 2, y: size.height - 16)
+        banner.position = CGPoint(x: mapAreaWidth / 2, y: size.height - 16)
         banner.horizontalAlignmentMode = .center
         banner.zPosition = 10
         addChild(banner)
@@ -662,7 +702,7 @@ public final class ScenarioScene: SKScene {
         credits.fontColor = .white
         credits.fontSize = 14
         credits.position = CGPoint(
-            x: Self.mapSize + Self.sidebarWidth / 2,
+            x: sidebarX + Self.sidebarWidth / 2,
             y: size.height - 16
         )
         credits.horizontalAlignmentMode = .center
@@ -748,9 +788,9 @@ public final class ScenarioScene: SKScene {
         let viewport: Minimap.Rect?
         if mapZoom > 0 {
             let visContentMinX = -mapPan.x / mapZoom
-            let visContentMaxX = (Self.mapSize - mapPan.x) / mapZoom
+            let visContentMaxX = (mapAreaWidth - mapPan.x) / mapZoom
             let visContentMinY = -mapPan.y / mapZoom
-            let visContentMaxY = (Self.mapSize - mapPan.y) / mapZoom
+            let visContentMaxY = (mapAreaHeight - mapPan.y) / mapZoom
             let tilePx = Self.tileSize
             let vx0 = max(0, min(63, Int(floor(visContentMinX / tilePx))))
             let vx1 = max(0, min(64, Int(ceil(visContentMaxX / tilePx))))
@@ -787,7 +827,7 @@ public final class ScenarioScene: SKScene {
         node.anchorPoint = .zero
         node.size = CGSize(width: MinimapPanel.size, height: MinimapPanel.size)
         node.position = CGPoint(
-            x: Self.mapSize + (Self.sidebarWidth - MinimapPanel.size) / 2,
+            x: sidebarX + (Self.sidebarWidth - MinimapPanel.size) / 2,
             y: MinimapPanel.baseY
         )
         node.zPosition = 21
@@ -1197,7 +1237,7 @@ public final class ScenarioScene: SKScene {
     /// `renderSidebar` so the same container-teardown cycle clears old
     /// nodes.
     private func renderInfoPanel(into container: SKNode) {
-        let baseX = Self.mapSize + Self.sidebarPadding
+        let baseX = sidebarX + Self.sidebarPadding
         let baseY: CGFloat = 0
         let panelWidth = Self.sidebarWidth - 2 * Self.sidebarPadding
         let panelRect = CGRect(
@@ -1519,9 +1559,11 @@ public final class ScenarioScene: SKScene {
         sidebarNode = container
 
         // Background panel so the sidebar reads as a distinct region.
-        let bgSize = CGSize(width: Self.sidebarWidth, height: Self.mapSize)
+        // Pinned to the right edge of the scene — resizes with the
+        // window via `sidebarX`.
+        let bgSize = CGSize(width: Self.sidebarWidth, height: size.height)
         let bg = SKShapeNode(rect: CGRect(
-            x: Self.mapSize, y: 0,
+            x: sidebarX, y: 0,
             width: bgSize.width, height: bgSize.height
         ))
         bg.fillColor = NSColor(calibratedWhite: 0.12, alpha: 1.0)
@@ -1535,8 +1577,8 @@ public final class ScenarioScene: SKScene {
         header.fontName = "Menlo-Bold"
         header.horizontalAlignmentMode = .center
         header.position = CGPoint(
-            x: Self.mapSize + Self.sidebarWidth / 2,
-            y: Self.mapSize - 18
+            x: sidebarX + Self.sidebarWidth / 2,
+            y: size.height - 18
         )
         container.addChild(header)
 
@@ -1544,7 +1586,7 @@ public final class ScenarioScene: SKScene {
         for (row, type) in buildController.availableTypes.enumerated() {
             let slotY = sidebarSlotY(forIndex: row)
             let slotFrame = CGRect(
-                x: Self.mapSize + Self.sidebarPadding,
+                x: sidebarX + Self.sidebarPadding,
                 y: slotY,
                 width: Self.sidebarWidth - 2 * Self.sidebarPadding,
                 height: Self.sidebarRowHeight - Self.sidebarPadding
@@ -1645,7 +1687,7 @@ public final class ScenarioScene: SKScene {
     /// "BUILD" header; each subsequent row is `sidebarRowHeight` lower.
     private func sidebarSlotY(forIndex row: Int) -> CGFloat {
         let topMargin: CGFloat = 36
-        let topY = Self.mapSize - topMargin
+        let topY = size.height - topMargin
         return topY - CGFloat(row + 1) * Self.sidebarRowHeight
     }
 
