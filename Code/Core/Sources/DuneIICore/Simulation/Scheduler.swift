@@ -1654,10 +1654,37 @@ extension Simulation {
                             "move-snap u\(idx) overshoot or in-threshold — pos→(\(goal.x),\(goal.y)) distB=\(distBefore) distA=\(distAfter)",
                             tracer: .label("move")
                         )
-                        // Re-enter the arrival branch next tick by
-                        // leaving the loop; the distToGoal<=threshold
-                        // check at the top of the next iteration will
-                        // trigger the normal arrival logic.
+                        // When we snap to the current route step's
+                        // destination AND more route steps remain, pop
+                        // the step inline so the next tick can pick up
+                        // the NEXT leg without wasting a cycle on
+                        // route-bookkeeping.
+                        //
+                        // Before this: per 16 ticks a unit spent one
+                        // tick with Δ=32 (step + overshoot-snap) and
+                        // the next tick with Δ=0 (arrival branch pops
+                        // route but fires no step). Visible stutter at
+                        // every tile boundary — the "jumps" flagged in
+                        // headless screenshots for the trike driving
+                        // east across mission 1.
+                        if goalSource == "route", slot.route[0] != 0xFF {
+                            for i in 0..<13 { slot.route[i] = slot.route[i + 1] }
+                            slot.route[13] = 0xFF
+                            slot.currentDestinationX = 0
+                            slot.currentDestinationY = 0
+                            if slot.route[0] == 0xFF {
+                                slot.targetMove = 0
+                            }
+                            Log.debug(
+                                "move-snap-pop u\(idx) inline route-pop after overshoot-snap, route[0]=\(slot.route[0])",
+                                tracer: .label("move")
+                            )
+                        } else if goalSource != "route" {
+                            // Fallback-slide arrival.
+                            slot.targetMove = 0
+                            slot.currentDestinationX = 0
+                            slot.currentDestinationY = 0
+                        }
                         host.units[idx] = slot
                         continue
                     }

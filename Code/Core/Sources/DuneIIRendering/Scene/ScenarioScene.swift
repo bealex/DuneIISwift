@@ -63,6 +63,18 @@ public final class ScenarioScene: SKScene {
     private var creditsLabel: SKLabelNode?
     /// Per-unit-pool-slot marker nodes, keyed by pool index.
     private var unitMarkers: [Int: SKSpriteNode] = [:]
+    /// Per-unit render interpolation — sim ticks at `framesPerTick`
+    /// cadence (12 Hz) but the scene renders every frame (60 Hz).
+    /// Without interpolation the marker visibly steps every 5 frames;
+    /// with it we lerp between `unitPrevPos` (sampled before the
+    /// most-recent sim tick) and `unitCurrPos` (sampled after),
+    /// weighted by `frameCounter / framesPerTick`. Teleports (new
+    /// spawns, carryall drops, death-respawns) skip interpolation by
+    /// setting prev = curr for the affected slot.
+    private var unitPrevPosX: [Int: UInt16] = [:]
+    private var unitPrevPosY: [Int: UInt16] = [:]
+    private var unitCurrPosX: [Int: UInt16] = [:]
+    private var unitCurrPosY: [Int: UInt16] = [:]
     private var structureMarkers: [Int: SKShapeNode] = [:]
     /// Explosion slot → scene node. Discs for most `ExplosionType`s,
     /// `SKSpriteNode` for `corpseInfantry` (renders the dead-body
@@ -209,11 +221,17 @@ public final class ScenarioScene: SKScene {
         frameCounter += 1
         if frameCounter >= Self.framesPerTick {
             frameCounter = 0
+            // Snapshot pre-tick positions so the render-side lerp
+            // between sim ticks has a `prev` end-point. Only the
+            // most-recent pre-tick snapshot matters; we stomp every
+            // tick.
+            snapshotUnitPositions(into: &unitPrevPosX, &unitPrevPosY)
             // Speed multiplier: run N sim ticks per render boundary.
             // Defaults to 1; debug keys `,` / `.` adjust.
             for _ in 0..<max(1, speedMultiplier) {
                 runtime.tick()
             }
+            snapshotUnitPositions(into: &unitCurrPosX, &unitCurrPosY)
             syncVisualsFromPool()
             syncGroundTiles()
             validateSelectionHalo()
@@ -246,6 +264,74 @@ public final class ScenarioScene: SKScene {
                 }.joined(separator: " | ")
                 Log.info("tick \(tickCounter): \(lines)", tracer: .label("scene-tick"))
             }
+        }
+        // Every render frame — lerp markers toward the post-tick pose
+        // so movement looks smooth at 60 Hz even though the sim only
+        // advances every `framesPerTick` (12 Hz). Skipped entirely at
+        // speedMultiplier > 1 because multiple sim ticks happen in one
+        // render interval; the prev/curr endpoints no longer bracket a
+        // single linear motion there, and interpolation between them
+        // would look laggy.
+        if speedMultiplier == 1 {
+            interpolateUnitMarkers(
+                fraction: CGFloat(frameCounter) / CGFloat(Self.framesPerTick)
+            )
+        }
+    }
+
+    /// Captures current `UnitSlot.positionX/Y` for each allocated
+    /// slot. Called twice per sim-tick frame: once before the tick
+    /// (into `unitPrevPos*`), once after (into `unitCurrPos*`).
+    /// Freed slots drop their entries.
+    private func snapshotUnitPositions(
+        into x: inout [Int: UInt16], _ y: inout [Int: UInt16]
+    ) {
+        guard let host = scheduler?.host else { return }
+        // Drop entries for slots that are no longer in use — avoids
+        // lerping toward a stale position after a unit dies.
+        var keep = Set<Int>()
+        for idx in host.units.findArray {
+            keep.insert(idx)
+            let s = host.units.slots[idx]
+            x[idx] = s.positionX
+            y[idx] = s.positionY
+        }
+        x = x.filter { keep.contains($0.key) }
+        y = y.filter { keep.contains($0.key) }
+    }
+
+    /// Lerps each allocated unit's marker position between
+    /// `unitPrevPos*` and `unitCurrPos*` by the given `fraction`
+    /// (0 = prev pose, 1 = curr pose). Teleports (|Δ| ≥ 1 tile) skip
+    /// the lerp and snap to the curr position — protects against a
+    /// visible slide through empty space when a unit respawns or a
+    /// carryall drops a harvester across the map.
+    private func interpolateUnitMarkers(fraction: CGFloat) {
+        guard let host = scheduler?.host else { return }
+        // Teleport guard: any axis delta ≥ 1 tile (= 256 pos32 px) is
+        // treated as a discrete jump — no lerp, just sit at curr.
+        let teleportThreshold: Int32 = 256
+        for idx in host.units.findArray {
+            guard let marker = unitMarkers[idx], !marker.isHidden else { continue }
+            let s = host.units.slots[idx]
+            let prevX = unitPrevPosX[idx] ?? s.positionX
+            let prevY = unitPrevPosY[idx] ?? s.positionY
+            let currX = unitCurrPosX[idx] ?? s.positionX
+            let currY = unitCurrPosY[idx] ?? s.positionY
+            let dx = Int32(currX) - Int32(prevX)
+            let dy = Int32(currY) - Int32(prevY)
+            let x: UInt16
+            let y: UInt16
+            if abs(dx) >= teleportThreshold || abs(dy) >= teleportThreshold {
+                x = currX
+                y = currY
+            } else {
+                let lerpX = CGFloat(prevX) + CGFloat(dx) * fraction
+                let lerpY = CGFloat(prevY) + CGFloat(dy) * fraction
+                x = UInt16(clamping: Int(lerpX.rounded()))
+                y = UInt16(clamping: Int(lerpY.rounded()))
+            }
+            marker.position = screenPositionPos32(x: x, y: y)
         }
     }
 
