@@ -172,10 +172,10 @@ index 3afb968..672ba6f 100644
  	if (IniFile_GetString("scalefilter", NULL, filter_text, sizeof(filter_text)) != NULL) {
 diff --git a/src/parity.c b/src/parity.c
 new file mode 100644
-index 0000000..5c805cf
+index 0000000..41502bd
 --- /dev/null
 +++ b/src/parity.c
-@@ -0,0 +1,254 @@
+@@ -0,0 +1,268 @@
 +/** @file src/parity.c Tick-parity golden-dump harness (patch).
 + *
 + * See Documentation/Architecture/TickParityHarness.md for the design.
@@ -206,6 +206,8 @@ index 0000000..5c805cf
 +#include "types.h"
 +#include "parity.h"
 +
++#include "audio/driver.h"
++#include "config.h"
 +#include "house.h"
 +#include "load.h"
 +#include "pool/house.h"
@@ -388,6 +390,18 @@ index 0000000..5c805cf
 +
 +	fprintf(stderr, "parity: load=%s dump=%s ticks=%u\n",
 +		g_parityLoadPath, g_parityDumpPath, (unsigned)g_parityTicks);
++
++	/* Disable audio / voice / music + pin driver indices to 0xFFFF.
++	 * We skip Drivers_All_Init in parity mode, which leaves s_driverVoice
++	 * (and siblings) with index=0, so Driver_Voice_Play's early-return
++	 * gate (`voice->index == 0xFFFF`) doesn't fire and DSP_Play runs
++	 * against an uninitialised audio device — segfault. Disabling sounds
++	 * at the config gate is the cheaper short-circuit. */
++	g_gameConfig.music = 0;
++	g_gameConfig.sounds = 0;
++	g_driverVoice->index = 0xFFFF;
++	g_driverMusic->index = 0xFFFF;
++	g_driverSound->index = 0xFFFF;
 +
 +	/* Re-seed the LCG to a fixed value so the parity run is reproducible.
 +	 * OpenDune_Init seeds from time(NULL); SaveGame_LoadFile does not

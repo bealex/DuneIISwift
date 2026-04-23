@@ -289,6 +289,11 @@ extension Simulation {
                 u.hitpoints = slot.object.hitpoints
                 u.seenByHouses = slot.object.seenByHouses
                 u.speed = slot.speed
+                u.speedPerTick = slot.speedPerTick
+                u.speedRemainder = slot.speedRemainder
+                u.movingSpeed = slot.movingSpeed
+                u.currentDestinationX = slot.currentDestinationX
+                u.currentDestinationY = slot.currentDestinationY
                 u.spriteOffset = slot.spriteOffset
                 u.blinkCounter = slot.blinkCounter
                 u.inTransport = slot.object.flags.inTransport
