@@ -55,7 +55,6 @@ struct NaiveMovementTests {
     func tickAdvancesPosition() throws {
         var units = Simulation.UnitPool()
         units.allocate(at: 0, type: 13, houseID: 0)  // Trike — wheeled
-        units.allocate(at: 1, type: 9, houseID: 0)
         var u = units[0]
         u.positionX = 256       // tile (1, 1)
         u.positionY = 256
@@ -65,12 +64,14 @@ struct NaiveMovementTests {
         // overflows and fires the move.
         u.speed = 15
         u.speedPerTick = 255
-        u.targetMove = Scripting.EncodedIndex.unit(1).raw
+        // Target a plain tile (10, 1), not a unit — after the
+        // unit-occupancy gate landed, unit-encoded targets get
+        // redirected to an adjacent tile via
+        // `nearestPassableNeighbor`, which breaks this test's
+        // "advance toward a specific pos32" invariant.
+        let dstPacked = UInt16(1 * 64 + 10)
+        u.targetMove = Scripting.EncodedIndex.tile(packed: dstPacked).raw
         units[0] = u
-        var target = units[1]
-        target.positionX = 2560 // tile (10, 1)
-        target.positionY = 256
-        units[1] = target
 
         let host = Scripting.Host(
             units: units, structures: .init(),
@@ -94,16 +95,20 @@ struct NaiveMovementTests {
     func tickArrives() throws {
         var units = Simulation.UnitPool()
         units.allocate(at: 0, type: 13, houseID: 0)
-        units.allocate(at: 1, type: 9, houseID: 0)
         var u = units[0]
         u.positionX = 1000
         u.positionY = 1000
-        u.targetMove = Scripting.EncodedIndex.unit(1).raw
+        // Target a tile whose pos32 anchor is close enough that the
+        // arrival threshold fires on the first tick. Using an
+        // encoded tile (not a unit) keeps `nearestPassableNeighbor`
+        // out of the picture.
+        let dstPacked = UInt16(3 * 64 + 3)  // tile (3, 3)
+        u.targetMove = Scripting.EncodedIndex.tile(packed: dstPacked).raw
+        // Sub-tile fractional position so arrival lands exactly on
+        // the tile centre (3*256+128 = 896).
+        u.positionX = 890
+        u.positionY = 890
         units[0] = u
-        var tgt = units[1]
-        tgt.positionX = 1005  // dx=5, dy=5, sum=10 ≤ threshold 16
-        tgt.positionY = 1005
-        units[1] = tgt
 
         let host = Scripting.Host(
             units: units, structures: .init(),
@@ -117,8 +122,9 @@ struct NaiveMovementTests {
         )
         scheduler.tick()
         #expect(host.units[0].targetMove == 0)
-        #expect(host.units[0].positionX == 1005)
-        #expect(host.units[0].positionY == 1005)
+        // Arrival snaps to the target tile's centre (3 × 256 + 128 = 896).
+        #expect(host.units[0].positionX == 896)
+        #expect(host.units[0].positionY == 896)
     }
 
     @Test("Unit with no targetMove stays put across many ticks")

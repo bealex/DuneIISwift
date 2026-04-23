@@ -107,9 +107,12 @@ extension Simulation {
         ///   gating.
         ///
         /// Winger (air) and slither (sandworm) always pass. Off-map
-        /// tiles are never passable.
+        /// tiles are never passable. When `excludingUnit` is supplied
+        /// the mover's own tile skips the unit-occupancy check so the
+        /// pathfinder can start from the mover's current position.
         func isTilePassable(
-            tileX: Int, tileY: Int, movementType: MovementType
+            tileX: Int, tileY: Int, movementType: MovementType,
+            excludingUnit: Int? = nil
         ) -> Bool {
             if movementType == .winger || movementType == .slither { return true }
             guard (0..<64).contains(tileX), (0..<64).contains(tileY) else { return false }
@@ -121,6 +124,24 @@ extension Simulation {
                 if footprint.contains(where: { $0.0 == tileX && $0.1 == tileY }) {
                     return false
                 }
+            }
+            // Unit occupancy. OpenDUNE's `Unit_GetTileEnterScore`
+            // (`src/unit.c:2335`) flags a tile impassable when any
+            // other unit sits on it; our simplified rule treats every
+            // ground / infantry foothold as a wall. Skips the mover
+            // itself so the source tile of a route is walkable.
+            // Projectiles (bullets / missiles) don't block movement.
+            for idx in host.units.findArray {
+                if idx == excludingUnit { continue }
+                let u = host.units.slots[idx]
+                guard u.isUsed else { continue }
+                if Self.isProjectileType(u.type) { continue }
+                // Wingers fly above the ground layer — don't block.
+                if let info = Simulation.UnitInfo.lookup(u.type),
+                   info.movementType == .winger { continue }
+                let utx = Int(u.positionX) / 256
+                let uty = Int(u.positionY) / 256
+                if utx == tileX && uty == tileY { return false }
             }
             guard let lookup = host.landscapeAt else { return true }
             let packed = UInt16(tileY * 64 + tileX)
@@ -917,7 +938,7 @@ extension Simulation {
                     // may have been stamped by a non-validating path.
                     let mt = Simulation.UnitInfo.lookup(slot.type)?.movementType ?? .foot
                     if !Self.isProjectileType(slot.type),
-                       !isTilePassable(tileX: tileX, tileY: tileY, movementType: mt)
+                       !isTilePassable(tileX: tileX, tileY: tileY, movementType: mt, excludingUnit: idx)
                     {
                         Log.info(
                             "move-halt u\(idx) impassable tile=(\(tileX),\(tileY)) mt=\(mt) — clearing route + target",
@@ -959,7 +980,7 @@ extension Simulation {
                     var adjusted = t
                     let mt = Simulation.UnitInfo.lookup(slot.type)?.movementType ?? .foot
                     if !Self.isProjectileType(slot.type),
-                       !isTilePassable(tileX: goalTileX, tileY: goalTileY, movementType: mt)
+                       !isTilePassable(tileX: goalTileX, tileY: goalTileY, movementType: mt, excludingUnit: idx)
                     {
                         if let nearest = nearestPassableNeighbor(
                             of: (goalTileX, goalTileY),

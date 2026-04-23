@@ -847,7 +847,30 @@ extension Scripting {
                     // Fill a fresh route.
                     let movement = Simulation.UnitInfo.lookup(slot.type)?.movementType ?? .tracked
                     let scorer = host.tileEnterScore
+                    // Capture for the closure: we need the attacker's
+                    // pool index so we skip its own tile when checking
+                    // unit-occupancy, and the unit pool snapshot so
+                    // the closure can scan peers cheaply.
+                    let selfIndex = poolIndex
+                    let unitsSnapshot = host.units
                     let scoreFn: Simulation.Pathfinder.TileEnterScore = { packed, orient in
+                        // Unit-occupancy gate — port of OpenDUNE's
+                        // `Unit_GetTileEnterScore` (src/unit.c:2335)
+                        // "other unit on this tile → return 256".
+                        // Skips the mover itself; skips projectiles
+                        // and wingers (they don't block ground).
+                        let tx = Int(packed & 0x3F)
+                        let ty = Int((packed >> 6) & 0x3F)
+                        for (i, u) in unitsSnapshot.slots.enumerated() {
+                            if i == selfIndex { continue }
+                            guard u.isUsed else { continue }
+                            if Simulation.Scheduler.isProjectileType(u.type) { continue }
+                            if let info = Simulation.UnitInfo.lookup(u.type),
+                               info.movementType == .winger { continue }
+                            let utx = Int(u.positionX) / 256
+                            let uty = Int(u.positionY) / 256
+                            if utx == tx && uty == ty { return 256 }
+                        }
                         if let fn = scorer { return fn(packed, orient, movement) }
                         // Fallback: always walkable with cost 128. Keeps the
                         // pathfinder productive for tests that don't wire a
