@@ -83,7 +83,7 @@ extension Simulation {
                         let before = level
                         let after = map.apply(delta: +1, at: cp)
                         if before != after {
-                            host.spiceLevelDidChange?(cp, after)
+                            host.spiceLevelDidChange?(cp, after, map)
                         }
                     }
                 }
@@ -96,7 +96,7 @@ extension Simulation {
                 let levelBefore = map[packed]
                 let levelAfter = map.apply(delta: +1, at: packed)
                 if levelBefore != levelAfter {
-                    host.spiceLevelDidChange?(packed, levelAfter)
+                    host.spiceLevelDidChange?(packed, levelAfter, map)
                 }
                 host.spiceMap = map
             }

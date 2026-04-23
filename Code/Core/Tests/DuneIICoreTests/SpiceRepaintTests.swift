@@ -11,7 +11,7 @@ struct SpiceRepaintTests {
     private func emptyScheduler(
         spiceMap: Simulation.SpiceMap,
         rng: @escaping () -> UInt8,
-        onLevelChange: @escaping (UInt16, Simulation.SpiceMap.Level) -> Void
+        onLevelChange: @escaping (UInt16, Simulation.SpiceMap.Level, Simulation.SpiceMap) -> Void
     ) -> Simulation.Scheduler {
         let host = Scripting.Host(
             playerHouseID: Simulation.House.atreides,
@@ -38,7 +38,7 @@ struct SpiceRepaintTests {
         var fires: [(UInt16, Simulation.SpiceMap.Level)] = []
         var scheduler = emptyScheduler(
             spiceMap: map, rng: { 0 }
-        ) { packed, level in
+        ) { packed, level, _ in
             fires.append((packed, level))
         }
 
@@ -76,7 +76,7 @@ struct SpiceRepaintTests {
         var fires: [(UInt16, Simulation.SpiceMap.Level)] = []
         var scheduler = emptyScheduler(
             spiceMap: map, rng: { 0 }
-        ) { packed, level in
+        ) { packed, level, _ in
             fires.append((packed, level))
         }
         let hIdx = scheduler.host.units.allocate(

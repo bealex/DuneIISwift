@@ -35,6 +35,7 @@ After that, `Documentation/Plans/01.Initial.md` is the authoritative long-term p
 - Codecs (`Format80`, `Format40`) are pure functions on `Data`. Used by multiple decoders so they sit in `Core/Sources/DuneIICore/Codec/`.
 - Every format/codec ships with XCTest (Swift Testing) coverage in `Core/Tests/DuneIICoreTests/`. Real-data assertions use `TestInstall.locate()` and short-circuit when the install is absent.
 - Simulation parity with OpenDUNE is non-negotiable. When in doubt, port the C behavior literally. Only add a comment when a subtle invariant would surprise a future reader. Do not "improve" the simulation.
+- **Always consult OpenDUNE before implementing or changing any game-logic code.** This applies to everything except pure UI / presentation (SwiftUI chrome, SpriteKit node layout, sidebar widgets, HUD, input handling). Anything that touches simulation state, scripting, AI, pathfinding, combat, economy, map rules, spice mechanics, structure / unit behaviour, save-format, randomness, or timing must be grounded in a specific OpenDUNE source file and line range. Read the C first, port literally, cite the reference in the Swift doc comment (`src/<file>.c:<lines>`). Guessing or inventing behaviour is a regression even when the tests still pass — parity with v1.07 is the whole point of this project. If OpenDUNE's implementation is unclear or absent, surface the gap in the PR / history entry rather than silently filling it in.
 
 ## Feature workflow
 

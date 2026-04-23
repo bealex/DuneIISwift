@@ -146,4 +146,78 @@ struct SpiceMapTests {
         #expect(map[5, 5] == .bare)
 
     }
+
+    // MARK: - Map_FixupSpiceEdges-style bitfield lookup
+
+    /// Isolated thin-spice cell surrounded by bare sand — bitfield is 0
+    /// for all 4 interior neighbours, but map edges count as "matching"
+    /// per `src/map.c:740..742`. Here (10,10) is interior, so bits=0.
+    @Test("Isolated thin spice cell in sand field has bitfield 0")
+    func isolatedThinBitfieldIsZero() {
+        var map = Simulation.SpiceMap { _ in .normalSand }
+        let packed = UInt16(10 * 64 + 10)
+        _ = map.apply(delta: +1, at: packed)
+        #expect(map[packed] == .thin)
+        #expect(map.edgeBitfield(at: packed) == 0)
+    }
+
+    /// Thin cell with only its top neighbour also being spice — bit 0.
+    @Test("Thin cell with matching top neighbour sets only bit 0")
+    func thinTopNeighbourOnly() {
+        var map = Simulation.SpiceMap { _ in .normalSand }
+        let centre = UInt16(10 * 64 + 10)
+        let top = UInt16(9 * 64 + 10)
+        _ = map.apply(delta: +1, at: centre)
+        _ = map.apply(delta: +1, at: top)
+        #expect(map.edgeBitfield(at: centre) == 0b0001)
+    }
+
+    /// Thin cell surrounded on all 4 cardinals by spice.
+    @Test("Thin cell with all 4 cardinal neighbours spice has bitfield 15")
+    func thinAllNeighboursSet() {
+        var map = Simulation.SpiceMap { _ in .normalSand }
+        let x = 10, y = 10
+        for (dx, dy) in [(0, 0), (0, -1), (1, 0), (0, 1), (-1, 0)] {
+            _ = map.apply(delta: +1, at: UInt16((y + dy) * 64 + (x + dx)))
+        }
+        #expect(map.edgeBitfield(at: UInt16(y * 64 + x)) == 0b1111)
+    }
+
+    /// Thick cell only matches THICK neighbours — a THIN neighbour does
+    /// NOT set a bit. Mirrors the `if (curType == LST_THICK_SPICE)` gate
+    /// on the thick branch of `Map_FixupSpiceEdges`.
+    @Test("Thick cell requires thick neighbours — thin neighbour doesn't match")
+    func thickOnlyMatchesThick() {
+        var map = Simulation.SpiceMap { _ in .normalSand }
+        let centre = UInt16(10 * 64 + 10)
+        let top = UInt16(9 * 64 + 10)
+        let right = UInt16(10 * 64 + 11)
+        _ = map.apply(delta: +1, at: centre)   // bare → thin
+        _ = map.apply(delta: +1, at: centre)   // thin → thick
+        _ = map.apply(delta: +1, at: top)      // bare → thin (not thick)
+        _ = map.apply(delta: +1, at: right)    // bare → thin
+        _ = map.apply(delta: +1, at: right)    // thin → thick
+        #expect(map.edgeBitfield(at: centre) == 0b0010,
+                "only the thick RIGHT neighbour matches, thin TOP does not")
+    }
+
+    /// Map-edge tile: out-of-bounds neighbours count as matching, so
+    /// a spice tile in the corner gets a partial bitfield without any
+    /// actual neighbours of matching level.
+    @Test("Map-edge spice tile counts out-of-map sides as matching")
+    func mapEdgeOutOfMapCountsAsMatch() {
+        var map = Simulation.SpiceMap { _ in .normalSand }
+        // Top-left corner tile (0,0): top and left neighbours are out of map.
+        let packed = UInt16(0)
+        _ = map.apply(delta: +1, at: packed)
+        #expect(map[packed] == .thin)
+        // Top (bit 0) + Left (bit 3) = 0b1001 = 9.
+        #expect(map.edgeBitfield(at: packed) == 0b1001)
+    }
+
+    @Test("edgeBitfield returns nil for non-spice tiles")
+    func bitfieldNilForNonSpice() {
+        let map = Simulation.SpiceMap { _ in .normalSand }
+        #expect(map.edgeBitfield(at: UInt16(10 * 64 + 10)) == nil)
+    }
 }

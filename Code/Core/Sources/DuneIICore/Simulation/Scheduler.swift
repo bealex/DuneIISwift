@@ -347,6 +347,40 @@ extension Simulation {
             return nil
         }
 
+        /// Returns the refinery pool index whose footprint covers
+        /// `tile` OR whose footprint is 4-adjacent to `tile`, else nil.
+        ///
+        /// Why adjacency: the pathfinder treats the 3×2 footprint as
+        /// blocked (structures are impassable), so a harvester heading
+        /// back to unload halts on a tile **next to** the refinery,
+        /// never on top of it. OpenDUNE's `Unit_Move` fires
+        /// `Unit_EnterStructure` when the moving unit's next tile is a
+        /// structure tile — with our blocked-footprint pathfinder the
+        /// unit can't reach a structure tile, so we accept the nearest
+        /// adjacent tile as the dock trigger instead. Same observable
+        /// behaviour: harvester arrives → dock → refinery state READY.
+        static func refineryAtOrAdjacent(
+            tile: (x: Int, y: Int),
+            houseID: UInt8,
+            structures: StructurePool
+        ) -> Int? {
+            if let idx = refineryAt(tile: tile, houseID: houseID, structures: structures) {
+                return idx
+            }
+            let adjacents: [(Int, Int)] = [(0, -1), (1, 0), (0, 1), (-1, 0)]
+            for (dx, dy) in adjacents {
+                let cx = tile.x + dx
+                let cy = tile.y + dy
+                guard (0..<64).contains(cx), (0..<64).contains(cy) else { continue }
+                if let idx = refineryAt(
+                    tile: (x: cx, y: cy), houseID: houseID, structures: structures
+                ) {
+                    return idx
+                }
+            }
+            return nil
+        }
+
         public init(
             host: Scripting.Host,
             unitVM: Scripting.VM,
@@ -777,26 +811,56 @@ extension Simulation {
                     structures: host.structures,
                     units: host.units
                 )
-                // Pin: ANY harvester in STOP / GUARD / default action
-                // flips back to HARVEST so the seek-spice / seek-refinery
-                // branches below can reclaim it. OpenDUNE sets
-                // `actionsPlayer[3] = stop` for harvesters, so
-                // `Script_Unit_SetActionDefault` leaves a player-owned
-                // harvester stuck in STOP once its current task finishes.
+                // Harvester action coherence pin. OpenDUNE's
+                // `Script_Unit_Harvest` (`src/script/unit.c:1640..1669`)
+                // returns 0 when `amount >= 100` — that's the sole
+                // "I'm full" signal the EMC script uses to transition
+                // to RETURN via `Script_Unit_GoToClosestStructure`.
+                // Since slot 0x2A is not yet ported (halts on call),
+                // the EMC script can flip action to bogus values
+                // (STOP, RETURN-while-not-full) and strand the
+                // harvester. The pin defends against those drifts
+                // without stealing the harvest/return/move trio's
+                // organic transitions (which our own branches below
+                // handle correctly).
+                //
+                // Rule:
+                //   {.harvest, .returnAction, .move} → leave alone;
+                //     the branches below own these transitions.
+                //   anything else + idle               → override:
+                //     .returnAction if amount≥100, else .harvest.
+                //   RETURN + idle + amount<100         → demote to
+                //     .harvest (the EMC-driven bogus-RETURN case
+                //     that strands the harvester mid-load on spice).
                 let idleState = slot.targetMove == 0
                     && slot.route[0] == 0xFF
                     && slot.currentDestinationX == 0
                     && slot.currentDestinationY == 0
-                if slot.actionID != Simulation.ActionID.harvest
-                    && slot.actionID != Simulation.ActionID.returnAction
-                    && !isDocked
-                    && idleState
-                {
+                let isOrganicAction = slot.actionID == Simulation.ActionID.harvest
+                    || slot.actionID == Simulation.ActionID.returnAction
+                    || slot.actionID == Simulation.ActionID.move
+                if !isDocked, !isOrganicAction, idleState {
                     let prior = slot.actionID
+                    slot.actionID = slot.amount >= 100
+                        ? Simulation.ActionID.returnAction
+                        : Simulation.ActionID.harvest
+                    host.units[idx] = slot
+                    Log.info(
+                        "harvest-pin harvester=\(idx) \(prior) → \(slot.actionID) (idle, amount=\(slot.amount))",
+                        tracer: .label("harvest-tick")
+                    )
+                }
+                if !isDocked, slot.actionID == Simulation.ActionID.returnAction,
+                   slot.amount < 100, idleState
+                {
+                    // Bogus EMC-driven RETURN at amount<100 with no
+                    // active plan — strands the harvester on whatever
+                    // tile it halted on. Demote to HARVEST so the
+                    // seek-spice branch fires on this tick.
                     slot.actionID = Simulation.ActionID.harvest
                     host.units[idx] = slot
                     Log.info(
-                        "harvest-pin harvester=\(idx) \(prior) → HARVEST (idle, amount=\(slot.amount))",
+                        "harvest-pin harvester=\(idx) RETURN → HARVEST (idle, amount=\(slot.amount) < 100, bogus)",
                         tracer: .label("harvest-tick")
                     )
                 }
@@ -901,7 +965,7 @@ extension Simulation {
                 {
                     let tx = Int(slot.positionX) / 256
                     let ty = Int(slot.positionY) / 256
-                    if let refIdx = Self.refineryAt(
+                    if let refIdx = Self.refineryAtOrAdjacent(
                         tile: (x: tx, y: ty), houseID: slot.houseID,
                         structures: host.structures
                     ) {
@@ -919,6 +983,45 @@ extension Simulation {
                             "harvest-cycle arrived harvester=\(idx) refinery=\(refIdx) DOCK",
                             tracer: .label("harvest-tick")
                         )
+                    } else {
+                        // RETURN with no active move = re-plan. Port of
+                        // OpenDUNE's `Script_Unit_GoToClosestStructure`
+                        // (`src/script/unit.c:1786`): find nearest
+                        // same-house refinery, issue move, keep RETURN
+                        // action so the next dock check fires when we
+                        // arrive. Without this the EMC HARVEST script's
+                        // SetAction(RETURN) branch — fired whenever our
+                        // nil `Script_Unit_Harvest` slot trips the
+                        // script's "harvest failed" branch — strands the
+                        // harvester on whatever tile it last halted on.
+                        let idle = slot.targetMove == 0
+                            && slot.route[0] == 0xFF
+                            && slot.currentDestinationX == 0
+                            && slot.currentDestinationY == 0
+                        if idle,
+                           let refIdx = Self.findFreeRefinery(
+                               forHarvester: slot, structures: host.structures
+                           ) ?? Self.findNearestRefinery(
+                               forHarvester: slot, structures: host.structures
+                           )
+                        {
+                            let r = host.structures.slots[refIdx]
+                            let rx = Int(r.positionX) / 256
+                            let ry = Int(r.positionY) / 256
+                            _ = Simulation.Units.orderMove(
+                                poolIndex: idx, tileX: rx, tileY: ry,
+                                units: &host.units
+                            )
+                            // orderMove flips action to .move; restore
+                            // RETURN so the arrival-dock branch fires.
+                            var u = host.units[idx]
+                            u.actionID = Simulation.ActionID.returnAction
+                            host.units[idx] = u
+                            Log.info(
+                                "harvest-cycle RETURN replan harvester=\(idx) → refinery=\(refIdx) tile=(\(rx),\(ry))",
+                                tracer: .label("harvest-tick")
+                            )
+                        }
                     }
                 }
             }
@@ -952,7 +1055,7 @@ extension Simulation {
                     changeSpice: { packed, delta in
                         let levelBefore = spiceMap[packed]
                         let levelAfter = spiceMap.apply(delta: delta, at: packed)
-                        if levelBefore != levelAfter { notifier?(packed, levelAfter) }
+                        if levelBefore != levelAfter { notifier?(packed, levelAfter, spiceMap) }
                     },
                     rng: rng
                 )

@@ -1137,31 +1137,40 @@ public final class ScenarioRuntime {
         }
     }
 
-    /// Slice 9 helper. Builds the `spiceLevelDidChange` closure wired
-    /// into `Scripting.Host` — on every transition, overwrites the
-    /// matching `tileGrid` cell's `groundTileID` with the level's
-    /// canonical landscape-group sprite (bare=0, spice=49, thick=65;
-    /// ports `Map_ChangeSpiceAmount`'s offsets at `src/map.c:786`).
-    /// The scene's `syncGroundTiles` picks up the change on the next
-    /// tick. Edge-fixup (`Map_FixupSpiceEdges`) is deferred.
+    /// Builds the `spiceLevelDidChange` closure wired into
+    /// `Scripting.Host` — on every level transition, runs a port of
+    /// OpenDUNE's `Map_FixupSpiceEdges` (`src/map.c:725..764`) over
+    /// the changed tile AND its 4 cardinal neighbours. Each spice tile
+    /// picks one of 16 edge-fitted variants via the 4-neighbour
+    /// bitfield stored on `SpiceMap`; a fully-drained tile reverts to
+    /// plain sand (landscape offset 0). Without this, depleted patches
+    /// render every surviving spice cell as the "isolated" no-neighbour
+    /// variant — hard blocky edges against sand.
+    ///
+    /// Neighbours also get rewritten because their bitfield variant
+    /// shifts when the centre cell flips level (e.g. draining one cell
+    /// leaves its surviving northern neighbour with one fewer matching
+    /// side, so it should drop to a different edge sprite).
     private static func makeSpiceRepaint(
         ref: TileGridRef,
         resolver: TileResolver
-    ) -> (UInt16, Simulation.SpiceMap.Level) -> Void {
+    ) -> (UInt16, Simulation.SpiceMap.Level, Simulation.SpiceMap) -> Void {
         let iconMap = resolver.iconMap
         let sandID = iconMap.tileId(in: .landscape, offset: 0)
-        let thinID = iconMap.tileId(in: .landscape, offset: 49)
-        let thickID = iconMap.tileId(in: .landscape, offset: 65)
-        return { [ref] packed, level in
-            let idx = Int(packed)
-            guard idx < ref.tiles.count else { return }
-            let newID: UInt16
+        func spriteID(at packed: UInt16, map: Simulation.SpiceMap) -> UInt16 {
+            let level = map[packed]
             switch level {
-            case .bare:      newID = sandID
-            case .thin:      newID = thinID
-            case .thick:     newID = thickID
-            case .notSand:   return
+            case .bare, .notSand:
+                return sandID
+            case .thin:
+                let bits = map.edgeBitfield(at: packed) ?? 0
+                return iconMap.tileId(in: .landscape, offset: 49 + Int(bits))
+            case .thick:
+                let bits = map.edgeBitfield(at: packed) ?? 0
+                return iconMap.tileId(in: .landscape, offset: 65 + Int(bits))
             }
+        }
+        func rewrite(idx: Int, newID: UInt16) {
             let old = ref.tiles[idx]
             if old.groundTileID == newID { return }
             ref.tiles[idx] = Simulation.WorldSnapshot.Tile(
@@ -1175,6 +1184,25 @@ public final class ScenarioRuntime {
                 hasExplosion: old.hasExplosion,
                 objectRef: old.objectRef
             )
+        }
+        return { [ref] packed, _, map in
+            let idx = Int(packed)
+            guard idx < ref.tiles.count else { return }
+            rewrite(idx: idx, newID: spriteID(at: packed, map: map))
+            let x = idx % Simulation.SpiceMap.width
+            let y = idx / Simulation.SpiceMap.width
+            let neighbours: [(Int, Int)] = [(0, -1), (1, 0), (0, 1), (-1, 0)]
+            for (dx, dy) in neighbours {
+                let nx = x + dx
+                let ny = y + dy
+                guard nx >= 0, nx < Simulation.SpiceMap.width,
+                      ny >= 0, ny < Simulation.SpiceMap.height else { continue }
+                let nIdx = ny * Simulation.SpiceMap.width + nx
+                let nPacked = UInt16(nIdx)
+                let nLevel = map[nPacked]
+                guard nLevel == .thin || nLevel == .thick else { continue }
+                rewrite(idx: nIdx, newID: spriteID(at: nPacked, map: map))
+            }
         }
     }
 
