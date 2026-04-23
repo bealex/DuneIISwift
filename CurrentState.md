@@ -11,26 +11,28 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**None — playtest follow-up (attack muzzle flash, A/M/H/R shortcuts, spice-bloom detonation) shipped. Pick from "Next up".**
+**None — attack chain works end-to-end (trike kills enemy + leaves corpse), camera + minimap polished. Pick from "Next up".**
 
 What works now:
-- CYARD pre-selected at scene load; build panel shows buildables.
-- Slab → Windtrap → Refinery chain works; REFINERY placement auto-spawns a harvester in HARVEST action.
-- Harvester seeks spice → drains → docks at refinery → returns credits → repeats. Credits accumulate.
-- Two harvesters parallelise across two refineries; if both refineries are busy, a carryall ferries the next one (spawns above the harvester, flies to destination, drops off).
-- Spice tiles actually deplete — tile repaints bare when a harvester drains all the way down.
-- Walking into a spice bloom (non-sandworm) detonates it: tremor explosion + radius-5 spice spread + the walker dies.
-- Every fire attempt spawns a muzzle-flash explosion at the shooter, so attack intent is visible even when the bullet sprite is too small / too fast.
-- Click any unit or structure → info panel shows name / house / HP bar / state / action; halo matches friendly (green) vs enemy (red).
-- Right-click with friendly unit → orderMove (empty tile), orderAttack (enemy unit), or orderAttackStructure (enemy building).
-- Keyboard shortcut keys: `A` / `M` / `H` / `R` stage Attack / Move / Harvest / Return — next left-click resolves (Harvest + Return harvester-only). Escape clears selection + stage. Tab cycles player units. `,` / `.` halves / doubles sim speed (1× → 16×).
-- Enemy HUNT-action units walk toward the player base (redirect-to-adjacent when target tile is impassable).
-- Sidebar minimap renders terrain + unit / structure dots, refreshed every tick.
-- Structure + unit sprites pick up per-house palette remap (Atreides CY is blue, not default Harkonnen).
-- Headless: `screenshot x y w h path` emits a PNG via the same renderer the tests consume; `dump icntile / iconmap` for palette debugging; `stage <name>` mirrors the shortcut keys.
-- `ScreenshotTests` suite gives us golden-image regression coverage (5 tests).
+- Player CY + sidebar build panel + slab / windtrap / refinery chain.
+- Harvester loop: seek → drain → dock → deposit → repeat. Parallelises across refineries; full harvester + all-refineries-busy triggers carryall ferry (spawn → fly → drop → re-dock).
+- Spice tiles visibly deplete (thick → thin → bare).
+- Spice-bloom walk-into: tremor explosion + radius-5 spice spread + walker dies.
+- Right-click attack: unit approaches, stops at fire range, snaps orientation to target, fires bullets → bullet arrives → explosion + HP damage → on kill, dead-body sprite from `sandDeadBodies` iconGroup persists ~20s then fades.
+- Click any unit / structure → info panel shows name / house / HP bar (correctly capped at max) / state / action.
+- Green halo around friendly selection; red halo around enemy. Blue (Atreides) structure outlines use the same code path so they sit exactly on the footprint.
+- Per-house ICN palette remap applied in both `ScreenshotRenderer` + live scene (Atreides CY renders blue).
+- Windtrap vanes render grey (palette index 223 statically resolved to target 12 — animated vanes TODO).
+- Map trim: playable rect (`g_mapInfos[mapScale]`) renders with fully-veiled border around the scenario area.
+- Camera: `mapContainer` scaled 4× by default, centred on player CYARD at load. Arrow keys pan (clamped to playable rect). `=` / `-` zoom [1..16]×.
+- Minimap cropped to playable rect + viewport overlay (white outline tracks the camera view).
+- Keyboard: Escape (deselect + unstage), Tab (cycle player units), A/M/H/R (stage action), `,` / `.` (sim speed 1..16×), `=` / `-` (zoom), arrows (pan).
+- Headless: `screenshot x y w h path`; `dump icntile / iconmap`; `stage <name>`; `fire-gate` + `damage` + `attack-hold` + `carryall` + `bloom` tracers all emit to stderr.
+- Unit sprites render at native pixel size (harvester > trike > infantry).
 
-Latest session (2026-04-22) shipped 17 commits across the day. All details in today's `Documentation/History/2026-04.md` bullets.
+Test status: **832 / 83** suites green, zero warnings. 5 golden screenshot fixtures (`Fixtures/Screenshots/`).
+
+Latest session (2026-04-22) shipped 27 commits. Details in today's `Documentation/History/2026-04.md` bullets.
 
 ## Next up (queued)
 
@@ -51,6 +53,15 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 
 Reverse-chronological; link to the day's history bullet for detail.
 
+- **2026-04-22 — Infantry corpse + dim muzzle flash.** `ExplosionType.corpseInfantry` drops a `sandDeadBodies` sprite on infantry death (240-tick lifetime, fades in final frames). `IMPACT_SMALL` alpha lowered from 0.9 → 0.3 so muzzle flashes stop cluttering the view.
+- **2026-04-22 — Playtest batch 3.** (a) HP percent conversion (`u->hitpoints = max * percent / 256`) — no more `HP: 256/100`. (b) Camera clamped to playable rect via `clampMapPan()`. (c) Minimap cropped to playable rect. (d) Minimap viewport overlay — white outline shows camera view.
+- **2026-04-22 — Unify structure marker / halo.** `syncStructures` switched to `SKShapeNode(rect:)` with the same `screenPosition(ax, ay+dims-1)` + explicit size the halo uses — single source of truth for the footprint rect.
+- **2026-04-22 — Attack chain end-to-end.** Fix 1: `WorldSnapshot.init(scenario:)` now allocates via `UnitInfo.indexStart..indexEnd` (Unit_Allocate port) — scenario units land in 22..101, bullet range 12..15 stays free. Fix 2: new `Scheduler.tickAttackHold` — stops ACTION_ATTACK units at fire range and snaps orientation toward target so `Script_Unit_Fire`'s gate can pass. Projectiles skipped so bullets still fly. End-to-end verified in headless: bullet arrives, damage lands, HP decreases.
+- **2026-04-22 — Camera.** `mapContainer` parent node holds all map content; `mapZoom=4` default, `mapPan` centred on player yard at load, arrow keys pan, `=` / `-` zoom [1..16]×. Click classifier inverse-transforms through scale+pan.
+- **2026-04-22 — Map trim.** `ScenarioRuntime.load` stamps `veiledTileID` (fog-of-war offset 16) on every cell outside `scenario.playableRect` (port of `g_mapInfos[mapScale]`).
+- **2026-04-22 — Windtrap vanes.** Palette index 223 (the animated "windtrap colour" slot per `GUI_PaletteAnimate`) statically resolved to index 12 at load. Pink → grey.
+- **2026-04-22 — Unit sprite scaling.** Render at native SHP pixel size (matches `Sprite_GetWidth` / `Sprite_GetHeight`), not a forced 16×16 fit — harvester > trike > infantry hierarchy restored.
+- **2026-04-22 — Bug batch 2.** `tickSpriteOffsets` now gates on active movement (guard-state infantry stop animating). Added `fire-gate` / `damage` / `scene-halo` tracers.
 - **2026-04-22 — Attack muzzle flash.** `Script_Unit_Fire` spawns a cosmetic `IMPACT_SMALL` explosion at the shooter's tile on every successful fire so attack intent is always visible. Extended `FireTests.fireSuccess`. 832 green / 83 suites.
 - **2026-04-22 — Spice-bloom walk-into detonation.** `Simulation.Bloom.explodeSpice` ports `Map_Bloom_ExplodeSpice` + `Map_FillCircleWithSpice` (radius-5, edge 50% via rng, centre gets +2). `Scheduler.tickBloomDetonation` sweeps non-sandworm units on bloom tiles between `tickMovement` and `tickUnits`. New `Host.groundTileOverride` closure resets the bloom cell to sand. 6 new tests. 832 green / 83 suites.
 - **2026-04-22 — Action shortcut keys (A/M/H/R).** `UnitCommandController.stage(action:pool:)` primes a staged intent; next left-click resolves (Harvest/Return harvester-only; Attack falls back to move on empty). New `.orderHarvest` / `.orderReturn` runtime outcomes; scene keybindings + HUD `STAGE X (click target)` indicator. Headless `stage <name>` verb. 11 new tests. 826 green / 82 suites.
