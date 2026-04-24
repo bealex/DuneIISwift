@@ -665,11 +665,15 @@ extension Simulation {
             Simulation.Structures.tickConstruction(
                 pool: &host.structures, houses: &host.houses
             )
-            // Units first, then structures, then teams — matches OpenDUNE's
-            // main loop in `Server_Main.c`.
+            // Pass order matches OpenDUNE's `GameLoop_Main`
+            // (`src/opendune.c:1117..1120`): Team → Unit → Structure →
+            // House. Order matters for RNG parity because TEAM.EMC
+            // scripts consume `Tools_Random_256` bytes via
+            // `Script_Random` / idle checks, which shifts the RNG state
+            // seen by the per-unit `GameLoop_Unit` iteration.
+            tickTeams()
             tickUnits()
             tickStructures()
-            tickTeams()
             // Harvest / refine runs after unit & structure ticks so the
             // script-driven action / linkedID state is settled for the
             // current tick. Gated on both a non-nil spiceMap (so tests
