@@ -209,6 +209,76 @@ struct ParityHarnessTests {
         print("wrote Swift rng trace to \(traceURL.path)")
     }
 
+    /// Diagnostic: dump Swift's full `Tools_Random_256` byte stream
+    /// across 200 ticks so `grep ctx=Harvest.bump` (or any other
+    /// per-call context tag) can be scanned for when / whether a
+    /// specific draw fires. Partners with the existing
+    /// `saveSevenParityTickOneDumpRandomStream` which only covers
+    /// tick 1. Pairs with OpenDUNE's matching `--parity-random-trace`
+    /// dump when we can regenerate it.
+    @Test("_SAVE007.DAT — dump Swift Tools_Random_256 byte stream over 200 ticks")
+    @MainActor
+    func saveSevenParityDump200TickRNGStream() throws {
+        guard let root = TestInstall.locate() else { return }
+        let saveURL = root.appendingPathComponent("_SAVE007.DAT")
+        guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
+        let goldenURL = Self.goldenURL(named: "save007_200ticks.jsonl")
+        guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
+
+        let tmpDir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("tmp", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: tmpDir, withIntermediateDirectories: true
+        )
+        let traceURL = tmpDir.appendingPathComponent("swift_rng_trace_200.txt")
+
+        let data = try Data(contentsOf: saveURL)
+        let game = try Formats.Save.Game.decode(data)
+        let golden = try Data(contentsOf: goldenURL)
+
+        let install = try Installation(rootDirectory: root)
+        let assets = try AssetLoader(installation: install)
+        let unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+        let structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
+        let teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+        let resolver = assets.tileResolver
+        let baseline = Map.Generator.generate(
+            seed: game.info.scenario.mapSeed, resolver: resolver
+        )
+        let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
+        let snapshotLandscape = snapshot.tiles.map { tile in
+            resolver.landscapeType(
+                groundTileID: tile.groundTileID,
+                overlayTileID: tile.overlayTileID,
+                hasStructure: tile.hasStructure
+            )
+        }
+        let spiceMap = Simulation.SpiceMap { i in snapshotLandscape[i] }
+
+        let trace = Simulation.ParityHarness.RNGTrace(path: traceURL)
+        // `runAgainst` halts at the first drift (currently tick 151
+        // u39.amount); the RNGTrace flush in its `defer` block still
+        // writes the partial trace covering ticks 1..150.
+        _ = try? Simulation.ParityHarness.runAgainst(
+            snapshot: snapshot,
+            golden: golden,
+            tickLimit: 200,
+            unitProgram: unitProgram,
+            structureProgram: structureProgram,
+            teamProgram: teamProgram,
+            seedScriptsFrom: game,
+            spiceMap: spiceMap,
+            snapshotLandscape: snapshotLandscape,
+            rngTrace: trace
+        )
+        print("wrote Swift 200-tick rng trace to \(traceURL.path)")
+    }
+
     /// Diagnostic: writes Swift's per-opcode execution trace for a
     /// single unit (default `u0`, the SAVE007 player carryall) over
     /// the first 100 ticks to `tmp/swift_u0_script.txt`. Pairs with

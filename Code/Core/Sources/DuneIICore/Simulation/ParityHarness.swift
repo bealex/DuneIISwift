@@ -248,7 +248,12 @@ extension Simulation {
             // Same `Tools_Random_256` source for the `Unit_Move` wobble
             // byte draw (`src/unit.c:1322`). Must share the stream with
             // scripts + harvesting for byte-exact RNG parity.
-            scheduler.movementRNG = { source.toolsNext() }
+            scheduler.movementRNG = { idx in
+                source.currentTraceContext = "wobble u\(idx)"
+                let b = source.toolsNext()
+                source.currentTraceContext = ""
+                return b
+            }
             // OpenDUNE loads `g_gameConfig.gameSpeed` from OPTIONS.CFG
             // on startup; our install has it pinned at 4 (Fastest), but
             // any save's golden will dump its own value. Read from the

@@ -11,7 +11,21 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**🎯 SAVE007 parity frontier at tick 151 `unit[39].amount: expected=12 actual=11` — now an independent harvester-drain drift, not the u0 cascade.** The ScriptTrace diagnostic showed Swift's u0 carryall script is now byte-exact with OpenDUNE for the full 52-opcode tick-1 window (closed via `Script_Unit_GetInfo` case 0x0F + 5 other missing cases). Rerunning the parity frontier still halts at tick 151 `u39.amount` — so the harvester drift has its own root cause unrelated to the carryall cascade. Next step: run `saveSevenParityDumpU0ScriptTrace` filtered to u39 (change `unitPoolIndex: 0` → `39`) and/or regenerate OpenDUNE's u39 script trace for a 151-tick window; diff for the first u39-specific divergence. Alternative: run the parity with `amount` temporarily commented to see if the drift cascades through any u39-specific fields first.
+**🎯 SAVE007 parity frontier at tick 151 `unit[39].amount: expected=12 actual=11` — root cause identified as per-tick RNG draw ordering divergence; needs structural scheduler refactor.** New `saveSevenParityDump200TickRNGStream` test (added this session) writes `tmp/swift_rng_trace_200.txt` for the first 151 ticks; OpenDUNE binary re-dumped to `tmp/opendune_rng_trace_200.txt` (200 ticks, via `Repositories/OpenDUNE/bin/opendune --parity-random-trace=... --parity-ticks=200`). Byte-stream diff shows: **Swift and OpenDUNE produce the SAME byte sequence** (deterministic RNG) — but the **CALLERS attributing each byte differ**. E.g., at tick 1:
+
+- OpenDUNE idx=0..9 attributed to: NULL, u22/u23/u24/u29/u32/u33/u34/u35 (DelayRandom from each unit's script), then idx=9 to u36 wobble.
+- Swift idx=0..9 attributed to: wobble u36 (FIRST), then an untagged draw, then DelayRandom u22..u35.
+
+This is because **OpenDUNE's `GameLoop_Unit` interleaves per-unit { movement + wobble, rotation, script }** inside a single `Unit_Find` loop (`src/unit.c:175..306`), while **Swift's `Scheduler.tick()` runs `tickMovement()` as a batch over all units BEFORE `tickUnits()` dispatches any script**. So Swift's u36 wobble draw (from the movement pass) fires before any unit script's DelayRandom, inverting the order.
+
+The byte-stream is still identical, so most ticks happen to produce the correct per-unit state. At tick 151 the accumulated ordering shift causes u39's Harvest.bump to read the byte OpenDUNE's `ctx=u39 Harvest.drainRoll` would read (0x14, LSB=0 → no bump), producing `amount=11` instead of 12.
+
+Fix requires Swift's scheduler to adopt OpenDUNE's per-unit-interleaved structure — a significant refactor flagged as queue item "(b) rewrite as a single per-unit loop with inline script/movement/rotation branches" earlier in CurrentState. Next session's shape: introduce `tickPerUnit(findIndex:)` in `Scheduler` that runs movement/rotation/sprite/script for one unit, then replace `tickMovement()` + `tickRotation()` + `tickSpriteOffsets()` + `tickUnits()` call chain with a single findArray loop invoking it. Around 150+ tests depend on the batch ordering — expect broad test adjustments.
+
+Diagnostic infrastructure shipped this session:
+- `ParityHarness.ScriptTrace` — opcode-level trace writer per unit.
+- `saveSevenParityDumpU0ScriptTrace` + `saveSevenParityDump200TickRNGStream` — regenerate `tmp/swift_*_trace_*.txt` for diffing against OpenDUNE.
+- `movementRNG` closure signature changed to `((Int) -> UInt8)?` so the parity harness tags each wobble draw with its owning unit (e.g. `ctx=wobble u36`).
 
 **Prior (shipped later 2026-04-24 session):**
 - Added `ParityHarness.ScriptTrace` — opcode-level trace writer mirroring OpenDUNE's `--parity-script-trace` line format. `saveSevenParityDumpU0ScriptTrace` test regenerates `tmp/swift_u0_script.txt` on demand.
@@ -191,7 +205,7 @@ What works now:
 - Unit sprites render at native pixel size (harvester > trike > infantry). Units pathfind around each other.
 - Attack visuals: muzzle flash + impact dimmed to 30% alpha so they're a hint, not a clutter.
 
-Test status: **992 / 97** tests in suites green, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`), 2 golden parity JSONLs (`Fixtures/ParityGoldens/save001_200ticks.jsonl` + `save007_200ticks.jsonl`).
+Test status: **993 / 97** tests in suites green, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`), 2 golden parity JSONLs (`Fixtures/ParityGoldens/save001_200ticks.jsonl` + `save007_200ticks.jsonl`).
 
 Latest session (2026-04-23) shipped, across two merged lines of work: (1) movement polish + STARPORT slices 5a/5b/5c-sim (fallback-slide per-tile gate, OpenDUNE crush parity, `[CHOAM]` INI loader + buildable mask, order commit + frigate delivery + availability bump, `StarportController` + pricing + runtime stock seeding); (2) harvester RETURN replan + adjacency dock + coherence pin + `Map_FixupSpiceEdges` port + CLAUDE.md "consult OpenDUNE" rule. Previous session (2026-04-22) shipped 27 commits. Details in today's `Documentation/History/2026-04.md` bullets.
 
@@ -211,6 +225,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
+
+- **2026-04-24 — SAVE007 tick-151 `u39.amount` drift root-caused to per-tick RNG draw order divergence.** RNG byte stream matches Swift / OpenDUNE (same seed, deterministic), but callers attributed to each byte differ. Swift batches `tickMovement` / `tickRotation` / `tickSpriteOffsets` over all units before running any unit scripts; OpenDUNE interleaves all of them per-unit inside `Unit_Find`. By tick 151 the accumulated ordering shift makes u39's Harvest.bump read OpenDUNE's drainRoll byte. Fix is a scheduler-structure refactor — see the active task. New insight `simulation-per-tick-rng-order-matters`. Infrastructure: `saveSevenParityDump200TickRNGStream` diagnostic test, `movementRNG: ((Int) -> UInt8)?` signature for per-wobble tagging. **993 / 97 / zero warnings.**
 
 - **2026-04-24 — SAVE007 u0 carryall script byte-exact for OpenDUNE's tick-1 window via `Script_Unit_GetInfo` case 0x0F (byScenario) + 5 other missing cases.** ScriptTrace diagnostic infrastructure landed (`ParityHarness.ScriptTrace` + `saveSevenParityDumpU0ScriptTrace` test regenerating `tmp/swift_u0_script.txt`). Per-opcode diff against `tmp/opendune_u0_script.txt` pinned the divergence at opcode 41 — GetInfo(0x0F) fetches `byScenario`, Swift's `default: return 0` branch fired where OpenDUNE returned 1. Added 0x09/0x0A/0x0C/0x0F/0x11/0x13 cases to `makeGetInfoUnit`. Tick-151 u39.amount drift is now an independent issue, no longer a u0 cascade. **992 / 97 / zero warnings.**
 

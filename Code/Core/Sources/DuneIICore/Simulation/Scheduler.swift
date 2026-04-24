@@ -123,7 +123,12 @@ extension Simulation {
         /// `canWobble && isWobbling`. Tests that don't wire this get
         /// the non-parity "no wobble draw" behaviour, which is fine
         /// since `wobbleIndex` isn't compared in the default golden.
-        public var movementRNG: (() -> UInt8)?
+        /// `Tools_Random_256` byte source for the per-step wobble draw
+        /// (`src/unit.c:1322`). Signature carries the unit's pool
+        /// index so the parity harness's RNG-trace hook can tag each
+        /// draw with its owning unit (e.g. "wobble u13") and surface
+        /// where our stream advances when OpenDUNE's doesn't.
+        public var movementRNG: ((Int) -> UInt8)?
         private var harvestTickCounter: Int = 0
 
         /// Monotonic per-tick counter. Mirrors OpenDUNE's `g_timerGame`
@@ -2176,7 +2181,7 @@ extension Simulation {
                         slot.wobbleIndex = 0
                         if Simulation.UnitInfo.canWobble(type: slot.type),
                            slot.isWobbling, let rng = movementRNG {
-                            slot.wobbleIndex = rng() & 7
+                            slot.wobbleIndex = rng(idx) & 7
                         }
                         didStep = true
                     }
