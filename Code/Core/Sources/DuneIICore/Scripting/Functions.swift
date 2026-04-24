@@ -194,6 +194,16 @@ extension Scripting {
                     return UInt16(slot.type)
                 case 0x08:
                     return Scripting.EncodedIndex.unit(slot.index).raw
+                case 0x09:
+                    // `u->movingSpeed`.
+                    return UInt16(slot.movingSpeed)
+                case 0x0A:
+                    // `abs(orient[0].target - orient[0].current)` — the
+                    // absolute remaining rotation for the body. UNIT.EMC
+                    // uses this in carryall / winger motion scripts to
+                    // gate on "nearly done turning."
+                    let diff = Int16(slot.orientationTarget) &- Int16(slot.orientationCurrent)
+                    return UInt16(abs(Int(diff)))
                 case 0x0B:
                     // `(u->currentDestination.x == 0 && u->currentDestination.y == 0) ? 0 : 1`
                     // — `currentDestination` is the pixel-level per-step goal
@@ -203,20 +213,45 @@ extension Scripting {
                     // handler (UNIT.EMC word 637) decide "already moving" on
                     // tick 1 of a fresh order and loop forever at the wait.
                     return (slot.currentDestinationX == 0 && slot.currentDestinationY == 0) ? 0 : 1
+                case 0x0C:
+                    // `u->fireDelay == 0 ? 1 : 0` — attack-ready gate.
+                    return slot.fireDelay == 0 ? 1 : 0
                 case 0x0D:
                     // `ui->flags.explodeOnDeath`.
                     return (info?.explodeOnDeath ?? false) ? 1 : 0
                 case 0x0E:
                     return UInt16(slot.houseID)
+                case 0x0F:
+                    // `u->o.flags.s.byScenario ? 1 : 0`. Carryalls and
+                    // reinforcement units carry this flag; `Script_Unit_SetSpeed`
+                    // at `src/script/unit.c:389` branches on it to skip the
+                    // 192/256 speed scaling. Missing this case made u0
+                    // (SAVE007 player carryall) see byScenario=0 where
+                    // OpenDUNE saw 1, which cascaded into every subsequent
+                    // opcode the carryall's flight script dispatched.
+                    return slot.byScenario ? 1 : 0
                 case 0x10:
                     // Turret orientation — we don't separate turret from body
                     // yet, so return body orientation regardless.
                     return UInt16(bitPattern: Int16(slot.orientationCurrent))
+                case 0x11:
+                    // `abs(orient[level].target - orient[level].current)`
+                    // where `level = hasTurret ? 1 : 0`. We don't track
+                    // turret orientation target/speed separately yet; fall
+                    // back to the body-level delta (same as case 0x0A).
+                    let diff11 = Int16(slot.orientationTarget) &- Int16(slot.orientationCurrent)
+                    return UInt16(abs(Int(diff11)))
                 case 0x12:
                     // `(ui->movementType & 0x40) == 0 ? 0 : 1` — the 0x40 bit
                     // never appears in MovementType enum (all values < 6), so
                     // this is effectively always 0 in vanilla data.
                     return 0
+                case 0x13:
+                    // `(u->o.seenByHouses & (1 << g_playerHouseID)) == 0 ? 0 : 1`.
+                    // Without `host.playerHouseID` we can't evaluate, so
+                    // return 0 matching the pre-player-house default.
+                    guard let player = host.playerHouseID else { return 0 }
+                    return (slot.seenByHouses & (UInt8(1) &<< player)) == 0 ? 0 : 1
                 default:
                     return 0
                 }

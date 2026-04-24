@@ -78,7 +78,8 @@ extension Simulation {
             seedScriptsFrom game: Formats.Save.Game? = nil,
             spiceMap: Simulation.SpiceMap? = nil,
             snapshotLandscape: [LandscapeType] = [],
-            rngTrace: RNGTrace? = nil
+            rngTrace: RNGTrace? = nil,
+            scriptTrace: ScriptTrace? = nil
         ) throws {
             let goldenTicks = try parseGolden(golden)
             guard !goldenTicks.isEmpty else { throw ParseError.goldenEmpty }
@@ -218,9 +219,24 @@ extension Simulation {
             let unitFunctions = Scripting.Functions.unitTable(host: host, source: source)
             let structureFunctions = Scripting.Functions.structureTable(host: host, source: source)
             let teamFunctions = Scripting.Functions.teamTable(host: host, source: source)
-            let unitVM = Scripting.VM(program: unitProgram, functions: unitFunctions)
+            var unitVM = Scripting.VM(program: unitProgram, functions: unitFunctions)
             let structureVM = Scripting.VM(program: structureProgram, functions: structureFunctions)
             let teamVM = Scripting.VM(program: teamProgram, functions: teamFunctions)
+            // Per-opcode script trace, filtered to one unit. Hooks the
+            // unit VM only — structure / team VMs dispatch off their
+            // own pools, and OpenDUNE's matching `--parity-script-unit`
+            // flag also targets a unit slot specifically.
+            if let scriptTrace {
+                let targetIdx = scriptTrace.unitPoolIndex
+                unitVM.trace = { pc, opcode, parameter, engine in
+                    if case .unit(let poolIndex)? = host.currentObject,
+                       poolIndex == targetIdx {
+                        scriptTrace.record(
+                            pc: pc, opcode: opcode, parameter: parameter, engine: engine
+                        )
+                    }
+                }
+            }
 
             var scheduler = Simulation.Scheduler(
                 host: host,
@@ -272,6 +288,7 @@ extension Simulation {
             // divergence) or completes — the trace is the load-bearing
             // artifact for debugging, not a success signal.
             defer { try? rngTrace?.flush() }
+            defer { try? scriptTrace?.flush() }
 
             try diff(tick: 0, golden: goldenTicks[0], host: host)
 
@@ -281,6 +298,42 @@ extension Simulation {
                     scheduler.tick()
                     try diff(tick: t, golden: goldenTicks[t], host: host)
                 }
+            }
+        }
+
+        /// Captures every opcode executed by the unit VM for a single
+        /// pool slot, matching the line format emitted by OpenDUNE's
+        /// `--parity-script-trace=<path>` + `--parity-script-unit=<idx>`
+        /// combo (see `parity.c`). Used to pinpoint where our scripted
+        /// behaviour diverges on a specific unit — e.g. SAVE007 u0 mid-
+        /// flight where Swift's carryall never jumps from pc=1117 to
+        /// pc=1968 the way OpenDUNE does around tick 96.
+        public final class ScriptTrace {
+            public let path: URL
+            public let unitPoolIndex: Int
+            private var buffer: String = ""
+
+            public init(path: URL, unitPoolIndex: Int) {
+                self.path = path
+                self.unitPoolIndex = unitPoolIndex
+                buffer.reserveCapacity(128 * 1024)
+                buffer.append("# swift parity script trace for unit[\(unitPoolIndex)] — one line per opcode\n")
+            }
+
+            fileprivate func record(
+                pc: Int, opcode: UInt8, parameter: Int, engine: Scripting.Engine
+            ) {
+                // Line format lifted from OpenDUNE's `parity.c` so diff
+                // output is visually aligned across the two engines.
+                buffer.append(
+                    "pc=\(pc) op=\(opcode) param=\(parameter) delay=\(engine.delay)"
+                    + " SP=\(engine.stackPointer) FP=\(engine.framePointer)"
+                    + " return=\(engine.returnValue)\n"
+                )
+            }
+
+            public func flush() throws {
+                try buffer.write(to: path, atomically: true, encoding: .utf8)
             }
         }
 

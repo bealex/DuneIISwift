@@ -209,6 +209,80 @@ struct ParityHarnessTests {
         print("wrote Swift rng trace to \(traceURL.path)")
     }
 
+    /// Diagnostic: writes Swift's per-opcode execution trace for a
+    /// single unit (default `u0`, the SAVE007 player carryall) over
+    /// the first 100 ticks to `tmp/swift_u0_script.txt`. Pairs with
+    /// OpenDUNE's `--parity-script-unit=0` dump at
+    /// `tmp/opendune_u0_script.txt`; a line-by-line diff pins the
+    /// tick where our VM takes a different branch. Gated on the
+    /// install + golden being present; no assertions.
+    @Test("_SAVE007.DAT — dump Swift u0 per-opcode script trace")
+    @MainActor
+    func saveSevenParityDumpU0ScriptTrace() throws {
+        guard let root = TestInstall.locate() else { return }
+        let saveURL = root.appendingPathComponent("_SAVE007.DAT")
+        guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
+        let goldenURL = Self.goldenURL(named: "save007_200ticks.jsonl")
+        guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
+
+        let tmpDir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("tmp", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: tmpDir, withIntermediateDirectories: true
+        )
+        let traceURL = tmpDir.appendingPathComponent("swift_u0_script.txt")
+
+        let data = try Data(contentsOf: saveURL)
+        let game = try Formats.Save.Game.decode(data)
+        let golden = try Data(contentsOf: goldenURL)
+
+        let install = try Installation(rootDirectory: root)
+        let assets = try AssetLoader(installation: install)
+        let unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+        let structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
+        let teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+        let resolver = assets.tileResolver
+        let baseline = Map.Generator.generate(
+            seed: game.info.scenario.mapSeed, resolver: resolver
+        )
+        let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
+        let snapshotLandscape = snapshot.tiles.map { tile in
+            resolver.landscapeType(
+                groundTileID: tile.groundTileID,
+                overlayTileID: tile.overlayTileID,
+                hasStructure: tile.hasStructure
+            )
+        }
+        let spiceMap = Simulation.SpiceMap { i in snapshotLandscape[i] }
+
+        let trace = Simulation.ParityHarness.ScriptTrace(
+            path: traceURL, unitPoolIndex: 0
+        )
+        // Run over 100 ticks — covers the tick-96 carryall branch
+        // point where OpenDUNE's pc jumps from 1117 → 1968. The
+        // harness halts on the first field drift (currently tick
+        // 151, u39.amount) so the trace is partial; that's fine
+        // because the divergence we're chasing lands at tick 96.
+        _ = try? Simulation.ParityHarness.runAgainst(
+            snapshot: snapshot,
+            golden: golden,
+            tickLimit: 100,
+            unitProgram: unitProgram,
+            structureProgram: structureProgram,
+            teamProgram: teamProgram,
+            seedScriptsFrom: game,
+            spiceMap: spiceMap,
+            snapshotLandscape: snapshotLandscape,
+            scriptTrace: trace
+        )
+        print("wrote Swift u0 script trace to \(traceURL.path)")
+    }
+
     // MARK: Shared helpers
 
     @MainActor

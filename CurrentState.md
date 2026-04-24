@@ -11,7 +11,15 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**🎯 SAVE007 parity frontier at tick 151 `unit[39].amount: expected=12 actual=11`.** The apparent harvester-drain drift is actually a downstream symptom of a u0 (player carryall) script divergence — diagnostic narrowing via temporary skip-list in `ParityHarness.compareUnit` showed:
+**🎯 SAVE007 parity frontier at tick 151 `unit[39].amount: expected=12 actual=11` — now an independent harvester-drain drift, not the u0 cascade.** The ScriptTrace diagnostic showed Swift's u0 carryall script is now byte-exact with OpenDUNE for the full 52-opcode tick-1 window (closed via `Script_Unit_GetInfo` case 0x0F + 5 other missing cases). Rerunning the parity frontier still halts at tick 151 `u39.amount` — so the harvester drift has its own root cause unrelated to the carryall cascade. Next step: run `saveSevenParityDumpU0ScriptTrace` filtered to u39 (change `unitPoolIndex: 0` → `39`) and/or regenerate OpenDUNE's u39 script trace for a 151-tick window; diff for the first u39-specific divergence. Alternative: run the parity with `amount` temporarily commented to see if the drift cascades through any u39-specific fields first.
+
+**Prior (shipped later 2026-04-24 session):**
+- Added `ParityHarness.ScriptTrace` — opcode-level trace writer mirroring OpenDUNE's `--parity-script-trace` line format. `saveSevenParityDumpU0ScriptTrace` test regenerates `tmp/swift_u0_script.txt` on demand.
+- `Script_Unit_GetInfo` now covers cases 0x09 (movingSpeed), 0x0A (body rotation delta), 0x0C (fireDelay==0), 0x0F (byScenario), 0x11 (turret rotation delta, falls back to body for now), 0x13 (seenByHouses). Was missing 6 cases; u0's carryall flight script called GetInfo(0x0F) at pc~1957 and got 0 where OpenDUNE returned 1, shifting the carryall's whole downstream state by tick 101.
+
+**Historical diagnostic narrowing (preserved for context; was the map that led to the GetInfo fix):**
+
+The tick-151 drift *before* the GetInfo fix cascaded via u0 — diagnostic narrowing via temporary skip-list in `ParityHarness.compareUnit` showed:
 
 - skip `amount` → next drift tick 166 `u0.orientation0Target=43 vs -15`
 - skip `orientation0Target/Speed` too → tick 167 `u0.orientation0Current=-3 vs -15`
@@ -183,7 +191,7 @@ What works now:
 - Unit sprites render at native pixel size (harvester > trike > infantry). Units pathfind around each other.
 - Attack visuals: muzzle flash + impact dimmed to 30% alpha so they're a hint, not a clutter.
 
-Test status: **989 / 97** tests in suites green, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`), 2 golden parity JSONLs (`Fixtures/ParityGoldens/save001_200ticks.jsonl` + `save007_200ticks.jsonl`).
+Test status: **992 / 97** tests in suites green, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`), 2 golden parity JSONLs (`Fixtures/ParityGoldens/save001_200ticks.jsonl` + `save007_200ticks.jsonl`).
 
 Latest session (2026-04-23) shipped, across two merged lines of work: (1) movement polish + STARPORT slices 5a/5b/5c-sim (fallback-slide per-tile gate, OpenDUNE crush parity, `[CHOAM]` INI loader + buildable mask, order commit + frigate delivery + availability bump, `StarportController` + pricing + runtime stock seeding); (2) harvester RETURN replan + adjacency dock + coherence pin + `Map_FixupSpiceEdges` port + CLAUDE.md "consult OpenDUNE" rule. Previous session (2026-04-22) shipped 27 commits. Details in today's `Documentation/History/2026-04.md` bullets.
 
@@ -203,6 +211,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
+
+- **2026-04-24 — SAVE007 u0 carryall script byte-exact for OpenDUNE's tick-1 window via `Script_Unit_GetInfo` case 0x0F (byScenario) + 5 other missing cases.** ScriptTrace diagnostic infrastructure landed (`ParityHarness.ScriptTrace` + `saveSevenParityDumpU0ScriptTrace` test regenerating `tmp/swift_u0_script.txt`). Per-opcode diff against `tmp/opendune_u0_script.txt` pinned the divergence at opcode 41 — GetInfo(0x0F) fetches `byScenario`, Swift's `default: return 0` branch fired where OpenDUNE returned 1. Added 0x09/0x0A/0x0C/0x0F/0x11/0x13 cases to `makeGetInfoUnit`. Tick-151 u39.amount drift is now an independent issue, no longer a u0 cascade. **992 / 97 / zero warnings.**
 
 - **2026-04-24 — SAVE007 parity frontier tick 101 → tick 151 via `Script_Unit_SetDestinationDirect` byte-exact rewrite.** Removed the spurious `targetMove` write, switched to `Units.setOrientation(rotateInstantly: false)` for gradual turn, and gated the `currentDestination` write on `currentDestination == (0, 0)` — matching `src/script/unit.c:918..936`. **989 / 97 / zero warnings.**
 

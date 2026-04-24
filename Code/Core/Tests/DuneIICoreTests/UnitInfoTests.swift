@@ -148,6 +148,76 @@ struct UnitInfoTests {
         #expect(engine.returnValue == 4 << 8)
     }
 
+    @Test("GetInfo 0x0F returns byScenario as 0/1")
+    func getInfoByScenario() throws {
+        var units = Simulation.UnitPool()
+        units.allocate(at: 0, type: 0, houseID: 0) // Carryall
+        var u = units[0]; u.byScenario = true; units[0] = u
+        units.allocate(at: 1, type: 0, houseID: 0) // Carryall
+        // Slot 1 defaults to byScenario=false.
+        for (index, want) in [(0, UInt16(1)), (1, UInt16(0))] {
+            let host = Scripting.Host(
+                units: units, structures: .init(),
+                currentObject: .unit(poolIndex: index),
+                texts: [], textLog: [], voiceLog: []
+            )
+            var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
+            functions[0] = Scripting.Functions.makeGetInfoUnit(host: host)
+            let vm = Scripting.VM(
+                program: (try? Formats.Emc.Program.decodeCode(ins(3, 0x0F) + ins(14, 0))) ?? .empty,
+                functions: functions
+            )
+            var engine = Scripting.Engine.reset()
+            _ = vm.step(&engine); _ = vm.step(&engine)
+            #expect(engine.returnValue == want)
+        }
+    }
+
+    @Test("GetInfo 0x09 returns movingSpeed; 0x0A returns |o0Target - o0Current|; 0x0C returns fireDelay==0")
+    func getInfoSpeedAndTimers() throws {
+        var units = Simulation.UnitPool()
+        units.allocate(at: 0, type: 9, houseID: 0)
+        var u = units[0]
+        u.movingSpeed = 200
+        u.orientationCurrent = 10
+        u.orientationTarget = 40     // diff = 30
+        u.fireDelay = 0              // ready
+        units[0] = u
+
+        let host = Scripting.Host(
+            units: units, structures: .init(),
+            currentObject: .unit(poolIndex: 0),
+            texts: [], textLog: [], voiceLog: []
+        )
+        for (subcase, want) in [(UInt16(0x09), UInt16(200)), (0x0A, 30), (0x0C, 1)] {
+            var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
+            functions[0] = Scripting.Functions.makeGetInfoUnit(host: host)
+            let vm = Scripting.VM(
+                program: (try? Formats.Emc.Program.decodeCode(ins(3, subcase) + ins(14, 0))) ?? .empty,
+                functions: functions
+            )
+            var engine = Scripting.Engine.reset()
+            _ = vm.step(&engine); _ = vm.step(&engine)
+            #expect(engine.returnValue == want, "subcase=0x\(String(subcase, radix: 16))")
+        }
+        // `fireDelay = 5 → 0x0C == 0` (not ready).
+        var u2 = units[0]; u2.fireDelay = 5; units[0] = u2
+        let host2 = Scripting.Host(
+            units: units, structures: .init(),
+            currentObject: .unit(poolIndex: 0),
+            texts: [], textLog: [], voiceLog: []
+        )
+        var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
+        functions[0] = Scripting.Functions.makeGetInfoUnit(host: host2)
+        let vm = Scripting.VM(
+            program: (try? Formats.Emc.Program.decodeCode(ins(3, 0x0C) + ins(14, 0))) ?? .empty,
+            functions: functions
+        )
+        var engine = Scripting.Engine.reset()
+        _ = vm.step(&engine); _ = vm.step(&engine)
+        #expect(engine.returnValue == 0)
+    }
+
     @Test("GetInfo 0x0D returns explodeOnDeath as 0/1")
     func getInfoExplodeOnDeath() throws {
         var units = Simulation.UnitPool()
