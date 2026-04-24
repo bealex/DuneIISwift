@@ -45,6 +45,31 @@ public struct Pos32: Sendable, Equatable, Hashable {
         return UInt16(truncatingIfNeeded: (raw &+ 0x80) >> 8)
     }
 
+    /// Port of `Tile_MoveByOrientation` (`src/tile.c:405`). Steps the
+    /// position by exactly 256 pos32 pixels (one tile) along the
+    /// OCTANT-snapped orientation. The incoming `orientation` is
+    /// reduced to 0..7 via `Orientation_Orientation256ToOrientation8`
+    /// (`(orientation + 16) / 32 & 0x7`), then the position is
+    /// offset by the matching `(xOffsets, yOffsets)` pair. Returns
+    /// `origin` unchanged if the result would leave the 16384×16384
+    /// pos32 map.
+    public static func movedByOrientation(_ origin: Pos32, orientation: UInt8) -> Pos32 {
+        // y decreases for "up" orientations (screen-coord Y grows
+        // downward, matching OpenDUNE).
+        let xOffsets: [Int32] = [0, 256, 256, 256, 0, -256, -256, -256]
+        let yOffsets: [Int32] = [-256, -256, 0, 256, 256, 256, 0, -256]
+        let octant = Int((UInt16(orientation) &+ 16) / 32) & 0x7
+        let nx = Int32(origin.x) &+ xOffsets[octant]
+        let ny = Int32(origin.y) &+ yOffsets[octant]
+        // OpenDUNE: `if (x > 16384 || y > 16384) return position;` —
+        // the uint16 wrap makes negatives read as > 16384 too, so
+        // any overflow snaps back. Match with signed bounds check.
+        if nx < 0 || nx > 16384 || ny < 0 || ny > 16384 {
+            return origin
+        }
+        return Pos32(x: UInt16(truncatingIfNeeded: nx), y: UInt16(truncatingIfNeeded: ny))
+    }
+
     /// Port of `Tile_MoveByDirection` (`src/tile.c:276`). Offsets the
     /// position by `distance` pos32 pixels along the 256-step orientation
     /// heading. `distance` is clamped to 0xFF. The sign convention matches

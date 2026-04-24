@@ -1658,45 +1658,62 @@ extension Simulation {
             for idx in host.units.findArray {
                 var slot = host.units.slots[idx]
                 guard let info = Simulation.UnitInfo.lookup(slot.type) else { continue }
-                // Harvester branch runs regardless of displayMode — u16
-                // is `.unit` in the table but OpenDUNE's animation gate
-                // at `src/unit.c:268..283` tests the type directly. When
-                // in ACTION_HARVEST, bump the 6-bit counter; otherwise
-                // reset to 0 (the "sampling / deposit" idle cycle).
-                // `isSmoking` isn't tracked on slots yet — when the
-                // smoke flag lands, OR it into the increment branch.
-                if slot.type == 16 /* UNIT_HARVESTER */ {
+
+                // Port of OpenDUNE `src/unit.c:240..286`:
+                //   if (u->timer == 0) {
+                //       <animate + set timer = ui->animationSpeed / 5>
+                //   } else {
+                //       u->timer--;
+                //   }
+                // The timer gate applies to ALL per-unit animation
+                // branches (foot infantry, ornithopter, harvester).
+                // Decrement first when the timer is pending so the
+                // animation step only fires once the pause elapses.
+                if slot.timer != 0 {
+                    slot.timer &-= 1
+                    host.units[idx] = slot
+                    continue
+                }
+
+                var animated = false
+
+                // Foot-infantry branch. OpenDUNE gates on
+                // `movementType==FOOT && u->speed != 0 || isSmoking`.
+                if info.movementType == .foot, slot.speed != 0,
+                   slot.spriteOffset >= 0,
+                   (info.displayMode == .infantry3 || info.displayMode == .infantry4) {
+                    let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
+                    slot.spriteOffset = Int8(bitPattern: bumped)
+                    slot.timer = info.animationSpeed / 5
+                    animated = true
+                }
+
+                // Ornithopter branch — the animation plays regardless
+                // of speed / move state because the rotors spin in
+                // place. `spriteOffset >= 0` gate keeps the "not
+                // allocated" sentinel out of the bump.
+                if slot.type == 1 /* ORNITHOPTER */, slot.spriteOffset >= 0 {
+                    let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
+                    slot.spriteOffset = Int8(bitPattern: bumped)
+                    slot.timer = 1
+                    animated = true
+                }
+
+                // Harvester branch — bumps while ACTION_HARVEST,
+                // resets to 0 otherwise. Timer stays pinned at 4.
+                if slot.type == 16 /* HARVESTER */ {
                     if slot.actionID == Simulation.ActionID.harvest {
                         let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
                         slot.spriteOffset = Int8(bitPattern: bumped)
-                        host.units[idx] = slot
+                        slot.timer = 4
+                        animated = true
                     } else if slot.spriteOffset != 0 {
                         slot.spriteOffset = 0
-                        host.units[idx] = slot
                     }
-                    continue
                 }
-                switch info.displayMode {
-                case .infantry3, .infantry4:
-                    // OpenDUNE `src/unit.c:241`: animation advances only
-                    // when `(movementType == MOVEMENT_FOOT && u->speed != 0)
-                    // || u->o.flags.s.isSmoking`. `u->speed` is the tile-hop
-                    // clamp that `Unit_SetSpeed` writes — non-zero iff the
-                    // unit is actually mid-move. A parked HUNT trooper
-                    // with a stale `targetMove` pointing at a distant
-                    // enemy still has `speed == 0` and must NOT animate
-                    // (SAVE007 unit[25]). `isSmoking` isn't on our slots
-                    // yet; land it alongside explosion-damage flagging.
-                    guard slot.speed != 0 else { continue }
-                    // `spriteOffset < 0` is OpenDUNE's "don't animate"
-                    // marker for specific states (spawning, dying); skip.
-                    guard slot.spriteOffset >= 0 else { continue }
-                    let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
-                    slot.spriteOffset = Int8(bitPattern: bumped)
-                    host.units[idx] = slot
-                default:
-                    continue
-                }
+
+                _ = animated
+                host.units[idx] = slot
             }
         }
         private var spriteAnimationCounter: Int = 0
@@ -1887,12 +1904,7 @@ extension Simulation {
                 let distToGoal = distBefore
 
                 if distToGoal <= arrivalThreshold {
-                    slot.positionX = goal.x
-                    slot.positionY = goal.y
-                    // Bullet / missile arrival → detonate and free.
-                    // OpenDUNE drives this via `BULLET.EMC` calling
-                    // `Script_Unit_ExplosionSingle`; we shortcut in the
-                    // scheduler until bullet scripts are wired.
+                    // Bullet / missile arrival shortcut — detonate and free.
                     if Self.isProjectileType(slot.type) {
                         let explosionType = Simulation.UnitInfo.lookup(slot.type)?.explosionType
                             ?? Simulation.ExplosionType.invalid
@@ -1905,41 +1917,35 @@ extension Simulation {
                         host.units.free(at: idx)
                         Simulation.Explosions.makeExplosion(
                             type: explosionType,
-                            position: goal,
+                            position: Pos32(x: slot.positionX, y: slot.positionY),
                             hitpoints: damage,
                             unitOriginEncoded: origin,
                             host: host
                         )
                         continue
                     }
-                    let wasRouteStep = slot.currentDestinationX != 0 || slot.currentDestinationY != 0
-                    slot.currentDestinationX = 0
-                    slot.currentDestinationY = 0
-                    if wasRouteStep, slot.route[0] != 0xFF {
-                        for i in 0..<13 { slot.route[i] = slot.route[i + 1] }
-                        slot.route[13] = 0xFF
-                        if slot.route[0] == 0xFF {
+                    // Gameplay mode only: pre-movement arrival for ground units.
+                    // In parity mode (`perTickCadenceGatesEnabled`), arrival is
+                    // handled entirely inside the step block below — mirroring
+                    // `Unit_Move` (`src/unit.c:1286`) which only checks arrival
+                    // after actually computing a new position.
+                    if !perTickCadenceGatesEnabled {
+                        slot.positionX = goal.x
+                        slot.positionY = goal.y
+                        let wasRouteStep = slot.currentDestinationX != 0 || slot.currentDestinationY != 0
+                        slot.currentDestinationX = 0
+                        slot.currentDestinationY = 0
+                        if wasRouteStep, slot.route[0] != 0xFF {
+                            for i in 0..<13 { slot.route[i] = slot.route[i + 1] }
+                            slot.route[13] = 0xFF
+                            if slot.route[0] == 0xFF { slot.targetMove = 0 }
+                        } else if !wasRouteStep {
                             slot.targetMove = 0
-                            Log.info(
-                                "move-arrived u\(idx) (type=\(slot.type)) at pos=(\(goal.x),\(goal.y)) route-exhausted",
-                                tracer: .label("move")
-                            )
-                        } else {
-                            Log.debug(
-                                "move-pop u\(idx) step-done, route[0]=\(slot.route[0]), pos=(\(goal.x),\(goal.y))",
-                                tracer: .label("move")
-                            )
                         }
-                    } else {
-                        // Arrived via targetMove fallback.
-                        slot.targetMove = 0
-                        Log.info(
-                            "move-arrived u\(idx) (type=\(slot.type)) at pos=(\(goal.x),\(goal.y)) via=\(goalSource)",
-                            tracer: .label("move")
-                        )
+                        host.units[idx] = slot
+                        continue
                     }
-                    host.units[idx] = slot
-                    continue
+                    // Parity mode: fall through to movement step.
                 }
 
                 // Orientation first: the subpixel step uses
@@ -2143,48 +2149,89 @@ extension Simulation {
                     // ornithopter, frigate) don't.
                     let mt = Simulation.UnitInfo.lookup(slot.type)?.movementType
                     let isFlier = mt == .winger && !Self.isProjectileType(slot.type)
-                    if !isFlier,
-                       distAfter >= distBefore || distAfter <= arrivalThreshold {
+                    let isGroundUnit = !isFlier && !Self.isProjectileType(slot.type)
+                    let distAfterU16 = UInt16(clamping: distAfter)
+                    // Arrival check. Two variants:
+                    // • Parity mode: port of `Unit_Move` (`src/unit.c:1419`)
+                    //   `ret = (distanceToDestination < distance || distance < 16)`.
+                    //   Uses the stored `distanceToDestination` from the previous
+                    //   movement tick (reset to 0x7FFF by Unit_StartMovement so
+                    //   the first step never falsely triggers via the left arm).
+                    // • Gameplay mode: simpler `distAfter >= distBefore || dist < 16`
+                    //   which is equivalent when `distanceToDestination == distBefore`
+                    //   (true for continuously-moving units), and doesn't require
+                    //   the field to be loaded + reset correctly.
+                    let arrivedParity = slot.distanceToDestination < distAfterU16 || distAfterU16 < 16
+                    let arrivedGameplay = distAfter >= distBefore || distAfterU16 < arrivalThreshold
+                    let arrived = perTickCadenceGatesEnabled ? arrivedParity : arrivedGameplay
+                    if !isFlier, arrived {
+                        // Snap to currentDestination (mirrors `if currentDestination!=0
+                        // newPosition = currentDestination` at src/unit.c:1452).
                         slot.positionX = goal.x
                         slot.positionY = goal.y
                         Log.debug(
-                            "move-snap u\(idx) overshoot or in-threshold — pos→(\(goal.x),\(goal.y)) distB=\(distBefore) distA=\(distAfter)",
+                            "move-snap u\(idx) arrived — pos→(\(goal.x),\(goal.y)) dTD=\(slot.distanceToDestination) distA=\(distAfterU16) parity=\(perTickCadenceGatesEnabled)",
                             tracer: .label("move")
                         )
-                        // When we snap to the current route step's
-                        // destination AND more route steps remain, pop
-                        // the step inline so the next tick can pick up
-                        // the NEXT leg without wasting a cycle on
-                        // route-bookkeeping.
-                        //
-                        // Before this: per 16 ticks a unit spent one
-                        // tick with Δ=32 (step + overshoot-snap) and
-                        // the next tick with Δ=0 (arrival branch pops
-                        // route but fires no step). Visible stutter at
-                        // every tile boundary — the "jumps" flagged in
-                        // headless screenshots for the trike driving
-                        // east across mission 1.
-                        if goalSource == "route", slot.route[0] != 0xFF {
-                            for i in 0..<13 { slot.route[i] = slot.route[i + 1] }
-                            slot.route[13] = 0xFF
-                            slot.currentDestinationX = 0
-                            slot.currentDestinationY = 0
-                            if slot.route[0] == 0xFF {
-                                slot.targetMove = 0
+                        if isGroundUnit {
+                            if perTickCadenceGatesEnabled {
+                                // Parity: port of `Unit_SetSpeed(unit, 0)` inside
+                                // `Unit_Move` (`src/unit.c:1482`). Only zero
+                                // speed/speedPerTick/movingSpeed — NOT speedRemainder:
+                                // `Unit_MovementTick` writes `speedRemainder = speed & 0xFF`
+                                // AFTER `Unit_Move` returns (src/unit.c:115), overwriting
+                                // the 0 written here. Our caller already updated
+                                // speedRemainder in the accumulator line above.
+                                slot.speed = 0
+                                slot.speedPerTick = 0
+                                slot.movingSpeed = 0
+                                slot.currentDestinationX = 0
+                                slot.currentDestinationY = 0
+                            } else {
+                                // Gameplay: inline route pop so the auto-populate
+                                // can immediately pick up the next step, avoiding
+                                // a one-tick stall per tile boundary.
+                                if goalSource == "route", slot.route[0] != 0xFF {
+                                    for i in 0..<13 { slot.route[i] = slot.route[i + 1] }
+                                    slot.route[13] = 0xFF
+                                    slot.currentDestinationX = 0
+                                    slot.currentDestinationY = 0
+                                    if slot.route[0] == 0xFF { slot.targetMove = 0 }
+                                    Log.debug(
+                                        "move-snap-pop u\(idx) inline route-pop after overshoot-snap, route[0]=\(slot.route[0])",
+                                        tracer: .label("move")
+                                    )
+                                } else if goalSource != "route" {
+                                    slot.targetMove = 0
+                                    slot.currentDestinationX = 0
+                                    slot.currentDestinationY = 0
+                                }
                             }
-                            Log.debug(
-                                "move-snap-pop u\(idx) inline route-pop after overshoot-snap, route[0]=\(slot.route[0])",
-                                tracer: .label("move")
+                        } else {
+                            // Projectile detonation (reached post-step).
+                            let explosionType = Simulation.UnitInfo.lookup(slot.type)?.explosionType
+                                ?? Simulation.ExplosionType.invalid
+                            Log.info(
+                                "bullet \(idx) (post-step) arrived, spawning explosion",
+                                tracer: .label("scheduler")
                             )
-                        } else if goalSource != "route" {
-                            // Fallback-slide arrival.
-                            slot.targetMove = 0
-                            slot.currentDestinationX = 0
-                            slot.currentDestinationY = 0
+                            host.units.free(at: idx)
+                            Simulation.Explosions.makeExplosion(
+                                type: explosionType,
+                                position: goal,
+                                hitpoints: slot.hitpoints,
+                                unitOriginEncoded: slot.originEncoded,
+                                host: host
+                            )
+                            continue
                         }
                         host.units[idx] = slot
                         continue
                     }
+                    // Update distanceToDestination for next tick's arrival
+                    // check. Mirrors `unit->distanceToDestination = distance`
+                    // at src/unit.c:1511.
+                    slot.distanceToDestination = distAfterU16
                     Log.verbose(
                         "move-tick u\(idx) (t=\(slot.type) a=\(slot.actionID)) pos=(\(priorX),\(priorY))→(\(slot.positionX),\(slot.positionY)) o=\(priorOrient)→\(slot.orientationCurrent) goal=(\(goal.x),\(goal.y)) via=\(goalSource) speedPT=\(slot.speedPerTick) rem=\(slot.speedRemainder) dist=\(distBefore)→\(distAfter)",
                         tracer: .label("move")
@@ -2221,25 +2268,46 @@ extension Simulation {
         private mutating func tickRotation() {
             for idx in host.units.findArray {
                 var slot = host.units.slots[idx]
-                if slot.orientationSpeed == 0 { continue }
-                let target = Int(slot.orientationTarget)
-                let current = Int(slot.orientationCurrent)
-                var diff = target - current
-                if diff > 128 { diff -= 256 }
-                if diff < -128 { diff += 256 }
-                let absDiff = abs(diff)
-                let speed = Int(slot.orientationSpeed)
-                let absSpeed = abs(speed)
-                var newCurrent = current &+ speed
-                if absSpeed >= absDiff {
-                    slot.orientationSpeed = 0
-                    newCurrent = target
+                var changed = false
+
+                // Level 0 — body orientation (Unit_Rotate, src/unit.c:65)
+                if slot.orientationSpeed != 0 {
+                    let target = Int(slot.orientationTarget)
+                    let current = Int(slot.orientationCurrent)
+                    var diff = target - current
+                    if diff > 128 { diff -= 256 }
+                    if diff < -128 { diff += 256 }
+                    let absDiff = abs(diff)
+                    let speed = Int(slot.orientationSpeed)
+                    var newCurrent = current &+ speed
+                    if abs(speed) >= absDiff {
+                        slot.orientationSpeed = 0
+                        newCurrent = target
+                    }
+                    slot.orientationCurrent = Int8(truncatingIfNeeded: newCurrent)
+                    changed = true
                 }
-                // Match OpenDUNE's 8-bit wrap. Int8 stores -128..127
-                // which is the same modulo-256 space the original
-                // `int8` arithmetic uses.
-                slot.orientationCurrent = Int8(truncatingIfNeeded: newCurrent)
-                host.units[idx] = slot
+
+                // Level 1 — turret (only for hasTurret units)
+                if slot.turretOrientationSpeed != 0,
+                   Simulation.UnitInfo.lookup(slot.type)?.hasTurret == true {
+                    let target = Int(slot.turretOrientationTarget)
+                    let current = Int(slot.turretOrientationCurrent)
+                    var diff = target - current
+                    if diff > 128 { diff -= 256 }
+                    if diff < -128 { diff += 256 }
+                    let absDiff = abs(diff)
+                    let speed = Int(slot.turretOrientationSpeed)
+                    var newCurrent = current &+ speed
+                    if abs(speed) >= absDiff {
+                        slot.turretOrientationSpeed = 0
+                        newCurrent = target
+                    }
+                    slot.turretOrientationCurrent = Int8(truncatingIfNeeded: newCurrent)
+                    changed = true
+                }
+
+                if changed { host.units[idx] = slot }
             }
         }
 

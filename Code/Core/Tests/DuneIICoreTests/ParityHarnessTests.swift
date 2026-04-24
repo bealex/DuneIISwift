@@ -130,7 +130,7 @@ struct ParityHarnessTests {
     @MainActor
     func saveSevenParityRealEmcFrontier() throws {
         try expectDivergenceUpTo(
-            tickLimit: 20,
+            tickLimit: 200,
             save: "_SAVE007.DAT", golden: "save007_200ticks.jsonl",
             withRealEmc: true
         )
@@ -180,14 +180,14 @@ struct ParityHarnessTests {
             seed: game.info.scenario.mapSeed, resolver: resolver
         )
         let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
-        let spiceMap = Simulation.SpiceMap { i in
-            let tile = snapshot.tiles[i]
-            return resolver.landscapeType(
+        let snapshotLandscape = snapshot.tiles.map { tile in
+            resolver.landscapeType(
                 groundTileID: tile.groundTileID,
                 overlayTileID: tile.overlayTileID,
                 hasStructure: tile.hasStructure
             )
         }
+        let spiceMap = Simulation.SpiceMap { i in snapshotLandscape[i] }
 
         let trace = Simulation.ParityHarness.RNGTrace(path: traceURL)
         // Run — will throw on first divergence, which is fine; we still
@@ -202,6 +202,7 @@ struct ParityHarnessTests {
             teamProgram: teamProgram,
             seedScriptsFrom: game,
             spiceMap: spiceMap,
+            snapshotLandscape: snapshotLandscape,
             rngTrace: trace
         )
         // Diff-against-OpenDUNE is manual for now; the trace is on disk.
@@ -260,6 +261,7 @@ struct ParityHarnessTests {
         let label: String
         var snapshot: Simulation.WorldSnapshot
         var spiceMap: Simulation.SpiceMap?
+        var snapshotLandscape: [LandscapeType] = []
         if withRealEmc {
             let install = try Installation(rootDirectory: root)
             let assets = try AssetLoader(installation: install)
@@ -271,14 +273,14 @@ struct ParityHarnessTests {
                 seed: game.info.scenario.mapSeed, resolver: resolver
             )
             snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
-            spiceMap = Simulation.SpiceMap { i in
-                let tile = snapshot.tiles[i]
-                return resolver.landscapeType(
+            snapshotLandscape = snapshot.tiles.map { tile in
+                resolver.landscapeType(
                     groundTileID: tile.groundTileID,
                     overlayTileID: tile.overlayTileID,
                     hasStructure: tile.hasStructure
                 )
             }
+            spiceMap = Simulation.SpiceMap { i in snapshotLandscape[i] }
             label = "\(save)+UNIT.EMC"
         } else {
             snapshot = try Simulation.WorldSnapshot(loading: game, baseline: Map.empty())
@@ -294,7 +296,8 @@ struct ParityHarnessTests {
                 structureProgram: structureProgram,
                 teamProgram: teamProgram,
                 seedScriptsFrom: withRealEmc ? game : nil,
-                spiceMap: spiceMap
+                spiceMap: spiceMap,
+                snapshotLandscape: snapshotLandscape
             )
             Issue.record("unexpected: \(label) matched through tick \(tickLimit) — widen tickLimit")
         } catch let d as Simulation.ParityHarness.Divergence {
@@ -325,6 +328,7 @@ struct ParityHarnessTests {
         let label: String
         var snapshot: Simulation.WorldSnapshot
         var spiceMap: Simulation.SpiceMap?
+        var snapshotLandscape: [LandscapeType] = []
         if withRealEmc {
             let install = try Installation(rootDirectory: root)
             let assets = try AssetLoader(installation: install)
@@ -341,13 +345,17 @@ struct ParityHarnessTests {
                 resolver: resolver
             )
             snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
-            spiceMap = Simulation.SpiceMap { i in
-                let tile = snapshot.tiles[i]
-                return resolver.landscapeType(
+            // Pre-computed landscape lookup for every tile — feeds the
+            // harness's `landscapeAt` closure (port of `Map_GetLandscapeType`).
+            snapshotLandscape = snapshot.tiles.map { tile in
+                resolver.landscapeType(
                     groundTileID: tile.groundTileID,
                     overlayTileID: tile.overlayTileID,
                     hasStructure: tile.hasStructure
                 )
+            }
+            spiceMap = Simulation.SpiceMap { i in
+                snapshotLandscape[i]
             }
             label = "\(save)+UNIT.EMC"
         } else {
@@ -364,7 +372,8 @@ struct ParityHarnessTests {
                 structureProgram: structureProgram,
                 teamProgram: teamProgram,
                 seedScriptsFrom: withRealEmc ? game : nil,
-                spiceMap: spiceMap
+                spiceMap: spiceMap,
+                snapshotLandscape: snapshotLandscape
             )
             Issue.record("unexpected: tick 1 matched for \(label) — widen tickLimit and remove this expectation")
         } catch let d as Simulation.ParityHarness.Divergence {

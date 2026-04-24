@@ -23,6 +23,14 @@ extension Simulation {
         /// `Unit_SetOrientation` seeds this as `turningSpeed * 4` with the
         /// sign chosen by shortest arc.
         public var orientationSpeed: Int8
+        /// `orientation[1].current` — turret heading (only meaningful when
+        /// `UnitInfo.hasTurret == true`). Loaded from save; written by
+        /// `Unit_SetOrientation(level=1)`. Mirrors OpenDUNE `u->orientation[1].current`.
+        public var turretOrientationCurrent: Int8
+        /// `orientation[1].target` — turret rotation target.
+        public var turretOrientationTarget: Int8
+        /// `orientation[1].speed` — turret rotation velocity; `0` = not rotating.
+        public var turretOrientationSpeed: Int8
         /// Current action enum. Written by `Script_Unit_SetAction`, read by
         /// the unit state machine.
         public var actionID: UInt8
@@ -84,6 +92,14 @@ extension Simulation {
         /// arrival. Zero when idle. Mirrors OpenDUNE `u->currentDestination`.
         public var currentDestinationX: UInt16
         public var currentDestinationY: UInt16
+        /// Tile_GetDistance from the unit's position to `currentDestination`
+        /// as measured AFTER the previous movement step. Used by
+        /// `Unit_Move`'s arrival check: `ret = (distanceToDestination <
+        /// newDistance || newDistance < 16)`. Initialised to `0x7FFF` by
+        /// `Unit_Create` and `Unit_StartMovement` so the check can't
+        /// falsely trigger on the very first step. Mirrors OpenDUNE
+        /// `u->distanceToDestination`.
+        public var distanceToDestination: UInt16
         /// Runtime fire-cooldown counter (`u->fireDelay`). Ticks down by
         /// one per `Scheduler.tick()`; `Script_Unit_Fire` refuses to fire
         /// until it reaches 0. Narrowed to `u8` on disk (OpenDUNE's
@@ -98,6 +114,14 @@ extension Simulation {
         /// round-tripping to save bytes matches; readers should subtract
         /// 1 before indexing `TeamPool`.
         public var team: UInt8
+        /// Generic per-unit countdown used by `tickUnknown5`
+        /// (`src/unit.c:240..286`) to pace sprite animation: when
+        /// `timer == 0` and the animation condition fires, bump
+        /// `spriteOffset` + set `timer = ui->animationSpeed / 5` (or
+        /// 4 / 1 / 3 depending on type / state). Otherwise decrement.
+        /// Also used by a handful of other per-unit timers (bullets'
+        /// arrival, etc.) — we use it as a catch-all counter field.
+        public var timer: UInt16
 
         public init(
             isUsed: Bool = false,
@@ -109,6 +133,9 @@ extension Simulation {
             orientationCurrent: Int8 = 0,
             orientationTarget: Int8 = 0,
             orientationSpeed: Int8 = 0,
+            turretOrientationCurrent: Int8 = 0,
+            turretOrientationTarget: Int8 = 0,
+            turretOrientationSpeed: Int8 = 0,
             actionID: UInt8 = 0,
             amount: UInt8 = 0,
             targetAttack: UInt16 = 0,
@@ -129,9 +156,11 @@ extension Simulation {
             route: [UInt8] = [UInt8](repeating: 0xFF, count: 14),
             currentDestinationX: UInt16 = 0,
             currentDestinationY: UInt16 = 0,
+            distanceToDestination: UInt16 = 0x7FFF,
             fireDelay: UInt8 = 0,
             fireTwiceFlip: Bool = false,
-            team: UInt8 = 0
+            team: UInt8 = 0,
+            timer: UInt16 = 0
         ) {
             self.isUsed = isUsed
             self.isAllocated = isAllocated
@@ -142,6 +171,9 @@ extension Simulation {
             self.orientationCurrent = orientationCurrent
             self.orientationTarget = orientationTarget
             self.orientationSpeed = orientationSpeed
+            self.turretOrientationCurrent = turretOrientationCurrent
+            self.turretOrientationTarget = turretOrientationTarget
+            self.turretOrientationSpeed = turretOrientationSpeed
             self.actionID = actionID
             self.amount = amount
             self.targetAttack = targetAttack
@@ -162,9 +194,11 @@ extension Simulation {
             self.route = route
             self.currentDestinationX = currentDestinationX
             self.currentDestinationY = currentDestinationY
+            self.distanceToDestination = distanceToDestination
             self.fireDelay = fireDelay
             self.fireTwiceFlip = fireTwiceFlip
             self.team = team
+            self.timer = timer
         }
     }
 

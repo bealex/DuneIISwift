@@ -53,6 +53,12 @@ extension Scripting {
         /// `slot.speed` alone so install-less tests keep working.
         public var landscapeAt: ((_ packed: UInt16) -> UInt8)?
 
+        /// `g_gameConfig.gameSpeed` from OPTIONS.CFG (0=Slowest .. 4=Fastest).
+        /// Read by `Tools_AdjustToGameSpeed` inside `Unit_SetSpeed` etc.
+        /// Parity harness pins this to the save's recorded value (often
+        /// 4 / Fastest); gameplay leaves it at 2 / Normal.
+        public var gameSpeed: UInt8 = 2
+
         /// Runtime spice grid. When non-nil, the scheduler's harvesting
         /// pass reads `spiceMap.landscapeByte` to decide whether a
         /// harvester's current tile holds spice, and writes level

@@ -243,11 +243,23 @@ extension Simulation {
                 var bullet = host.units[bulletIdx]
                 bullet.positionX = position.x
                 bullet.positionY = position.y
+                // OpenDUNE's `Unit_Create` calls `Unit_SetOrientation`
+                // with `rotateInstantly=true` for both levels (`src/unit.c:405..406`),
+                // which snaps all three fields (current/target/speed=0)
+                // immediately.
                 bullet.orientationCurrent = Int8(bitPattern: orientation)
+                bullet.orientationTarget = Int8(bitPattern: orientation)
+                bullet.orientationSpeed = 0
+                // Match OpenDUNE's `Unit_Create` → `Unit_SetAction(u, actionAI)`
+                // at `src/unit.c:462`. Bullets have `actionAI = STOP`, so
+                // the post-create action is 7, not 0 (ATTACK).
+                bullet.actionID = info.actionAI
                 bullet.targetAttack = target
                 bullet.hitpoints = damage
                 bullet.currentDestinationX = targetPos.x
                 bullet.currentDestinationY = targetPos.y
+                bullet.route = [UInt8](repeating: 0, count: 14)
+                bullet.route[0] = 0xFF
                 bullet.fireDelay = UInt8(truncatingIfNeeded: info.fireDistance & 0xFF)
                 // Winger targets get doubled travel budget (AA-style
                 // lead-the-target behaviour, from OpenDUNE).
@@ -280,11 +292,29 @@ extension Simulation {
                 var bullet = host.units[bulletIdx]
                 bullet.positionX = spawn.x
                 bullet.positionY = spawn.y
+                // OpenDUNE's `Unit_Create` calls `Unit_SetOrientation`
+                // with `rotateInstantly=true` for both levels
+                // (`src/unit.c:405..406`).
                 bullet.orientationCurrent = Int8(bitPattern: orientation)
-                bullet.targetAttack = target
+                bullet.orientationTarget = Int8(bitPattern: orientation)
+                bullet.orientationSpeed = 0
+                // Match OpenDUNE's `Unit_Create` → `Unit_SetAction(u, actionAI)`
+                // at `src/unit.c:462`. BULLET + SONIC_BLAST both have
+                // `actionAI = STOP`.
+                bullet.actionID = info.actionAI
+                // OpenDUNE's UNIT_BULLET / UNIT_SONIC_BLAST arm at
+                // `src/unit.c:2003..2029` does NOT set `targetAttack`;
+                // only the missile arm (cases 18..22) does. The bullet
+                // uses `currentDestination` for arrival detection.
                 bullet.hitpoints = damage
                 bullet.currentDestinationX = targetPos.x
                 bullet.currentDestinationY = targetPos.y
+                // OpenDUNE's Unit_Create memsets the slot to zero and
+                // then sets route[0]=0xFF; route[1..13] stay zero.
+                // Swift's slot default has every route entry = 0xFF,
+                // so match by explicit reset here.
+                bullet.route = [UInt8](repeating: 0, count: 14)
+                bullet.route[0] = 0xFF
                 if type == 24 {
                     bullet.fireDelay = UInt8(truncatingIfNeeded: info.fireDistance & 0xFF)
                 }
@@ -324,31 +354,30 @@ extension Simulation {
             var u = units[poolIndex]
             guard u.isUsed, u.isAllocated else { return }
             guard let info = UnitInfo.lookup(u.type) else { return }
-            // Only level 0 (body) has fields on UnitSlot; level 1
-            // (turret) no-ops until the turret-track fields land.
-            if level != 0 { return }
 
-            u.orientationSpeed = 0
-            u.orientationTarget = orientation
-
-            if rotateInstantly {
-                u.orientationCurrent = orientation
-                units[poolIndex] = u
-                return
+            if level == 0 {
+                u.orientationSpeed = 0
+                u.orientationTarget = orientation
+                if rotateInstantly {
+                    u.orientationCurrent = orientation
+                } else if u.orientationCurrent != orientation {
+                    var speed = Int16(info.turningSpeed) &* 4
+                    let diff = Int16(orientation) &- Int16(u.orientationCurrent)
+                    if (diff > -128 && diff < 0) || diff > 128 { speed = -speed }
+                    u.orientationSpeed = Int8(truncatingIfNeeded: speed)
+                }
+            } else {
+                u.turretOrientationSpeed = 0
+                u.turretOrientationTarget = orientation
+                if rotateInstantly {
+                    u.turretOrientationCurrent = orientation
+                } else if u.turretOrientationCurrent != orientation {
+                    var speed = Int16(info.turningSpeed) &* 4
+                    let diff = Int16(orientation) &- Int16(u.turretOrientationCurrent)
+                    if (diff > -128 && diff < 0) || diff > 128 { speed = -speed }
+                    u.turretOrientationSpeed = Int8(truncatingIfNeeded: speed)
+                }
             }
-
-            if u.orientationCurrent == orientation {
-                units[poolIndex] = u
-                return
-            }
-
-            // Pick sign to rotate along the shortest arc.
-            var speed = Int16(info.turningSpeed) &* 4
-            let diff = Int16(orientation) &- Int16(u.orientationCurrent)
-            if (diff > -128 && diff < 0) || diff > 128 {
-                speed = -speed
-            }
-            u.orientationSpeed = Int8(truncatingIfNeeded: speed)
             units[poolIndex] = u
         }
 
