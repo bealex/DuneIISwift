@@ -91,7 +91,9 @@ extension Scripting.Functions {
         table[0x26] = Scripting.Functions.makeVoicePlay(host: host)
         // 0x27 — Script_Unit_DisplayDestroyedText (not ported; GUI)
         // 0x28 — Script_Unit_RemoveFog (not ported; fog)
-        // 0x29 — Script_General_SearchSpice (not ported; map search)
+        // 0x29 — Script_General_SearchSpice (needs host.searchSpice;
+        // returns 0 when nil so non-parity callers degrade gracefully).
+        table[0x29] = Scripting.Functions.makeSearchSpice(host: host)
         // 0x2A — Script_Unit_Harvest (needs host.spiceMap; no-ops when nil)
         table[0x2A] = Scripting.Functions.makeHarvestUnit(host: host, source: source)
         // 0x2B — NoOp

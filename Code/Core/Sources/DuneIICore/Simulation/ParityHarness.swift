@@ -181,6 +181,31 @@ extension Simulation {
             // so hunting enemies don't halt one tile short of a CYARD;
             // parity needs the faithful behaviour.
             host.retargetImpassableDst = false
+            // `Script_General_SearchSpice` (slot 0x29) — wire to
+            // `Scheduler.findSpiceNear` so the harvester's UNIT.EMC
+            // HARVEST loop can find a fresh spice tile when its
+            // current one is empty. Without this the script returns 0
+            // and falls through to the RETURN-action transition (the
+            // SAVE007 tick-801 drift). Uses the harness's
+            // `playableRect` derivation (mapScale-keyed g_mapInfos)
+            // so the search bounds match OpenDUNE.
+            let searchPlayableRect: (originX: Int, originY: Int, width: Int, height: Int) =
+                (playableRect.originX, playableRect.originY, playableRect.width, playableRect.height)
+            host.searchSpice = { [weak host] packedFrom, radius, excluding in
+                guard let host = host, let spiceMap = host.spiceMap else { return 0 }
+                let fromX = Int(packedFrom & 0x3F)
+                let fromY = Int((packedFrom >> 6) & 0x3F)
+                guard let found = Simulation.Scheduler.findSpiceNear(
+                    from: (x: fromX, y: fromY),
+                    radius: Int(radius),
+                    playableRect: searchPlayableRect,
+                    map: spiceMap,
+                    structures: host.structures,
+                    units: host.units,
+                    excludingUnit: excluding
+                ) else { return 0 }
+                return UInt16(found.y * 64 + found.x)
+            }
             // `g_playerHouseID` analogue. OpenDUNE derives this from
             // the scenario filename at load; the save itself doesn't
             // record it. Heuristic: pick the lowest-indexed house that
@@ -652,8 +677,16 @@ extension Simulation {
             try eq(tick, "unit", idx, "blinkCounter",     g.blinkCounter,     s.blinkCounter)
             try eq(tick, "unit", idx, "team",             g.team,             s.team)
             try eq(tick, "unit", idx, "timer",            g.timer,            s.timer)
-            // Skipped (Swift side not yet tracking these):
-            //   nextActionID, orientation1*, wobbleIndex
+            try eq(tick, "unit", idx, "wobbleIndex",      g.wobbleIndex,      s.wobbleIndex)
+            // Skipped:
+            //   nextActionID — Swift doesn't track this field yet.
+            //   orientation1{Current,Target,Speed} — Swift writes these
+            //   for non-turreted units (`Script_Unit_SetTarget` always
+            //   calls `Unit_SetOrientation(level: 1)`), but the dump
+            //   schema also includes them for non-turreted units, and
+            //   we have a still-open drift at tick 11 u37 (SOLDIER —
+            //   no turret) where OpenDUNE writes 0 and Swift keeps 32.
+            //   Investigate after the §6 milestone closes.
         }
 
         private static func byteAt(_ a: [UInt8], _ i: Int) -> UInt8 {

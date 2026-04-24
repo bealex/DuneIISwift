@@ -1883,6 +1883,30 @@ extension Scripting {
             }
         }
 
+        /// `Script_General_SearchSpice` (unit slot 0x29) — port of
+        /// `src/script/general.c:325..336`. Reads `radius` from the
+        /// stack, asks `host.searchSpice` for a packed spice tile near
+        /// the current object's position, and returns
+        /// `Tools_Index_Encode(packed, IT_TILE)` on success or 0 on
+        /// failure. Without `host.searchSpice` wired, returns 0 — the
+        /// pre-existing NoOp default — so non-parity callers degrade
+        /// gracefully.
+        public static func makeSearchSpice(host: Host) -> VM.Function {
+            return { engine in
+                let radius = Scripting.peek(engine: &engine, position: 1)
+                guard let pos = currentPosition(host: host) else { return 0 }
+                let packedFrom = Simulation.Pathfinder.packedTile(x: pos.x, y: pos.y)
+                let excluding: Int = {
+                    if case .unit(let idx)? = host.currentObject { return idx }
+                    return -1
+                }()
+                guard let search = host.searchSpice else { return 0 }
+                let packed = search(packedFrom, radius, excluding)
+                if packed == 0 { return 0 }
+                return Scripting.EncodedIndex.tile(packed: packed).raw
+            }
+        }
+
         /// `Script_Unit_Harvest` (unit slot 0x2A) — port of
         /// `src/script/unit.c:1640..1670`. Advances a harvester's
         /// `amount` on a spice tile and probabilistically decrements

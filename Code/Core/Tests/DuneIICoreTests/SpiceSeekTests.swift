@@ -216,4 +216,30 @@ struct SpiceSeekTests {
         // flipped true (jitter=1 grants +1; inTransport set).
         #expect(s.host.units[idx].inTransport == true)
     }
+
+    @Test("findSpiceNear: equidistant ties pick the LAST tile in (y, x) iteration order — matches OpenDUNE last-wins")
+    func tieBreakLastWins() {
+        // Two thin spice tiles at the same distance from the search
+        // origin: (5, 4) and (5, 6) are both distance 1 from (5, 5).
+        // OpenDUNE's `Map_SearchSpice` uses `<= radius1` for the
+        // tracker (`src/map.c:1171`), so the LAST tile visited wins.
+        // Iteration is y outer, x inner — at fixed y=5, x advances
+        // from xmin to xmax, so x=6 (visited later) beats x=4. SAVE007
+        // tick 801 hit this exact tie-break: u39 had spice at both
+        // (23, 20) and (23, 21); the second-visited (23, 21) is
+        // OpenDUNE's pick.
+        var map = Simulation.SpiceMap()
+        _ = map.apply(delta: +1, at: UInt16(5 * 64 + 4))   // y=5, x=4
+        _ = map.apply(delta: +1, at: UInt16(5 * 64 + 6))   // y=5, x=6
+        let picked = Simulation.Scheduler.findSpiceNear(
+            from: (x: 5, y: 5),
+            radius: 3, playableRect: fullRect,
+            map: map,
+            structures: Simulation.StructurePool(),
+            units: Simulation.UnitPool(),
+            excludingUnit: -1
+        )
+        #expect(picked?.x == 6 && picked?.y == 5,
+                "expected (6, 5) — last tile in (y, x) iteration order at the tie distance")
+    }
 }

@@ -327,6 +327,71 @@ struct EmcHostBatch67Tests {
 
     // MARK: Helpers
 
+    @Test("SearchSpice (slot 0x29) returns Tools_Index_Encode(packed, IT_TILE) when host.searchSpice finds a tile")
+    func searchSpiceReturnsEncodedTile() throws {
+        var units = Simulation.UnitPool()
+        units.allocate(at: 0, type: 16 /* HARVESTER */, houseID: 1)
+        var u = units[0]
+        u.positionX = 24 * 256 + 128
+        u.positionY = 21 * 256 + 128
+        units[0] = u
+        let host = Scripting.Host(
+            units: units, structures: .init(),
+            currentObject: .unit(poolIndex: 0),
+            texts: [], textLog: [], voiceLog: []
+        )
+        // Wire the search to return packed tile (23, 21) = 21*64 + 23 = 1367.
+        let target: UInt16 = 23 + 21 * 64
+        host.searchSpice = { _, _, _ in target }
+
+        var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
+        functions[0x29] = Scripting.Functions.makeSearchSpice(host: host)
+        // PUSH radius=3, FUNCTION 0x29.
+        let vm = makeVM(words: ins(3, 3) + ins(14, 0x29), functions: functions)
+        var engine = Scripting.Engine.reset()
+        _ = vm.step(&engine); _ = vm.step(&engine)
+        // OpenDUNE encoding: ((x*2+1) | ((y*2+1) << 7)) | 0xC000.
+        // x=23, y=21 → (47 | (43 << 7)) | 0xC000 = 47 | 5504 | 49152 = 54703.
+        #expect(engine.returnValue == 54703,
+                "expected encoded IT_TILE for (23, 21) = 54703, got \(engine.returnValue)")
+    }
+
+    @Test("SearchSpice returns 0 when host.searchSpice is nil (NoOp default)")
+    func searchSpiceNilHostHook() throws {
+        var units = Simulation.UnitPool()
+        units.allocate(at: 0, type: 16, houseID: 1)
+        let host = Scripting.Host(
+            units: units, structures: .init(),
+            currentObject: .unit(poolIndex: 0),
+            texts: [], textLog: [], voiceLog: []
+        )
+        // host.searchSpice is nil by default.
+        var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
+        functions[0x29] = Scripting.Functions.makeSearchSpice(host: host)
+        let vm = makeVM(words: ins(3, 5) + ins(14, 0x29), functions: functions)
+        var engine = Scripting.Engine.reset()
+        _ = vm.step(&engine); _ = vm.step(&engine)
+        #expect(engine.returnValue == 0)
+    }
+
+    @Test("SearchSpice returns 0 when host.searchSpice returns 0 (no spice found)")
+    func searchSpiceReturnsZero() throws {
+        var units = Simulation.UnitPool()
+        units.allocate(at: 0, type: 16, houseID: 1)
+        let host = Scripting.Host(
+            units: units, structures: .init(),
+            currentObject: .unit(poolIndex: 0),
+            texts: [], textLog: [], voiceLog: []
+        )
+        host.searchSpice = { _, _, _ in 0 }
+        var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
+        functions[0x29] = Scripting.Functions.makeSearchSpice(host: host)
+        let vm = makeVM(words: ins(3, 5) + ins(14, 0x29), functions: functions)
+        var engine = Scripting.Engine.reset()
+        _ = vm.step(&engine); _ = vm.step(&engine)
+        #expect(engine.returnValue == 0)
+    }
+
     private func makeHost(units: Simulation.UnitPool, current: Scripting.Host.ObjectRef?) -> Scripting.Host {
         Scripting.Host(
             units: units, structures: .init(),
