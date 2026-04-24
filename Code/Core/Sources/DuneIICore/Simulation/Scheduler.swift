@@ -1788,21 +1788,29 @@ extension Simulation {
         ///    so the next tick picks up the next step.
         /// Per-unit movement pass. When `fromFindArrayIndex` is nil, iterates
         /// the entire `findArray`; when non-nil, only iterates the tail
-        /// starting at that index. The latter mode is used to catch up
-        /// units allocated during `tickUnits` (e.g. bullets from firing)
-        /// so they get their `Unit_MovementTick` in the same scheduler tick,
-        /// mirroring OpenDUNE's `GameLoop_Unit` where `Unit_Find` visits
-        /// newly-appended pool entries later in the same pass.
+        /// starting at that index.
+        ///
+        /// Uses a LIVE cursor (re-read `findArray` on each iteration) so
+        /// mid-iteration mutations — a bullet detonating inside
+        /// `Unit_Move` and calling `Unit_Free`, which shifts every
+        /// higher-index entry down by one — cause the unit that landed
+        /// in the freed slot to be SKIPPED. This matches OpenDUNE's
+        /// `Unit_Find` cursor semantics (`src/pool/unit.c:42..58`): the
+        /// cursor always advances, so a post-free `findArray[N] =
+        /// old findArray[N+1]` is never visited. SAVE007 tick 34:
+        /// bullet u12 detonates while u13 sits at `findArray[20]`; after
+        /// `Unit_Free(u12)` shifts u13 into slot 19 (u12's old position),
+        /// the cursor advances to 20 (now u14), skipping u13. Only at
+        /// tick 37 does u13 get its next `Unit_MovementTick`.
         private mutating func tickMovement(fromFindArrayIndex: Int? = nil) {
             let arrivalThreshold: Int32 = 16
-            let indices: ArraySlice<Int>
-            if let start = fromFindArrayIndex {
-                if start >= host.units.findArray.count { return }
-                indices = host.units.findArray[start...]
-            } else {
-                indices = host.units.findArray[...]
-            }
-            for idx in indices {
+            var cursor = fromFindArrayIndex ?? 0
+            while cursor < host.units.findArray.count {
+                let idx = host.units.findArray[cursor]
+                // Inlined re-bind so the `for idx in indices` body below
+                // keeps its existing structure.
+                cursor += 1
+                do {
                 var slot = host.units.slots[idx]
                 let hasDestination = slot.currentDestinationX != 0 || slot.currentDestinationY != 0
                 let hasRoute = slot.route[0] != 0xFF
@@ -2224,10 +2232,16 @@ extension Simulation {
                     if !isFlier, arrived {
                         // Snap to currentDestination (mirrors `if currentDestination!=0
                         // newPosition = currentDestination` at src/unit.c:1452).
-                        slot.positionX = goal.x
-                        slot.positionY = goal.y
+                        // Ground units only — projectiles detonate at the
+                        // actual post-step position (`newPosition` in OpenDUNE),
+                        // which `slot.positionX/Y` already holds from the step
+                        // block above.
+                        if isGroundUnit {
+                            slot.positionX = goal.x
+                            slot.positionY = goal.y
+                        }
                         Log.debug(
-                            "move-snap u\(idx) arrived — pos→(\(goal.x),\(goal.y)) dTD=\(slot.distanceToDestination) distA=\(distAfterU16) parity=\(perTickCadenceGatesEnabled)",
+                            "move-snap u\(idx) arrived — pos→(\(slot.positionX),\(slot.positionY)) dTD=\(slot.distanceToDestination) distA=\(distAfterU16) parity=\(perTickCadenceGatesEnabled)",
                             tracer: .label("move")
                         )
                         if isGroundUnit {
@@ -2265,17 +2279,22 @@ extension Simulation {
                                 }
                             }
                         } else {
-                            // Projectile detonation (reached post-step).
+                            // Projectile detonation at the actual post-step
+                            // position (mirrors OpenDUNE `Map_MakeExplosion
+                            // (..., newPosition, ...)` at src/unit.c:1443).
+                            // Not at `goal` — bullet damage falloff depends
+                            // on distance from newPosition to nearby units.
                             let explosionType = Simulation.UnitInfo.lookup(slot.type)?.explosionType
                                 ?? Simulation.ExplosionType.invalid
+                            let explodePos = Pos32(x: slot.positionX, y: slot.positionY)
                             Log.info(
-                                "bullet \(idx) (post-step) arrived, spawning explosion",
+                                "bullet \(idx) (post-step) arrived at (\(explodePos.x),\(explodePos.y)), spawning explosion",
                                 tracer: .label("scheduler")
                             )
                             host.units.free(at: idx)
                             Simulation.Explosions.makeExplosion(
                                 type: explosionType,
-                                position: goal,
+                                position: explodePos,
                                 hitpoints: slot.hitpoints,
                                 unitOriginEncoded: slot.originEncoded,
                                 host: host
@@ -2308,6 +2327,7 @@ extension Simulation {
                     }
                 }
                 host.units[idx] = slot
+                } // end inner do-block
             }
         }
 
