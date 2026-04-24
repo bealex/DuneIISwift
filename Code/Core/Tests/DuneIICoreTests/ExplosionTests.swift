@@ -41,6 +41,40 @@ struct ExplosionTests {
         #expect(host.units[30].isUsed == false)
     }
 
+    @Test("applyUnitDamage with Host.deferFreeOnDeath=true leaves slot alive with actionID=ACTION_DIE")
+    func unitDamageDeferFreeSetsActionDie() {
+        let host = makeHost()
+        _ = host.units.allocate(at: 30, type: 9, houseID: 0)
+        var tank = host.units[30]
+        tank.positionX = 128; tank.positionY = 128; tank.hitpoints = 50
+        tank.actionID = Simulation.ActionID.attack
+        host.units[30] = tank
+        host.deferFreeOnDeath = true
+
+        let killed = Simulation.Explosions.applyUnitDamage(unitIndex: 30, damage: 999, host: host)
+        #expect(killed == true)
+        // Parity path: slot stays used/allocated; the DIE script fires
+        // on the next EMC dispatch and frees it via `Script_Unit_Die`.
+        #expect(host.units[30].isUsed == true)
+        #expect(host.units[30].isAllocated == true)
+        #expect(host.units[30].hitpoints == 0)
+        #expect(host.units[30].actionID == Simulation.ActionID.die)
+    }
+
+    @Test("applyUnitDamage with Host.deferFreeOnDeath=false (gameplay default) frees the slot immediately")
+    func unitDamageImmediateFreeByDefault() {
+        let host = makeHost()
+        _ = host.units.allocate(at: 30, type: 9, houseID: 0)
+        var tank = host.units[30]
+        tank.hitpoints = 50
+        host.units[30] = tank
+        // `deferFreeOnDeath` defaults to false — pin that.
+        #expect(host.deferFreeOnDeath == false)
+
+        _ = Simulation.Explosions.applyUnitDamage(unitIndex: 30, damage: 50, host: host)
+        #expect(host.units[30].isUsed == false)
+    }
+
     @Test("applyUnitDamage on wound leaves slot live")
     func unitDamageWound() {
         let host = makeHost()

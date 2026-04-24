@@ -250,7 +250,13 @@ extension Simulation {
                 )
                 return nil
             }
-            guard let targetPos = Pos32.of(encoded, host: host) else {
+            // Match OpenDUNE's `Unit_CreateBullet` (`src/unit.c:1962`):
+            // `tile = Tools_Index_GetTile(target)`. For structures
+            // that's the layout-adjusted centre, not the raw stored
+            // top-left position — so a bullet fired at a 2x2 CYARD
+            // heads NE toward the centre rather than N toward the
+            // anchor corner.
+            guard let targetPos = Pos32.targetTile(encoded, host: host) else {
                 Log.debug(
                     "createBullet type=\(type) FAIL target-pos",
                     tracer: .label("fire")
@@ -750,6 +756,101 @@ extension Simulation {
                 "orderAttackStructure u\(poolIndex) (t=\(slot.type) h=\(slot.houseID) turret=\(info.hasTurret)) → structure s\(targetStructureIndex) encoded=\(String(format: "0x%04X", encoded)) action:\(priorAction)→0 prevTarget=\(String(format: "0x%04X", priorTarget))",
                 tracer: .label("attack")
             )
+            return true
+        }
+
+        // MARK: Unit teardown
+
+        /// Port of `Unit_UntargetMe` (`src/unit.c:1611`). Clears any
+        /// live reference to the given unit from every other unit's
+        /// `targetMove` / `targetAttack` / `scriptVariable4` and from
+        /// turret structures' `scriptVariables[2]`. Called right before
+        /// freeing a slot so no stale encoded index survives in the
+        /// pool.
+        public static func untargetUnit(
+            poolIndex: Int,
+            host: Scripting.Host
+        ) {
+            guard poolIndex >= 0, poolIndex < host.units.slots.count else { return }
+            let encoded = Scripting.EncodedIndex.unit(UInt16(poolIndex)).raw
+            for otherIdx in 0..<host.units.slots.count {
+                var u = host.units[otherIdx]
+                guard u.isUsed else { continue }
+                var changed = false
+                if u.targetMove == encoded { u.targetMove = 0; changed = true }
+                if u.targetAttack == encoded { u.targetAttack = 0; changed = true }
+                if changed { host.units[otherIdx] = u }
+            }
+            // Turret structures read the current firing target from
+            // `scriptVariables[2]`. Match `Unit_UntargetMe`'s sweep at
+            // `src/unit.c:1643..1645`. Our port doesn't expose per-
+            // structure script variables yet, so this is a TODO when
+            // the structure script variables land.
+        }
+
+        // MARK: Structure entry
+
+        /// Port of OpenDUNE's `Unit_EnterStructure` hostile-entry path
+        /// (`src/unit.c:2226..2265`). Fires when a ground unit arrives
+        /// on a structure tile owned by a different, non-allied house.
+        ///
+        /// Semantics:
+        /// - **Saboteur** (`type == UNIT_SABOTEUR`): deal 500 damage,
+        ///   remove the unit. (TODO — SOLDIER path below is the
+        ///   common case; saboteur branch added when we port that
+        ///   unit type.)
+        /// - **Low-hp takeover** (`structure.hp < max/4`): transfer
+        ///   ownership to the attacker's house. (TODO — same gate
+        ///   as saboteur, deferred.)
+        /// - **Otherwise** (common case — enemy foot unit on a
+        ///   still-healthy structure): deal
+        ///   `min(unit.hp * 2, structure.hp / 2)` damage to the
+        ///   structure, remove the attacker.
+        ///
+        /// For the SAVE007 parity frontier this closes tick 622 —
+        /// u37 (SOLDIER, hp=20) walks NE onto the player's CYARD and
+        /// deals `min(40, 198) = 40` damage before being consumed.
+        ///
+        /// Returns `true` when the unit was consumed (caller must
+        /// stop further per-tick processing for the slot).
+        @discardableResult
+        public static func enterStructure(
+            poolIndex: Int,
+            structureIndex: Int,
+            host: Scripting.Host
+        ) -> Bool {
+            guard poolIndex >= 0, poolIndex < host.units.slots.count else { return false }
+            guard structureIndex >= 0, structureIndex < host.structures.slots.count else { return false }
+            let u = host.units[poolIndex]
+            let s = host.structures[structureIndex]
+            guard u.isUsed, u.isAllocated, s.isUsed else { return false }
+
+            // Saboteurs / low-hp takeover paths aren't ported yet —
+            // skip them so gameplay isn't affected by a half-baked
+            // power-shift behaviour. The common hostile-entry damage
+            // + consume branch is what SAVE007 parity needs.
+            let attackerHouse = u.houseID
+            let defenderHouse = s.houseID
+            // Allied / same-house entry is a no-op (the OpenDUNE
+            // `House_AreAllied` branch at line 2204 handles
+            // REPAIR docking + linkedID chaining — not needed for
+            // the parity window).
+            if attackerHouse == defenderHouse { return false }
+
+            // Damage + remove.
+            let dmg = min(
+                UInt16(u.hitpoints) &* 2,
+                s.hitpoints / 2
+            )
+            Log.info(
+                "enterStructure u\(poolIndex) (t=\(u.type) h=\(attackerHouse) hp=\(u.hitpoints)) onto s\(structureIndex) (t=\(s.type) h=\(defenderHouse) hp=\(s.hitpoints)) dmg=\(dmg)",
+                tracer: .label("enter-structure")
+            )
+            _ = Simulation.Explosions.applyStructureDamage(
+                structureIndex: structureIndex, damage: dmg, host: host
+            )
+            untargetUnit(poolIndex: poolIndex, host: host)
+            host.units.free(at: poolIndex)
             return true
         }
 

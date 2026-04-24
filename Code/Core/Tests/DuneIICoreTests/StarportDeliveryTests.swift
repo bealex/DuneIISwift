@@ -258,4 +258,59 @@ struct StarportDeliveryTests {
         s.tickStarportAvailability()
         #expect(s.starportStock[Int(TANK_TYPE)] == 5)
     }
+
+    @Test("tickStarportAvailability prefers lcgRange over harvestRNG when both are wired")
+    func availabilityPrefersLCGOverHarvestRNG() {
+        // Port of `src/house.c:105` — OpenDUNE draws the type from
+        // `Tools_RandomLCG_Range(0, UNIT_MAX - 1)`, not Tools_Random_256.
+        // When both sources are wired (parity mode), LCG wins; if we
+        // accidentally fell back to `harvestRNG` the bump would land
+        // on TRIKE instead of TANK.
+        let host = Scripting.Host(spiceMap: nil)
+        let program = Formats.Emc.Program.empty
+        let vm = Scripting.VM(program: program, functions: Array(repeating: nil, count: 64))
+        var s = Simulation.Scheduler(
+            host: host, unitVM: vm, structureVM: vm, teamVM: vm,
+            harvestRNG: { UInt8(self.TRIKE_TYPE) }
+        )
+        s.lcgRange = { _, _ in UInt16(self.TANK_TYPE) }
+        s.starportStock[Int(TANK_TYPE)] = -1
+        s.starportStock[Int(TRIKE_TYPE)] = -1
+        s.tickStarportAvailability()
+        #expect(s.starportStock[Int(TANK_TYPE)] == 1,
+                "LCG-driven pick must bump TANK, not TRIKE")
+        #expect(s.starportStock[Int(TRIKE_TYPE)] == -1,
+                "TRIKE unchanged — harvestRNG shouldn't win when lcgRange is set")
+    }
+
+    @Test("OpenDUNE-style starport-availability gate fires at tick 1, then every 1800 ticks")
+    func availabilityGateFiresAtTickOne() {
+        // Port of `src/house.c:89..92` — `s_tickHouseStarportAvailability`
+        // starts at 0, so the first fire happens when `g_timerGame >= 0`
+        // on tick 1 post-load. Second fire at tick 1801.
+        let host = Scripting.Host(spiceMap: nil)
+        let program = Formats.Emc.Program.empty
+        let vm = Scripting.VM(program: program, functions: Array(repeating: nil, count: 64))
+        var draws: [UInt16] = []
+        var s = Simulation.Scheduler(
+            host: host, unitVM: vm, structureVM: vm, teamVM: vm
+        )
+        s.lcgRange = { lo, hi in
+            draws.append(UInt16(draws.count))
+            return lo
+        }
+        // Parity-style gates must be explicitly enabled — gameplay
+        // default keeps the simpler modulo-counter path.
+        s.perTickCadenceGatesEnabled = true
+        s.starportStock[Int(TANK_TYPE)] = -1  // 0 = stock at lo=0 pick
+
+        s.tick() // tick 1 — gate fires
+        #expect(draws.count == 1, "gate must fire on tick 1")
+
+        for _ in 2...1800 { s.tick() }
+        #expect(draws.count == 1, "no additional fires before 1801")
+
+        s.tick() // tick 1801 — second fire
+        #expect(draws.count == 2, "second fire lands at 1 + 1800 = 1801")
+    }
 }

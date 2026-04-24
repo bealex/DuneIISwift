@@ -34,6 +34,24 @@ extension Scripting {
             return b
         }
 
+        /// Parity-harness trace hook for Borland LCG draws. Fires once
+        /// per `lcgRange(_:_:)` call with the returned value + the
+        /// shared `currentTraceContext`. Pairs with OpenDUNE's
+        /// `--parity-lcg-trace=<path>` hook in `Tools_RandomLCG_Range`
+        /// for byte-stream diffing parallel to `onToolsDraw`. Callers
+        /// of `source.lcg.range(...)` directly bypass the hook —
+        /// always route through `lcgRange` when tracing matters.
+        public var onLCGDraw: ((UInt16, String) -> Void)?
+
+        /// Draw from the LCG through the trace hook. Shares
+        /// `currentTraceContext` with the Tools_Random_256 path so a
+        /// single context set is visible to both streams.
+        public func lcgRange(_ lo: UInt16, _ hi: UInt16) -> UInt16 {
+            let v = lcg.range(lo, hi)
+            onLCGDraw?(v, currentTraceContext)
+            return v
+        }
+
         public init(seed: UInt16) {
             self.lcg = RNG.BorlandLCG(seed: seed)
             self.tools = RNG.ToolsRandom256(seed: UInt32(seed))
@@ -72,7 +90,10 @@ extension Scripting {
             return { engine in
                 let lo = Scripting.peek(engine: &engine, position: 1)
                 let hi = Scripting.peek(engine: &engine, position: 2)
-                return source.lcg.range(lo, hi)
+                let prior = source.currentTraceContext
+                source.currentTraceContext = "RandomRange(\(lo),\(hi))"
+                defer { source.currentTraceContext = prior }
+                return source.lcgRange(lo, hi)
             }
         }
 
@@ -311,11 +332,21 @@ extension Scripting {
             }
         }
 
-        /// `Script_General_GetDistanceToObject` — same metric; just a
-        /// different name in OpenDUNE because the C overload takes a
-        /// different path internally. At this layer they're identical.
+        /// `Script_General_GetDistanceToObject` — port of
+        /// `src/script/general.c:162..171`, which calls
+        /// `Object_GetDistanceToEncoded` (`src/object.c:114`). For a
+        /// structure target the distance is measured to the structure's
+        /// nearest edge tile, not its centre — so a SOLDIER ~2 tiles
+        /// south-east of a 2x2 CYARD reads ~235 (edge) instead of ~555
+        /// (centre) and the script's `distance <= fireDistance<<8`
+        /// gate passes. Unit / tile targets fall through to plain
+        /// tile-distance.
         public static func makeGetDistanceToObject(host: Host) -> VM.Function {
-            makeGetDistanceToTile(host: host)
+            return { engine in
+                let encoded = Scripting.EncodedIndex(raw: Scripting.peek(engine: &engine, position: 1))
+                guard let from = currentPosition(host: host) else { return 0xFFFF }
+                return Pos32.distance(from: from, toEncoded: encoded, host: host) ?? 0xFFFF
+            }
         }
 
         /// `Script_General_VoicePlay` — queues a voice sample keyed on
@@ -358,7 +389,9 @@ extension Scripting {
         /// `byScenario`-flag 192/256 down-scale (OpenDUNE `src/script/unit.c:388`),
         /// and routes through `Units.setSpeed` so `speed`, `speedPerTick`,
         /// `speedRemainder`, and `movingSpeed` are all set from the
-        /// same input. Returns the 0..255 percent speed.
+        /// same input. Returns `u->speed` after setSpeed (matches
+        /// `src/script/unit.c:393`) — the clamp-down from percent input
+        /// to the per-tile tick count, not the original argument.
         public static func makeSetSpeedUnit(host: Host) -> VM.Function {
             return { engine in
                 let raw = Scripting.peek(engine: &engine, position: 1)
@@ -373,7 +406,7 @@ extension Scripting {
                     units: &host.units,
                     gameSpeed: host.gameSpeed
                 )
-                return speed
+                return UInt16(host.units.slots[poolIndex].speed)
             }
         }
 
@@ -405,12 +438,16 @@ extension Scripting {
             }
         }
 
-        /// `Script_Unit_Die` — frees the unit slot. The full OpenDUNE
-        /// behaviour (score / kill-counter updates, saboteur explosion)
-        /// is deferred until the economy + explosion pool lands.
+        /// `Script_Unit_Die` — frees the unit slot. Matches OpenDUNE's
+        /// `Unit_Remove` (`src/unit.c:897`) path which calls
+        /// `Unit_UntargetMe` before `Unit_Free` so no other unit keeps
+        /// a stale `targetMove` / `targetAttack` reference to the
+        /// freed slot. Score / kill-counter updates + saboteur
+        /// explosion are deferred to the economy + explosion pool.
         public static func makeDieUnit(host: Host) -> VM.Function {
             return { _ in
                 guard let (poolIndex, _) = currentUnit(host: host) else { return 0 }
+                Simulation.Units.untargetUnit(poolIndex: poolIndex, host: host)
                 host.units.free(at: poolIndex)
                 return 0
             }
@@ -508,7 +545,9 @@ extension Scripting {
                 let origin = Pos32(x: slot.positionX, y: slot.positionY)
 
                 // First: central explosion with a lower damage roll.
-                let centralDamage = source.lcg.range(25, 50)
+                source.currentTraceContext = "ExplosionMultiple.central"
+                let centralDamage = source.lcgRange(25, 50)
+                source.currentTraceContext = ""
                 Simulation.Explosions.makeExplosion(
                     type: Simulation.ExplosionType.deathHand.rawValue,
                     position: origin, hitpoints: centralDamage,
@@ -523,7 +562,9 @@ extension Scripting {
                         center: false,
                         random: { source.toolsNext() }
                     )
-                    let damage = source.lcg.range(75, 150)
+                    source.currentTraceContext = "ExplosionMultiple.scatter"
+                    let damage = source.lcgRange(75, 150)
+                    source.currentTraceContext = ""
                     Simulation.Explosions.makeExplosion(
                         type: Simulation.ExplosionType.deathHand.rawValue,
                         position: scattered, hitpoints: damage,
@@ -615,16 +656,39 @@ extension Scripting {
                     return 0
                 }
 
-                // Target in range.
-                guard let targetPos = Pos32.of(Scripting.EncodedIndex(raw: target), host: host) else {
+                // Target in range. Uses `Pos32.distance(from:toEncoded:host:)`
+                // — port of `Object_GetDistanceToEncoded` — so a
+                // structure target's distance is measured to its
+                // nearest edge tile (not centre), matching
+                // `src/object.c:114`. A SOLDIER at ~2 tiles from a
+                // 2x2 CYARD's south edge reads ~235 to edge vs ~555
+                // to centre; the latter rejects the shot and causes
+                // the tick-581 `u12.isUsed` parity drift.
+                let shooterPos = Pos32(x: shooter.positionX, y: shooter.positionY)
+                guard let distance16 = Pos32.distance(
+                    from: shooterPos,
+                    toEncoded: Scripting.EncodedIndex(raw: target),
+                    host: host
+                ) else {
                     Log.debug(
                         "fire-gate unit=\(shooterIdx) target-pos-unresolved raw=\(String(format: "0x%04X", target))",
                         tracer: .label("fire-gate")
                     )
                     return 0
                 }
-                let shooterPos = Pos32(x: shooter.positionX, y: shooter.positionY)
-                let distance = UInt32(Pos32.distance(shooterPos, targetPos))
+                let distance = UInt32(distance16)
+                // Target position for the orientation-diff gate. For
+                // structures, OpenDUNE's `Tile_GetDirection(u->o.position,
+                // Tools_Index_GetTile(target))` uses the layout-adjusted
+                // centre (`position + layoutTileDiff`) — a 2x2 CYARD at
+                // anchor (7680,6400) becomes (7936,6656). Using the raw
+                // stored position (top-left) reads a heading ~24° off and
+                // the `diff >= 8` gate rejects the shot.
+                guard let targetPos = Pos32.targetTile(
+                    Scripting.EncodedIndex(raw: target), host: host
+                ) else {
+                    return 0
+                }
                 let fireRange = UInt32(info.fireDistance) &<< 8
                 if Int32(bitPattern: fireRange) < Int32(bitPattern: distance) {
                     Log.debug(
@@ -900,10 +964,11 @@ extension Scripting {
                 )
 
                 // src/script/unit.c:1759 — `Tools_RandomLCG_Range(0, 10)`.
-                // The LCG is independent of `Tools_Random_256`; the parity
-                // RNG trace only records Tools bytes, so this draw isn't
-                // tagged.
-                let random = source.lcg.range(0, 10)
+                // Tagged so the LCG trace can attribute this draw to the
+                // owning unit.
+                source.currentTraceContext = "IdleAction.gate u\(poolIndex)"
+                let random = source.lcgRange(0, 10)
+                source.currentTraceContext = ""
 
                 // src/script/unit.c:1762 — bail immediately for
                 // wingers / slitherers / harvesters; they don't drew
@@ -1169,15 +1234,37 @@ extension Scripting {
                     )
                     let nextPacked = UInt16(truncatingIfNeeded: Int32(currentPacked) + delta)
                     let lst = landscapeAt(nextPacked)
-                    let landscapeIndex = Int(lst)
+                    // Port of `Unit_StartMovement` at `src/unit.c:1088..1089`:
+                    //   type = Map_GetLandscapeType(packed);
+                    //   if (type == LST_STRUCTURE) type = LST_CONCRETE_SLAB;
+                    // Structure tiles share the concrete-slab speed
+                    // table for movement purposes so units walk across
+                    // friendly bases at full speed instead of the 0
+                    // entry in LST_STRUCTURE's row. Without this remap
+                    // every route ending at / through a structure
+                    // (e.g. a HUNT trooper closing on an enemy CYARD)
+                    // clamps setSpeed to 0 and the unit never moves.
+                    let remapped: UInt8 = (lst == UInt8(LandscapeType.structure.rawValue))
+                        ? UInt8(LandscapeType.concreteSlab.rawValue)
+                        : lst
+                    let landscapeIndex = Int(remapped)
                     if landscapeIndex >= 0, landscapeIndex < Simulation.LandscapeInfo.table.count {
                         let land = Simulation.LandscapeInfo.table[landscapeIndex]
-                        // Port of `Unit_StartMovement` (`src/unit.c:1098..1100`):
-                        // vanilla Dune2 sets `isWobbling = true` when the
-                        // destination tile's `letUnitWobble` is true, and
-                        // NEVER clears it afterwards. Load-bearing for
-                        // RNG-stream parity.
-                        if land.letUnitWobble { updated.isWobbling = true }
+                        // Port of `Unit_StartMovement` (`src/unit.c:1097..1101`)
+                        // in the `g_dune2_enhanced = true` path, which
+                        // is OpenDUNE's default (`src/opendune.c:82`):
+                        //   unit->o.flags.s.isWobbling =
+                        //       g_table_landscapeInfo[type].letUnitWobble;
+                        // This overwrites `isWobbling` every step, so a
+                        // unit that walked off rock onto sand/slab/etc.
+                        // stops wobbling. The non-enhanced vanilla path
+                        // only SETS — `isWobbling = true` sticks forever
+                        // — but OpenDUNE runs enhanced in the parity
+                        // harness. Load-bearing for RNG-stream parity:
+                        // without the clear, `canWobble` units draw one
+                        // extra `Tools_Random_256` byte per step after
+                        // stepping off rock.
+                        updated.isWobbling = land.letUnitWobble
                         let mIndex = Int(info.movementType.rawValue)
                         if mIndex < land.movementSpeed.count {
                             // Port of `Unit_StartMovement`'s speed block

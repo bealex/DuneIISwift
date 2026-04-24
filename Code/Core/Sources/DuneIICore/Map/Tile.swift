@@ -197,6 +197,80 @@ public struct Pos32: Sendable, Equatable, Hashable {
         return UInt8(truncatingIfNeeded: value)
     }
 
+    /// Port of `Object_GetDistanceToEncoded` (`src/object.c:114`).
+    /// Computes tile-distance from `fromPos` to the encoded target,
+    /// adjusting the target position to the structure's nearest edge
+    /// tile when the target is a structure — OpenDUNE uses the edge
+    /// tile so a SOLDIER firing at a 2x2 CYARD doesn't need to be
+    /// within range of the structure's centre.
+    public static func distance(
+        from fromPos: Pos32,
+        toEncoded encoded: Scripting.EncodedIndex,
+        host: Scripting.Host
+    ) -> UInt16? {
+        switch encoded.kind {
+        case .structure:
+            let idx = Int(encoded.decoded)
+            guard idx < host.structures.slots.count else { return nil }
+            let s = host.structures.slots[idx]
+            guard s.isUsed else { return nil }
+            let centre = Pos32(x: s.positionX, y: s.positionY)
+            let anchorPacked = Int32(Simulation.Pathfinder.packedTile(
+                x: s.positionX, y: s.positionY
+            ))
+            guard let info = Simulation.StructureInfo.lookup(s.type) else {
+                return distance(fromPos, centre)
+            }
+            // orient8 = Orientation256to8(direction(fromPos, centre)).
+            let dir256 = direction(from: fromPos, to: centre)
+            let orient8 = (Int(dir256) &+ 16) / 32 & 0x7
+            // OpenDUNE `(orient8 + 4) & 7` — flips the direction by 180°
+            // so the "edge facing the attacker" is what we reach from
+            // the structure's anchor.
+            let edgeIdx = (orient8 + 4) & 0x7
+            let offsets = info.layout.edgeTileOffsets
+            guard edgeIdx < offsets.count else {
+                return distance(fromPos, centre)
+            }
+            let edgePacked = UInt16(
+                truncatingIfNeeded: anchorPacked &+ Int32(offsets[edgeIdx])
+            )
+            let edgePos = Pos32.centered(at: PackedPosition(raw: edgePacked))
+            return distance(fromPos, edgePos)
+        default:
+            guard let tgt = of(encoded, host: host) else { return nil }
+            return distance(fromPos, tgt)
+        }
+    }
+
+    /// Port of `Tools_Index_GetTile` (`src/tools.c:152`). Returns the
+    /// "target tile" position — the value the script VM sees when it
+    /// dereferences an encoded index. Differs from `Pos32.of` only
+    /// for structures: OpenDUNE adds `layoutTileDiff` to the stored
+    /// top-left position so the result is the layout-adjusted centre
+    /// (e.g. a 2x2 CYARD at anchor (7680,6400) returns (7936,6656)).
+    /// Used by Fire's orientation-diff gate so the direction check
+    /// sees the right heading to a multi-tile structure.
+    public static func targetTile(
+        _ encoded: Scripting.EncodedIndex, host: Scripting.Host
+    ) -> Pos32? {
+        switch encoded.kind {
+        case .structure:
+            let idx = Int(encoded.decoded)
+            guard idx < host.structures.slots.count else { return nil }
+            let s = host.structures.slots[idx]
+            guard s.isUsed else { return nil }
+            let diff = Simulation.StructureInfo.lookup(s.type)?.layout.tileDiff
+                ?? (x: UInt16(0), y: UInt16(0))
+            return Pos32(
+                x: s.positionX &+ diff.x,
+                y: s.positionY &+ diff.y
+            )
+        default:
+            return of(encoded, host: host)
+        }
+    }
+
     /// Tile32 position of the tile referenced by an `EncodedIndex`.
     /// - `.tile`: centred on the packed tile coordinates.
     /// - `.unit` / `.structure`: the pool slot's `positionX` / `positionY`.

@@ -56,6 +56,17 @@ extension Simulation {
                     "unit \(unitIndex) (type \(type) house \(houseID)) destroyed by \(damage) dmg",
                     tracer: .label("damage")
                 )
+                if host.deferFreeOnDeath {
+                    // Parity path: keep the slot alive, transition to
+                    // ACTION_DIE. `Script_Unit_Die` (slot 0x0F) fires
+                    // from UNIT.EMC on the next script dispatch and
+                    // calls `UnitPool.free` there, matching OpenDUNE's
+                    // `Unit_Damage` → `Unit_SetAction(ACTION_DIE)` at
+                    // `src/unit.c:1567`.
+                    slot.actionID = ActionID.die
+                    host.units[unitIndex] = slot
+                    return true
+                }
                 host.units.free(at: unitIndex)
 
                 if let info = UnitInfo.lookup(type),
@@ -280,7 +291,7 @@ extension Simulation {
         /// Which structure (if any) covers the packed tile. Walks
         /// `structures.findArray` and checks each footprint. Reserved
         /// slots (walls / slabs) never carry object damage in this slice.
-        private static func structureAt(
+        public static func structureAt(
             packed: UInt16,
             host: Scripting.Host
         ) -> Int? {
