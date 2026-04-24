@@ -117,6 +117,13 @@ extension Simulation {
         /// pass. `nil` disables the pass even when `host.spiceMap` is
         /// set — tests that don't need harvest can skip wiring it.
         public let harvestRNG: (() -> UInt8)?
+        /// Optional `Tools_Random_256` source used by `tickMovement` for
+        /// the `wobbleIndex = Tools_Random_256() & 7` draw inside
+        /// `Unit_Move` (`src/unit.c:1322`). Fires only for units where
+        /// `canWobble && isWobbling`. Tests that don't wire this get
+        /// the non-parity "no wobble draw" behaviour, which is fine
+        /// since `wobbleIndex` isn't compared in the default golden.
+        public var movementRNG: (() -> UInt8)?
         private var harvestTickCounter: Int = 0
 
         /// Monotonic per-tick counter. Mirrors OpenDUNE's `g_timerGame`
@@ -801,7 +808,26 @@ extension Simulation {
             // `Script_Random` / idle checks, which shifts the RNG state
             // seen by the per-unit `GameLoop_Unit` iteration.
             tickTeams()
+            // Snapshot findArray length so we can catch up any units
+            // allocated during `tickUnits` (e.g. bullets from firing) with
+            // their `Unit_MovementTick` / `Unit_Rotate` in the same tick.
+            // OpenDUNE's `GameLoop_Unit` uses `Unit_Find` which visits
+            // newly-appended pool entries later in the same pass, giving
+            // new bullets a first-tick accumulator run that leaves
+            // `speedRemainder = speedPerTick` (e.g. 255 for a BULLET)
+            // instead of 0. Without this catch-up the SAVE007 tick-31
+            // bullet u13 (from u26 firing) diverges on `speedRemainder`.
+            let preTickUnitsFindCount = host.units.findArray.count
             tickUnits()
+            let postTickUnitsFindCount = host.units.findArray.count
+            if postTickUnitsFindCount > preTickUnitsFindCount {
+                if unitMovementEnabledThisTick {
+                    tickMovement(fromFindArrayIndex: preTickUnitsFindCount)
+                }
+                if unitRotationEnabledThisTick {
+                    tickRotation(fromFindArrayIndex: preTickUnitsFindCount)
+                }
+            }
             tickStructures()
             // Harvest / refine runs after unit & structure ticks so the
             // script-driven action / linkedID state is settled for the
@@ -1760,9 +1786,31 @@ extension Simulation {
         /// 3. Step toward `currentDestination`. On arrival (manhattan ≤
         ///    threshold), snap, pop `route[0]`, and clear the destination
         ///    so the next tick picks up the next step.
-        private mutating func tickMovement() {
+        /// Per-unit movement pass. When `fromFindArrayIndex` is nil, iterates
+        /// the entire `findArray`; when non-nil, only iterates the tail
+        /// starting at that index.
+        ///
+        /// Uses a LIVE cursor (re-read `findArray` on each iteration) so
+        /// mid-iteration mutations — a bullet detonating inside
+        /// `Unit_Move` and calling `Unit_Free`, which shifts every
+        /// higher-index entry down by one — cause the unit that landed
+        /// in the freed slot to be SKIPPED. This matches OpenDUNE's
+        /// `Unit_Find` cursor semantics (`src/pool/unit.c:42..58`): the
+        /// cursor always advances, so a post-free `findArray[N] =
+        /// old findArray[N+1]` is never visited. SAVE007 tick 34:
+        /// bullet u12 detonates while u13 sits at `findArray[20]`; after
+        /// `Unit_Free(u12)` shifts u13 into slot 19 (u12's old position),
+        /// the cursor advances to 20 (now u14), skipping u13. Only at
+        /// tick 37 does u13 get its next `Unit_MovementTick`.
+        private mutating func tickMovement(fromFindArrayIndex: Int? = nil) {
             let arrivalThreshold: Int32 = 16
-            for idx in host.units.findArray {
+            var cursor = fromFindArrayIndex ?? 0
+            while cursor < host.units.findArray.count {
+                let idx = host.units.findArray[cursor]
+                // Inlined re-bind so the `for idx in indices` body below
+                // keeps its existing structure.
+                cursor += 1
+                do {
                 var slot = host.units.slots[idx]
                 let hasDestination = slot.currentDestinationX != 0 || slot.currentDestinationY != 0
                 let hasRoute = slot.route[0] != 0xFF
@@ -2072,6 +2120,23 @@ extension Simulation {
                         }
                         slot.positionX = next.x
                         slot.positionY = next.y
+                        // Port of `Unit_Move`'s wobble byte draw at
+                        // `src/unit.c:1319..1323`:
+                        //   unit->wobbleIndex = 0;
+                        //   if (ui->flags.canWobble && unit->o.flags.s.isWobbling) {
+                        //       unit->wobbleIndex = Tools_Random_256() & 7;
+                        //   }
+                        // Load-bearing for RNG-stream parity: canWobble
+                        // units (SOLDIER, TROOPER, TRIKE, RAIDER_TRIKE, QUAD)
+                        // that have stepped onto rock draw one byte per
+                        // `Unit_Move` call. Without this Swift's RNG
+                        // stream runs 1+ bytes behind OpenDUNE's on any
+                        // tick a canWobble unit moves while isWobbling.
+                        slot.wobbleIndex = 0
+                        if Simulation.UnitInfo.canWobble(type: slot.type),
+                           slot.isWobbling, let rng = movementRNG {
+                            slot.wobbleIndex = rng() & 7
+                        }
                         didStep = true
                     }
                 }
@@ -2167,10 +2232,16 @@ extension Simulation {
                     if !isFlier, arrived {
                         // Snap to currentDestination (mirrors `if currentDestination!=0
                         // newPosition = currentDestination` at src/unit.c:1452).
-                        slot.positionX = goal.x
-                        slot.positionY = goal.y
+                        // Ground units only — projectiles detonate at the
+                        // actual post-step position (`newPosition` in OpenDUNE),
+                        // which `slot.positionX/Y` already holds from the step
+                        // block above.
+                        if isGroundUnit {
+                            slot.positionX = goal.x
+                            slot.positionY = goal.y
+                        }
                         Log.debug(
-                            "move-snap u\(idx) arrived — pos→(\(goal.x),\(goal.y)) dTD=\(slot.distanceToDestination) distA=\(distAfterU16) parity=\(perTickCadenceGatesEnabled)",
+                            "move-snap u\(idx) arrived — pos→(\(slot.positionX),\(slot.positionY)) dTD=\(slot.distanceToDestination) distA=\(distAfterU16) parity=\(perTickCadenceGatesEnabled)",
                             tracer: .label("move")
                         )
                         if isGroundUnit {
@@ -2208,17 +2279,22 @@ extension Simulation {
                                 }
                             }
                         } else {
-                            // Projectile detonation (reached post-step).
+                            // Projectile detonation at the actual post-step
+                            // position (mirrors OpenDUNE `Map_MakeExplosion
+                            // (..., newPosition, ...)` at src/unit.c:1443).
+                            // Not at `goal` — bullet damage falloff depends
+                            // on distance from newPosition to nearby units.
                             let explosionType = Simulation.UnitInfo.lookup(slot.type)?.explosionType
                                 ?? Simulation.ExplosionType.invalid
+                            let explodePos = Pos32(x: slot.positionX, y: slot.positionY)
                             Log.info(
-                                "bullet \(idx) (post-step) arrived, spawning explosion",
+                                "bullet \(idx) (post-step) arrived at (\(explodePos.x),\(explodePos.y)), spawning explosion",
                                 tracer: .label("scheduler")
                             )
                             host.units.free(at: idx)
                             Simulation.Explosions.makeExplosion(
                                 type: explosionType,
-                                position: goal,
+                                position: explodePos,
                                 hitpoints: slot.hitpoints,
                                 unitOriginEncoded: slot.originEncoded,
                                 host: host
@@ -2251,6 +2327,7 @@ extension Simulation {
                     }
                 }
                 host.units[idx] = slot
+                } // end inner do-block
             }
         }
 
@@ -2265,8 +2342,15 @@ extension Simulation {
         /// (`level=1`) would need a second orientation track on
         /// `UnitSlot`, which we haven't ported yet. Turret units land
         /// when we add `orientation[1]` fields.
-        private mutating func tickRotation() {
-            for idx in host.units.findArray {
+        private mutating func tickRotation(fromFindArrayIndex: Int? = nil) {
+            let indices: ArraySlice<Int>
+            if let start = fromFindArrayIndex {
+                if start >= host.units.findArray.count { return }
+                indices = host.units.findArray[start...]
+            } else {
+                indices = host.units.findArray[...]
+            }
+            for idx in indices {
                 var slot = host.units.slots[idx]
                 var changed = false
 

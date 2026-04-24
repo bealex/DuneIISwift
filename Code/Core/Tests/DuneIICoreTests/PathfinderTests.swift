@@ -154,6 +154,9 @@ struct PathfinderTests {
         u.byScenario = true          // makeSetSpeed's byScenario scaling is bypassed
         u.route = Array(repeating: 0xFF, count: 14)
         u.speed = 0
+        // Pre-orient east so the route[0]=2 (E) orientation gate passes
+        // on the first call — the test doesn't run tickRotation.
+        u.orientationCurrent = 64
         units[0] = u
 
         let host = Scripting.Host(
@@ -206,6 +209,9 @@ struct PathfinderTests {
         u.byScenario = true
         u.route = Array(repeating: 0xFF, count: 14)
         u.speed = 0
+        // Pre-orient east so the route[0]=2 (E) orientation gate passes
+        // on the first call — the test doesn't run tickRotation.
+        u.orientationCurrent = 64
         units[0] = u
 
         let host = Scripting.Host(

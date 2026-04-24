@@ -11,7 +11,30 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**🎯 SAVE007 parity frontier at tick 31 (in-flight 2026-04-23). u13 speedRemainder: expected=255 actual=0.** This is a newly-created BULLET (type 23) spawned at tick 31 by u26 (TRIKE, house=1) firing at u25. In OpenDUNE, `GameLoop_Unit` iterates units with `Unit_Find` which finds newly-allocated units in the same pass — so the new bullet's `Unit_MovementTick` runs in the same tick, accumulating `speedRemainder = 0 + Tools_AdjustToGameSpeed(255, 1, 255, false) = 255`. In Swift, `tickMovement` iterates `host.units.findArray` snapshot taken before `tickUnits`, so bullets allocated during script dispatch don't get their first movement tick until 3 ticks later.
+**🎯 SAVE007 parity frontier at tick 41 `unit[38].orientation0Target: expected=15 actual=0`.** u38 (SOLDIER, HUNT) holds orientation0Target=15 from tick 34 onward in OpenDUNE. Swift holds 15 through tick 40 (no earlier drift), then resets to 0 at tick 41. Neither engine reports damage to u38 (HP stays 20) and u38 is far from all explosion sites (pos ≈ (4480, 16000) vs explosions near (8320, ~7500)), so retaliation-path retargeting isn't the culprit — u38's own script at PC=378→381 must be setting orientation0Target=0 in Swift where OpenDUNE keeps 15. Next step: script-trace u38 at tick 41 on both engines and diff the opcode sequence.
+
+**Prior (shipped this session):**
+- Tick 31 `unit[36].movingSpeed: expected=0 actual=112` closed by moving `setSpeed` to AFTER the orientation gate in `makeCalculateRouteUnit` (matches `Unit_StartMovement` order — setSpeed is *inside* StartMovement, which only runs after orientation aligns). The old eager setSpeed was clobbering `movingSpeed=0` to `movingSpeed=112` on every CalcRoute call while the unit was still rotating. Fixed PathfinderTests (two) that depended on the eager-speed behaviour by pre-orienting the test unit to route[0] direction.
+- Tick 31 `unit[36].orientation0Current: expected=0 actual=-32` closed by replacing the direct `orientationCurrent = desired` snap in `makeCalculateRouteUnit` with `Simulation.Units.setOrientation(rotateInstantly: false)` — mirrors `Script_Unit_CalculateRoute` (`src/script/unit.c:1331..1334`). The old snap was instantly rotating u36 NW (-32) when OpenDUNE gradually rotated across multiple ticks.
+- Tick 31 `unit[13].speedRemainder: expected=255 actual=0` closed by adding wobble-byte draw to `tickMovement`: new `UnitSlot` fields `wobbleIndex: UInt8` + `isWobbling: Bool` + `UnitInfo.canWobble(type:)` lookup; `makeCalculateRouteUnit` sets `isWobbling=true` when entering a `letUnitWobble` landscape (port of `src/unit.c:1098..1100`); `tickMovement` step block draws `Tools_Random_256() & 7` into `wobbleIndex` when `canWobble && isWobbling` via a new `Scheduler.movementRNG` closure wired from the parity harness.
+- `makeIdleActionUnit` rewritten to match OpenDUNE byte-exactly (was drawing from `lcg.range(0,10)` instead of `Tools_Random_256`). First byte always drawn; sandworm/INFANTRY-GUARD branches; `spawnChance` gate via `idleActionSpawnChance(type:)` (0 for most, 64 for ground vehicles, 128 for harvester). Updated `IdleActionTests.swift:footSpriteOffset` to set `actionID=GUARD` and pick a `toolsSeed` where the second draw has `& 0x3F != 0`.
+
+### Session progress (2026-04-23 evening)
+
+Advanced frontier tick 31 → 34 with five fixes on top of the earlier tick 25 → 31 batch:
+
+1. Catch-up movement/rotation pass for mid-tick-allocated bullets (separate commit `b0d3eaf`).
+2. `Script_Unit_IdleAction` byte-exact RNG port.
+3. Wobble-byte tracking + draw (`isWobbling`, `wobbleIndex`, `canWobble`, landscape trigger, `movementRNG` closure).
+4. `Script_Unit_CalculateRoute` orientation gate now delegates to `Units.setOrientation(rotateInstantly: false)` instead of snapping `orientationCurrent`.
+5. `setSpeed` moved after the orientation gate (matches `Unit_StartMovement` order).
+
+**Test status**: 983/97 green, 0 warnings. Two `PathfinderTests` pre-orient their unit to route[0] direction now (post-fix the test scheduler doesn't run `tickRotation`, so orientation stays until tickRotation completes — tests need the route direction to match initial orientation).
+
+**Uncommitted since `b0d3eaf`**. Ready for a single commit capturing all five fixes.
+
+**Prior (shipped this session):**
+- Tick 31 `unit[13].speedRemainder: expected=255 actual=0` (new bullet) closed via `tickMovement/tickRotation(fromFindArrayIndex:)` catch-up pass after `tickUnits`. In OpenDUNE, `Unit_Find` iterates `g_unitFindArray` — a dynamic array that `Unit_Allocate` appends to — so newly-created bullets get their first `Unit_MovementTick` in the same `GameLoop_Unit` call. Swift's separate passes didn't replicate this; the catch-up pass snapshots `findArray.count` pre-`tickUnits` and processes the tail post-`tickUnits`. `Scheduler.swift` lines ~804-822.
 
 **Root cause**: per-unit single-pass ordering mismatch. OpenDUNE: per-unit { script; movement; rotation; … } in one `Unit_Find` loop. Swift: three separate passes (`tickUnits`, `tickMovement`, `tickRotation`) over a pre-computed `findArray`. Solutions: (a) recount after `tickUnits` and have `tickMovement` pick up new units — quick fix but doesn't match OpenDUNE's per-unit ordering; (b) rewrite as a single per-unit loop with inline script/movement/rotation branches — correct but large refactor; (c) manually run `tickMovement` for any unit allocated during script dispatch, within the same tick. **Recommended next step**: try (a) first — after `tickUnits`, call `host.units.recount()` so `tickMovement` sees the new bullets.
 

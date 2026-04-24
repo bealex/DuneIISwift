@@ -159,10 +159,15 @@ extension Simulation {
             let reactionDistance: UInt16 = isDeathHand ? 32 : 16
             let packed = Pathfinder.packedTile(x: position.x, y: position.y)
 
-            // Unit-radius damage.
+            // Unit-radius damage + AI retaliation. Port of
+            // `Map_MakeExplosion` at `src/map.c:403..487`. Runs the damage
+            // application inline with the retaliation logic (Unit_SetTarget
+            // on the victim against the bullet's origin) in the same order
+            // OpenDUNE does — relevant for `findArray` cursor ordering when
+            // `applyUnitDamage` frees a slot.
             if hitpoints != 0 {
-                // Snapshot the findArray up front — `applyUnitDamage`
-                // may `free(at:)` the slot mid-iteration, mutating it.
+                let playerHouseID = host.playerHouseID
+                let originEncoded = Scripting.EncodedIndex(raw: unitOriginEncoded)
                 for idx in host.units.findArray {
                     let unit = host.units[idx]
                     guard unit.isUsed, unit.isAllocated else { continue }
@@ -178,6 +183,61 @@ extension Simulation {
                     let shift = UInt16(min(d >> 2, 15))  // cap shift at 15
                     let dmg = hitpoints >> shift
                     _ = applyUnitDamage(unitIndex: idx, damage: dmg, host: host)
+
+                    // Retaliation (src/map.c:432..485): the damaged unit
+                    // retargets the bullet's origin if the conditions line
+                    // up. Only runs for non-player, non-self, non-allied,
+                    // non-harvester, combat (bulletType set) units — and
+                    // only when their current attack target is either zero,
+                    // out-of-range, or they're in ACTION_HUNT. Port is
+                    // minimal: we skip the team-retaliation branch and the
+                    // harvester-flee branch for now — those land when
+                    // teams / harvester AI are wired to receive the hint.
+                    if unit.houseID == playerHouseID { continue }
+                    guard originEncoded.kind == .unit else { continue }
+                    let originIdx = Int(originEncoded.decoded)
+                    guard originIdx >= 0, originIdx < host.units.slots.count else { continue }
+                    let originUnit = host.units.slots[originIdx]
+                    guard originUnit.isUsed, originUnit.isAllocated else { continue }
+                    if originIdx == idx { continue }                // self
+                    if originUnit.houseID == unit.houseID { continue } // allied (same house only for now)
+                    if unit.type == 16 /*HARVESTER*/ { continue }
+                    guard let ui = UnitInfo.lookup(unit.type),
+                          ui.bulletType != nil else { continue }
+                    // Re-read the slot after applyUnitDamage — its state
+                    // might have mutated (or the slot could have been
+                    // freed if damage killed it).
+                    var latest = host.units[idx]
+                    guard latest.isUsed, latest.isAllocated else { continue }
+                    // GUARD + byScenario → transition to HUNT (port of
+                    // src/map.c:473). Minimal: just write actionID; full
+                    // Unit_SetAction handling lands later.
+                    if latest.actionID == ActionID.guard_, latest.byScenario {
+                        latest.actionID = ActionID.hunt
+                        host.units[idx] = latest
+                    }
+                    if latest.targetAttack != 0,
+                       latest.actionID != ActionID.hunt { continue }
+                    if latest.targetAttack != 0 {
+                        let atk = Scripting.EncodedIndex(raw: latest.targetAttack)
+                        if let atkPos = Pos32.of(atk, host: host) {
+                            let curTile = Pathfinder.packedTile(x: latest.positionX, y: latest.positionY)
+                            let atkTile = Pathfinder.packedTile(x: atkPos.x, y: atkPos.y)
+                            let distPacked = Pathfinder.packedDistance(from: curTile, to: atkTile)
+                            if distPacked <= UInt16(ui.fireDistance) { continue }
+                        }
+                    }
+                    // Inline port of Unit_SetTarget at src/unit.c:1134..1162.
+                    // Skip the tile→object upgrade and self-target fold for
+                    // now: the caller always passes a valid unit/structure
+                    // encoded index (the bullet's originEncoded).
+                    if latest.targetAttack == unitOriginEncoded { continue }
+                    latest.targetAttack = unitOriginEncoded
+                    if !ui.hasTurret {
+                        latest.targetMove = unitOriginEncoded
+                        latest.route[0] = 0xFF
+                    }
+                    host.units[idx] = latest
                 }
             }
 

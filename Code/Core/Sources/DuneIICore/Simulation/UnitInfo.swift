@@ -539,6 +539,19 @@ extension Simulation {
         /// as a dense table here rather than a full column on `UnitInfo`
         /// to avoid touching 27 UnitInfo rows — flip the individual row if
         /// any of these values ever needs updating.
+        /// `canWobble` flag per unit type. From `src/table/unitinfo.c`'s
+        /// `canWobble` column. Only SOLDIER(4), TROOPER(5), TRIKE(13),
+        /// RAIDER_TRIKE(14), QUAD(15) can wobble — all others are false.
+        /// Used by `Unit_Move` (`src/unit.c:1322`) to gate the
+        /// `wobbleIndex = Tools_Random_256() & 7` byte draw; load-bearing
+        /// for RNG-stream parity.
+        public static func canWobble(type: UInt8) -> Bool {
+            switch type {
+            case 4, 5, 13, 14, 15: return true
+            default: return false
+            }
+        }
+
         public static func scriptNoSlowdown(type: UInt8) -> Bool {
             // Row order matches `src/table/unitinfo.c` 27-unit table.
             // Lines cited: 32, 105, 178, 251, 324, 397, 470, 543, 616,

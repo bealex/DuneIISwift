@@ -71,23 +71,31 @@ struct IdleActionTests {
         #expect(host.units[0].orientationCurrent == 0)
     }
 
-    @Test("IdleAction nudges spriteOffset on a foot unit when random > 8")
+    @Test("IdleAction nudges spriteOffset on a GUARDing infantry-class unit")
     func footSpriteOffset() throws {
-        // Find a seed where first range(0..10) is ≥ 9.
-        var seed: UInt16 = 0
-        for candidate in 0..<128 {
-            var lcg = RNG.BorlandLCG(seed: UInt16(candidate))
-            if lcg.range(0, 10) > 8 { seed = UInt16(candidate); break }
+        // Port of `src/script/unit.c:1763..1766`: when actionID=GUARD AND
+        // type is in INFANTRY..TROOPER (2..5), IdleAction draws a second
+        // Tools_Random_256 byte for `spriteOffset = byte & 0x3F`. The
+        // first byte is the gate; we need toolsSeed such that the SECOND
+        // draw has `& 0x3F != 0` so the assertion is robust.
+        var toolsSeed: UInt32 = 1
+        for candidate in UInt32(1)..<UInt32(256) {
+            var t = RNG.ToolsRandom256(seed: candidate)
+            _ = t.next()                        // gate byte
+            if (t.next() & 0x3F) != 0 { toolsSeed = candidate; break }
         }
         var units = Simulation.UnitPool()
-        units.allocate(at: 0, type: 2, houseID: 0)   // Infantry = foot
-        var u = units[0]; u.spriteOffset = 0; units[0] = u
+        units.allocate(at: 0, type: 2, houseID: 0)   // INFANTRY
+        var u = units[0]
+        u.spriteOffset = 0
+        u.actionID = Simulation.ActionID.guard_
+        units[0] = u
         let host = Scripting.Host(
             units: units, structures: .init(),
             currentObject: .unit(poolIndex: 0),
             texts: [], textLog: [], voiceLog: []
         )
-        let source = Scripting.RandomSource(lcgSeed: seed, toolsSeed: 2)
+        let source = Scripting.RandomSource(lcgSeed: 0, toolsSeed: toolsSeed)
         var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
         functions[0] = Scripting.Functions.makeIdleActionUnit(source: source, host: host)
         let vm = Scripting.VM(
@@ -96,8 +104,6 @@ struct IdleActionTests {
         )
         var engine = Scripting.Engine.reset()
         _ = vm.step(&engine)
-        // spriteOffset is `Tools_Random_256() & 0x3F`; non-zero outcomes
-        // are overwhelmingly likely from a non-degenerate seed.
         #expect(host.units[0].spriteOffset != 0)
     }
 
