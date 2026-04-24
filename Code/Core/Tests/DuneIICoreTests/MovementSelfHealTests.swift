@@ -180,6 +180,41 @@ struct MovementSelfHealTests {
         #expect(dx > 0, "unit should have advanced east on a passable step")
     }
 
+    @Test("Fallback slide octant-snaps orientation — non-octant heading rounds to nearest 45°")
+    func fallbackSlideOctantSnapsOrientation() {
+        // Goal tile 3-right, 8-down from origin (a "knight's-move"
+        // vector, ~20° off pure south). Pos32.direction returns a
+        // continuous heading near 72; without octant-snap our earlier
+        // code wrote 72 verbatim and `Pos32.moved` slid at that angle.
+        // OpenDUNE's `Unit_StartMovement` rounds to the nearest octant
+        // via `(current + 16) & 0xE0`, landing on 64 (S ≡ "down-ish"
+        // in the 0=N/64=E/128=S/… convention, but direction returns
+        // ~72 for dx≈3, dy≈8 which rounds to 64 → pure east in
+        // OpenDUNE's _stepX table). Pin that the fallback writes an
+        // exact multiple of 32.
+        var s = scheduler()
+        let idx = s.host.units.allocateForType(type: TANK, houseID: Simulation.House.atreides)!
+        var u = s.host.units[idx]
+        u.positionX = UInt16(5 * 256 + 128)
+        u.positionY = UInt16(5 * 256 + 128)
+        u.speed = 100
+        u.speedPerTick = 255
+        u.speedRemainder = 255
+        u.route = [UInt8](repeating: 0xFF, count: 14)
+        u.actionID = Simulation.ActionID.move
+        // Destination 3 tiles east + 8 tiles south — the resulting
+        // continuous heading is non-octant.
+        u.targetMove = Scripting.EncodedIndex.tile(packed: UInt16(13 * 64 + 8)).raw
+        s.host.units[idx] = u
+
+        s.tick()
+
+        let after = s.host.units[idx]
+        let orient = UInt8(bitPattern: after.orientationCurrent)
+        #expect(orient & 0x1F == 0,
+            "expected octant-snapped orientation (multiple of 32), got \(orient)")
+    }
+
     @Test("orderMove preserves targetMove + clears route; subsequent tick starts motion via fallback")
     func orderMoveThenTickAdvances() {
         var s = scheduler()

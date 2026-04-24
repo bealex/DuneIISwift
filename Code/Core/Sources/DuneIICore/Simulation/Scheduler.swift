@@ -1831,8 +1831,23 @@ extension Simulation {
                     if routeStepPopulatedThisTick, slot.route[0] != 0xFF {
                         slot.orientationCurrent = Int8(bitPattern: slot.route[0] &* 32)
                     } else if goalSource == "targetMove(fallback)" {
+                        // Octant-snap the continuous heading. OpenDUNE's
+                        // `Unit_StartMovement` (`src/unit.c:1073`) sets
+                        // `orientation = (current + 16) & 0xE0` — rounds
+                        // to the nearest multiple of 32, giving one of
+                        // 8 directions (N/NE/E/…/NW). Without this, our
+                        // fallback-slide picks up `Pos32.direction`'s
+                        // full 0..255 heading, so a unit ordered to
+                        // (tile dx=3, dy=8) slides at ~20° instead of
+                        // snapping to N. User-visible: "diagonal, not
+                        // vertical/45 degrees" for harvester RETURN
+                        // when EMC's `CalculateRoute` hasn't yet
+                        // produced `route[]` and the unit is driving
+                        // via fallback.
                         let from = Pos32(x: slot.positionX, y: slot.positionY)
-                        slot.orientationCurrent = Int8(bitPattern: Pos32.direction(from: from, to: goal))
+                        let raw = UInt16(Pos32.direction(from: from, to: goal))
+                        let snapped = UInt8(truncatingIfNeeded: (raw &+ 16) & 0xE0)
+                        slot.orientationCurrent = Int8(bitPattern: snapped)
                     }
                 }
                 // else: keep stored orientation (script-set).
