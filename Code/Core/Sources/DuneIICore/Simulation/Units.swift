@@ -297,6 +297,61 @@ extension Simulation {
             }
         }
 
+        // MARK: Orientation (Unit_SetOrientation port)
+
+        /// Port of OpenDUNE's `Unit_SetOrientation` (`src/unit.c:1671`).
+        /// Writes `orientationTarget` + seeds `orientationSpeed` for
+        /// gradual rotation (or snaps `orientationCurrent` when
+        /// `rotateInstantly` is true). `level=0` for body, `level=1`
+        /// for turret (turret track not yet tracked on UnitSlot).
+        ///
+        /// When `rotateInstantly=false` and `current == orientation`,
+        /// this is effectively a no-op — `orientationSpeed` stays 0.
+        /// Otherwise `orientationSpeed = turningSpeed * 4` with the
+        /// sign chosen by shortest arc:
+        ///   diff = target - current (wrapped into [-128..127])
+        ///   speed = turningSpeed * 4 (positive)
+        ///   if diff is in "short arc going backwards" (i.e.
+        ///   -128..0 or >128), negate `speed`.
+        public static func setOrientation(
+            poolIndex: Int,
+            orientation: Int8,
+            rotateInstantly: Bool,
+            level: UInt16,
+            units: inout UnitPool
+        ) {
+            guard poolIndex >= 0, poolIndex < UnitPool.capacity else { return }
+            var u = units[poolIndex]
+            guard u.isUsed, u.isAllocated else { return }
+            guard let info = UnitInfo.lookup(u.type) else { return }
+            // Only level 0 (body) has fields on UnitSlot; level 1
+            // (turret) no-ops until the turret-track fields land.
+            if level != 0 { return }
+
+            u.orientationSpeed = 0
+            u.orientationTarget = orientation
+
+            if rotateInstantly {
+                u.orientationCurrent = orientation
+                units[poolIndex] = u
+                return
+            }
+
+            if u.orientationCurrent == orientation {
+                units[poolIndex] = u
+                return
+            }
+
+            // Pick sign to rotate along the shortest arc.
+            var speed = Int16(info.turningSpeed) &* 4
+            let diff = Int16(orientation) &- Int16(u.orientationCurrent)
+            if (diff > -128 && diff < 0) || diff > 128 {
+                speed = -speed
+            }
+            u.orientationSpeed = Int8(truncatingIfNeeded: speed)
+            units[poolIndex] = u
+        }
+
         // MARK: Speed (Unit_SetSpeed port)
 
         /// Port of OpenDUNE's `Unit_SetSpeed` (`src/unit.c:1902`).

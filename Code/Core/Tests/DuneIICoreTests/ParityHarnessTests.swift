@@ -121,13 +121,91 @@ struct ParityHarnessTests {
         try expectTickOneDivergence(save: "_SAVE007.DAT", golden: "save007_200ticks.jsonl")
     }
 
-    @Test("_SAVE007.DAT tick 1 with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
+    /// SAVE007 tick 1 now matches byte-for-byte under real UNIT.EMC /
+    /// BUILD.EMC / TEAM.EMC (closed in the team-cadence + recount +
+    /// Fire-jitter + harvester-sprite fix slice). This test widens the
+    /// harness past tick 1 to surface the next drift; adjust `tickLimit`
+    /// as closures move the frontier deeper into the golden.
+    @Test("_SAVE007.DAT tick 1+ with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
     @MainActor
-    func saveSevenParityTickOneRealEmc() throws {
-        try expectTickOneDivergence(
+    func saveSevenParityRealEmcFrontier() throws {
+        try expectDivergenceUpTo(
+            tickLimit: 20,
             save: "_SAVE007.DAT", golden: "save007_200ticks.jsonl",
             withRealEmc: true
         )
+    }
+
+    /// One-off diagnostic: writes the Swift Tools_Random_256 byte
+    /// stream for SAVE007 tick 1 to the worktree `tmp/` directory so
+    /// a byte-for-byte diff against OpenDUNE's matching trace pins the
+    /// remaining u39.amount RNG-sequence offset. Gated on the install
+    /// being present + the tmp dir existing; no assertions.
+    @Test("_SAVE007.DAT tick 1 — dump Swift Tools_Random_256 byte stream")
+    @MainActor
+    func saveSevenParityTickOneDumpRandomStream() throws {
+        guard let root = TestInstall.locate() else { return }
+        let saveURL = root.appendingPathComponent("_SAVE007.DAT")
+        guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
+        let goldenURL = Self.goldenURL(named: "save007_200ticks.jsonl")
+        guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
+
+        // Write to the worktree `tmp/` so the harness's file I/O doesn't
+        // hit sandbox restrictions on `/tmp`. `#filePath` points to this
+        // file; 5 deletingLastPathComponent hops up lands on the
+        // worktree root (Code/Core/Tests/DuneIICoreTests → worktree).
+        let tmpDir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // DuneIICoreTests/
+            .deletingLastPathComponent()  // Tests/
+            .deletingLastPathComponent()  // Core/
+            .deletingLastPathComponent()  // Code/
+            .deletingLastPathComponent()  // <worktree-root>/
+            .appendingPathComponent("tmp", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: tmpDir, withIntermediateDirectories: true
+        )
+        let traceURL = tmpDir.appendingPathComponent("swift_rng_trace.txt")
+
+        let data = try Data(contentsOf: saveURL)
+        let game = try Formats.Save.Game.decode(data)
+        let golden = try Data(contentsOf: goldenURL)
+
+        let install = try Installation(rootDirectory: root)
+        let assets = try AssetLoader(installation: install)
+        let unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+        let structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
+        let teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+        let resolver = assets.tileResolver
+        let baseline = Map.Generator.generate(
+            seed: game.info.scenario.mapSeed, resolver: resolver
+        )
+        let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
+        let spiceMap = Simulation.SpiceMap { i in
+            let tile = snapshot.tiles[i]
+            return resolver.landscapeType(
+                groundTileID: tile.groundTileID,
+                overlayTileID: tile.overlayTileID,
+                hasStructure: tile.hasStructure
+            )
+        }
+
+        let trace = Simulation.ParityHarness.RNGTrace(path: traceURL)
+        // Run — will throw on first divergence, which is fine; we still
+        // want the partial trace up to that point to diff against
+        // OpenDUNE's.
+        _ = try? Simulation.ParityHarness.runAgainst(
+            snapshot: snapshot,
+            golden: golden,
+            tickLimit: 1,
+            unitProgram: unitProgram,
+            structureProgram: structureProgram,
+            teamProgram: teamProgram,
+            seedScriptsFrom: game,
+            spiceMap: spiceMap,
+            rngTrace: trace
+        )
+        // Diff-against-OpenDUNE is manual for now; the trace is on disk.
+        print("wrote Swift rng trace to \(traceURL.path)")
     }
 
     // MARK: Shared helpers
@@ -150,6 +228,79 @@ struct ParityHarnessTests {
             golden: golden,
             tickLimit: 0
         )
+    }
+
+    /// Run the parity harness with a widening `tickLimit` and
+    /// record the first divergence anywhere in `[1..tickLimit]`.
+    /// Unlike `expectTickOneDivergence`, this accepts divergences at
+    /// any tick — useful once tick 1 is clean and the frontier moves
+    /// deeper. Still expects *some* divergence within the window; if
+    /// the entire run matches, the test records an Issue so we bump
+    /// `tickLimit` further.
+    @MainActor
+    private func expectDivergenceUpTo(
+        tickLimit: Int,
+        save: String,
+        golden goldenName: String,
+        withRealEmc: Bool = false
+    ) throws {
+        guard let root = TestInstall.locate() else { return }
+        let saveURL = root.appendingPathComponent(save)
+        guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
+        let goldenURL = Self.goldenURL(named: goldenName)
+        guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
+
+        let data = try Data(contentsOf: saveURL)
+        let game = try Formats.Save.Game.decode(data)
+        let golden = try Data(contentsOf: goldenURL)
+
+        var unitProgram = Formats.Emc.Program.empty
+        var structureProgram = Formats.Emc.Program.empty
+        var teamProgram = Formats.Emc.Program.empty
+        let label: String
+        var snapshot: Simulation.WorldSnapshot
+        var spiceMap: Simulation.SpiceMap?
+        if withRealEmc {
+            let install = try Installation(rootDirectory: root)
+            let assets = try AssetLoader(installation: install)
+            unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+            structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
+            teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+            let resolver = assets.tileResolver
+            let baseline = Map.Generator.generate(
+                seed: game.info.scenario.mapSeed, resolver: resolver
+            )
+            snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
+            spiceMap = Simulation.SpiceMap { i in
+                let tile = snapshot.tiles[i]
+                return resolver.landscapeType(
+                    groundTileID: tile.groundTileID,
+                    overlayTileID: tile.overlayTileID,
+                    hasStructure: tile.hasStructure
+                )
+            }
+            label = "\(save)+UNIT.EMC"
+        } else {
+            snapshot = try Simulation.WorldSnapshot(loading: game, baseline: Map.empty())
+            label = "\(save)+empty-EMC"
+        }
+
+        do {
+            try Simulation.ParityHarness.runAgainst(
+                snapshot: snapshot,
+                golden: golden,
+                tickLimit: tickLimit,
+                unitProgram: unitProgram,
+                structureProgram: structureProgram,
+                teamProgram: teamProgram,
+                seedScriptsFrom: withRealEmc ? game : nil,
+                spiceMap: spiceMap
+            )
+            Issue.record("unexpected: \(label) matched through tick \(tickLimit) — widen tickLimit")
+        } catch let d as Simulation.ParityHarness.Divergence {
+            #expect(d.tick >= 1 && d.tick <= tickLimit)
+            print("parity first drift (\(label)) at tick \(d.tick): \(d)")
+        }
     }
 
     @MainActor

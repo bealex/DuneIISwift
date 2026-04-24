@@ -12,6 +12,17 @@ extension Simulation {
         /// `orientation[0].current` in OpenDUNE — the unit's body/turret
         /// heading byte. Read by `Script_General_GetOrientation`.
         public var orientationCurrent: Int8
+        /// `orientation[0].target` in OpenDUNE (`src/unit.h`'s `OrientationInfo`).
+        /// Set by `Unit_SetOrientation` (via `Script_Unit_SetOrientation`,
+        /// `Script_Unit_SetTarget`, `Unit_StartMovement`). `tickRotation`
+        /// advances `orientationCurrent` toward this byte every 4..8 ticks
+        /// at `orientationSpeed` per step.
+        public var orientationTarget: Int8
+        /// `orientation[0].speed` in OpenDUNE. Signed rotation velocity in
+        /// 1/256ths of a turn per rotation tick; `0` means "not rotating."
+        /// `Unit_SetOrientation` seeds this as `turningSpeed * 4` with the
+        /// sign chosen by shortest arc.
+        public var orientationSpeed: Int8
         /// Current action enum. Written by `Script_Unit_SetAction`, read by
         /// the unit state machine.
         public var actionID: UInt8
@@ -96,6 +107,8 @@ extension Simulation {
             houseID: UInt8 = 0,
             linkedID: UInt8 = 0,
             orientationCurrent: Int8 = 0,
+            orientationTarget: Int8 = 0,
+            orientationSpeed: Int8 = 0,
             actionID: UInt8 = 0,
             amount: UInt8 = 0,
             targetAttack: UInt16 = 0,
@@ -127,6 +140,8 @@ extension Simulation {
             self.houseID = houseID
             self.linkedID = linkedID
             self.orientationCurrent = orientationCurrent
+            self.orientationTarget = orientationTarget
+            self.orientationSpeed = orientationSpeed
             self.actionID = actionID
             self.amount = amount
             self.targetAttack = targetAttack
@@ -220,6 +235,23 @@ extension Simulation {
             slots[index].isAllocated = false
             if let position = findArray.firstIndex(of: index) {
                 findArray.remove(at: position)
+            }
+        }
+
+        /// Port of OpenDUNE's `Unit_Recount` (`src/pool/unit.c:75`).
+        /// Discards the current `findArray` and rebuilds it in pool
+        /// index order (0..<capacity, including every `isUsed` slot).
+        /// OpenDUNE calls this after `SaveGame_LoadFile` so the
+        /// post-load iteration order is fixed regardless of the
+        /// save chunk's on-disk order. Our save-loader allocates in
+        /// on-disk order, which for SAVE007 places u39 at position 4
+        /// in `findArray`, and drives per-tick unit dispatch order
+        /// out of sync with OpenDUNE. Calling `recount()` after a
+        /// save load restores pool-index order.
+        public mutating func recount() {
+            findArray.removeAll(keepingCapacity: true)
+            for i in 0..<Self.capacity where slots[i].isUsed {
+                findArray.append(i)
             }
         }
     }

@@ -9,6 +9,31 @@ extension Scripting {
         public var lcg: RNG.BorlandLCG
         public var tools: RNG.ToolsRandom256
 
+        /// Parity-harness trace hook. When non-nil, `toolsNext()` logs
+        /// every byte drawn from `tools` so a bit-exact diff against
+        /// OpenDUNE's `Tools_Random_256` call stream can pinpoint
+        /// RNG-sequence drift. Direct `source.tools.next()` callers
+        /// bypass this hook — the parity harness routes its own
+        /// `harvestRNG` closure through `toolsNext()` too.
+        ///
+        /// The `context` string is an optional free-form tag (e.g.
+        /// unit pool index + function name) the scheduler/scripts can
+        /// poke via `currentTraceContext` so the diff narrows to the
+        /// exact call site, not just the byte position.
+        public var onToolsDraw: ((UInt8, String) -> Void)?
+
+        /// Per-call context tag. Scheduler / scripts set this right
+        /// before they expect RNG draws so the trace records who
+        /// asked. `""` when unknown.
+        public var currentTraceContext: String = ""
+
+        /// Draw a byte from `tools` with optional trace.
+        public func toolsNext() -> UInt8 {
+            let b = tools.next()
+            onToolsDraw?(b, currentTraceContext)
+            return b
+        }
+
         public init(seed: UInt16) {
             self.lcg = RNG.BorlandLCG(seed: seed)
             self.tools = RNG.ToolsRandom256(seed: UInt32(seed))
@@ -274,17 +299,23 @@ extension Scripting {
 
         // MARK: Batch 7 — simple unit mutators (no pathfinding / no combat)
 
-        /// `Script_Unit_SetOrientation` — writes `peek(1) & 0xFF` (as
-        /// signed 8-bit) to the current unit's `orientationCurrent`.
-        /// Returns the new orientation.
+        /// `Script_Unit_SetOrientation` (slot 0x07) — port of
+        /// `src/script/unit.c:707..715`. Calls
+        /// `Unit_SetOrientation(u, peek(1), rotateInstantly=false, 0)`
+        /// which sets `orientationTarget` + seeds `orientationSpeed`
+        /// for gradual rotation via `tickRotation`. Returns the unit's
+        /// current orientation (advances over subsequent ticks).
         public static func makeSetOrientationUnit(host: Host) -> VM.Function {
             return { engine in
                 let raw = Scripting.peek(engine: &engine, position: 1)
                 guard let (poolIndex, _) = currentUnit(host: host) else { return 0 }
-                var slot = host.units.slots[poolIndex]
-                slot.orientationCurrent = Int8(truncatingIfNeeded: raw)
-                host.units[poolIndex] = slot
-                return UInt16(bitPattern: Int16(slot.orientationCurrent))
+                Simulation.Units.setOrientation(
+                    poolIndex: poolIndex,
+                    orientation: Int8(truncatingIfNeeded: raw),
+                    rotateInstantly: false, level: 0,
+                    units: &host.units
+                )
+                return UInt16(bitPattern: Int16(host.units.slots[poolIndex].orientationCurrent))
             }
         }
 
@@ -382,23 +413,29 @@ extension Scripting {
                 updated.targetAttack = raw
                 let hasTurret = Simulation.UnitInfo.lookup(slot.type)?.hasTurret ?? false
                 if !hasTurret {
-                    // Non-turreted: the unit walks toward its target.
-                    // OpenDUNE also calls `Unit_SetOrientation(u, dir,
-                    // rotateInstantly=false, 0)` which writes
-                    // `orientation[0].target + .speed` for gradual
-                    // rotation — we don't yet track target/speed
-                    // separately (see Swift-side gaps in
-                    // `Simulation.ParityHarness.compareUnit` skip-list).
-                    // Writing `orientationCurrent` directly would flip
-                    // the body instantly in one tick instead of rotating
-                    // gradually; parity diverges either way on
-                    // `orientation0Current` vs `orientation0Target`, but
-                    // leaving body orientation alone matches the
-                    // `orientation0Current` golden (which stays at its
-                    // save-loaded value until `tickRotation` lands).
                     updated.targetMove = raw
                 }
                 host.units[poolIndex] = updated
+                // OpenDUNE `src/script/unit.c:852..859` — compute the
+                // direction from our pos to the target tile, then call
+                // Unit_SetOrientation for level 0 (body, non-turret
+                // units only) and level 1 (turret, always).
+                // `rotateInstantly=false` seeds orientationTarget +
+                // orientationSpeed; current advances via tickRotation.
+                if let targetPos = Pos32.of(encoded, host: host) {
+                    let fromPos = Pos32(x: updated.positionX, y: updated.positionY)
+                    let orient = Int8(bitPattern: Pos32.direction(from: fromPos, to: targetPos))
+                    if !hasTurret {
+                        Simulation.Units.setOrientation(
+                            poolIndex: poolIndex, orientation: orient,
+                            rotateInstantly: false, level: 0, units: &host.units
+                        )
+                    }
+                    Simulation.Units.setOrientation(
+                        poolIndex: poolIndex, orientation: orient,
+                        rotateInstantly: false, level: 1, units: &host.units
+                    )
+                }
                 return raw
             }
         }
@@ -447,7 +484,7 @@ extension Scripting {
                         from: origin,
                         distance: radius,
                         center: false,
-                        random: { source.tools.next() }
+                        random: { source.toolsNext() }
                     )
                     let damage = source.lcg.range(75, 150)
                     Simulation.Explosions.makeExplosion(
@@ -491,9 +528,15 @@ extension Scripting {
         /// units. Returns 1 on success, 0 otherwise.
         ///
         /// Deferred (see `Fire.md` §6.1): sandworm eat branch,
-        /// `Tools_AdjustToGameSpeed` scaling, random jitter on
-        /// fireDelay, `Unit_Deviation_Decrease`, voice + fog side-effects.
-        public static func makeFireUnit(host: Host) -> VM.Function {
+        /// `Tools_AdjustToGameSpeed` scaling, `Unit_Deviation_Decrease`,
+        /// voice + fog side-effects.
+        ///
+        /// **The trailing `fireDelay += Tools_Random_256() & 1`** at
+        /// `src/script/unit.c:692` is consumed from the shared RNG
+        /// stream on every successful fire — even a 0-bump affects the
+        /// stream position. Needed for byte-level parity with OpenDUNE;
+        /// every HUNT / ATTACK unit that fires draws this byte once.
+        public static func makeFireUnit(host: Host, source: RandomSource) -> VM.Function {
             return { _ in
                 guard let (shooterIdx, shooter) = currentUnit(host: host) else {
                     Log.debug("fire-gate no-current-object", tracer: .label("fire-gate"))
@@ -652,6 +695,16 @@ extension Scripting {
                     shooterSlot.fireTwiceFlip = false
                     shooterSlot.fireDelay = UInt8(clamping: normalCooldown)
                 }
+                // `u->fireDelay += Tools_Random_256() & 1` — port of
+                // `src/script/unit.c:692`. Bumps fireDelay by 0 or 1
+                // (roughly 50/50) every successful fire. Load-bearing
+                // for RNG-stream parity: without this draw, the
+                // shared Tools stream stays 1 byte behind OpenDUNE
+                // every time a HUNT / ATTACK unit fires, cascading
+                // into downstream script RNG offsets.
+                source.currentTraceContext = "Fire.jitter u\(shooterIdx)"
+                shooterSlot.fireDelay = shooterSlot.fireDelay &+ (source.toolsNext() & 1)
+                source.currentTraceContext = ""
                 host.units[shooterIdx] = shooterSlot
                 return 1
             }
@@ -738,7 +791,9 @@ extension Scripting {
 
                 // Foot units occasionally randomise sprite-offset.
                 if mt == .foot && random > 8 {
-                    let spriteRaw = source.tools.next()
+                    source.currentTraceContext = "IdleAction.sprite u\(poolIndex)"
+                    let spriteRaw = source.toolsNext()
+                    source.currentTraceContext = ""
                     updated.spriteOffset = Int8(bitPattern: spriteRaw & 0x3F)
                 }
 
@@ -760,8 +815,11 @@ extension Scripting {
                 // OpenDUNE draws two RNG bytes unconditionally — consume
                 // them here regardless of whether we apply the rotation
                 // so the RNG sequence stays in lockstep.
-                let turretByte = source.tools.next()
-                _ = source.tools.next()  // newOrientation (target).
+                source.currentTraceContext = "IdleAction.turret u\(poolIndex)"
+                let turretByte = source.toolsNext()
+                source.currentTraceContext = "IdleAction.newOrient u\(poolIndex)"
+                _ = source.toolsNext()  // newOrientation (target).
+                source.currentTraceContext = ""
                 let i: UInt8 = (turretByte & 1) == 0 ? 1 : 0
                 _ = i
                 // OpenDUNE calls `Unit_SetOrientation(u, newOrientation,
@@ -1444,10 +1502,19 @@ extension Scripting {
         /// `Script_General_DelayRandom` — `(Tools_Random_256() * peek(1)) / 256 / 5`.
         /// Writes `engine.delay` and returns the same value. Shares the
         /// `RandomSource.tools` stream with any other consumer.
-        public static func makeDelayRandom(source: RandomSource) -> VM.Function {
+        public static func makeDelayRandom(source: RandomSource, host: Host) -> VM.Function {
             return { engine in
                 let peek = Scripting.peek(engine: &engine, position: 1)
-                let r = UInt16(source.tools.next())
+                let ctxObj: String
+                switch host.currentObject {
+                case .unit(let idx): ctxObj = "u\(idx)"
+                case .structure(let idx): ctxObj = "s\(idx)"
+                case .team(let idx): ctxObj = "t\(idx)"
+                case .none: ctxObj = "?"
+                }
+                source.currentTraceContext = "DelayRandom \(ctxObj)"
+                let r = UInt16(source.toolsNext())
+                source.currentTraceContext = ""
                 let d = (r &* peek) / 256 / 5
                 engine.delay = d
                 return d
@@ -1581,13 +1648,17 @@ extension Scripting {
 
                 var updated = slot
                 // Consume RNG byte #1 — low bit is the amount bump.
-                let bump = source.tools.next() & 1
+                source.currentTraceContext = "Harvest.bump u\(poolIndex)"
+                let bump = source.toolsNext() & 1
                 updated.amount = updated.amount &+ bump
                 updated.inTransport = true
                 if updated.amount > 100 { updated.amount = 100 }
                 host.units[poolIndex] = updated
                 // Consume RNG byte #2 — 31/32 chance of "keep going".
-                if (source.tools.next() & 0x1F) != 0 {
+                source.currentTraceContext = "Harvest.drainRoll u\(poolIndex)"
+                let roll = source.toolsNext()
+                source.currentTraceContext = ""
+                if (roll & 0x1F) != 0 {
                     return 1
                 }
                 // Drain one spice level on this tile. `spiceMap` is a

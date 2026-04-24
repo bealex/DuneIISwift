@@ -76,7 +76,8 @@ extension Simulation {
             teamProgram: Formats.Emc.Program = .empty,
             rngSeed: UInt32 = 0,
             seedScriptsFrom game: Formats.Save.Game? = nil,
-            spiceMap: Simulation.SpiceMap? = nil
+            spiceMap: Simulation.SpiceMap? = nil,
+            rngTrace: RNGTrace? = nil
         ) throws {
             let goldenTicks = try parseGolden(golden)
             guard !goldenTicks.isEmpty else { throw ParseError.goldenEmpty }
@@ -101,6 +102,18 @@ extension Simulation {
                 lcgSeed: UInt16(truncatingIfNeeded: rngSeed),
                 toolsSeed: rngSeed
             )
+            // Per-byte `Tools_Random_256` trace. Matches the OpenDUNE
+            // `--parity-random-trace=<path>` hook (one line per draw:
+            // `idx=<N> byte=0x<BB>`). Byte-stream diff between the two
+            // files pins which upstream script consumes a byte on one
+            // engine but not the other — the known u39.amount drift
+            // is a single-byte offset somewhere before `makeHarvestUnit`
+            // fires on tick 1.
+            if let rngTrace {
+                source.onToolsDraw = { byte, context in
+                    rngTrace.record(byte, context: context)
+                }
+            }
             let unitFunctions = Scripting.Functions.unitTable(host: host, source: source)
             let structureFunctions = Scripting.Functions.structureTable(host: host, source: source)
             let teamFunctions = Scripting.Functions.teamTable(host: host, source: source)
@@ -113,7 +126,7 @@ extension Simulation {
                 unitVM: unitVM,
                 structureVM: structureVM,
                 teamVM: teamVM,
-                harvestRNG: { source.tools.next() }
+                harvestRNG: { source.toolsNext() }
             )
             // OpenDUNE loads `g_gameConfig.gameSpeed` from OPTIONS.CFG
             // on startup; our install has it pinned at 4 (Fastest), but
@@ -136,6 +149,8 @@ extension Simulation {
             // `Script_Unit_Fire` path own that decision, so with real
             // UNIT.EMC our clear produces drift.
             scheduler.tickAttackHoldEnabled = false
+            scheduler.tickHarvestingEnabled = false
+            scheduler.perTickCadenceGatesEnabled = true
             // Parity runs headless (no viewport), so every unit that
             // doesn't have `scriptNoSlowdown=true` falls into the
             // off-viewport 3-opcode cap (OpenDUNE `src/unit.c:292..294`).
@@ -147,13 +162,50 @@ extension Simulation {
             Log.debug("parity: \(goldenTicks.count) golden ticks loaded; tickLimit=\(tickLimit)",
                       tracer: .label("parity"))
 
+            // Flush the RNG trace whether runAgainst throws (first
+            // divergence) or completes — the trace is the load-bearing
+            // artifact for debugging, not a success signal.
+            defer { try? rngTrace?.flush() }
+
             try diff(tick: 0, golden: goldenTicks[0], host: host)
 
             if tickLimit >= 1 {
                 for t in 1...tickLimit {
+                    rngTrace?.beginTick(t)
                     scheduler.tick()
                     try diff(tick: t, golden: goldenTicks[t], host: host)
                 }
+            }
+        }
+
+        /// Captures every `Tools_Random_256` draw during `runAgainst`.
+        /// Paired with OpenDUNE's `--parity-random-trace=<path>` hook
+        /// for byte-stream diffing. Not thread-safe — the parity harness
+        /// runs single-threaded per test.
+        public final class RNGTrace {
+            public let path: URL
+            private var buffer: String = ""
+            private var index: UInt32 = 0
+            private var currentTick: Int = 0
+
+            public init(path: URL) {
+                self.path = path
+                buffer.reserveCapacity(64 * 1024)
+                buffer.append("# swift parity rng trace — one line per Tools_Random_256 byte\n")
+            }
+
+            fileprivate func beginTick(_ t: Int) {
+                currentTick = t
+            }
+
+            fileprivate func record(_ byte: UInt8, context: String = "") {
+                let ctx = context.isEmpty ? "" : " ctx=\(context)"
+                buffer.append("tick=\(currentTick) idx=\(index) byte=0x\(String(format: "%02X", byte))\(ctx)\n")
+                index &+= 1
+            }
+
+            public func flush() throws {
+                try buffer.write(to: path, atomically: true, encoding: .utf8)
             }
         }
 
@@ -343,6 +395,8 @@ extension Simulation {
             try eq(tick, "unit", idx, "hitpoints",        g.hitpoints,        s.hitpoints)
             try eq(tick, "unit", idx, "actionID",         g.actionID,         s.actionID)
             try eq(tick, "unit", idx, "orientation0Current", g.orientation0Current, s.orientationCurrent)
+            try eq(tick, "unit", idx, "orientation0Target",  g.orientation0Target,  s.orientationTarget)
+            try eq(tick, "unit", idx, "orientation0Speed",   g.orientation0Speed,   s.orientationSpeed)
             try eq(tick, "unit", idx, "movingSpeed",      g.movingSpeed,      s.movingSpeed)
             try eq(tick, "unit", idx, "speed",            g.speed,            s.speed)
             try eq(tick, "unit", idx, "speedPerTick",     g.speedPerTick,     s.speedPerTick)

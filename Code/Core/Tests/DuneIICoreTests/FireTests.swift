@@ -315,7 +315,8 @@ struct FireTests {
 
     private func runFire(host: Scripting.Host) -> UInt16 {
         var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
-        functions[0] = Scripting.Functions.makeFireUnit(host: host)
+        let source = Scripting.RandomSource(lcgSeed: 0, toolsSeed: 0)
+        functions[0] = Scripting.Functions.makeFireUnit(host: host, source: source)
         let vm = makeVM(words: ins(14, 0), functions: functions)
         var engine = Scripting.Engine.reset()
         _ = vm.step(&engine)

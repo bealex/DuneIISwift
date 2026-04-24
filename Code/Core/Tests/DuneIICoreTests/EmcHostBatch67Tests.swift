@@ -76,8 +76,8 @@ struct EmcHostBatch67Tests {
 
     // MARK: Batch 7 — unit mutators
 
-    @Test("SetOrientationUnit writes peek(1) & 0xFF as signed 8-bit and returns new value")
-    func setOrientationWrites() throws {
+    @Test("SetOrientationUnit seeds target + speed for gradual rotation (tickRotation advances current)")
+    func setOrientationSeedsTargetAndSpeed() throws {
         var units = Simulation.UnitPool()
         units.allocate(at: 0, type: 0, houseID: 0)
         let host = makeHost(units: units, current: .unit(poolIndex: 0))
@@ -86,9 +86,14 @@ struct EmcHostBatch67Tests {
         let vm = makeVM(words: ins(3, 0x01A0) + ins(14, 0), functions: functions) // 0xA0 = -96
         var engine = Scripting.Engine.reset()
         _ = vm.step(&engine); _ = vm.step(&engine)
-        #expect(host.units[0].orientationCurrent == -96)
-        // Return value is the signed orientation reinterpret-cast to UInt16.
-        #expect(engine.returnValue == UInt16(bitPattern: Int16(-96)))
+        // Port of OpenDUNE `Script_Unit_SetOrientation` → `Unit_SetOrientation(rotateInstantly=false)`:
+        // writes orientationTarget; seeds orientationSpeed for rotation
+        // via tickRotation; leaves orientationCurrent alone this tick.
+        #expect(host.units[0].orientationTarget == -96)
+        #expect(host.units[0].orientationSpeed != 0)
+        #expect(host.units[0].orientationCurrent == 0)
+        // Return value is orientationCurrent reinterpret-cast to UInt16.
+        #expect(engine.returnValue == UInt16(bitPattern: Int16(0)))
     }
 
     @Test("SetSpeedUnit on a byScenario unit clamps to 0..255 with no scale")

@@ -335,6 +335,19 @@ public final class ScenarioRuntime {
         }
     }
 
+    /// `true` when `(tileX, tileY)` is inside the scenario's playable
+    /// rect (`g_mapInfos[mapScale]`). Used to reject move-style orders
+    /// that would let a unit walk into the veiled border — in Dune 2
+    /// the player can't click there because the UI hides the region;
+    /// our scene renders the whole 64×64 grid so stray clicks land on
+    /// veiled tiles and used to dispatch all the way through `orderMove`.
+    public func isInPlayableRect(tileX: Int, tileY: Int) -> Bool {
+        return tileX >= playableRect.originX
+            && tileX < playableRect.originX + playableRect.width
+            && tileY >= playableRect.originY
+            && tileY < playableRect.originY + playableRect.height
+    }
+
     // MARK: Click intent
 
     @discardableResult
@@ -366,6 +379,13 @@ public final class ScenarioRuntime {
                 // structure selection made on the same click path.
                 return .unitDeselected
             case .orderMove(let idx, let tx, let ty):
+                guard isInPlayableRect(tileX: tx, tileY: ty) else {
+                    Log.info(
+                        "unit-order-move unit=\(idx) tile=(\(tx),\(ty)) REJECTED out-of-playable",
+                        tracer: .label("unit-cmd")
+                    )
+                    return .orderMove(unitIdx: idx, tileX: tx, tileY: ty, ok: false)
+                }
                 let ok = Simulation.Units.orderMove(
                     poolIndex: idx, tileX: tx, tileY: ty, units: &host.units
                 )
@@ -404,6 +424,13 @@ public final class ScenarioRuntime {
                 // Harvester shortcut: move to target + pin action to
                 // HARVEST so tickHarvesting's seek-spice / drain path
                 // takes over on arrival.
+                guard isInPlayableRect(tileX: tx, tileY: ty) else {
+                    Log.info(
+                        "unit-order-harvest unit=\(idx) tile=(\(tx),\(ty)) REJECTED out-of-playable",
+                        tracer: .label("unit-cmd")
+                    )
+                    return .orderHarvest(unitIdx: idx, tileX: tx, tileY: ty, ok: false)
+                }
                 let ok = Simulation.Units.orderMove(
                     poolIndex: idx, tileX: tx, tileY: ty, units: &host.units
                 )
@@ -581,6 +608,13 @@ public final class ScenarioRuntime {
             )
             switch action {
             case .orderMove(let idx, let tx, let ty):
+                guard isInPlayableRect(tileX: tx, tileY: ty) else {
+                    Log.info(
+                        "unit-order-move unit=\(idx) tile=(\(tx),\(ty)) REJECTED out-of-playable",
+                        tracer: .label("unit-cmd")
+                    )
+                    return .orderMove(unitIdx: idx, tileX: tx, tileY: ty, ok: false)
+                }
                 let ok = Simulation.Units.orderMove(
                     poolIndex: idx, tileX: tx, tileY: ty, units: &host.units
                 )
