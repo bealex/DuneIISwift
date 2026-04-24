@@ -278,6 +278,15 @@ extension Simulation {
             scheduler.tickAttackHoldEnabled = false
             scheduler.tickHarvestingEnabled = false
             scheduler.perTickCadenceGatesEnabled = true
+            // Parity mode: run movement + script interleaved per unit
+            // so Swift consumes `Tools_Random_256` bytes in the same
+            // order OpenDUNE's `Unit_Find` loop does. Temporarily off
+            // while the interleaved path is validated — the batched
+            // ordering currently reaches tick 151 before drifting.
+            // Flipping this on takes Swift's tick order closer to
+            // OpenDUNE's but surfaces new drifts (e.g. tick 109 u0
+            // positionX) that need iterative fixes.
+            scheduler.perUnitInterleavedTickOrder = false
             // Parity runs headless (no viewport), so every unit that
             // doesn't have `scriptNoSlowdown=true` falls into the
             // off-viewport 3-opcode cap (OpenDUNE `src/unit.c:292..294`).
