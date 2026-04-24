@@ -59,6 +59,28 @@ extension Simulation {
         /// conflicts with the script's own target tracking.
         public var tickAttackHoldEnabled: Bool = true
 
+        /// `tickHarvestingEnabled` — our scheduler-level harvester AI
+        /// pass (seek / dock / deposit / auto-flip actions) is a stopgap
+        /// for gameplay paths that didn't have EMC wired. Now that
+        /// `Script_Unit_Harvest` is ported (slot 0x2A), the EMC script
+        /// handles the amount bump + drain branch; with real UNIT.EMC
+        /// loaded, running both produces double-counting (SAVE007 tick 3
+        /// `unit[39].amount` bumped twice on our side). Parity harness
+        /// flips this off; gameplay keeps it on until every harvester
+        /// transition is wired through EMC.
+        public var tickHarvestingEnabled: Bool = true
+
+        /// `perTickCadenceGatesEnabled` — OpenDUNE gates per-unit passes
+        /// (movement, rotation, script, sprite-animation) behind
+        /// `g_timerGame`-keyed schedules (every 3, 2–8, 5, 5 ticks).
+        /// Gameplay Swift was built before these gates were ported and
+        /// many tests bake in the "movement runs every tick" behavior;
+        /// turning the gates on by default would break dozens of
+        /// gameplay tests. Parity harness flips this on; gameplay
+        /// stays on per-tick cadence until a dedicated retuning slice
+        /// aligns everything to OpenDUNE's schedule.
+        public var perTickCadenceGatesEnabled: Bool = false
+
         /// `offViewportSlowdownEnabled`: emulates OpenDUNE's off-viewport
         /// 3-opcode cap on unit scripts (`src/unit.c:292..294`). When
         /// true, units whose type has `scriptNoSlowdown == false` AND
@@ -113,6 +135,44 @@ extension Simulation {
         /// stream sits 1 byte ahead of OpenDUNE's on every tick where
         /// the gate fires.
         private var nextTeamTickGate: UInt32 = 0
+
+        /// Next `timerGame` value at which unit script dispatch fires.
+        /// Port of OpenDUNE's `s_tickUnitScript` at `src/unit.c:156..158`:
+        ///   if (s_tickUnitScript <= g_timerGame) {
+        ///       tickScript = true;
+        ///       s_tickUnitScript = g_timerGame + 5;
+        ///   }
+        /// Scripts run every 5 ticks, NOT every tick. Load-bearing for
+        /// SAVE007 parity past tick 1: without this, Swift dispatches
+        /// u0's UNIT.EMC on tick 2 and hits a `Script_Unit_SetOrientation`
+        /// that OpenDUNE wouldn't have reached yet, flipping
+        /// `orientation0Current` from 96 to 106. OpenDUNE's `tickScript`
+        /// gate stays closed on ticks 2..5 for every unit.
+        private var nextUnitScriptGate: UInt32 = 0
+        /// Companion to `nextUnitScriptGate` — captured at tick start
+        /// and read inside `tickUnits` so the decision to dispatch
+        /// scripts this tick is made once per tick, not per unit.
+        private var unitScriptEnabledThisTick: Bool = false
+
+        /// Next `timerGame` at which `tickMovement` + `tickFireCooldowns`
+        /// fire. Port of OpenDUNE `s_tickUnitMovement` (`src/unit.c:136..138`):
+        ///   if (s_tickUnitMovement <= g_timerGame) {
+        ///       tickMovement = true;
+        ///       s_tickUnitMovement = g_timerGame + 3;
+        ///   }
+        /// Runs every 3 ticks. The `u->fireDelay--` decrement at
+        /// `src/unit.c:215` is inside this gate, so fireDelay only
+        /// ticks down once per 3 scheduler ticks.
+        private var nextUnitMovementGate: UInt32 = 0
+        private var unitMovementEnabledThisTick: Bool = false
+
+        /// Next `timerGame` at which `tickRotation` fires. Port of
+        /// OpenDUNE `s_tickUnitRotation` (`src/unit.c:141..143`):
+        ///   s_tickUnitRotation = g_timerGame + Tools_AdjustToGameSpeed(4, 2, 8, true);
+        /// Cadence scales with gameSpeed — 2 ticks at Fastest, 8 at
+        /// Slowest, 4 at Normal. Calls `Unit_Rotate` once per fire.
+        private var nextUnitRotationGate: UInt32 = 0
+        private var unitRotationEnabledThisTick: Bool = false
 
         /// STARPORT slice 5b — live per-game stock. Indexed by
         /// `UnitInfo.typeID` (27 entries). Seeded from
@@ -643,10 +703,48 @@ extension Simulation {
             // here so per-tick gates (team / house) key off the same
             // counter and fire on the same ticks.
             timerGame &+= 1
+            // Sample the unit-script cadence gate at tick start —
+            // `tickUnits` reads the result. Matches OpenDUNE's
+            // `src/unit.c:156..158` `tickScript` latch.
+            if perTickCadenceGatesEnabled {
+                if nextUnitScriptGate <= timerGame {
+                    unitScriptEnabledThisTick = true
+                    nextUnitScriptGate = timerGame &+ 5
+                } else {
+                    unitScriptEnabledThisTick = false
+                }
+                if nextUnitMovementGate <= timerGame {
+                    unitMovementEnabledThisTick = true
+                    nextUnitMovementGate = timerGame &+ 3
+                } else {
+                    unitMovementEnabledThisTick = false
+                }
+                if nextUnitRotationGate <= timerGame {
+                    unitRotationEnabledThisTick = true
+                    let cadence = UInt32(Simulation.Tools.adjustToGameSpeed(
+                        normal: 4, minimum: 2, maximum: 8,
+                        inverseSpeed: true, gameSpeed: gameSpeed
+                    ))
+                    nextUnitRotationGate = timerGame &+ cadence
+                } else {
+                    unitRotationEnabledThisTick = false
+                }
+            } else {
+                // Gates off — run every pass every tick (gameplay
+                // default; breaks OpenDUNE parity past tick 1 but
+                // preserves the large body of gameplay tests built on
+                // the per-tick cadence).
+                unitScriptEnabledThisTick = true
+                unitMovementEnabledThisTick = true
+                unitRotationEnabledThisTick = true
+            }
             // Fire-cooldown decrement runs first. `Script_Unit_Fire`
             // reads `fireDelay == 0` as its gate; decrementing before
             // the EMC dispatch matches OpenDUNE's `Unit_Tick` order.
-            tickFireCooldowns()
+            // OpenDUNE's fireDelay decrement sits inside the tickMovement
+            // gate (`src/unit.c:199..217`) — fires every 3 ticks, not
+            // every tick. Match that cadence.
+            if unitMovementEnabledThisTick { tickFireCooldowns() }
             // Infantry walk-cycle animation advance.
             tickSpriteOffsets()
             // Explosion frame decrement — simple lifetime tick for the
@@ -664,8 +762,17 @@ extension Simulation {
             if tickAttackHoldEnabled { tickAttackHold() }
             // Route-follower runs BEFORE script dispatch so scripts (e.g.
             // `CalculateRoute`) observe the updated position when deciding
-            // whether to pop the next step or re-plan.
-            tickMovement()
+            // whether to pop the next step or re-plan. Gated by
+            // OpenDUNE's `s_tickUnitMovement` cadence (every 3 ticks).
+            if unitMovementEnabledThisTick { tickMovement() }
+            // tickRotation — port of OpenDUNE `Unit_Rotate` (src/unit.c:65)
+            // called from GameLoop_Unit at src/unit.c:220..221 when
+            // the s_tickUnitRotation gate fires. Advances
+            // `orientationCurrent` by `orientationSpeed` (signed) toward
+            // `orientationTarget`, clamping to target when within one
+            // step; zeros `orientationSpeed` on arrival. Cadence is
+            // gameSpeed-dependent (2..8 ticks). Runs per-unit.
+            if unitRotationEnabledThisTick { tickRotation() }
             // Carryall arrival drop-off (slice 8c). tickMovement snaps
             // an in-transport carryall to its destination refinery and
             // clears `targetMove`; we pick that up here and detach the
@@ -701,7 +808,8 @@ extension Simulation {
             // current tick. Gated on both a non-nil spiceMap (so tests
             // can skip) and an RNG closure (Tools_Random_256 port).
             harvestTickCounter &+= 1
-            if host.spiceMap != nil, harvestRNG != nil,
+            if tickHarvestingEnabled,
+               host.spiceMap != nil, harvestRNG != nil,
                harvestTickCounter % Self.harvestCadenceTicks == 0
             {
                 tickHarvesting()
@@ -2099,7 +2207,48 @@ extension Simulation {
             }
         }
 
+        /// Per-unit body-rotation advance. Port of OpenDUNE
+        /// `Unit_Rotate` at `src/unit.c:65..96`. Called once per
+        /// rotation-gate fire (every 2..8 ticks per `gameSpeed`).
+        /// Advances `orientationCurrent` by the signed
+        /// `orientationSpeed` toward `orientationTarget`; clamps to
+        /// target + zeroes speed when within one step.
+        ///
+        /// Only level-0 (body) is handled here — turret rotation
+        /// (`level=1`) would need a second orientation track on
+        /// `UnitSlot`, which we haven't ported yet. Turret units land
+        /// when we add `orientation[1]` fields.
+        private mutating func tickRotation() {
+            for idx in host.units.findArray {
+                var slot = host.units.slots[idx]
+                if slot.orientationSpeed == 0 { continue }
+                let target = Int(slot.orientationTarget)
+                let current = Int(slot.orientationCurrent)
+                var diff = target - current
+                if diff > 128 { diff -= 256 }
+                if diff < -128 { diff += 256 }
+                let absDiff = abs(diff)
+                let speed = Int(slot.orientationSpeed)
+                let absSpeed = abs(speed)
+                var newCurrent = current &+ speed
+                if absSpeed >= absDiff {
+                    slot.orientationSpeed = 0
+                    newCurrent = target
+                }
+                // Match OpenDUNE's 8-bit wrap. Int8 stores -128..127
+                // which is the same modulo-256 space the original
+                // `int8` arithmetic uses.
+                slot.orientationCurrent = Int8(truncatingIfNeeded: newCurrent)
+                host.units[idx] = slot
+            }
+        }
+
         private mutating func tickUnits() {
+            // tickScript cadence gate — OpenDUNE runs unit scripts
+            // every 5 ticks (`src/unit.c:156..158`), not every tick.
+            // When closed, still perform the per-unit VM-load bookkeeping
+            // below so action-change deltas land; just skip the dispatch.
+            let runScripts = unitScriptEnabledThisTick
             var query = Simulation.PoolQuery()
             while let slot = host.units.next(&query) {
                 let idx = Int(slot.index)
@@ -2124,6 +2273,11 @@ extension Simulation {
                         tracer: .label("scheduler")
                     )
                     loadedUnitAction[idx] = action
+                }
+                if !runScripts {
+                    // Script gate closed this tick — skip dispatch but
+                    // keep per-unit engine state intact.
+                    continue
                 }
                 let priorPC = unitEngines[idx].pc
                 // Per-unit budget for OpenDUNE parity (`src/unit.c:292..294`):

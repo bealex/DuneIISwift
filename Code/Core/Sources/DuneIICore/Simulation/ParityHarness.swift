@@ -149,6 +149,8 @@ extension Simulation {
             // `Script_Unit_Fire` path own that decision, so with real
             // UNIT.EMC our clear produces drift.
             scheduler.tickAttackHoldEnabled = false
+            scheduler.tickHarvestingEnabled = false
+            scheduler.perTickCadenceGatesEnabled = true
             // Parity runs headless (no viewport), so every unit that
             // doesn't have `scriptNoSlowdown=true` falls into the
             // off-viewport 3-opcode cap (OpenDUNE `src/unit.c:292..294`).
@@ -393,6 +395,8 @@ extension Simulation {
             try eq(tick, "unit", idx, "hitpoints",        g.hitpoints,        s.hitpoints)
             try eq(tick, "unit", idx, "actionID",         g.actionID,         s.actionID)
             try eq(tick, "unit", idx, "orientation0Current", g.orientation0Current, s.orientationCurrent)
+            try eq(tick, "unit", idx, "orientation0Target",  g.orientation0Target,  s.orientationTarget)
+            try eq(tick, "unit", idx, "orientation0Speed",   g.orientation0Speed,   s.orientationSpeed)
             try eq(tick, "unit", idx, "movingSpeed",      g.movingSpeed,      s.movingSpeed)
             try eq(tick, "unit", idx, "speed",            g.speed,            s.speed)
             try eq(tick, "unit", idx, "speedPerTick",     g.speedPerTick,     s.speedPerTick)

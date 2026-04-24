@@ -11,11 +11,15 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**🎯 SAVE007 tick 1 byte-identical with OpenDUNE under real EMC (shipped 2026-04-23).** Parity frontier moved from tick 1 to **tick 2**: `unit[0].orientation0Current=106` (expected 96) — carryall is mid-rotation. Our port still lacks `orientation[0].target + .speed` on `UnitSlot` + a `tickRotation` pass (port of `Unit_Rotate` at `src/unit.c:220`); body orientation stays put while OpenDUNE ticks it 10 units closer to the target per rotation tick.
+**🎯 SAVE007 parity walks to tick 6 (shipped 2026-04-23) via cadence gates + `Unit_Rotate` port.** Frontier now at `unit[36].spriteOffset=64` (expected 63) — sprite-animation `timer` field not yet tracked on `UnitSlot`.
 
-Next concrete step: add `orientationTarget: Int8` + `orientationSpeed: Int8` to `UnitSlot`, propagate through save-loader (`WorldSnapshot(loading:)` reads `Orientation[0].target + .speed` from the save), wire `Script_Unit_SetOrientation` / `Unit_SetOrientation` to write these fields (port of `src/unit.c:1671`), add a `tickRotation` pass that advances `orientation0Current` by `orientationSpeed / 4` each call (cadence: every 4–8 ticks per `s_tickUnitRotation = g_timerGame + Tools_AdjustToGameSpeed(4, 2, 8, true)`), flip `parityHarness.compareUnit` skip entries for `orientation0Target` / `orientation0Speed` (currently skipped). Once that lands, re-run `saveSevenParityRealEmcFrontier` and chase the next drift.
+Next concrete step: port `timer: UInt16` to `UnitSlot` + the OpenDUNE `tickUnknown5` timer gate at `src/unit.c:240..286`:
+- When `timer == 0` AND the animation condition is met (`movementType==FOOT && speed!=0` OR `isSmoking` OR `type==HARVESTER && action==HARVEST` OR `type==ORNITHOPTER && allocated`), increment `spriteOffset` via `(& 0x3F) + 1` AND set `timer = ui->animationSpeed / 5` (or 4 for harvester / 1 for ornithopter / 3 for isSmoking).
+- Else (timer > 0), decrement `timer--`.
 
-SAVE001 tick-1 harvester drift still open (`unit[22].actionID=6 RETURN` expected 5 HARVEST) — investigate after carryall rotation closes.
+`animationSpeed: UInt16` needs to land in `UnitInfo` rows too (27 entries) — values are at `src/table/unitinfo.c` marked `/* animationSpeed       */ <N>`. 0 for the zero-animation types (bullets?), 7 for some, 12 / 15 for infantry variants.
+
+Also flip `timer` + `spriteOffset` skips in `parityHarness.compareUnit` once the field is live. SAVE001 tick-1 harvester drift (`unit[22].actionID=6 vs 5`) still open.
 
 Trace files (gitignored in `tmp/`):
 - `tmp/opendune_rng_trace.txt` — regenerated via rebuilt OpenDUNE binary at `Repositories/OpenDUNE/bin/opendune --parity-load=_SAVE007.DAT --parity-dump=tmp/save007_dump.jsonl --parity-ticks=1 --parity-data-dir=Repositories/patched_107_unofficial --parity-random-trace=tmp/opendune_rng_trace.txt`.
@@ -119,6 +123,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
+
+- **2026-04-23 — SAVE007 parity frontier walks tick 2 → tick 6 via per-unit cadence gates + `Unit_Rotate` port.** Three fixes stacked: (1) cadence gates for `tickScript` (every 5 ticks), `tickMovement` (every 3), `tickRotation` (2..8 gameSpeed-adjusted) — gated behind `perTickCadenceGatesEnabled: Bool = false` default, parity harness flips on; (2) `Unit_Rotate` port as `Scheduler.tickRotation`, new `orientationTarget` + `orientationSpeed` fields on `UnitSlot`, `Unit_SetOrientation(rotateInstantly:)` helper, updated `Script_Unit_SetOrientation` + `Script_Unit_SetTarget` to seed target+speed; (3) `tickHarvesting` gated by `tickHarvestingEnabled: Bool = true` (parity off) to avoid double-bumping `amount` with real `Script_Unit_Harvest`. Frontier: `unit[36].spriteOffset=64` (expected 63) — sprite-animation `timer` gate not yet ported. **982 / 96 / zero warnings.**
 
 - **2026-04-23 — SAVE007 tick 1 byte-identical with OpenDUNE under real EMC; parity frontier moved to tick 2.** Closed the final tick-1 drift (`unit[39].spriteOffset`) by porting OpenDUNE's harvester-specific animation branch at `src/unit.c:268..283` into `Scheduler.tickSpriteOffsets` — when `type == HARVESTER && action == HARVEST`, bump the 6-bit counter; otherwise reset to 0. Test `saveSevenParityTickOneRealEmc` → `saveSevenParityRealEmcFrontier` with a new `expectDivergenceUpTo(tickLimit:)` helper. Tick-2 drift: `unit[0].orientation0Current=106` (expected 96) — carryall rotation needs `Unit_Rotate` + orientation-target/speed fields. **982 / 96 / zero warnings.**
 

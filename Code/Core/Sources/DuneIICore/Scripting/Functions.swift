@@ -299,17 +299,23 @@ extension Scripting {
 
         // MARK: Batch 7 — simple unit mutators (no pathfinding / no combat)
 
-        /// `Script_Unit_SetOrientation` — writes `peek(1) & 0xFF` (as
-        /// signed 8-bit) to the current unit's `orientationCurrent`.
-        /// Returns the new orientation.
+        /// `Script_Unit_SetOrientation` (slot 0x07) — port of
+        /// `src/script/unit.c:707..715`. Calls
+        /// `Unit_SetOrientation(u, peek(1), rotateInstantly=false, 0)`
+        /// which sets `orientationTarget` + seeds `orientationSpeed`
+        /// for gradual rotation via `tickRotation`. Returns the unit's
+        /// current orientation (advances over subsequent ticks).
         public static func makeSetOrientationUnit(host: Host) -> VM.Function {
             return { engine in
                 let raw = Scripting.peek(engine: &engine, position: 1)
                 guard let (poolIndex, _) = currentUnit(host: host) else { return 0 }
-                var slot = host.units.slots[poolIndex]
-                slot.orientationCurrent = Int8(truncatingIfNeeded: raw)
-                host.units[poolIndex] = slot
-                return UInt16(bitPattern: Int16(slot.orientationCurrent))
+                Simulation.Units.setOrientation(
+                    poolIndex: poolIndex,
+                    orientation: Int8(truncatingIfNeeded: raw),
+                    rotateInstantly: false, level: 0,
+                    units: &host.units
+                )
+                return UInt16(bitPattern: Int16(host.units.slots[poolIndex].orientationCurrent))
             }
         }
 
@@ -407,23 +413,29 @@ extension Scripting {
                 updated.targetAttack = raw
                 let hasTurret = Simulation.UnitInfo.lookup(slot.type)?.hasTurret ?? false
                 if !hasTurret {
-                    // Non-turreted: the unit walks toward its target.
-                    // OpenDUNE also calls `Unit_SetOrientation(u, dir,
-                    // rotateInstantly=false, 0)` which writes
-                    // `orientation[0].target + .speed` for gradual
-                    // rotation — we don't yet track target/speed
-                    // separately (see Swift-side gaps in
-                    // `Simulation.ParityHarness.compareUnit` skip-list).
-                    // Writing `orientationCurrent` directly would flip
-                    // the body instantly in one tick instead of rotating
-                    // gradually; parity diverges either way on
-                    // `orientation0Current` vs `orientation0Target`, but
-                    // leaving body orientation alone matches the
-                    // `orientation0Current` golden (which stays at its
-                    // save-loaded value until `tickRotation` lands).
                     updated.targetMove = raw
                 }
                 host.units[poolIndex] = updated
+                // OpenDUNE `src/script/unit.c:852..859` — compute the
+                // direction from our pos to the target tile, then call
+                // Unit_SetOrientation for level 0 (body, non-turret
+                // units only) and level 1 (turret, always).
+                // `rotateInstantly=false` seeds orientationTarget +
+                // orientationSpeed; current advances via tickRotation.
+                if let targetPos = Pos32.of(encoded, host: host) {
+                    let fromPos = Pos32(x: updated.positionX, y: updated.positionY)
+                    let orient = Int8(bitPattern: Pos32.direction(from: fromPos, to: targetPos))
+                    if !hasTurret {
+                        Simulation.Units.setOrientation(
+                            poolIndex: poolIndex, orientation: orient,
+                            rotateInstantly: false, level: 0, units: &host.units
+                        )
+                    }
+                    Simulation.Units.setOrientation(
+                        poolIndex: poolIndex, orientation: orient,
+                        rotateInstantly: false, level: 1, units: &host.units
+                    )
+                }
                 return raw
             }
         }

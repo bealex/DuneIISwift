@@ -278,6 +278,8 @@ extension Simulation {
                 u.linkedID = slot.object.linkedID
                 if !slot.orientation.isEmpty {
                     u.orientationCurrent = slot.orientation[0].current
+                    u.orientationTarget = slot.orientation[0].target
+                    u.orientationSpeed = slot.orientation[0].speed
                 }
                 u.actionID = slot.actionID
                 u.amount = slot.amount
