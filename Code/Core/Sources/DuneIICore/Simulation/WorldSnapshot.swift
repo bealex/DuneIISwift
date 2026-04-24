@@ -302,6 +302,8 @@ extension Simulation {
                 u.currentDestinationX = slot.currentDestinationX
                 u.currentDestinationY = slot.currentDestinationY
                 u.distanceToDestination = slot.distanceToDestination
+                u.wobbleIndex = slot.wobbleIndex
+                u.isWobbling = slot.object.flags.isWobbling
                 u.spriteOffset = slot.spriteOffset
                 u.blinkCounter = slot.blinkCounter
                 u.inTransport = slot.object.flags.inTransport

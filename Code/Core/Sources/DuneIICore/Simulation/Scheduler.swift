@@ -117,6 +117,13 @@ extension Simulation {
         /// pass. `nil` disables the pass even when `host.spiceMap` is
         /// set — tests that don't need harvest can skip wiring it.
         public let harvestRNG: (() -> UInt8)?
+        /// Optional `Tools_Random_256` source used by `tickMovement` for
+        /// the `wobbleIndex = Tools_Random_256() & 7` draw inside
+        /// `Unit_Move` (`src/unit.c:1322`). Fires only for units where
+        /// `canWobble && isWobbling`. Tests that don't wire this get
+        /// the non-parity "no wobble draw" behaviour, which is fine
+        /// since `wobbleIndex` isn't compared in the default golden.
+        public var movementRNG: (() -> UInt8)?
         private var harvestTickCounter: Int = 0
 
         /// Monotonic per-tick counter. Mirrors OpenDUNE's `g_timerGame`
@@ -2105,6 +2112,23 @@ extension Simulation {
                         }
                         slot.positionX = next.x
                         slot.positionY = next.y
+                        // Port of `Unit_Move`'s wobble byte draw at
+                        // `src/unit.c:1319..1323`:
+                        //   unit->wobbleIndex = 0;
+                        //   if (ui->flags.canWobble && unit->o.flags.s.isWobbling) {
+                        //       unit->wobbleIndex = Tools_Random_256() & 7;
+                        //   }
+                        // Load-bearing for RNG-stream parity: canWobble
+                        // units (SOLDIER, TROOPER, TRIKE, RAIDER_TRIKE, QUAD)
+                        // that have stepped onto rock draw one byte per
+                        // `Unit_Move` call. Without this Swift's RNG
+                        // stream runs 1+ bytes behind OpenDUNE's on any
+                        // tick a canWobble unit moves while isWobbling.
+                        slot.wobbleIndex = 0
+                        if Simulation.UnitInfo.canWobble(type: slot.type),
+                           slot.isWobbling, let rng = movementRNG {
+                            slot.wobbleIndex = rng() & 7
+                        }
                         didStep = true
                     }
                 }

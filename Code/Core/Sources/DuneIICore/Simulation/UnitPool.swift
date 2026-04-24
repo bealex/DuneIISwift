@@ -100,6 +100,18 @@ extension Simulation {
         /// falsely trigger on the very first step. Mirrors OpenDUNE
         /// `u->distanceToDestination`.
         public var distanceToDestination: UInt16
+        /// Wobble-animation offset. Written by `Unit_Move` (`src/unit.c:1322`)
+        /// when the unit has `canWobble` and `isWobbling`, drawn as
+        /// `Tools_Random_256() & 7` on every movement step.
+        public var wobbleIndex: UInt8
+        /// `o.flags.s.isWobbling` — set by `Unit_StartMovement`
+        /// (`src/unit.c:1098..1100`) when the destination tile's
+        /// landscape has `letUnitWobble = true` (partial / entirely /
+        /// mostly rock). Vanilla Dune2 never clears this flag once set,
+        /// so once a canWobble unit steps onto rock, every subsequent
+        /// `Unit_Move` draws a `Tools_Random_256() & 7` byte — load-
+        /// bearing for RNG-stream parity.
+        public var isWobbling: Bool
         /// Runtime fire-cooldown counter (`u->fireDelay`). Ticks down by
         /// one per `Scheduler.tick()`; `Script_Unit_Fire` refuses to fire
         /// until it reaches 0. Narrowed to `u8` on disk (OpenDUNE's
@@ -157,6 +169,8 @@ extension Simulation {
             currentDestinationX: UInt16 = 0,
             currentDestinationY: UInt16 = 0,
             distanceToDestination: UInt16 = 0x7FFF,
+            wobbleIndex: UInt8 = 0,
+            isWobbling: Bool = false,
             fireDelay: UInt8 = 0,
             fireTwiceFlip: Bool = false,
             team: UInt8 = 0,
@@ -195,6 +209,8 @@ extension Simulation {
             self.currentDestinationX = currentDestinationX
             self.currentDestinationY = currentDestinationY
             self.distanceToDestination = distanceToDestination
+            self.wobbleIndex = wobbleIndex
+            self.isWobbling = isWobbling
             self.fireDelay = fireDelay
             self.fireTwiceFlip = fireTwiceFlip
             self.team = team

@@ -835,11 +835,17 @@ extension Scripting {
         }
 
         /// `Script_Unit_IdleAction` (slot 0x31) — port of OpenDUNE
-        /// `src/script/unit.c:1748`. Ground units fidget while idle:
-        /// foot units occasionally nudge their `spriteOffset`, and all
-        /// three ground movement types (foot / tracked / wheeled) have a
-        /// small chance of rotating to a random orientation each tick.
-        /// Wingers / harvesters / sandworms skip the whole routine.
+        /// `src/script/unit.c:1748`. Always draws one `Tools_Random_256`
+        /// byte as the gate-roll. Then, depending on type + actionID,
+        /// draws additional bytes:
+        ///   • sandworm: 1 extra byte (orientation) if `(random & 3) == 0`
+        ///   • INFANTRY..TROOPER + GUARD: 1 extra byte (spriteOffset)
+        ///   • any unit if `random ≤ spawnChance`: 2 extra bytes (turret
+        ///     level select + new orientation)
+        /// `spawnChance` is 0 for most units (so the 2-byte branch is
+        /// skipped), 64 for ground vehicles, 128 for harvester. Keeping
+        /// the byte count exact is load-bearing for RNG-stream parity —
+        /// an off-by-one here shifts every downstream draw.
         public static func makeIdleActionUnit(source: RandomSource, host: Host) -> VM.Function {
             return { _ in
                 guard let (poolIndex, slot) = currentUnit(host: host) else { return 0 }
@@ -847,59 +853,67 @@ extension Scripting {
                     "IdleAction fired for unit \(poolIndex) type=\(slot.type) orient=\(slot.orientationCurrent)",
                     tracer: .label("idle")
                 )
-                guard let info = Simulation.UnitInfo.lookup(slot.type) else { return 0 }
-                let mt = info.movementType
-                guard mt == .foot || mt == .tracked || mt == .wheeled else { return 0 }
 
-                let random = source.lcg.range(0, 10)
-                var updated = slot
+                // First byte: always drawn (src/script/unit.c:1755).
+                source.currentTraceContext = "IdleAction.random u\(poolIndex)"
+                let random = source.toolsNext()
+                source.currentTraceContext = ""
 
-                // Foot units occasionally randomise sprite-offset.
-                if mt == .foot && random > 8 {
-                    source.currentTraceContext = "IdleAction.sprite u\(poolIndex)"
-                    let spriteRaw = source.toolsNext()
+                // Sandworm branch (src/script/unit.c:1757..1761).
+                if slot.type == 25 {  // UNIT_SANDWORM
+                    if (random & 3) != 0 { return 0 }
+                    source.currentTraceContext = "IdleAction.wormOrient u\(poolIndex)"
+                    let wormOrient = source.toolsNext()
                     source.currentTraceContext = ""
-                    updated.spriteOffset = Int8(bitPattern: spriteRaw & 0x3F)
-                }
-
-                if random > 2 {
-                    host.units[poolIndex] = updated
+                    Simulation.Units.setOrientation(
+                        poolIndex: poolIndex, orientation: Int8(bitPattern: wormOrient),
+                        rotateInstantly: false, level: 0, units: &host.units
+                    )
                     return 0
                 }
 
-                // OpenDUNE: `i = (Tools_Random_256() & 1) == 0 ? 1 : 0;`
-                // then `Unit_SetOrientation(u, Tools_Random_256(), false, i)`.
-                // `i == 0` writes the body orientation; `i == 1` writes
-                // the turret. For units without a turret (foot /
-                // non-turret wheeled), `i == 1` is a no-op, so body
-                // orientation only changes ~50% of the calls. Our port
-                // had dropped that distinction and rotated the body
-                // every call, which made trikes / soldiers visibly
-                // "blink" (sprite-flip toggles across octant boundaries)
-                // while guarding.
-                // OpenDUNE draws two RNG bytes unconditionally — consume
-                // them here regardless of whether we apply the rotation
-                // so the RNG sequence stays in lockstep.
+                // GUARD + INFANTRY..TROOPER: spriteOffset fidget (src/script/unit.c:1763..1766).
+                if slot.actionID == Simulation.ActionID.guard_,
+                   slot.type >= 2, slot.type <= 5 {
+                    source.currentTraceContext = "IdleAction.sprite u\(poolIndex)"
+                    let spriteByte = source.toolsNext()
+                    source.currentTraceContext = ""
+                    var updated = slot
+                    updated.spriteOffset = Int8(bitPattern: spriteByte & 0x3F)
+                    host.units[poolIndex] = updated
+                }
+
+                // spawnChance gate (src/script/unit.c:1768): early return
+                // unless random ≤ spawnChance. For most unit types
+                // spawnChance = 0, so `random > 0` almost always returns.
+                if Int(random) > Int(Self.idleActionSpawnChance(type: slot.type)) {
+                    return 0
+                }
+
+                // Turret-level select + new orientation (src/script/unit.c:1771..1773).
                 source.currentTraceContext = "IdleAction.turret u\(poolIndex)"
                 let turretByte = source.toolsNext()
                 source.currentTraceContext = "IdleAction.newOrient u\(poolIndex)"
-                _ = source.toolsNext()  // newOrientation (target).
+                let newOrient = source.toolsNext()
                 source.currentTraceContext = ""
-                let i: UInt8 = (turretByte & 1) == 0 ? 1 : 0
-                _ = i
-                // OpenDUNE calls `Unit_SetOrientation(u, newOrientation,
-                // rotateInstantly=false, i)` which writes
-                // `orientation[i].target + .speed` and lets `tickRotation`
-                // advance `.current` gradually over subsequent ticks.
-                // We don't yet track `target` / `speed` on `UnitSlot`
-                // (see `ParityHarness.compareUnit` skip-list), so writing
-                // `orientationCurrent` directly — as we used to — produced
-                // tick-1 divergence (SAVE007 unit[36].orientation0Current).
-                // Gameplay-visible effect: idle units no longer randomly
-                // swing to a new heading each tick; they stay put until
-                // target/speed + rotation-tick are ported.
-                host.units[poolIndex] = updated
+                let level: UInt16 = (turretByte & 1) == 0 ? 1 : 0
+                Simulation.Units.setOrientation(
+                    poolIndex: poolIndex, orientation: Int8(bitPattern: newOrient),
+                    rotateInstantly: false, level: level, units: &host.units
+                )
                 return 0
+            }
+        }
+
+        /// `spawnChance` lookup for `Script_Unit_IdleAction`. Values from
+        /// `src/table/unitinfo.c`'s `spawnChance` column. HARVESTER is
+        /// the only 128; ground vehicles (types 7..15 + MCV=17) are 64;
+        /// everything else is 0.
+        private static func idleActionSpawnChance(type: UInt8) -> UInt8 {
+            switch type {
+            case 16: return 128
+            case 7...15, 17: return 64
+            default: return 0
             }
         }
 
@@ -1077,6 +1091,25 @@ extension Scripting {
                     return 1
                 }
 
+                // Orientation gate (port of `Script_Unit_CalculateRoute`'s
+                // check at `src/script/unit.c:1331..1334`):
+                //   if (u->orientation[0].current != (int8)(u->route[0] * 32)) {
+                //       Unit_SetOrientation(u, (int8)(u->route[0] * 32), false, 0);
+                //       return 1;
+                //   }
+                // setSpeed + setCurrentDest live inside Unit_StartMovement,
+                // which only runs AFTER this check succeeds — so neither
+                // speed nor currentDest are touched on the return-1 path.
+                let desired = Int8(bitPattern: UInt8(updated.route[0] &* 32))
+                if updated.orientationCurrent != desired {
+                    host.units[poolIndex] = updated
+                    Simulation.Units.setOrientation(
+                        poolIndex: poolIndex, orientation: desired,
+                        rotateInstantly: false, level: 0, units: &host.units
+                    )
+                    return 1
+                }
+
                 // Port the SetSpeed slice of `Unit_StartMovement`
                 // (`src/unit.c:1088..1105`): look up the landscape at
                 // the tile we're about to enter, read
@@ -1085,13 +1118,6 @@ extension Scripting {
                 // `Units.setSpeed` so `speedPerTick` + `speedRemainder`
                 // are set correctly — the scheduler's subpixel tick
                 // reads them to drive `Tile_MoveByDirection`.
-                //
-                // Runs BEFORE the orientation-gated early return so a
-                // newly-filled route sets speed immediately. Previously
-                // this lived after the orientation check, but the UNIT.EMC
-                // MOVE handler hits the "already moving" wait once
-                // `currentDestination` populates, which blocks any second
-                // CalcRoute call — leaving `speed = 0` forever.
                 if let landscapeAt = host.landscapeAt,
                    let info = Simulation.UnitInfo.lookup(slot.type) {
                     let stepDir = Int(updated.route[0])
@@ -1104,6 +1130,12 @@ extension Scripting {
                     let landscapeIndex = Int(lst)
                     if landscapeIndex >= 0, landscapeIndex < Simulation.LandscapeInfo.table.count {
                         let land = Simulation.LandscapeInfo.table[landscapeIndex]
+                        // Port of `Unit_StartMovement` (`src/unit.c:1098..1100`):
+                        // vanilla Dune2 sets `isWobbling = true` when the
+                        // destination tile's `letUnitWobble` is true, and
+                        // NEVER clears it afterwards. Load-bearing for
+                        // RNG-stream parity.
+                        if land.letUnitWobble { updated.isWobbling = true }
                         let mIndex = Int(info.movementType.rawValue)
                         if mIndex < land.movementSpeed.count {
                             // Port of `Unit_StartMovement`'s speed block
@@ -1113,17 +1145,11 @@ extension Scripting {
                             //       && ui->movementType != MOVEMENT_WINGER)
                             //     speed -= speed / 4;
                             //   Unit_SetSpeed(unit, speed);
-                            // The `byScenario * 192/256` scaling is a
-                            // `Script_Unit_SetSpeed`-only concern
-                            // (`src/script/unit.c:388`); Unit_StartMovement
-                            // passes `speed` straight through.
                             var speed = UInt16(land.movementSpeed[mIndex])
                             if info.movementType != .winger,
                                (UInt16(info.hitpoints) / 2) > UInt16(updated.hitpoints) {
                                 speed &-= speed / 4
                             }
-                            // Write updated slot before setSpeed so it
-                            // sees the current HP / amount.
                             host.units[poolIndex] = updated
                             Simulation.Units.setSpeed(
                                 poolIndex: poolIndex,
@@ -1134,19 +1160,6 @@ extension Scripting {
                             updated = host.units[poolIndex]
                         }
                     }
-                }
-
-                // Orientation gate: if the unit hasn't rotated to face
-                // the next step yet, set the target orientation and
-                // return without consuming the step. Speed was already
-                // written above so `tickMovement` can inch the unit
-                // while the turret rotates (matches OpenDUNE's
-                // `Unit_StartMovement` ordering).
-                let desired = Int8(bitPattern: UInt8(updated.route[0] &* 32))
-                if updated.orientationCurrent != desired {
-                    updated.orientationCurrent = desired
-                    host.units[poolIndex] = updated
-                    return 1
                 }
 
                 // Port of Unit_StartMovement's currentDestination write
