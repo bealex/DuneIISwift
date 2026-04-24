@@ -801,7 +801,26 @@ extension Simulation {
             // `Script_Random` / idle checks, which shifts the RNG state
             // seen by the per-unit `GameLoop_Unit` iteration.
             tickTeams()
+            // Snapshot findArray length so we can catch up any units
+            // allocated during `tickUnits` (e.g. bullets from firing) with
+            // their `Unit_MovementTick` / `Unit_Rotate` in the same tick.
+            // OpenDUNE's `GameLoop_Unit` uses `Unit_Find` which visits
+            // newly-appended pool entries later in the same pass, giving
+            // new bullets a first-tick accumulator run that leaves
+            // `speedRemainder = speedPerTick` (e.g. 255 for a BULLET)
+            // instead of 0. Without this catch-up the SAVE007 tick-31
+            // bullet u13 (from u26 firing) diverges on `speedRemainder`.
+            let preTickUnitsFindCount = host.units.findArray.count
             tickUnits()
+            let postTickUnitsFindCount = host.units.findArray.count
+            if postTickUnitsFindCount > preTickUnitsFindCount {
+                if unitMovementEnabledThisTick {
+                    tickMovement(fromFindArrayIndex: preTickUnitsFindCount)
+                }
+                if unitRotationEnabledThisTick {
+                    tickRotation(fromFindArrayIndex: preTickUnitsFindCount)
+                }
+            }
             tickStructures()
             // Harvest / refine runs after unit & structure ticks so the
             // script-driven action / linkedID state is settled for the
@@ -1760,9 +1779,23 @@ extension Simulation {
         /// 3. Step toward `currentDestination`. On arrival (manhattan ≤
         ///    threshold), snap, pop `route[0]`, and clear the destination
         ///    so the next tick picks up the next step.
-        private mutating func tickMovement() {
+        /// Per-unit movement pass. When `fromFindArrayIndex` is nil, iterates
+        /// the entire `findArray`; when non-nil, only iterates the tail
+        /// starting at that index. The latter mode is used to catch up
+        /// units allocated during `tickUnits` (e.g. bullets from firing)
+        /// so they get their `Unit_MovementTick` in the same scheduler tick,
+        /// mirroring OpenDUNE's `GameLoop_Unit` where `Unit_Find` visits
+        /// newly-appended pool entries later in the same pass.
+        private mutating func tickMovement(fromFindArrayIndex: Int? = nil) {
             let arrivalThreshold: Int32 = 16
-            for idx in host.units.findArray {
+            let indices: ArraySlice<Int>
+            if let start = fromFindArrayIndex {
+                if start >= host.units.findArray.count { return }
+                indices = host.units.findArray[start...]
+            } else {
+                indices = host.units.findArray[...]
+            }
+            for idx in indices {
                 var slot = host.units.slots[idx]
                 let hasDestination = slot.currentDestinationX != 0 || slot.currentDestinationY != 0
                 let hasRoute = slot.route[0] != 0xFF
@@ -2265,8 +2298,15 @@ extension Simulation {
         /// (`level=1`) would need a second orientation track on
         /// `UnitSlot`, which we haven't ported yet. Turret units land
         /// when we add `orientation[1]` fields.
-        private mutating func tickRotation() {
-            for idx in host.units.findArray {
+        private mutating func tickRotation(fromFindArrayIndex: Int? = nil) {
+            let indices: ArraySlice<Int>
+            if let start = fromFindArrayIndex {
+                if start >= host.units.findArray.count { return }
+                indices = host.units.findArray[start...]
+            } else {
+                indices = host.units.findArray[...]
+            }
+            for idx in indices {
                 var slot = host.units.slots[idx]
                 var changed = false
 
