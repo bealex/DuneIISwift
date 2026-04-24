@@ -121,10 +121,16 @@ struct ParityHarnessTests {
         try expectTickOneDivergence(save: "_SAVE007.DAT", golden: "save007_200ticks.jsonl")
     }
 
-    @Test("_SAVE007.DAT tick 1 with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
+    /// SAVE007 tick 1 now matches byte-for-byte under real UNIT.EMC /
+    /// BUILD.EMC / TEAM.EMC (closed in the team-cadence + recount +
+    /// Fire-jitter + harvester-sprite fix slice). This test widens the
+    /// harness past tick 1 to surface the next drift; adjust `tickLimit`
+    /// as closures move the frontier deeper into the golden.
+    @Test("_SAVE007.DAT tick 1+ with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
     @MainActor
-    func saveSevenParityTickOneRealEmc() throws {
-        try expectTickOneDivergence(
+    func saveSevenParityRealEmcFrontier() throws {
+        try expectDivergenceUpTo(
+            tickLimit: 20,
             save: "_SAVE007.DAT", golden: "save007_200ticks.jsonl",
             withRealEmc: true
         )
@@ -222,6 +228,79 @@ struct ParityHarnessTests {
             golden: golden,
             tickLimit: 0
         )
+    }
+
+    /// Run the parity harness with a widening `tickLimit` and
+    /// record the first divergence anywhere in `[1..tickLimit]`.
+    /// Unlike `expectTickOneDivergence`, this accepts divergences at
+    /// any tick — useful once tick 1 is clean and the frontier moves
+    /// deeper. Still expects *some* divergence within the window; if
+    /// the entire run matches, the test records an Issue so we bump
+    /// `tickLimit` further.
+    @MainActor
+    private func expectDivergenceUpTo(
+        tickLimit: Int,
+        save: String,
+        golden goldenName: String,
+        withRealEmc: Bool = false
+    ) throws {
+        guard let root = TestInstall.locate() else { return }
+        let saveURL = root.appendingPathComponent(save)
+        guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
+        let goldenURL = Self.goldenURL(named: goldenName)
+        guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
+
+        let data = try Data(contentsOf: saveURL)
+        let game = try Formats.Save.Game.decode(data)
+        let golden = try Data(contentsOf: goldenURL)
+
+        var unitProgram = Formats.Emc.Program.empty
+        var structureProgram = Formats.Emc.Program.empty
+        var teamProgram = Formats.Emc.Program.empty
+        let label: String
+        var snapshot: Simulation.WorldSnapshot
+        var spiceMap: Simulation.SpiceMap?
+        if withRealEmc {
+            let install = try Installation(rootDirectory: root)
+            let assets = try AssetLoader(installation: install)
+            unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+            structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
+            teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+            let resolver = assets.tileResolver
+            let baseline = Map.Generator.generate(
+                seed: game.info.scenario.mapSeed, resolver: resolver
+            )
+            snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
+            spiceMap = Simulation.SpiceMap { i in
+                let tile = snapshot.tiles[i]
+                return resolver.landscapeType(
+                    groundTileID: tile.groundTileID,
+                    overlayTileID: tile.overlayTileID,
+                    hasStructure: tile.hasStructure
+                )
+            }
+            label = "\(save)+UNIT.EMC"
+        } else {
+            snapshot = try Simulation.WorldSnapshot(loading: game, baseline: Map.empty())
+            label = "\(save)+empty-EMC"
+        }
+
+        do {
+            try Simulation.ParityHarness.runAgainst(
+                snapshot: snapshot,
+                golden: golden,
+                tickLimit: tickLimit,
+                unitProgram: unitProgram,
+                structureProgram: structureProgram,
+                teamProgram: teamProgram,
+                seedScriptsFrom: withRealEmc ? game : nil,
+                spiceMap: spiceMap
+            )
+            Issue.record("unexpected: \(label) matched through tick \(tickLimit) — widen tickLimit")
+        } catch let d as Simulation.ParityHarness.Divergence {
+            #expect(d.tick >= 1 && d.tick <= tickLimit)
+            print("parity first drift (\(label)) at tick \(d.tick): \(d)")
+        }
     }
 
     @MainActor

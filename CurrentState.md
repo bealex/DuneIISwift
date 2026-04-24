@@ -11,9 +11,11 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**SAVE007 tick-1 `unit[39].amount` drift CLOSED (shipped 2026-04-23). Next-up drift: `unit[39].spriteOffset` off-by-one.** Three RNG-stream fixes closed the u39.amount off-by-one: (1) `GameLoop_Team`'s outer cadence byte-draw added to Swift's `tickTeams` via `nextTeamTickGate`; (2) `UnitPool.recount()` ported from `Unit_Recount` and called at the end of `WorldSnapshot(loading:baseline:)` so `findArray` is in pool-index order; (3) `makeFireUnit` now draws the trailing `source.toolsNext()` byte matching `src/script/unit.c:692`. Parity progression: `unit[39].amount=8 → 9` ✓, new drift at `unit[39].spriteOffset=24` (expected 25 — sprite-cycle cadence, different class).
+**🎯 SAVE007 tick 1 byte-identical with OpenDUNE under real EMC (shipped 2026-04-23).** Parity frontier moved from tick 1 to **tick 2**: `unit[0].orientation0Current=106` (expected 96) — carryall is mid-rotation. Our port still lacks `orientation[0].target + .speed` on `UnitSlot` + a `tickRotation` pass (port of `Unit_Rotate` at `src/unit.c:220`); body orientation stays put while OpenDUNE ticks it 10 units closer to the target per rotation tick.
 
-**Remaining RNG-trace discrepancy (minor, doesn't affect u39.amount):** OpenDUNE draws a `DelayRandom ctx=u36` byte between u35 and u39 that Swift still doesn't. u36 is a TROOPER in-viewport with action=HUNT — something in Swift's u36 script dispatch short-circuits before reaching DelayRandom. Not urgent (RNG stream already lines up through the Harvest draws). Inspect next.
+Next concrete step: add `orientationTarget: Int8` + `orientationSpeed: Int8` to `UnitSlot`, propagate through save-loader (`WorldSnapshot(loading:)` reads `Orientation[0].target + .speed` from the save), wire `Script_Unit_SetOrientation` / `Unit_SetOrientation` to write these fields (port of `src/unit.c:1671`), add a `tickRotation` pass that advances `orientation0Current` by `orientationSpeed / 4` each call (cadence: every 4–8 ticks per `s_tickUnitRotation = g_timerGame + Tools_AdjustToGameSpeed(4, 2, 8, true)`), flip `parityHarness.compareUnit` skip entries for `orientation0Target` / `orientation0Speed` (currently skipped). Once that lands, re-run `saveSevenParityRealEmcFrontier` and chase the next drift.
+
+SAVE001 tick-1 harvester drift still open (`unit[22].actionID=6 RETURN` expected 5 HARVEST) — investigate after carryall rotation closes.
 
 Trace files (gitignored in `tmp/`):
 - `tmp/opendune_rng_trace.txt` — regenerated via rebuilt OpenDUNE binary at `Repositories/OpenDUNE/bin/opendune --parity-load=_SAVE007.DAT --parity-dump=tmp/save007_dump.jsonl --parity-ticks=1 --parity-data-dir=Repositories/patched_107_unofficial --parity-random-trace=tmp/opendune_rng_trace.txt`.
@@ -117,6 +119,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
+
+- **2026-04-23 — SAVE007 tick 1 byte-identical with OpenDUNE under real EMC; parity frontier moved to tick 2.** Closed the final tick-1 drift (`unit[39].spriteOffset`) by porting OpenDUNE's harvester-specific animation branch at `src/unit.c:268..283` into `Scheduler.tickSpriteOffsets` — when `type == HARVESTER && action == HARVEST`, bump the 6-bit counter; otherwise reset to 0. Test `saveSevenParityTickOneRealEmc` → `saveSevenParityRealEmcFrontier` with a new `expectDivergenceUpTo(tickLimit:)` helper. Tick-2 drift: `unit[0].orientation0Current=106` (expected 96) — carryall rotation needs `Unit_Rotate` + orientation-target/speed fields. **982 / 96 / zero warnings.**
 
 - **2026-04-23 — SAVE007 tick-1 `unit[39].amount` drift CLOSED via three RNG-stream fixes.** (1) `tickTeams` now consumes 1 byte per outer-gate fire (matching OpenDUNE `src/team.c:27`), using new `timerGame` + `nextTeamTickGate` fields. (2) `UnitPool.recount()` ported from OpenDUNE's `Unit_Recount` (`src/pool/unit.c:75`) + called at the end of `WorldSnapshot(loading:baseline:)` so findArray is in pool-index order regardless of save-chunk order. (3) `makeFireUnit(host:source:)` now draws the trailing `fireDelay += Tools_Random_256() & 1` byte from `src/script/unit.c:692`. Drift moved to `unit[39].spriteOffset=24` (expected 25) — different class, sprite-cycle cadence, RNG stream now aligned. Also extended OpenDUNE's `Tools_Random_256` trace hook with per-draw context tagging (`ctx=u39` / `ctx=s3` / `ctx=t0` / `ctx=NULL`) for future per-unit diffing. **982 / 96 / zero warnings.**
 

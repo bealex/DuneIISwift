@@ -1550,6 +1550,24 @@ extension Simulation {
             for idx in host.units.findArray {
                 var slot = host.units.slots[idx]
                 guard let info = Simulation.UnitInfo.lookup(slot.type) else { continue }
+                // Harvester branch runs regardless of displayMode — u16
+                // is `.unit` in the table but OpenDUNE's animation gate
+                // at `src/unit.c:268..283` tests the type directly. When
+                // in ACTION_HARVEST, bump the 6-bit counter; otherwise
+                // reset to 0 (the "sampling / deposit" idle cycle).
+                // `isSmoking` isn't tracked on slots yet — when the
+                // smoke flag lands, OR it into the increment branch.
+                if slot.type == 16 /* UNIT_HARVESTER */ {
+                    if slot.actionID == Simulation.ActionID.harvest {
+                        let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
+                        slot.spriteOffset = Int8(bitPattern: bumped)
+                        host.units[idx] = slot
+                    } else if slot.spriteOffset != 0 {
+                        slot.spriteOffset = 0
+                        host.units[idx] = slot
+                    }
+                    continue
+                }
                 switch info.displayMode {
                 case .infantry3, .infantry4:
                     // OpenDUNE `src/unit.c:241`: animation advances only
