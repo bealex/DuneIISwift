@@ -98,6 +98,14 @@ extension Simulation {
         /// round-tripping to save bytes matches; readers should subtract
         /// 1 before indexing `TeamPool`.
         public var team: UInt8
+        /// Generic per-unit countdown used by `tickUnknown5`
+        /// (`src/unit.c:240..286`) to pace sprite animation: when
+        /// `timer == 0` and the animation condition fires, bump
+        /// `spriteOffset` + set `timer = ui->animationSpeed / 5` (or
+        /// 4 / 1 / 3 depending on type / state). Otherwise decrement.
+        /// Also used by a handful of other per-unit timers (bullets'
+        /// arrival, etc.) — we use it as a catch-all counter field.
+        public var timer: UInt16
 
         public init(
             isUsed: Bool = false,
@@ -131,7 +139,8 @@ extension Simulation {
             currentDestinationY: UInt16 = 0,
             fireDelay: UInt8 = 0,
             fireTwiceFlip: Bool = false,
-            team: UInt8 = 0
+            team: UInt8 = 0,
+            timer: UInt16 = 0
         ) {
             self.isUsed = isUsed
             self.isAllocated = isAllocated
@@ -165,6 +174,7 @@ extension Simulation {
             self.fireDelay = fireDelay
             self.fireTwiceFlip = fireTwiceFlip
             self.team = team
+            self.timer = timer
         }
     }
 

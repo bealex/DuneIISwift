@@ -11,15 +11,9 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**🎯 SAVE007 parity walks to tick 6 (shipped 2026-04-23) via cadence gates + `Unit_Rotate` port.** Frontier now at `unit[36].spriteOffset=64` (expected 63) — sprite-animation `timer` field not yet tracked on `UnitSlot`.
+**🎯 SAVE007 parity walks to tick 11 (shipped 2026-04-23) via sprite-animation timer gate.** Frontier now at `unit[37].movingSpeed=0` (expected 112). u37 is a trooper in HUNT, off-viewport (3-opcode cap). Likely cause: `Script_Unit_SetSpeed` in u37's 3-opcode window isn't landing the 112 write, or we clear `movingSpeed` somewhere we shouldn't.
 
-Next concrete step: port `timer: UInt16` to `UnitSlot` + the OpenDUNE `tickUnknown5` timer gate at `src/unit.c:240..286`:
-- When `timer == 0` AND the animation condition is met (`movementType==FOOT && speed!=0` OR `isSmoking` OR `type==HARVESTER && action==HARVEST` OR `type==ORNITHOPTER && allocated`), increment `spriteOffset` via `(& 0x3F) + 1` AND set `timer = ui->animationSpeed / 5` (or 4 for harvester / 1 for ornithopter / 3 for isSmoking).
-- Else (timer > 0), decrement `timer--`.
-
-`animationSpeed: UInt16` needs to land in `UnitInfo` rows too (27 entries) — values are at `src/table/unitinfo.c` marked `/* animationSpeed       */ <N>`. 0 for the zero-animation types (bullets?), 7 for some, 12 / 15 for infantry variants.
-
-Also flip `timer` + `spriteOffset` skips in `parityHarness.compareUnit` once the field is live. SAVE001 tick-1 harvester drift (`unit[22].actionID=6 vs 5`) still open.
+Next concrete step: script-trace u37 on OpenDUNE at tick 11 (`--parity-script-trace=... --parity-script-unit=37`) and the same state on Swift to compare the opcode-by-opcode flow. u37 off-viewport so only 3 opcodes execute per tick — a narrow window to diff. SAVE001 tick-1 harvester drift (`unit[22].actionID=6 vs 5`) still open.
 
 Trace files (gitignored in `tmp/`):
 - `tmp/opendune_rng_trace.txt` — regenerated via rebuilt OpenDUNE binary at `Repositories/OpenDUNE/bin/opendune --parity-load=_SAVE007.DAT --parity-dump=tmp/save007_dump.jsonl --parity-ticks=1 --parity-data-dir=Repositories/patched_107_unofficial --parity-random-trace=tmp/opendune_rng_trace.txt`.
@@ -123,6 +117,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
+
+- **2026-04-23 — SAVE007 parity frontier tick 6 → tick 11 via sprite-animation `timer` gate.** Ported OpenDUNE's `tickUnknown5` pacing from `src/unit.c:240..286`: `timer: UInt16` on `UnitSlot`, `animationSpeed: UInt16` on `UnitInfo` (27 table values from `src/table/unitinfo.c`), `tickSpriteOffsets` now decrements `timer` when non-zero and only animates + resets timer when timer hits 0. `compareUnit` flipped `timer` out of the skip-list. Frontier: `unit[37].movingSpeed=0` (expected 112) — trooper off-viewport (3-opcode cap), Script_Unit_SetSpeed investigation next. **982 / 96 / zero warnings.**
 
 - **2026-04-23 — SAVE007 parity frontier walks tick 2 → tick 6 via per-unit cadence gates + `Unit_Rotate` port.** Three fixes stacked: (1) cadence gates for `tickScript` (every 5 ticks), `tickMovement` (every 3), `tickRotation` (2..8 gameSpeed-adjusted) — gated behind `perTickCadenceGatesEnabled: Bool = false` default, parity harness flips on; (2) `Unit_Rotate` port as `Scheduler.tickRotation`, new `orientationTarget` + `orientationSpeed` fields on `UnitSlot`, `Unit_SetOrientation(rotateInstantly:)` helper, updated `Script_Unit_SetOrientation` + `Script_Unit_SetTarget` to seed target+speed; (3) `tickHarvesting` gated by `tickHarvestingEnabled: Bool = true` (parity off) to avoid double-bumping `amount` with real `Script_Unit_Harvest`. Frontier: `unit[36].spriteOffset=64` (expected 63) — sprite-animation `timer` gate not yet ported. **982 / 96 / zero warnings.**
 

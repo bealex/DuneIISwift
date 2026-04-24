@@ -62,6 +62,13 @@ extension Simulation {
         public let explodeOnDeath: Bool
         public let movingSpeedFactor: UInt16
         public let turningSpeed: UInt8
+        /// Sprite-animation pace. Port of OpenDUNE `animationSpeed`
+        /// (`src/unit.h:196`). Used by `tickUnknown5` at
+        /// `src/unit.c:248` to compute the per-animation pause:
+        /// `u->timer = animationSpeed / 5` (or 4 for harvester / 3 for
+        /// isSmoking / 1 for ornithopter). Zero means "no walking
+        /// animation" (bullets, MCV, sandworm, etc.).
+        public let animationSpeed: UInt16
         /// 4-entry `actionsPlayer` array: the 4 GUI buttons presented to
         /// human controllers. `actionsPlayer[3]` is the "default" action
         /// used by `Script_Unit_SetActionDefault`.
@@ -149,6 +156,7 @@ extension Simulation {
             explodeOnDeath: Bool,
             movingSpeedFactor: UInt16,
             turningSpeed: UInt8,
+            animationSpeed: UInt16 = 0,
             actionsPlayer: [UInt8],
             actionAI: UInt8,
             groundSpriteID: UInt16,
@@ -177,6 +185,7 @@ extension Simulation {
             self.explodeOnDeath = explodeOnDeath
             self.movingSpeedFactor = movingSpeedFactor
             self.turningSpeed = turningSpeed
+            self.animationSpeed = animationSpeed
             self.actionsPlayer = actionsPlayer
             self.actionAI = actionAI
             self.groundSpriteID = groundSpriteID
@@ -213,6 +222,7 @@ extension Simulation {
             UnitInfo(hitpoints: 25, fireDistance: 50, fireDelay: 50, damage: 50,
                      movementType: .winger, hasTurret: false, explodeOnDeath: true,
                      movingSpeedFactor: 150, turningSpeed: 2,
+                     animationSpeed: 7,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
                      actionAI: ActionID.stop,
                      groundSpriteID: 289, displayMode: .ornithopter,
@@ -225,6 +235,7 @@ extension Simulation {
             UnitInfo(hitpoints: 50, fireDistance: 2, fireDelay: 45, damage: 3,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
                      movingSpeedFactor: 5, turningSpeed: 3,
+                     animationSpeed: 15,
                      actionsPlayer: [ActionID.attack, ActionID.move, ActionID.retreat, ActionID.guard_],
                      actionAI: ActionID.hunt,
                      groundSpriteID: 329, displayMode: .infantry4,
@@ -237,6 +248,7 @@ extension Simulation {
             UnitInfo(hitpoints: 110, fireDistance: 5, fireDelay: 50, damage: 5,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
                      movingSpeedFactor: 10, turningSpeed: 3,
+                     animationSpeed: 15,
                      actionsPlayer: [ActionID.attack, ActionID.move, ActionID.retreat, ActionID.guard_],
                      actionAI: ActionID.hunt,
                      groundSpriteID: 341, displayMode: .infantry4,
@@ -249,6 +261,7 @@ extension Simulation {
             UnitInfo(hitpoints: 20, fireDistance: 2, fireDelay: 45, damage: 3,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
                      movingSpeedFactor: 8, turningSpeed: 3,
+                     animationSpeed: 12,
                      actionsPlayer: [ActionID.attack, ActionID.move, ActionID.retreat, ActionID.guard_],
                      actionAI: ActionID.hunt,
                      groundSpriteID: 311, displayMode: .infantry3,
@@ -261,6 +274,7 @@ extension Simulation {
             UnitInfo(hitpoints: 45, fireDistance: 5, fireDelay: 50, damage: 5,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
                      movingSpeedFactor: 15, turningSpeed: 3,
+                     animationSpeed: 12,
                      actionsPlayer: [ActionID.attack, ActionID.move, ActionID.retreat, ActionID.guard_],
                      actionAI: ActionID.hunt,
                      groundSpriteID: 320, displayMode: .infantry3,
@@ -273,6 +287,7 @@ extension Simulation {
             UnitInfo(hitpoints: 10, fireDistance: 2, fireDelay: 45, damage: 2,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
                      movingSpeedFactor: 40, turningSpeed: 3,
+                     animationSpeed: 7,
                      actionsPlayer: [ActionID.sabotage, ActionID.move, ActionID.retreat, ActionID.guard_],
                      actionAI: ActionID.hunt,
                      groundSpriteID: 301, displayMode: .infantry3,
@@ -426,6 +441,7 @@ extension Simulation {
             UnitInfo(hitpoints: 70, fireDistance: 8, fireDelay: 0, damage: 75,
                      movementType: .winger, hasTurret: false, explodeOnDeath: false,
                      movingSpeedFactor: 200, turningSpeed: 2,
+                     animationSpeed: 7,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
                      actionAI: ActionID.stop,
                      groundSpriteID: 258, displayMode: .rocket,
@@ -436,6 +452,7 @@ extension Simulation {
             UnitInfo(hitpoints: 70, fireDistance: 60, fireDelay: 0, damage: 75,
                      movementType: .winger, hasTurret: false, explodeOnDeath: false,
                      movingSpeedFactor: 160, turningSpeed: 8,
+                     animationSpeed: 7,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
                      actionAI: ActionID.stop,
                      groundSpriteID: 258, displayMode: .rocket,
@@ -446,6 +463,7 @@ extension Simulation {
             UnitInfo(hitpoints: 70, fireDistance: 7, fireDelay: 0, damage: 75,
                      movementType: .winger, hasTurret: false, explodeOnDeath: false,
                      movingSpeedFactor: 200, turningSpeed: 2,
+                     animationSpeed: 7,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
                      actionAI: ActionID.stop,
                      groundSpriteID: 258, displayMode: .rocket,
@@ -456,6 +474,7 @@ extension Simulation {
             UnitInfo(hitpoints: 70, fireDistance: 3, fireDelay: 0, damage: 0,
                      movementType: .winger, hasTurret: false, explodeOnDeath: false,
                      movingSpeedFactor: 180, turningSpeed: 5,
+                     animationSpeed: 7,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
                      actionAI: ActionID.stop,
                      groundSpriteID: 268, displayMode: .rocket,
@@ -476,6 +495,7 @@ extension Simulation {
             UnitInfo(hitpoints: 1, fireDistance: 10, fireDelay: 0, damage: 25,
                      movementType: .winger, hasTurret: false, explodeOnDeath: false,
                      movingSpeedFactor: 200, turningSpeed: 0,
+                     animationSpeed: 7,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
                      actionAI: ActionID.stop,
                      groundSpriteID: 160, displayMode: .singleFrame,

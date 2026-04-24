@@ -416,9 +416,9 @@ extension Simulation {
             try eq(tick, "unit", idx, "fireDelay",        g.fireDelay,        s.fireDelay)
             try eq(tick, "unit", idx, "blinkCounter",     g.blinkCounter,     s.blinkCounter)
             try eq(tick, "unit", idx, "team",             g.team,             s.team)
+            try eq(tick, "unit", idx, "timer",            g.timer,            s.timer)
             // Skipped (Swift side not yet tracking these):
-            //   nextActionID, orientation0Target, orientation0Speed,
-            //   orientation1*, wobbleIndex, timer
+            //   nextActionID, orientation1*, wobbleIndex
         }
 
         private static func byteAt(_ a: [UInt8], _ i: Int) -> UInt8 {

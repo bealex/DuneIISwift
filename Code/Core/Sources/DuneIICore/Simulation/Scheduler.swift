@@ -1658,45 +1658,62 @@ extension Simulation {
             for idx in host.units.findArray {
                 var slot = host.units.slots[idx]
                 guard let info = Simulation.UnitInfo.lookup(slot.type) else { continue }
-                // Harvester branch runs regardless of displayMode — u16
-                // is `.unit` in the table but OpenDUNE's animation gate
-                // at `src/unit.c:268..283` tests the type directly. When
-                // in ACTION_HARVEST, bump the 6-bit counter; otherwise
-                // reset to 0 (the "sampling / deposit" idle cycle).
-                // `isSmoking` isn't tracked on slots yet — when the
-                // smoke flag lands, OR it into the increment branch.
-                if slot.type == 16 /* UNIT_HARVESTER */ {
+
+                // Port of OpenDUNE `src/unit.c:240..286`:
+                //   if (u->timer == 0) {
+                //       <animate + set timer = ui->animationSpeed / 5>
+                //   } else {
+                //       u->timer--;
+                //   }
+                // The timer gate applies to ALL per-unit animation
+                // branches (foot infantry, ornithopter, harvester).
+                // Decrement first when the timer is pending so the
+                // animation step only fires once the pause elapses.
+                if slot.timer != 0 {
+                    slot.timer &-= 1
+                    host.units[idx] = slot
+                    continue
+                }
+
+                var animated = false
+
+                // Foot-infantry branch. OpenDUNE gates on
+                // `movementType==FOOT && u->speed != 0 || isSmoking`.
+                if info.movementType == .foot, slot.speed != 0,
+                   slot.spriteOffset >= 0,
+                   (info.displayMode == .infantry3 || info.displayMode == .infantry4) {
+                    let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
+                    slot.spriteOffset = Int8(bitPattern: bumped)
+                    slot.timer = info.animationSpeed / 5
+                    animated = true
+                }
+
+                // Ornithopter branch — the animation plays regardless
+                // of speed / move state because the rotors spin in
+                // place. `spriteOffset >= 0` gate keeps the "not
+                // allocated" sentinel out of the bump.
+                if slot.type == 1 /* ORNITHOPTER */, slot.spriteOffset >= 0 {
+                    let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
+                    slot.spriteOffset = Int8(bitPattern: bumped)
+                    slot.timer = 1
+                    animated = true
+                }
+
+                // Harvester branch — bumps while ACTION_HARVEST,
+                // resets to 0 otherwise. Timer stays pinned at 4.
+                if slot.type == 16 /* HARVESTER */ {
                     if slot.actionID == Simulation.ActionID.harvest {
                         let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
                         slot.spriteOffset = Int8(bitPattern: bumped)
-                        host.units[idx] = slot
+                        slot.timer = 4
+                        animated = true
                     } else if slot.spriteOffset != 0 {
                         slot.spriteOffset = 0
-                        host.units[idx] = slot
                     }
-                    continue
                 }
-                switch info.displayMode {
-                case .infantry3, .infantry4:
-                    // OpenDUNE `src/unit.c:241`: animation advances only
-                    // when `(movementType == MOVEMENT_FOOT && u->speed != 0)
-                    // || u->o.flags.s.isSmoking`. `u->speed` is the tile-hop
-                    // clamp that `Unit_SetSpeed` writes — non-zero iff the
-                    // unit is actually mid-move. A parked HUNT trooper
-                    // with a stale `targetMove` pointing at a distant
-                    // enemy still has `speed == 0` and must NOT animate
-                    // (SAVE007 unit[25]). `isSmoking` isn't on our slots
-                    // yet; land it alongside explosion-damage flagging.
-                    guard slot.speed != 0 else { continue }
-                    // `spriteOffset < 0` is OpenDUNE's "don't animate"
-                    // marker for specific states (spawning, dying); skip.
-                    guard slot.spriteOffset >= 0 else { continue }
-                    let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
-                    slot.spriteOffset = Int8(bitPattern: bumped)
-                    host.units[idx] = slot
-                default:
-                    continue
-                }
+
+                _ = animated
+                host.units[idx] = slot
             }
         }
         private var spriteAnimationCounter: Int = 0
