@@ -516,9 +516,15 @@ extension Scripting {
         /// units. Returns 1 on success, 0 otherwise.
         ///
         /// Deferred (see `Fire.md` §6.1): sandworm eat branch,
-        /// `Tools_AdjustToGameSpeed` scaling, random jitter on
-        /// fireDelay, `Unit_Deviation_Decrease`, voice + fog side-effects.
-        public static func makeFireUnit(host: Host) -> VM.Function {
+        /// `Tools_AdjustToGameSpeed` scaling, `Unit_Deviation_Decrease`,
+        /// voice + fog side-effects.
+        ///
+        /// **The trailing `fireDelay += Tools_Random_256() & 1`** at
+        /// `src/script/unit.c:692` is consumed from the shared RNG
+        /// stream on every successful fire — even a 0-bump affects the
+        /// stream position. Needed for byte-level parity with OpenDUNE;
+        /// every HUNT / ATTACK unit that fires draws this byte once.
+        public static func makeFireUnit(host: Host, source: RandomSource) -> VM.Function {
             return { _ in
                 guard let (shooterIdx, shooter) = currentUnit(host: host) else {
                     Log.debug("fire-gate no-current-object", tracer: .label("fire-gate"))
@@ -677,6 +683,16 @@ extension Scripting {
                     shooterSlot.fireTwiceFlip = false
                     shooterSlot.fireDelay = UInt8(clamping: normalCooldown)
                 }
+                // `u->fireDelay += Tools_Random_256() & 1` — port of
+                // `src/script/unit.c:692`. Bumps fireDelay by 0 or 1
+                // (roughly 50/50) every successful fire. Load-bearing
+                // for RNG-stream parity: without this draw, the
+                // shared Tools stream stays 1 byte behind OpenDUNE
+                // every time a HUNT / ATTACK unit fires, cascading
+                // into downstream script RNG offsets.
+                source.currentTraceContext = "Fire.jitter u\(shooterIdx)"
+                shooterSlot.fireDelay = shooterSlot.fireDelay &+ (source.toolsNext() & 1)
+                source.currentTraceContext = ""
                 host.units[shooterIdx] = shooterSlot
                 return 1
             }

@@ -222,5 +222,22 @@ extension Simulation {
                 findArray.remove(at: position)
             }
         }
+
+        /// Port of OpenDUNE's `Unit_Recount` (`src/pool/unit.c:75`).
+        /// Discards the current `findArray` and rebuilds it in pool
+        /// index order (0..<capacity, including every `isUsed` slot).
+        /// OpenDUNE calls this after `SaveGame_LoadFile` so the
+        /// post-load iteration order is fixed regardless of the
+        /// save chunk's on-disk order. Our save-loader allocates in
+        /// on-disk order, which for SAVE007 places u39 at position 4
+        /// in `findArray`, and drives per-tick unit dispatch order
+        /// out of sync with OpenDUNE. Calling `recount()` after a
+        /// save load restores pool-index order.
+        public mutating func recount() {
+            findArray.removeAll(keepingCapacity: true)
+            for i in 0..<Self.capacity where slots[i].isUsed {
+                findArray.append(i)
+            }
+        }
     }
 }

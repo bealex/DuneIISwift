@@ -36,7 +36,7 @@ extension Scripting.Functions {
         // 0x07 — Script_Unit_SetOrientation
         table[0x07] = Scripting.Functions.makeSetOrientationUnit(host: host)
         // 0x08 — Script_Unit_Fire
-        table[0x08] = Scripting.Functions.makeFireUnit(host: host)
+        table[0x08] = Scripting.Functions.makeFireUnit(host: host, source: source)
         // 0x09 — Script_Unit_MCVDeploy (not ported; structure creation)
         // 0x0A — Script_Unit_SetActionDefault
         table[0x0A] = Scripting.Functions.makeSetActionDefaultUnit(host: host)

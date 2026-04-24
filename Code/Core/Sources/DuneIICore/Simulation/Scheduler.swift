@@ -97,6 +97,23 @@ extension Simulation {
         public let harvestRNG: (() -> UInt8)?
         private var harvestTickCounter: Int = 0
 
+        /// Monotonic per-tick counter. Mirrors OpenDUNE's `g_timerGame`
+        /// (`src/opendune.c`). Incremented once at the top of `tick()`
+        /// before any pass runs. Used by C-code-equivalent per-tick
+        /// gates (team loop, house loop) that draw RNG on their
+        /// reschedule and need to match OpenDUNE's draw sequence.
+        public private(set) var timerGame: UInt32 = 0
+
+        /// Next `timerGame` value at which `tickTeams`'s outer gate
+        /// fires. Port of OpenDUNE `src/team.c:26..27`:
+        ///   if (s_tickTeamGameLoop > g_timerGame) return;
+        ///   s_tickTeamGameLoop = g_timerGame + (Tools_Random_256() & 7) + 5;
+        /// Drawing the byte on each fire is load-bearing for RNG
+        /// stream parity — without this, Swift's `Tools_Random_256`
+        /// stream sits 1 byte ahead of OpenDUNE's on every tick where
+        /// the gate fires.
+        private var nextTeamTickGate: UInt32 = 0
+
         /// STARPORT slice 5b — live per-game stock. Indexed by
         /// `UnitInfo.typeID` (27 entries). Seeded from
         /// `Scenario.choamInventory` at load; mutated by order commits
@@ -621,6 +638,11 @@ extension Simulation {
         }
 
         public mutating func tick() {
+            // OpenDUNE's game loop increments `g_timerGame` at the top
+            // of each scheduler pass (`src/opendune.c:1115`). Match
+            // here so per-tick gates (team / house) key off the same
+            // counter and fire on the same ticks.
+            timerGame &+= 1
             // Fire-cooldown decrement runs first. `Script_Unit_Fire`
             // reads `fireDelay == 0` as its gate; decrementing before
             // the EMC dispatch matches OpenDUNE's `Unit_Tick` order.
@@ -2146,6 +2168,21 @@ extension Simulation {
         /// opcode, making this a safe no-op until a real TEAM.EMC is
         /// loaded and wired.
         private mutating func tickTeams() {
+            // Port of OpenDUNE `GameLoop_Team` (`src/team.c:22..63`).
+            // Outer gate runs at most once per 5..12 ticks and draws
+            // one `Tools_Random_256` byte on each fire — even when
+            // there are no teams. This draw is load-bearing for RNG
+            // parity: SAVE007 tick 1 needs exactly this byte (OpenDUNE's
+            // idx=0 ctx=NULL in the parity random trace).
+            if nextTeamTickGate > timerGame { return }
+            if let rng = harvestRNG {
+                let byte = rng()
+                nextTeamTickGate = timerGame &+ UInt32(byte & 7) &+ 5
+            } else {
+                // No RNG wired (gameplay paths that don't need parity).
+                // Use a fixed delay so the gate still cycles.
+                nextTeamTickGate = timerGame &+ 5
+            }
             for idx in host.teams.findArray where idx < teamEngines.count {
                 host.currentObject = .team(poolIndex: idx)
                 let action = Int(host.teams.slots[idx].action)

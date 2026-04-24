@@ -304,6 +304,14 @@ extension Simulation {
                 if slot.route.count == 14 { u.route = slot.route }
                 units[idx] = u
             }
+            // Match OpenDUNE's post-load `Unit_Recount` (`src/pool/unit.c:75`
+            // via `src/saveload/unit.c:108`) so `findArray` is ordered by
+            // pool index, not save-chunk order. Save files can store units
+            // in arbitrary order (SAVE007 has u39 mid-chunk); without this,
+            // `GameLoop_Unit` would dispatch u39 before u25..u38, shifting
+            // the RNG stream position for per-unit DelayRandom / Harvest
+            // draws.
+            units.recount()
 
             // Structures
             var structures = StructurePool()
