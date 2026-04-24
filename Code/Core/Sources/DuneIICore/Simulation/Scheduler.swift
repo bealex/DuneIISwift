@@ -412,7 +412,7 @@ extension Simulation {
         /// itself is skipped via `excludingUnit`.
         ///
         /// Returns nil when no spice exists in range.
-        static func findSpiceNear(
+        public static func findSpiceNear(
             from: (x: Int, y: Int),
             radius: Int,
             playableRect: (originX: Int, originY: Int, width: Int, height: Int),
@@ -483,10 +483,18 @@ extension Simulation {
                     let isThin = (level == .thin)
                     guard isThick || isThin else { continue }
                     let d = packedDistance(tx, ty, from.x, from.y)
-                    if isThick, d < 4, d < radius2 {
+                    // OpenDUNE uses `<=` (last-wins) tie-breaking on
+                    // both trackers (`src/map.c:1162, 1171`) — when
+                    // multiple spice tiles share the same distance, the
+                    // last one visited in (y, x) iteration order wins.
+                    // SAVE007 tick 801 surfaced this: u39 has spice at
+                    // both (23, 20) and (23, 21) at distance 1; Swift's
+                    // `<` picked (23, 20) first, OpenDUNE's `<=` picked
+                    // (23, 21) last.
+                    if isThick, d < 4, d <= radius2 {
                         radius2 = d; packed2 = tile
                     }
-                    if d <= radius, d < radius1 {
+                    if d <= radius, d <= radius1 {
                         radius1 = d; packed1 = tile
                     }
                 }
@@ -795,7 +803,20 @@ extension Simulation {
             // OpenDUNE's fireDelay decrement sits inside the tickMovement
             // gate (`src/unit.c:199..217`) — fires every 3 ticks, not
             // every tick. Match that cadence.
-            if unitMovementEnabledThisTick { tickFireCooldowns() }
+            //
+            // In `perUnitInterleavedTickOrder` mode the decrement runs
+            // INLINE per-unit inside the interleaved loop below (matching
+            // OpenDUNE's `src/unit.c:202..216` — decrement sits right
+            // after `Unit_MovementTick` inside the `Unit_Find` loop).
+            // This matters for parity: when a unit dies mid-iteration
+            // and `Unit_Free` memmoves its findArray tail left by 1,
+            // the next unit gets SKIPPED that tick — including its
+            // fireDelay decrement. SAVE007 tick 691 u26 observed this
+            // exact skip after u25's DIE script completed and freed
+            // its slot, shifting u26 into u25's cursor position.
+            if unitMovementEnabledThisTick, !perUnitInterleavedTickOrder {
+                tickFireCooldowns()
+            }
             // Explosion frame decrement — simple lifetime tick for the
             // presentation layer. Matches OpenDUNE's `Explosion_Tick`
             // reducing each active slot's `timeOut`, but simplified to
@@ -908,6 +929,20 @@ extension Simulation {
                     let idx = host.units.findArray[cursor]
                     if unitMovementEnabledThisTick {
                         tickMovement(fromFindArrayIndex: cursor, singleUnit: true)
+                        // Inline `u->fireDelay--` (port of
+                        // `src/unit.c:202..216`) — decrement sits
+                        // immediately after `Unit_MovementTick` inside
+                        // the same `Unit_Find` iteration, so a mid-loop
+                        // free of a PRIOR unit (which memmoves the tail
+                        // left, skipping the next unit's whole body)
+                        // also skips its fireDelay decrement.
+                        if idx < host.units.slots.count {
+                            var slot = host.units.slots[idx]
+                            if slot.isUsed, slot.fireDelay != 0 {
+                                slot.fireDelay &-= 1
+                                host.units[idx] = slot
+                            }
+                        }
                     }
                     if rotationFires {
                         tickRotationForUnit(idx: idx)
@@ -2520,6 +2555,25 @@ extension Simulation {
                                 slot.movingSpeed = 0
                                 slot.currentDestinationX = 0
                                 slot.currentDestinationY = 0
+                                // Port of OpenDUNE `src/unit.c:1484..1486` —
+                                // when arrival lands on the same tile encoded
+                                // by `targetMove`, clear it. The harvester's
+                                // wait-for-arrival EMC loop (UNIT.EMC pc=51..60
+                                // for SAVE007 u39) reads `targetMove` to decide
+                                // whether to keep waiting; without this clear
+                                // the loop would never terminate. SAVE007 tick
+                                // 910 surfaced this — u39 reaches its spice
+                                // tile (23, 21) but Swift's targetMove stays
+                                // at the encoded tile.
+                                if slot.targetMove != 0 {
+                                    let arrPacked = Simulation.Pathfinder.packedTile(
+                                        x: slot.positionX, y: slot.positionY
+                                    )
+                                    let encoded = Scripting.EncodedIndex.tile(packed: arrPacked).raw
+                                    if slot.targetMove == encoded {
+                                        slot.targetMove = 0
+                                    }
+                                }
                             } else {
                                 // Gameplay: inline route pop so the auto-populate
                                 // can immediately pick up the next step, avoiding

@@ -91,14 +91,18 @@ struct ParityHarnessTests {
     }
 
     /// Same as `saveOneParityTickOneDiverges` but with real `UNIT.EMC`
-    /// / `BUILD.EMC` / `TEAM.EMC` loaded via `AssetLoader`. Expected to
-    /// still diverge (more sim surface is covered = more drift
-    /// opportunities), just on a different field. The log line in the
-    /// output pins whichever field is "next" to close.
-    @Test("_SAVE001.DAT tick 1 with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
+    /// / `BUILD.EMC` / `TEAM.EMC` loaded via `AssetLoader`. SAVE001
+    /// historically diverged at tick 1 with `unit[22].actionID=5
+    /// HARVEST vs 6 RETURN` (harvester transition class). The
+    /// SearchSpice port (slot 0x29) closed that drift here as a
+    /// side-effect of fixing SAVE007 — the same harvester EMC path
+    /// reads SearchSpice and falls through to RETURN when it returns
+    /// 0. Now widened to 200 ticks (the full SAVE001 golden window).
+    @Test("_SAVE001.DAT 200-tick parity with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
     @MainActor
-    func saveOneParityTickOneRealEmc() throws {
-        try expectTickOneDivergence(
+    func saveOneParityRealEmc() throws {
+        try expectFullParity(
+            tickLimit: 200,
             save: "_SAVE001.DAT", golden: "save001_200ticks.jsonl",
             withRealEmc: true
         )
@@ -121,18 +125,21 @@ struct ParityHarnessTests {
         try expectTickOneDivergence(save: "_SAVE007.DAT", golden: "save007_ticks.jsonl")
     }
 
-    /// SAVE007 matches OpenDUNE byte-for-byte through the first 690
-    /// ticks of a 1000-tick golden under real UNIT.EMC / BUILD.EMC /
-    /// TEAM.EMC. Next drift is tick 691 `u26.fireDelay=48 vs 47` —
-    /// an off-by-1 on the Atreides TANK's post-fire cooldown,
-    /// coming from the `u->fireDelay += Tools_Random_256() & 1`
-    /// trailing jitter byte at `src/script/unit.c:692`. One draw
-    /// drifted somewhere in ticks 622..690.
-    @Test("_SAVE007.DAT 690-tick parity with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
+    /// 🎯 SAVE007 matches OpenDUNE byte-for-byte across the FULL
+    /// 1000-tick golden under real UNIT.EMC / BUILD.EMC / TEAM.EMC.
+    /// Closing this frontier required (across two same-day sessions):
+    /// inline per-unit `fireDelay--` (`src/unit.c:202..216`);
+    /// `Script_General_SearchSpice` (`src/script/general.c:325`) wired
+    /// to a host closure that delegates to `Scheduler.findSpiceNear`;
+    /// tie-break flip from `<` to `<=` in `findSpiceNear` to match
+    /// OpenDUNE's last-wins ordering (`src/map.c:1162, 1171`); and
+    /// the targetMove auto-clear in `tickMovement`'s arrival branch
+    /// (`src/unit.c:1484..1486`).
+    @Test("_SAVE007.DAT FULL 1000-tick parity with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
     @MainActor
     func saveSevenParityRealEmcFrontier() throws {
         try expectFullParity(
-            tickLimit: 690,
+            tickLimit: 1000,
             save: "_SAVE007.DAT", golden: "save007_ticks.jsonl",
             withRealEmc: true
         )

@@ -108,6 +108,15 @@ extension Scripting {
         /// sim state still mutates; only the view surface stays stale.
         public var groundTileOverride: ((_ packed: UInt16, _ tileID: UInt16) -> Void)?
 
+        /// `Map_SearchSpice` analogue — finds a packed spice tile within
+        /// `radius` of `packedFrom` and returns the packed tile (0 = none).
+        /// Used by `Script_General_SearchSpice` (slot 0x29). `nil` means
+        /// "no spice search wired" — the script slot returns 0 so the
+        /// harvester's EMC fall-through still runs but never finds new
+        /// spice. Parity harness wires this to `Scheduler.findSpiceNear`;
+        /// gameplay's runtime can wire the same closure if it cares.
+        public var searchSpice: ((_ packedFrom: UInt16, _ radius: UInt16, _ excludingUnit: Int) -> UInt16)?
+
         public enum ObjectRef: Sendable, Equatable {
             case unit(poolIndex: Int)
             case structure(poolIndex: Int)

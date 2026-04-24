@@ -257,6 +257,62 @@ struct SimulationSchedulerTests {
         #expect(host.houses[1].credits == 304)
     }
 
+    @Test("Interleaved-mode fireDelay decrement skips a unit shifted into a freed slot's findArray position")
+    func interleavedFireDelayDecrementSkipsShiftedUnit() throws {
+        // Port of `src/unit.c:202..216` — OpenDUNE decrements
+        // `u->fireDelay` INSIDE the per-unit `Unit_Find` loop, right
+        // after `Unit_MovementTick`. When a unit dies mid-iteration
+        // and `Unit_Free` memmoves the findArray tail left by 1, the
+        // loop's `find->index++` advances PAST the unit that just
+        // moved into the freed slot's position — so its body
+        // (movement + fireDelay decrement + script) is skipped that
+        // tick. SAVE007 tick 691 hit this exact case: u25's DIE
+        // script freed it, u26 shifted into u25's cursor, the loop
+        // advanced past u26, and u26.fireDelay stayed at 48 instead
+        // of decrementing to 47.
+        //
+        // Synthetic repro: TANK at idx 9 (movementType matches u26),
+        // but it'd be sufficient with any two consecutive findArray
+        // slots. Use minimal scaffolding — empty script program with
+        // an inline Die-equivalent that frees u25 on its first tick.
+        var units = Simulation.UnitPool()
+        units.allocate(at: 25, type: 4, houseID: 0)  // TROOPER (foot)
+        units.allocate(at: 26, type: 9, houseID: 0)  // TANK
+        var u25 = units[25]; u25.actionID = 0; units[25] = u25
+        var u26 = units[26]; u26.fireDelay = 48; u26.actionID = 0; units[26] = u26
+        let host = Scripting.Host(units: units)
+
+        // Function table: slot 0x0F (Die) calls untargetUnit + free.
+        // Provide a 1-opcode program: FUNCTION 0x0F (calls Die).
+        // FUNCTION = opcode 14 (0x0E); 0x2000 flag = "next word is param".
+        let entryPoints = [UInt16](repeating: 0, count: 27)
+        let funcWord: UInt16 = (UInt16(14) << 8) | 0x2000
+        let words: [UInt16] = [funcWord, 0x000F, 0x4000]  // FUNCTION 0x0F; halt
+        let program = Formats.Emc.Program(
+            texts: [], entryPoints: entryPoints, code: words,
+            instructions: [], wordIndexToInsn: Array(repeating: -1, count: words.count)
+        )
+        var functions: [Scripting.VM.Function?] = Array(repeating: nil, count: 64)
+        functions[0x0F] = Scripting.Functions.makeDieUnit(host: host)
+        let vm = Scripting.VM(program: program, functions: functions)
+        var scheduler = Simulation.Scheduler(host: host, unitVM: vm, structureVM: vm)
+        scheduler.perUnitInterleavedTickOrder = true
+        scheduler.perTickCadenceGatesEnabled = true
+        scheduler.unitOpcodeBudget = 8
+        // No real EMC entry point at index 4 / 9; load goes to PC=0,
+        // running FUNCTION 0x0F first. We don't actually need u26 to
+        // run a script — only u25's script needs to fire Die so the
+        // findArray shifts. The interleaved loop processes u25 first
+        // (cursor=0), Die frees it, u26 shifts to cursor=0; cursor
+        // advances to 1 → past end, loop exits without ever visiting
+        // u26's body (including the inline fireDelay decrement).
+        scheduler.tick()
+
+        #expect(host.units[26].fireDelay == 48,
+                "u26 was shifted into u25's freed slot mid-iteration; its fireDelay decrement must be skipped")
+        #expect(!host.units[25].isUsed, "u25 should have been freed by Die")
+    }
+
     @Test("Power-maintenance drain scales with powerUsage: 30 → 1, 64 → 3, 200 → 7")
     func houseMaintenanceDrainScale() throws {
         // `(usage / 32) + 1` — rounding-down integer math. 30/32=0+1=1,
