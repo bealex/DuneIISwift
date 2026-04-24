@@ -685,11 +685,28 @@ extension Scripting {
                 }
 
                 // Cooldown: normal reload OR firesTwice quick-reload.
-                let normalCooldown = UInt16(info.fireDelay) &* 2
+                // Port of `src/script/unit.c:683..690`:
+                //   u->fireDelay = Tools_AdjustToGameSpeed(ui->fireDelay * 2, 1, 0xFFFF, true);
+                //   if (fireTwice) {
+                //       u->o.flags.s.fireTwiceFlip = !u->o.flags.s.fireTwiceFlip;
+                //       if (u->o.flags.s.fireTwiceFlip) u->fireDelay = Tools_AdjustToGameSpeed(5, 1, 10, true);
+                //   } else u->o.flags.s.fireTwiceFlip = false;
+                // `inverseSpeed=true` is load-bearing — `ui->fireDelay * 2`
+                // is the SLOWEST cooldown, scaled DOWN at faster game
+                // speeds (Tools_AdjustToGameSpeed inverts the bucket).
+                let normalCooldown = Simulation.Tools.adjustToGameSpeed(
+                    normal: UInt16(info.fireDelay) &* 2,
+                    minimum: 1, maximum: 0xFFFF,
+                    inverseSpeed: true, gameSpeed: host.gameSpeed
+                )
                 if fireTwice {
                     shooterSlot.fireTwiceFlip.toggle()
                     if shooterSlot.fireTwiceFlip {
-                        shooterSlot.fireDelay = 5
+                        let quick = Simulation.Tools.adjustToGameSpeed(
+                            normal: 5, minimum: 1, maximum: 10,
+                            inverseSpeed: true, gameSpeed: host.gameSpeed
+                        )
+                        shooterSlot.fireDelay = UInt8(clamping: quick)
                     } else {
                         shooterSlot.fireDelay = UInt8(clamping: normalCooldown)
                     }
@@ -708,6 +725,52 @@ extension Scripting {
                 shooterSlot.fireDelay = shooterSlot.fireDelay &+ (source.toolsNext() & 1)
                 source.currentTraceContext = ""
                 host.units[shooterIdx] = shooterSlot
+                return 1
+            }
+        }
+
+        /// `Script_Unit_Rotate` (slot 0x3D) — port of `src/script/unit.c:726`.
+        /// Rotates the unit (or turret) toward its `targetAttack`.
+        ///
+        /// - Non-wingers that are still moving (`currentDestination != 0`)
+        ///   return 1 (wait until arrival).
+        /// - If the relevant orientation track's `speed != 0` the unit is
+        ///   already rotating → return 1.
+        /// - If `targetAttack` is not a valid encoded index → return 0.
+        /// - Computes `Tile_GetDirection(position → target)`. If already
+        ///   aligned → return 0. Otherwise calls `Unit_SetOrientation` and
+        ///   returns 1.
+        public static func makeRotateUnit(host: Host) -> VM.Function {
+            return { _ in
+                guard let (idx, slot) = currentUnit(host: host) else { return 0 }
+                guard let info = Simulation.UnitInfo.lookup(slot.type) else { return 0 }
+
+                // Non-winger mid-step: finish moving first.
+                if info.movementType != .winger,
+                   slot.currentDestinationX != 0 || slot.currentDestinationY != 0 {
+                    return 1
+                }
+
+                let useTurret = info.hasTurret
+                let speed: Int8 = useTurret ? slot.turretOrientationSpeed : slot.orientationSpeed
+                if speed != 0 { return 1 }
+
+                let current: Int8 = useTurret ? slot.turretOrientationCurrent : slot.orientationCurrent
+
+                let encoded = Scripting.EncodedIndex(raw: slot.targetAttack)
+                guard isValid(encoded: encoded, host: host) else { return 0 }
+                guard let targetPos = Pos32.of(encoded, host: host) else { return 0 }
+
+                let fromPos = Pos32(x: slot.positionX, y: slot.positionY)
+                let orientation = Int8(bitPattern: Pos32.direction(from: fromPos, to: targetPos))
+
+                if orientation == current { return 0 }
+
+                let level: UInt16 = useTurret ? 1 : 0
+                Simulation.Units.setOrientation(
+                    poolIndex: idx, orientation: orientation,
+                    rotateInstantly: false, level: level, units: &host.units
+                )
                 return 1
             }
         }
@@ -1100,6 +1163,12 @@ extension Scripting {
                 let nextCenter = Pos32.movedByOrientation(fromPos, orientation: stepOrient)
                 updated.currentDestinationX = nextCenter.x
                 updated.currentDestinationY = nextCenter.y
+                // Port of `Unit_StartMovement` (`src/unit.c:1082`):
+                // `unit->distanceToDestination = 0x7FFF`. Prevents the
+                // first movement tick after starting a route step from
+                // falsely triggering the `distanceToDestination < newDist`
+                // overshoot-arrival branch.
+                updated.distanceToDestination = 0x7FFF
 
                 // Consume one step (memmove route[1..] down by one). The
                 // scheduler's `tickMovement` advances per-tile position

@@ -124,7 +124,8 @@ extension Scripting.Functions {
         // 0x3B — Script_General_Unknown0288 (not ported; corner case)
         // 0x3C — Script_General_DelayRandom
         table[0x3C] = Scripting.Functions.makeDelayRandom(source: source, host: host)
-        // 0x3D — Script_Unit_Rotate (not ported; needs orientation-speed state)
+        // 0x3D — Script_Unit_Rotate
+        table[0x3D] = Scripting.Functions.makeRotateUnit(host: host)
         // 0x3E — Script_General_GetDistanceToObject
         table[0x3E] = Scripting.Functions.makeGetDistanceToObject(host: host)
         // 0x3F — NoOp

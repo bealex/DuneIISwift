@@ -281,6 +281,11 @@ extension Simulation {
                     u.orientationTarget = slot.orientation[0].target
                     u.orientationSpeed = slot.orientation[0].speed
                 }
+                if slot.orientation.count > 1 {
+                    u.turretOrientationCurrent = slot.orientation[1].current
+                    u.turretOrientationTarget = slot.orientation[1].target
+                    u.turretOrientationSpeed = slot.orientation[1].speed
+                }
                 u.actionID = slot.actionID
                 u.amount = slot.amount
                 u.targetAttack = slot.targetAttack
@@ -296,6 +301,7 @@ extension Simulation {
                 u.movingSpeed = slot.movingSpeed
                 u.currentDestinationX = slot.currentDestinationX
                 u.currentDestinationY = slot.currentDestinationY
+                u.distanceToDestination = slot.distanceToDestination
                 u.spriteOffset = slot.spriteOffset
                 u.blinkCounter = slot.blinkCounter
                 u.inTransport = slot.object.flags.inTransport

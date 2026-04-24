@@ -11,9 +11,44 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**🎯 SAVE007 parity walks to tick 25 (shipped 2026-04-23) via Unit_StartMovement port + landscape-oracle fix.** Frontier now at `unit[36].positionY=7552` (expected 7568). u36 is a soldier (type 4) in HUNT — movement subpixel math is off by 16 pos32 pixels (one tile) at tick 25.
+**🎯 SAVE007 parity frontier at tick 31 (in-flight 2026-04-23). u13 speedRemainder: expected=255 actual=0.** This is a newly-created BULLET (type 23) spawned at tick 31 by u26 (TRIKE, house=1) firing at u25. In OpenDUNE, `GameLoop_Unit` iterates units with `Unit_Find` which finds newly-allocated units in the same pass — so the new bullet's `Unit_MovementTick` runs in the same tick, accumulating `speedRemainder = 0 + Tools_AdjustToGameSpeed(255, 1, 255, false) = 255`. In Swift, `tickMovement` iterates `host.units.findArray` snapshot taken before `tickUnits`, so bullets allocated during script dispatch don't get their first movement tick until 3 ticks later.
 
-Next concrete step: dump u36's state across ticks 20-25 on both engines and compare `positionY`, `speedRemainder`, and `currentDestinationY` deltas. Likely cause is a single-tile off-by-one in `tickMovement` step accumulation (subpixel overflow timing). SAVE001 tick-1 harvester drift (`unit[22].actionID=6 vs 5`) still open.
+**Root cause**: per-unit single-pass ordering mismatch. OpenDUNE: per-unit { script; movement; rotation; … } in one `Unit_Find` loop. Swift: three separate passes (`tickUnits`, `tickMovement`, `tickRotation`) over a pre-computed `findArray`. Solutions: (a) recount after `tickUnits` and have `tickMovement` pick up new units — quick fix but doesn't match OpenDUNE's per-unit ordering; (b) rewrite as a single per-unit loop with inline script/movement/rotation branches — correct but large refactor; (c) manually run `tickMovement` for any unit allocated during script dispatch, within the same tick. **Recommended next step**: try (a) first — after `tickUnits`, call `host.units.recount()` so `tickMovement` sees the new bullets.
+
+Post tick-31 queue: `SAVE001 tick-1 harvester drift (unit[22].actionID=6 vs 5)` still open (same root as earlier — harvester transitions RETURN prematurely).
+
+### Session progress (2026-04-23 PM)
+
+Advanced frontier tick 1 → tick 28 → tick 31 with three wins:
+
+1. **Script_Unit_Rotate ported (slot 0x3D)** — was nil (returned 0). u30 TRIKE has `orientation[0].speed=-8` at tick 26; without Rotate's "already rotating" gate (return 1), the script fell through to Script_Unit_Fire and fired. Port at `Functions.swift` `makeRotateUnit(host:)` mirrors `src/script/unit.c:726`. Wired in `FunctionTables.swift:127`. Closed tick 28 `unit[30].fireDelay=2 vs 0`.
+
+2. **Turret orientation tracking** — `UnitSlot` got `turretOrientationCurrent/Target/Speed: Int8`. `WorldSnapshot` loads `slot.orientation[1]` when `slot.orientation.count > 1`. `Units.setOrientation` now handles `level=1` (was no-op). `Scheduler.tickRotation` runs turret rotation when `hasTurret == true` (mirrors `src/unit.c:220-221`). `makeSetTargetUnit` `setOrientation(level:1)` call now actually writes.
+
+3. **Arrival logic rewrite** — `UnitSlot.distanceToDestination: UInt16 = 0x7FFF`, loaded from save (already in `SaveUnits.swift`). `Script_Unit_CalculateRoute` resets it to `0x7FFF` when setting `currentDestination` (port of `src/unit.c:1082` `Unit_StartMovement`). `tickMovement` post-step arrival is now gated on `perTickCadenceGatesEnabled`:
+   - **Parity mode** (`true`): `slot.distanceToDestination < distAfter || distAfter < 16` (mirrors `src/unit.c:1419`). On arrival: `slot.speed = 0; slot.speedPerTick = 0; slot.movingSpeed = 0` (NOT `speedRemainder` — `Unit_MovementTick` overwrites that AFTER `Unit_Move` returns); clear `currentDestination`; do NOT pop route (script's CalculateRoute pops on next dispatch).
+   - **Gameplay mode** (`false`, tests): old logic — `distAfter >= distBefore || distAfter < 16`, inline-pop route, optional targetMove clear. Keeps movement tests passing.
+   The pre-move arrival (`distToGoal <= 16` before step) is also gated: projectile detonation always; ground-unit arrival only in gameplay mode. `slot.distanceToDestination = distAfterU16` is written at end of step (parity mode uses it next tick).
+   Closed tick 28 `unit[36].movingSpeed=160 vs 0`.
+
+4. **Test touch-up** — `FireTests.swift:90` assertion flipped from `bullet.targetAttack == unit(30).raw` to `== 0`. BULLET arm in OpenDUNE (`src/unit.c:2003`) doesn't set `targetAttack` — the previous session's `createBullet` fix removed the write but left the old test assertion.
+
+**Key file changes this session**:
+- `Code/Core/Sources/DuneIICore/Simulation/UnitPool.swift` — added 3 turret fields + `distanceToDestination`.
+- `Code/Core/Sources/DuneIICore/Simulation/WorldSnapshot.swift` — loads orientation[1] + distanceToDestination from save.
+- `Code/Core/Sources/DuneIICore/Simulation/Units.swift` — `setOrientation` handles level=1.
+- `Code/Core/Sources/DuneIICore/Simulation/Scheduler.swift` — `tickRotation` handles turret; `tickMovement` arrival gated on `perTickCadenceGatesEnabled`.
+- `Code/Core/Sources/DuneIICore/Scripting/Functions.swift` — `makeRotateUnit` added; `makeCalculateRouteUnit` resets `distanceToDestination = 0x7FFF`.
+- `Code/Core/Sources/DuneIICore/Scripting/FunctionTables.swift` — wired 0x3D.
+- `Code/Core/Tests/DuneIICoreTests/FireTests.swift` — targetAttack=0 for BULLET.
+
+**Uncommitted. Test status: 983/97 green, 0 warnings on clean build.**
+
+### Next step for session resume
+
+Try the quickest fix for tick 31: call `host.units.recount()` after `tickUnits` in `Scheduler.tick()` so the new `findArray` includes bullets allocated during script dispatch, then `tickMovement` picks them up. If that changes too much behavior (bullets process movement immediately vs. via the per-unit `Unit_Find` sequence OpenDUNE uses), fall back to explicitly running `tickMovement` for just the newly-allocated bullets. The allocation points are in `Units.createBullet` (called from `makeFireUnit`). Consider tracking `host.units.allocatedThisTick: [Int]` to run movement for only those.
+
+**Before investigating tick 31 drift further**: verify by dumping u13 state in Swift at tick 31 to confirm it IS allocated (just with `speedRemainder=0`). If it's NOT allocated, the root cause is different (Swift's u26 didn't fire — check Script_Unit_Rotate orientation convergence for u26 across ticks 28-31).
 
 Trace files (gitignored in `tmp/`):
 - `tmp/opendune_rng_trace.txt` — regenerated via rebuilt OpenDUNE binary at `Repositories/OpenDUNE/bin/opendune --parity-load=_SAVE007.DAT --parity-dump=tmp/save007_dump.jsonl --parity-ticks=1 --parity-data-dir=Repositories/patched_107_unofficial --parity-random-trace=tmp/opendune_rng_trace.txt`.

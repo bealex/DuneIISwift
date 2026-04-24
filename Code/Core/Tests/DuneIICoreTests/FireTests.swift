@@ -87,7 +87,8 @@ struct FireTests {
         let bullet = host.units[idx]
         #expect(bullet.type == 23)
         #expect(bullet.hitpoints == 10)
-        #expect(bullet.targetAttack == Scripting.EncodedIndex.unit(30).raw)
+        // OpenDUNE's BULLET arm (src/unit.c:2003) does not set targetAttack; stays 0.
+        #expect(bullet.targetAttack == 0)
         // Target position in currentDestination.
         #expect(bullet.currentDestinationX == 2688)
         #expect(bullet.currentDestinationY == 128)
