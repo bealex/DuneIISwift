@@ -260,6 +260,12 @@ extension Simulation {
                 h.credits = slot.credits
                 h.creditsStorage = slot.creditsStorage
                 h.creditsQuota = slot.creditsQuota
+                // `House_CalculatePowerAndCredit` recomputes these on
+                // each `tickHouse`; the save snapshot is authoritative
+                // between ticks so `tickPowerMaintenance` (which fires
+                // before the first `tickHouse`) has correct numbers.
+                h.powerProduction = slot.powerProduction
+                h.powerUsage = slot.powerUsage
                 houses[idx] = h
             }
 

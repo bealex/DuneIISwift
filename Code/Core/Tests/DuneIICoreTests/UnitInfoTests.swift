@@ -42,6 +42,40 @@ struct UnitInfoTests {
         #expect(Simulation.UnitInfo.lookup(27) == nil)
     }
 
+    @Test("Bullets / missiles / sandworm / frigate carry actionAI == ACTION_INVALID")
+    func bulletActionAIInvalid() {
+        // OpenDUNE `src/table/unitinfo.c:1391..1975`: every `isBullet`
+        // row plus SANDWORM + FRIGATE uses `ACTION_INVALID` for
+        // `actionAI`. `Unit_SetAction(u, ACTION_INVALID)` early-returns
+        // (`src/unit.c:502`), which is how fresh AI-spawned bullets
+        // retain the `Unit_Create`-default `ACTION_GUARD`.
+        for type: UInt8 in 18...26 {
+            let info = Simulation.UnitInfo.lookup(type)
+            #expect(info?.actionAI == Simulation.ActionID.invalid,
+                    "type=\(type) should have actionAI=INVALID")
+        }
+    }
+
+    @Test("resolvedInitialAction picks actionsPlayer[3] for the player and falls back to GUARD on INVALID")
+    func resolvedInitialActionBranches() {
+        let bulletInfo = Simulation.UnitInfo.lookup(23)!  // BULLET: actionAI=INVALID, actionsPlayer[3]=STOP
+        // Player house (Atreides). `actionsPlayer[3] = STOP`, non-invalid,
+        // so it wins. Matches OpenDUNE's Unit_Create branch taken on a
+        // player-spawned bullet.
+        let playerHost = Scripting.Host()
+        playerHost.playerHouseID = Simulation.House.atreides
+        #expect(Simulation.Units.resolvedInitialAction(
+            info: bulletInfo, houseID: Simulation.House.atreides, host: playerHost
+        ) == Simulation.ActionID.stop)
+        // AI-spawned bullet (house != player). `actionAI = INVALID`
+        // triggers the `Unit_SetAction` early-return path, so the
+        // bullet keeps the `ACTION_GUARD` that Unit_Create wrote
+        // before the SetAction call.
+        #expect(Simulation.Units.resolvedInitialAction(
+            info: bulletInfo, houseID: Simulation.House.harkonnen, host: playerHost
+        ) == Simulation.ActionID.guard_)
+    }
+
     @Test("StructureInfo has 19 entries covering every StructureType")
     func structureTableSize() {
         #expect(Simulation.StructureInfo.table.count == 19)

@@ -43,6 +43,49 @@ struct PathfinderTests {
         #expect(route.size > 0, "expected a non-empty route to an adjacent tile")
     }
 
+    @Test("retargetImpassableDst=false matches OpenDUNE when src is isolated")
+    func findRouteParityNoRetarget() {
+        // Ports the SAVE007 u38 scenario: unit stranded outside the
+        // playable rect (every 8-neighbour of src scores 256) trying
+        // to reach a target whose tile is also impassable. In
+        // gameplay mode, `resolveReachable` slides the destination to
+        // a passable neighbour of dst, but the pathfinder still can't
+        // step out of src — so both modes must produce a zero-step
+        // result. The test pins that invariant plus the orthogonal
+        // case (retarget=true + passable dst island): gameplay finds
+        // a redirected route, parity does not (the greedy walker
+        // aims at the impassable original dst and is immediately
+        // rebuffed at every surrounding tile).
+        let src = UInt16(20 * 64 + 20)
+        let dst = UInt16(30 * 64 + 30)
+        // Island of passable tiles around dst only; src and everything
+        // else (including src's 8-neighbours) is impassable.
+        let passable: Set<UInt16> = [
+            src,
+            UInt16(29 * 64 + 30), UInt16(30 * 64 + 29),
+            UInt16(29 * 64 + 29), UInt16(31 * 64 + 30),
+            UInt16(30 * 64 + 31), UInt16(31 * 64 + 31),
+            UInt16(29 * 64 + 31), UInt16(31 * 64 + 29)
+        ]
+        let scorer: Simulation.Pathfinder.TileEnterScore = { packed, _ in
+            passable.contains(packed) ? 128 : 256
+        }
+        // Both modes bail because src has no escape — the observable
+        // difference is purely "did resolveReachable run." Either
+        // result must be an empty route (`buffer[0] == 0xFF`) so
+        // `Script_Unit_CalculateRoute` clears `targetMove`.
+        let strict = Simulation.Pathfinder.findRoute(
+            src: src, dst: dst, bufferSize: 40, score: scorer,
+            retargetImpassableDst: false
+        )
+        #expect(strict.buffer[0] == 0xFF)
+        let gameplay = Simulation.Pathfinder.findRoute(
+            src: src, dst: dst, bufferSize: 40, score: scorer,
+            retargetImpassableDst: true
+        )
+        #expect(gameplay.buffer[0] == 0xFF)
+    }
+
     @Test("packedTile converts pos32 pixel coords to tile indexes")
     func packedTileConversion() {
         // Tile (5, 3) centred → pos32 (5*256+128, 3*256+128) = (1408, 896).

@@ -29,8 +29,17 @@ extension Simulation {
 
         /// Top-level entry. `bufferSize` should be 40 for unit scripts
         /// (OpenDUNE allocates a 42-byte stack buffer then passes 40).
+        ///
+        /// `retargetImpassableDst` (gameplay default `true`) controls the
+        /// non-OpenDUNE ergonomic where an impassable destination is
+        /// slid to the nearest passable neighbour. Parity mode flips it
+        /// off — `Script_Unit_Pathfinder` doesn't retarget, it just
+        /// returns routeSize=0 and lets `Script_Unit_CalculateRoute`
+        /// clear `targetMove`.
         public static func findRoute(
-            src: UInt16, dst: UInt16, bufferSize: Int, score: TileEnterScore
+            src: UInt16, dst: UInt16, bufferSize: Int,
+            score: TileEnterScore,
+            retargetImpassableDst: Bool = true
         ) -> Route {
             var res = Route(buffer: [UInt8](repeating: 0xFF, count: bufferSize + 1), score: 0, size: 0)
             let capacity = bufferSize - 1
@@ -44,7 +53,9 @@ extension Simulation {
             // attack loop runs the fire script once the unit gets
             // within range; our partial port benefits from the
             // pathfinder stopping adjacent instead.
-            let dst = Self.resolveReachable(src: src, dst: dst, score: score)
+            let dst = retargetImpassableDst
+                ? Self.resolveReachable(src: src, dst: dst, score: score)
+                : dst
             var packedCur = src
 
             while res.size < capacity {

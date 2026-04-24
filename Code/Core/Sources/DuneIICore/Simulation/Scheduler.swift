@@ -181,6 +181,14 @@ extension Simulation {
         private var nextUnitRotationGate: UInt32 = 0
         private var unitRotationEnabledThisTick: Bool = false
 
+        /// Next `timerGame` at which `tickHousePowerMaintenance` fires.
+        /// Port of OpenDUNE `g_tickHousePowerMaintenance`
+        /// (`src/house.c:38`). Init path in `opendune.c:1503` pins it
+        /// to `max(g_timerGame + 70, saved)` on load — for a fresh
+        /// save-load (g_timerGame = 0, saved = 0) that's 70 ticks.
+        /// Each fire reschedules at `+ 10800` ticks.
+        private var nextHousePowerMaintenanceGate: UInt32 = 70
+
         /// STARPORT slice 5b — live per-game stock. Indexed by
         /// `UnitInfo.typeID` (27 entries). Seeded from
         /// `Scenario.choamInventory` at load; mutated by order commits
@@ -752,8 +760,6 @@ extension Simulation {
             // gate (`src/unit.c:199..217`) — fires every 3 ticks, not
             // every tick. Match that cadence.
             if unitMovementEnabledThisTick { tickFireCooldowns() }
-            // Infantry walk-cycle animation advance.
-            tickSpriteOffsets()
             // Explosion frame decrement — simple lifetime tick for the
             // presentation layer. Matches OpenDUNE's `Explosion_Tick`
             // reducing each active slot's `timeOut`, but simplified to
@@ -780,6 +786,15 @@ extension Simulation {
             // step; zeros `orientationSpeed` on arrival. Cadence is
             // gameSpeed-dependent (2..8 ticks). Runs per-unit.
             if unitRotationEnabledThisTick { tickRotation() }
+            // Infantry walk-cycle animation advance. OpenDUNE runs
+            // `tickUnknown5` AFTER `tickMovement` (src/unit.c:239) — so
+            // when a foot unit reaches its destination this tick,
+            // `Unit_MovementTick` clears `speed` FIRST and the sprite
+            // gate `FOOT && speed != 0` correctly refuses to bump. Our
+            // earlier ordering ran the sprite pass before movement,
+            // which snuck in one extra bump on the arrival tick (the
+            // SAVE007 u37 tick-76 drift).
+            tickSpriteOffsets()
             // Carryall arrival drop-off (slice 8c). tickMovement snaps
             // an in-transport carryall to its destination refinery and
             // clears `targetMove`; we pick that up here and detach the
@@ -859,7 +874,33 @@ extension Simulation {
             if starportAvailabilityTickCounter % Self.starportAvailabilityCadenceTicks == 0 {
                 tickStarportAvailability()
             }
+            // Per-house power-maintenance drain. Port of
+            // `src/house.c:270..273`:
+            //   uint16 cost = (h->powerUsage / 32) + 1;
+            //   h->credits -= min(h->credits, cost);
+            // OpenDUNE runs this at the end of `GameLoop_House`; we
+            // match that ordering by firing after all structure /
+            // starport passes have settled.
+            tickHousePowerMaintenance()
             host.currentObject = nil
+        }
+
+        private mutating func tickHousePowerMaintenance() {
+            guard nextHousePowerMaintenanceGate <= timerGame else { return }
+            nextHousePowerMaintenanceGate = timerGame &+ 10800
+            for idx in host.houses.findArray {
+                var h = host.houses[idx]
+                let cost = (h.powerUsage / 32) &+ 1
+                let drain = min(h.credits, cost)
+                if drain != 0 {
+                    h.credits &-= drain
+                    host.houses[idx] = h
+                    Log.debug(
+                        "power-maintenance house=\(idx) usage=\(h.powerUsage) cost=\(cost) drain=\(drain) credits=\(h.credits)",
+                        tracer: .label("economy")
+                    )
+                }
+            }
         }
 
         /// Attack-hold pass. OpenDUNE's UNIT.EMC handles this via per-

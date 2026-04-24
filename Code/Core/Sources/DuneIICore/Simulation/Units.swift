@@ -7,6 +7,31 @@ extension Simulation {
     /// without reaching into `UnitPool` internals.
     public enum Units {
 
+        /// Resolves a freshly-allocated unit's `actionID` the same way
+        /// `Unit_Create` does at `src/unit.c:462`:
+        ///
+        ///     Unit_SetAction(u, (houseID == g_playerHouseID)
+        ///                         ? ui->o.actionsPlayer[3]
+        ///                         : ui->actionAI);
+        ///
+        /// `Unit_SetAction` short-circuits on `ACTION_INVALID`
+        /// (`src/unit.c:502`), so when the chosen action is invalid we
+        /// fall back to the default `ACTION_GUARD` written earlier in
+        /// `Unit_Create` (`src/unit.c:425`). Returns the final
+        /// `actionID` byte to write into the slot.
+        static func resolvedInitialAction(
+            info: UnitInfo, houseID: UInt8, host: Scripting.Host
+        ) -> UInt8 {
+            let playerHouseID = host.playerHouseID ?? Simulation.House.invalidID
+            let action = (houseID == playerHouseID)
+                ? (info.actionsPlayer.count >= 4 ? info.actionsPlayer[3] : info.actionAI)
+                : info.actionAI
+            if action == ActionID.invalid {
+                return ActionID.guard_
+            }
+            return action
+        }
+
         /// Narrow port of `Unit_Create` covering the factory-completion
         /// spawn path (slice 5b-build): allocate a unit of `type` owned
         /// by `houseID` at `(tileX, tileY)`. Returns the pool slot
@@ -250,10 +275,14 @@ extension Simulation {
                 bullet.orientationCurrent = Int8(bitPattern: orientation)
                 bullet.orientationTarget = Int8(bitPattern: orientation)
                 bullet.orientationSpeed = 0
-                // Match OpenDUNE's `Unit_Create` → `Unit_SetAction(u, actionAI)`
-                // at `src/unit.c:462`. Bullets have `actionAI = STOP`, so
-                // the post-create action is 7, not 0 (ATTACK).
-                bullet.actionID = info.actionAI
+                // Port of `Unit_Create` (`src/unit.c:425` + `src/unit.c:462`):
+                // the initial `actionID = ACTION_GUARD` write is followed
+                // by `Unit_SetAction(u, player ? actionsPlayer[3] : actionAI)`.
+                // For bullets / missiles, `actionAI = ACTION_INVALID`, which
+                // makes `Unit_SetAction` early-return at `src/unit.c:502`
+                // and leaves `actionID = ACTION_GUARD`. The player arm
+                // picks `actionsPlayer[3]` (= STOP) which DOES write.
+                bullet.actionID = resolvedInitialAction(info: info, houseID: houseID, host: host)
                 bullet.targetAttack = target
                 bullet.hitpoints = damage
                 bullet.currentDestinationX = targetPos.x
@@ -298,10 +327,11 @@ extension Simulation {
                 bullet.orientationCurrent = Int8(bitPattern: orientation)
                 bullet.orientationTarget = Int8(bitPattern: orientation)
                 bullet.orientationSpeed = 0
-                // Match OpenDUNE's `Unit_Create` → `Unit_SetAction(u, actionAI)`
-                // at `src/unit.c:462`. BULLET + SONIC_BLAST both have
-                // `actionAI = STOP`.
-                bullet.actionID = info.actionAI
+                // Same `Unit_Create` semantics as the missile arm above:
+                // BULLET + SONIC_BLAST both carry `actionAI = INVALID`,
+                // so an AI-spawned bullet keeps the default `GUARD`; a
+                // player-spawned bullet gets `actionsPlayer[3] = STOP`.
+                bullet.actionID = resolvedInitialAction(info: info, houseID: houseID, host: host)
                 // OpenDUNE's UNIT_BULLET / UNIT_SONIC_BLAST arm at
                 // `src/unit.c:2003..2029` does NOT set `targetAttack`;
                 // only the missile arm (cases 18..22) does. The bullet

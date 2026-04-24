@@ -106,6 +106,59 @@ extension Simulation {
                 guard Int(packed) < snapshotLandscape.count else { return 0 }
                 return UInt8(snapshotLandscape[Int(packed)].rawValue)
             }
+            // Playable tile rect for this save's `mapScale`
+            // (`g_mapInfos[mapScale]`, `src/map.c:57`). Needed by the
+            // `Unit_GetTileEnterScore` port below — tiles outside the
+            // rect score 256 for non-winger movers, which makes the
+            // pathfinder return empty for units stranded outside
+            // (e.g. SAVE007 u38 at (17,62)). Without this, our
+            // fallback `return 128` let findRoute succeed where
+            // OpenDUNE's bailed, and `Script_Unit_CalculateRoute`
+            // wrote `orientation0Target` from a bogus route[0].
+            let mapScale: UInt16 = game?.info.scenario.mapScale ?? 1
+            let playableRect: (originX: Int, width: Int, originY: Int, height: Int) = {
+                switch mapScale {
+                case 0: return (1, 62, 1, 62)
+                case 2: return (21, 21, 21, 21)
+                default: return (16, 32, 16, 32)
+                }
+            }()
+            // Port of `Unit_GetTileEnterScore` (`src/unit.c:2335..2387`),
+            // trimmed to the checks the pathfinder needs for parity:
+            //   - MOVEMENT_WINGER bypasses the playable-rect check; all
+            //     other movement types score 256 outside the rect.
+            //   - Landscape speed from `LandscapeInfo.table`, indexed
+            //     by movement type. `0` → score 256 (impassable).
+            //   - Diagonal step (`orient8 & 1 != 0`) gets a speed
+            //     penalty (res -= res/4 + res/8).
+            //   - Final step: `res ^ 0xFF` inverts the speed to an
+            //     approximate cost.
+            // Structure-occupancy is handled implicitly: the
+            // `landscapeAt` closure returns `LandscapeType.structure`
+            // (`rawValue=12`), and `LandscapeInfo[12].movementSpeed`
+            // is 0 for every non-winger type, which already trips the
+            // `res == 0 → 256` branch.
+            let tileEnterScore: (_ packed: UInt16, _ orient8: UInt8, _ movementType: Simulation.MovementType) -> Int32 = { packed, orient8, movementType in
+                let tx = Int(packed & 0x3F)
+                let ty = Int((packed >> 6) & 0x3F)
+                if movementType != .winger {
+                    if tx < playableRect.originX || tx >= playableRect.originX + playableRect.width ||
+                       ty < playableRect.originY || ty >= playableRect.originY + playableRect.height {
+                        return 256
+                    }
+                }
+                let lst = Int(landscapeAt(packed))
+                guard lst >= 0, lst < Simulation.LandscapeInfo.table.count else { return 256 }
+                let land = Simulation.LandscapeInfo.table[lst]
+                let mIdx = Int(movementType.rawValue)
+                guard mIdx < land.movementSpeed.count else { return 256 }
+                var res = Int32(land.movementSpeed[mIdx])
+                if res == 0 { return 256 }
+                if (orient8 & 1) != 0 {
+                    res -= res / 4 + res / 8
+                }
+                return res ^ 0xFF
+            }
             let host = Scripting.Host(
                 units: snapshot.units,
                 structures: snapshot.structures,
@@ -115,9 +168,37 @@ extension Simulation {
                 currentObject: nil,
                 texts: [],
                 textLog: [],
+                tileEnterScore: tileEnterScore,
                 landscapeAt: landscapeAt,
                 spiceMap: spiceMap
             )
+            // OpenDUNE's `Script_Unit_Pathfinder` never retargets an
+            // impassable destination — it returns routeSize=0 and lets
+            // `Script_Unit_CalculateRoute` clear `u->targetMove`. Our
+            // gameplay default slides to the nearest passable neighbour
+            // so hunting enemies don't halt one tile short of a CYARD;
+            // parity needs the faithful behaviour.
+            host.retargetImpassableDst = false
+            // `g_playerHouseID` analogue. OpenDUNE derives this from
+            // the scenario filename at load; the save itself doesn't
+            // record it. Heuristic: pick the lowest-indexed house that
+            // owns a CYARD (structure type 8) — every scenario we care
+            // about has a unique player CYARD. Falls back to Atreides
+            // (1) when no CYARD exists so the default isn't silently
+            // 0 (Harkonnen). Wired so `Unit_Create`'s
+            // `Unit_SetAction(u, houseID == player ? actionsPlayer[3] : actionAI)`
+            // branches correctly for freshly-created bullets — the
+            // difference is visible on `actionID` because bullets have
+            // `actionAI = ACTION_INVALID`.
+            if host.playerHouseID == nil {
+                for s in host.structures.slots where s.isUsed && s.type == 8 {
+                    host.playerHouseID = s.houseID
+                    break
+                }
+                if host.playerHouseID == nil {
+                    host.playerHouseID = Simulation.House.atreides
+                }
+            }
             let source = Scripting.RandomSource(
                 lcgSeed: UInt16(truncatingIfNeeded: rngSeed),
                 toolsSeed: rngSeed
@@ -387,8 +468,10 @@ extension Simulation {
             try eq(tick, "house", g.index, "creditsQuota",   g.creditsQuota,   s.creditsQuota)
             try eq(tick, "house", g.index, "starportTimeLeft",  g.starportTimeLeft,  s.starportTimeLeft)
             try eq(tick, "house", g.index, "starportLinkedID", g.starportLinkedID, s.starportLinkedID)
+            try eq(tick, "house", g.index, "powerProduction", g.powerProduction, s.powerProduction)
+            try eq(tick, "house", g.index, "powerUsage",      g.powerUsage,      s.powerUsage)
             // Skipped (Swift side not yet tracking these):
-            //   powerProduction, powerUsage, unitCount, unitCountMax, harvestersIncoming
+            //   unitCount, unitCountMax, harvestersIncoming
         }
 
         private static func compareStructure(

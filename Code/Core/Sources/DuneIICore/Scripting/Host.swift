@@ -59,6 +59,15 @@ extension Scripting {
         /// 4 / Fastest); gameplay leaves it at 2 / Normal.
         public var gameSpeed: UInt8 = 2
 
+        /// When `true`, `Script_Unit_CalculateRoute` retargets an
+        /// impassable destination to the nearest passable neighbour
+        /// (via `Pathfinder.resolveReachable`). This is a gameplay
+        /// ergonomic — HUNT-action enemies otherwise halt one tile
+        /// short because we haven't fully ported `Unit_StartMovement`'s
+        /// adjacent-attack branch. OpenDUNE's `Script_Unit_Pathfinder`
+        /// never retargets, so the parity harness flips this off.
+        public var retargetImpassableDst: Bool = true
+
         /// Runtime spice grid. When non-nil, the scheduler's harvesting
         /// pass reads `spiceMap.landscapeByte` to decide whether a
         /// harvester's current tile holds spice, and writes level

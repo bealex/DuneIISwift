@@ -45,6 +45,13 @@ extension Simulation {
         public static let hunt: UInt8 = 11
         public static let deploy: UInt8 = 12
         public static let destruct: UInt8 = 13
+        /// `ACTION_INVALID` (`src/unit.h:99`) — used as the `actionAI`
+        /// for bullets, missiles, sandworms, and the frigate. When
+        /// `Unit_SetAction` is called with this value it early-returns
+        /// (`src/unit.c:502`), so freshly-created units of those types
+        /// keep the `ACTION_GUARD` default `Unit_Create` writes at
+        /// `src/unit.c:425`.
+        public static let invalid: UInt8 = 0xFF
     }
 
     /// Per-unit-type stats. Trimmed to the fields our wired host functions
@@ -427,11 +434,19 @@ extension Simulation {
                      upgradeLevelRequired: 1,
                      buildTime: 80, buildCredits: 900),
             // 18 MISSILE_HOUSE
+            // `actionAI = ACTION_INVALID` here (and on every bullet /
+            // missile / sandworm / frigate row below) mirrors
+            // `src/table/unitinfo.c:1391` and the others of their
+            // kind. `Unit_SetAction` early-returns on INVALID
+            // (`src/unit.c:502`), so `Unit_Create`'s default
+            // `actionID = ACTION_GUARD` at `src/unit.c:425` stays put
+            // for AI-spawned bullets — the player arm instead picks
+            // `actionsPlayer[3]` (= STOP) via the `Unit_Create` tail.
             UnitInfo(hitpoints: 70, fireDistance: 15, fireDelay: 0, damage: 100,
                      movementType: .winger, hasTurret: false, explodeOnDeath: false,
                      movingSpeedFactor: 250, turningSpeed: 2,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
-                     actionAI: ActionID.stop,
+                     actionAI: ActionID.invalid,
                      groundSpriteID: 278, displayMode: .rocket,
                      priority: false, targetAir: false, priorityBuild: 0, priorityTarget: 0,
                      indexStart: 12, indexEnd: 15, bulletType: nil, firesTwice: false,
@@ -443,7 +458,7 @@ extension Simulation {
                      movingSpeedFactor: 200, turningSpeed: 2,
                      animationSpeed: 7,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
-                     actionAI: ActionID.stop,
+                     actionAI: ActionID.invalid,
                      groundSpriteID: 258, displayMode: .rocket,
                      priority: false, targetAir: false, priorityBuild: 0, priorityTarget: 0,
                      indexStart: 12, indexEnd: 15, bulletType: nil, firesTwice: false,
@@ -454,7 +469,7 @@ extension Simulation {
                      movingSpeedFactor: 160, turningSpeed: 8,
                      animationSpeed: 7,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
-                     actionAI: ActionID.stop,
+                     actionAI: ActionID.invalid,
                      groundSpriteID: 258, displayMode: .rocket,
                      priority: false, targetAir: false, priorityBuild: 0, priorityTarget: 0,
                      indexStart: 12, indexEnd: 15, bulletType: nil, firesTwice: false,
@@ -465,7 +480,7 @@ extension Simulation {
                      movingSpeedFactor: 200, turningSpeed: 2,
                      animationSpeed: 7,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
-                     actionAI: ActionID.stop,
+                     actionAI: ActionID.invalid,
                      groundSpriteID: 258, displayMode: .rocket,
                      priority: false, targetAir: false, priorityBuild: 0, priorityTarget: 0,
                      indexStart: 12, indexEnd: 15, bulletType: nil, firesTwice: false,
@@ -476,7 +491,7 @@ extension Simulation {
                      movingSpeedFactor: 180, turningSpeed: 5,
                      animationSpeed: 7,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
-                     actionAI: ActionID.stop,
+                     actionAI: ActionID.invalid,
                      groundSpriteID: 268, displayMode: .rocket,
                      priority: false, targetAir: false, priorityBuild: 0, priorityTarget: 0,
                      indexStart: 12, indexEnd: 15, bulletType: nil, firesTwice: false,
@@ -486,7 +501,7 @@ extension Simulation {
                      movementType: .winger, hasTurret: false, explodeOnDeath: true,
                      movingSpeedFactor: 250, turningSpeed: 0,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
-                     actionAI: ActionID.stop,
+                     actionAI: ActionID.invalid,
                      groundSpriteID: 174, displayMode: .singleFrame,
                      priority: false, targetAir: false, priorityBuild: 0, priorityTarget: 0,
                      indexStart: 12, indexEnd: 15, bulletType: nil, firesTwice: false,
@@ -497,7 +512,7 @@ extension Simulation {
                      movingSpeedFactor: 200, turningSpeed: 0,
                      animationSpeed: 7,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
-                     actionAI: ActionID.stop,
+                     actionAI: ActionID.invalid,
                      groundSpriteID: 160, displayMode: .singleFrame,
                      priority: false, targetAir: false, priorityBuild: 0, priorityTarget: 0,
                      indexStart: 12, indexEnd: 15, bulletType: nil, firesTwice: false,
@@ -507,7 +522,7 @@ extension Simulation {
                      movementType: .slither, hasTurret: false, explodeOnDeath: false,
                      movingSpeedFactor: 35, turningSpeed: 3,
                      actionsPlayer: [ActionID.attack, ActionID.attack, ActionID.attack, ActionID.attack],
-                     actionAI: ActionID.hunt,
+                     actionAI: ActionID.invalid,
                      groundSpriteID: 161, displayMode: .unit,
                      priority: true, targetAir: false, priorityBuild: 0, priorityTarget: 0,
                      indexStart: 16, indexEnd: 17, bulletType: 25, firesTwice: false,
@@ -518,7 +533,7 @@ extension Simulation {
                      movementType: .winger, hasTurret: false, explodeOnDeath: false,
                      movingSpeedFactor: 130, turningSpeed: 2,
                      actionsPlayer: [ActionID.stop, ActionID.stop, ActionID.stop, ActionID.stop],
-                     actionAI: ActionID.stop,
+                     actionAI: ActionID.invalid,
                      groundSpriteID: 298, displayMode: .unit,
                      priority: true, targetAir: false, priorityBuild: 0, priorityTarget: 0,
                      indexStart: 11, indexEnd: 11, bulletType: nil, firesTwice: false,
