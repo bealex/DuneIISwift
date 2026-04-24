@@ -335,7 +335,8 @@ extension Scripting {
                 Simulation.Units.setSpeed(
                     poolIndex: poolIndex,
                     speedPercent: speed,
-                    units: &host.units
+                    units: &host.units,
+                    gameSpeed: host.gameSpeed
                 )
                 return speed
             }
@@ -350,7 +351,8 @@ extension Scripting {
                 Simulation.Units.setSpeed(
                     poolIndex: poolIndex,
                     speedPercent: 0,
-                    units: &host.units
+                    units: &host.units,
+                    gameSpeed: host.gameSpeed
                 )
                 return 0
             }
@@ -1041,14 +1043,21 @@ extension Scripting {
                         let land = Simulation.LandscapeInfo.table[landscapeIndex]
                         let mIndex = Int(info.movementType.rawValue)
                         if mIndex < land.movementSpeed.count {
+                            // Port of `Unit_StartMovement`'s speed block
+                            // at `src/unit.c:1095..1106`:
+                            //   speed = g_table_landscapeInfo[type].movementSpeed[ui->movementType];
+                            //   if ((ui->o.hitpoints / 2) > unit->o.hitpoints
+                            //       && ui->movementType != MOVEMENT_WINGER)
+                            //     speed -= speed / 4;
+                            //   Unit_SetSpeed(unit, speed);
+                            // The `byScenario * 192/256` scaling is a
+                            // `Script_Unit_SetSpeed`-only concern
+                            // (`src/script/unit.c:388`); Unit_StartMovement
+                            // passes `speed` straight through.
                             var speed = UInt16(land.movementSpeed[mIndex])
                             if info.movementType != .winger,
-                               info.hitpoints != 0,
-                               Int(updated.hitpoints) * 2 < Int(info.hitpoints) {
+                               (UInt16(info.hitpoints) / 2) > UInt16(updated.hitpoints) {
                                 speed &-= speed / 4
-                            }
-                            if !updated.byScenario {
-                                speed = (speed &* 192) / 256
                             }
                             // Write updated slot before setSpeed so it
                             // sees the current HP / amount.
@@ -1056,7 +1065,8 @@ extension Scripting {
                             Simulation.Units.setSpeed(
                                 poolIndex: poolIndex,
                                 speedPercent: speed,
-                                units: &host.units
+                                units: &host.units,
+                                gameSpeed: host.gameSpeed
                             )
                             updated = host.units[poolIndex]
                         }
@@ -1075,6 +1085,21 @@ extension Scripting {
                     host.units[poolIndex] = updated
                     return 1
                 }
+
+                // Port of Unit_StartMovement's currentDestination write
+                // (`src/unit.c:1118`):
+                //   unit->currentDestination = position;
+                // where `position = Tile_MoveByOrientation(o.position,
+                // orientation)`. With orientation octant-snapped to
+                // `route[0] * 32`, Tile_MoveByOrientation steps by
+                // exactly 256 pos32 pixels along the octant — not the
+                // sin-approx step that `Pos32.moved` uses. Use the
+                // matching `Pos32.movedByOrientation` helper.
+                let stepOrient = UInt8(updated.route[0] &* 32)
+                let fromPos = Pos32(x: updated.positionX, y: updated.positionY)
+                let nextCenter = Pos32.movedByOrientation(fromPos, orientation: stepOrient)
+                updated.currentDestinationX = nextCenter.x
+                updated.currentDestinationY = nextCenter.y
 
                 // Consume one step (memmove route[1..] down by one). The
                 // scheduler's `tickMovement` advances per-tile position

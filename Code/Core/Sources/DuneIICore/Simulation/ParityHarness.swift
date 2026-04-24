@@ -77,6 +77,7 @@ extension Simulation {
             rngSeed: UInt32 = 0,
             seedScriptsFrom game: Formats.Save.Game? = nil,
             spiceMap: Simulation.SpiceMap? = nil,
+            snapshotLandscape: [LandscapeType] = [],
             rngTrace: RNGTrace? = nil
         ) throws {
             let goldenTicks = try parseGolden(golden)
@@ -87,6 +88,24 @@ extension Simulation {
                 )
             }
 
+            // Landscape oracle: `Script_Unit_CalculateRoute`'s SetSpeed
+            // block (port of `Unit_StartMovement` at `src/unit.c:1088`)
+            // reads `Map_GetLandscapeType` to pick `movementSpeed[type]`
+            // from the landscape info table. Without this closure, the
+            // SetSpeed block short-circuits and `movingSpeed` stays 0,
+            // diverging from OpenDUNE on any unit that CalculateRoute
+            // routed a step. Pulls from `snapshotLandscape` — the
+            // harness builder passes it in as the matching LandscapeType
+            // closure for each tile. DO NOT reuse `spiceMap?[packed]` —
+            // that closure returns `SpiceMap.Level` (0..3), not
+            // `LandscapeType` (0..14), and conflating the two made
+            // normalSand (`LandscapeType.rawValue=0`) look like
+            // partialRock (`rawValue=1` in the landscape table but
+            // `SpiceMap.Level.bare=1` on the `SpiceMap` side).
+            let landscapeAt: (UInt16) -> UInt8 = { packed in
+                guard Int(packed) < snapshotLandscape.count else { return 0 }
+                return UInt8(snapshotLandscape[Int(packed)].rawValue)
+            }
             let host = Scripting.Host(
                 units: snapshot.units,
                 structures: snapshot.structures,
@@ -96,6 +115,7 @@ extension Simulation {
                 currentObject: nil,
                 texts: [],
                 textLog: [],
+                landscapeAt: landscapeAt,
                 spiceMap: spiceMap
             )
             let source = Scripting.RandomSource(
@@ -134,6 +154,7 @@ extension Simulation {
             // golden's tick-0 entry so `Tools_AdjustToGameSpeed` scales
             // `speedPerTick` increments the same way OpenDUNE did.
             scheduler.gameSpeed = goldenTicks[0].gameSpeed
+            host.gameSpeed = goldenTicks[0].gameSpeed
             scheduler.viewportPackedPosition = goldenTicks[0].viewportPosition
             // OpenDUNE's per-tick opcode budget: `SCRIPT_UNIT_OPCODES_PER_TICK + 2`
             // (= 52, `src/unit.c:292` + `src/script/script.h:7`). Our

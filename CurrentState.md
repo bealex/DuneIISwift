@@ -11,9 +11,9 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**🎯 SAVE007 parity walks to tick 11 (shipped 2026-04-23) via sprite-animation timer gate.** Frontier now at `unit[37].movingSpeed=0` (expected 112). u37 is a trooper in HUNT, off-viewport (3-opcode cap). Likely cause: `Script_Unit_SetSpeed` in u37's 3-opcode window isn't landing the 112 write, or we clear `movingSpeed` somewhere we shouldn't.
+**🎯 SAVE007 parity walks to tick 25 (shipped 2026-04-23) via Unit_StartMovement port + landscape-oracle fix.** Frontier now at `unit[36].positionY=7552` (expected 7568). u36 is a soldier (type 4) in HUNT — movement subpixel math is off by 16 pos32 pixels (one tile) at tick 25.
 
-Next concrete step: script-trace u37 on OpenDUNE at tick 11 (`--parity-script-trace=... --parity-script-unit=37`) and the same state on Swift to compare the opcode-by-opcode flow. u37 off-viewport so only 3 opcodes execute per tick — a narrow window to diff. SAVE001 tick-1 harvester drift (`unit[22].actionID=6 vs 5`) still open.
+Next concrete step: dump u36's state across ticks 20-25 on both engines and compare `positionY`, `speedRemainder`, and `currentDestinationY` deltas. Likely cause is a single-tile off-by-one in `tickMovement` step accumulation (subpixel overflow timing). SAVE001 tick-1 harvester drift (`unit[22].actionID=6 vs 5`) still open.
 
 Trace files (gitignored in `tmp/`):
 - `tmp/opendune_rng_trace.txt` — regenerated via rebuilt OpenDUNE binary at `Repositories/OpenDUNE/bin/opendune --parity-load=_SAVE007.DAT --parity-dump=tmp/save007_dump.jsonl --parity-ticks=1 --parity-data-dir=Repositories/patched_107_unofficial --parity-random-trace=tmp/opendune_rng_trace.txt`.
@@ -117,6 +117,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
+
+- **2026-04-23 — SAVE007 parity frontier tick 11 → tick 25 via `Unit_StartMovement` port + landscape-oracle fix.** Five stacked fixes: (1) `ParityHarness.runAgainst` landscape oracle was reading `SpiceMap.Level` rawValue as `LandscapeType` rawValue — fixed by adding `snapshotLandscape: [LandscapeType]` parameter built from `resolver.landscapeType(...)`. (2) Removed spurious `byScenario * 192/256` scaling from `makeCalculateRouteUnit`'s SetSpeed block (OpenDUNE's Unit_StartMovement doesn't apply it). (3) Fixed HP-half check to `(info.hitpoints / 2) > hp` matching OpenDUNE. (4) Added `Host.gameSpeed` + plumbed through all `setSpeed` / `Stop` / `CalculateRoute` call sites — parity harness syncs both `scheduler.gameSpeed` and `host.gameSpeed`. (5) Ported `Unit_StartMovement`'s `currentDestination = Tile_MoveByOrientation(pos, orientation)` via new `Pos32.movedByOrientation(_:orientation:)` (exact 256-pixel octant offsets, unlike the sin-approx `Pos32.moved`). Frontier: tick 25 `unit[36].positionY=7552` (expected 7568) — subpixel step math off by one tile. **982 / 96 / zero warnings.**
 
 - **2026-04-23 — SAVE007 parity frontier tick 6 → tick 11 via sprite-animation `timer` gate.** Ported OpenDUNE's `tickUnknown5` pacing from `src/unit.c:240..286`: `timer: UInt16` on `UnitSlot`, `animationSpeed: UInt16` on `UnitInfo` (27 table values from `src/table/unitinfo.c`), `tickSpriteOffsets` now decrements `timer` when non-zero and only animates + resets timer when timer hits 0. `compareUnit` flipped `timer` out of the skip-list. Frontier: `unit[37].movingSpeed=0` (expected 112) — trooper off-viewport (3-opcode cap), Script_Unit_SetSpeed investigation next. **982 / 96 / zero warnings.**
 
