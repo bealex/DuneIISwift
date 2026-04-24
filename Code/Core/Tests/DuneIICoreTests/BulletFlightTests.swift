@@ -150,6 +150,112 @@ struct BulletFlightTests {
         #expect(active.isEmpty)
     }
 
+    @Test("createBullet aimed at a multi-tile structure uses layout-adjusted centre for direction (Tools_Index_GetTile parity)")
+    func createBulletUsesStructureLayoutCentre() {
+        // CYARD (type 8, layout s2x2) at anchor (7680, 6400). OpenDUNE's
+        // `Unit_CreateBullet` (`src/unit.c:1962`) uses
+        // `Tools_Index_GetTile(target)` which returns anchor +
+        // layoutTileDiff — for s2x2 that's anchor + (0x100, 0x100) =
+        // (7936, 6656). Orientation from (7740, 6820) to layout centre
+        // ≈ NE (32). Using raw anchor (7680, 6400) would give ~N-NE
+        // (~8-12), so the bullet flies toward the CYARD's NW corner
+        // instead of its body.
+        let host = makeHost()
+        // Place the CYARD.
+        _ = host.structures.allocate(at: 0, type: 8, houseID: 1)
+        var s = host.structures[0]
+        s.positionX = 7680
+        s.positionY = 6400
+        host.structures[0] = s
+
+        // Shooter stamp — not strictly required for createBullet but
+        // makes `originEncoded` consistent.
+        _ = host.units.allocate(at: 50, type: 4, houseID: 2) // SOLDIER, enemy
+        var sh = host.units[50]
+        sh.positionX = 7740
+        sh.positionY = 6820
+        host.units[50] = sh
+
+        let bulletIdx = Simulation.Units.createBullet(
+            position: Pos32(x: 7740, y: 6820),
+            type: 23, houseID: 2, damage: 3,
+            target: Scripting.EncodedIndex.structure(0).raw,
+            host: host
+        )!
+        let bullet = host.units[bulletIdx]
+        // Orientation should be ~32 (NE) for a layout-centre target, not
+        // ~8 (roughly N) which is what the raw anchor would give.
+        let o = Int(bullet.orientationCurrent)
+        #expect((o == 32) || (24...36).contains(o),
+                "bullet orientation should reflect heading to structure's layout-adjusted centre (NE), got \(o)")
+        // currentDestination also uses the centre.
+        #expect(bullet.currentDestinationX == 7936)
+        #expect(bullet.currentDestinationY == 6656)
+    }
+
+    @Test("bullet stepping onto LST_STRUCTURE tile detonates mid-flight (src/unit.c:1409..1416)")
+    func bulletDetonatesOnStructureTile() {
+        // Port of `Unit_Move`'s `type == LST_WALL || LST_STRUCTURE ||
+        // LST_ENTIRELY_MOUNTAIN` branch: a UNIT_BULLET stepping into a
+        // structure tile explodes at its new position and frees, even
+        // if its `currentDestination` is further along. Without this,
+        // a SOLDIER's bullet aimed at a 2x2 CYARD's layout-centre
+        // (one tile past the nearest edge) misses the
+        // `distance < 16` arrival gate and keeps flying until it
+        // clips through the structure — in SAVE007 that delayed u12's
+        // impact by 3 ticks and left CYARD undamaged at tick 586.
+        let host = makeHost()
+        _ = host.units.allocate(at: 50, type: 4, houseID: 0)  // SOLDIER shooter
+        var shooter = host.units[50]
+        shooter.positionX = 7651
+        shooter.positionY = 6941
+        host.units[50] = shooter
+
+        // Mark tile (30, 25) as LST_STRUCTURE via host.landscapeAt.
+        // Packed = 25*64 + 30 = 1630. The bullet steps NE from
+        // ~(7740, 6820) toward (7936, 6656); one winger-speed step
+        // lands at ~(7907, 6653) which is tile (30, 25).
+        host.landscapeAt = { packed in
+            if packed == 1630 {
+                return UInt8(LandscapeType.structure.rawValue)
+            }
+            return UInt8(LandscapeType.normalSand.rawValue)
+        }
+
+        // Allocate a bullet at the pre-impact position (mid-flight
+        // snapshot).
+        _ = host.units.allocate(at: 12, type: 23, houseID: 0)
+        var bullet = host.units[12]
+        bullet.positionX = 7740
+        bullet.positionY = 6820
+        bullet.currentDestinationX = 7936
+        bullet.currentDestinationY = 6656
+        bullet.orientationCurrent = 32
+        bullet.orientationTarget = 32
+        bullet.movingSpeed = 255
+        bullet.speed = 15
+        bullet.speedPerTick = 255
+        bullet.speedRemainder = 255
+        bullet.hitpoints = 3
+        bullet.distanceToDestination = 0x7FFF
+        bullet.originEncoded = Scripting.EncodedIndex.unit(50).raw
+        host.units[12] = bullet
+
+        var scheduler = makeScheduler(host: host)
+        scheduler.perTickCadenceGatesEnabled = true
+        // Step a handful of times; the structure-collision detonation
+        // should fire as soon as the winger step crosses into tile
+        // (30, 25).
+        for _ in 0..<30 {
+            scheduler.tick()
+            if !host.units[12].isUsed { break }
+        }
+        #expect(host.units[12].isUsed == false,
+                "bullet must detonate on structure-tile entry")
+        let active = host.explosions.slots.filter(\.isActive)
+        #expect(active.count >= 1, "explosion queued at structure-tile detonation")
+    }
+
     // MARK: Helpers
 
     private func makeHost() -> Scripting.Host {

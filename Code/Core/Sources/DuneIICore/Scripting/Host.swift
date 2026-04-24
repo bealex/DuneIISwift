@@ -68,6 +68,17 @@ extension Scripting {
         /// never retargets, so the parity harness flips this off.
         public var retargetImpassableDst: Bool = true
 
+        /// When `true`, `Simulation.Explosions.applyUnitDamage` transitions
+        /// a unit to `ACTION_DIE` on hp=0 instead of freeing the slot
+        /// outright — matches OpenDUNE's `Unit_Damage` at
+        /// `src/unit.c:1554..1568`, which leaves the unit in the pool
+        /// and lets `Script_Unit_Die` dispatch from UNIT.EMC free it
+        /// later. Default `false` preserves gameplay's immediate-free
+        /// + separate corpse-sprite path (rendered via the explosion
+        /// pool). Parity harness flips this on so unit-pool state
+        /// matches OpenDUNE tick-for-tick.
+        public var deferFreeOnDeath: Bool = false
+
         /// Runtime spice grid. When non-nil, the scheduler's harvesting
         /// pass reads `spiceMap.landscapeByte` to decide whether a
         /// harvester's current tile holds spice, and writes level

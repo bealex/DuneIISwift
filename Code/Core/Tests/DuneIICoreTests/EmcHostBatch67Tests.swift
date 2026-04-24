@@ -31,6 +31,43 @@ struct EmcHostBatch67Tests {
         #expect(engine.returnValue == expected)
     }
 
+    @Test("GetDistanceToObject uses edge-tile adjustment for structure targets (Object_GetDistanceToEncoded parity)")
+    func getDistanceToObjectStructureEdge() throws {
+        // SOLDIER attacker at (7651, 6941). CYARD (type 8, layout
+        // s2x2) at anchor (7680, 6400) — stored top-left. For edge-
+        // adjusted distance, the attacker is ~NE of centre so the
+        // orient8=0 edge is picked (SE corner at packed 1695 =
+        // (31, 26), pos (8064, 6784)). Distance = 413 + 157/2 = 491.
+        var units = Simulation.UnitPool()
+        units.allocate(at: 0, type: 4, houseID: 1)
+        var u = units[0]
+        u.positionX = 7651
+        u.positionY = 6941
+        units[0] = u
+
+        var structures = Simulation.StructurePool()
+        structures.allocate(at: 0, type: 8, houseID: 2)
+        var s = structures[0]
+        s.positionX = 7680
+        s.positionY = 6400
+        structures[0] = s
+
+        let host = Scripting.Host(
+            units: units, structures: structures,
+            currentObject: .unit(poolIndex: 0),
+            texts: [], textLog: [], voiceLog: []
+        )
+
+        var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
+        functions[0] = Scripting.Functions.makeGetDistanceToObject(host: host)
+        let structRaw: UInt16 = 0x8000 | 0  // IT_STRUCTURE, index 0
+        let vm = makeVM(words: ins(3, structRaw) + ins(14, 0), functions: functions)
+        var engine = Scripting.Engine.reset()
+        _ = vm.step(&engine); _ = vm.step(&engine)
+        #expect(engine.returnValue == 491,
+                "GetDistanceToObject must measure to structure edge tile, not raw anchor centre")
+    }
+
     @Test("GetDistanceToTile returns 0xFFFF for an invalid encoded index")
     func getDistanceInvalid() throws {
         var units = Simulation.UnitPool()
@@ -109,8 +146,10 @@ struct EmcHostBatch67Tests {
         _ = vm.step(&engine); _ = vm.step(&engine)
         // setSpeed stores the 0..255 percent input in `movingSpeed`.
         // `speed` is the tile-hop clamp derived from `movingSpeedFactor`.
+        // Return value mirrors OpenDUNE `src/script/unit.c:393` — `u->speed`
+        // after `Unit_SetSpeed`, not the input percent.
         #expect(host.units[0].movingSpeed == 255)
-        #expect(engine.returnValue == 255)
+        #expect(engine.returnValue == UInt16(host.units[0].speed))
     }
 
     @Test("SetSpeedUnit on a built unit applies the 192/256 down-scale")
@@ -126,8 +165,9 @@ struct EmcHostBatch67Tests {
         _ = vm.step(&engine); _ = vm.step(&engine)
         // min(256,255)=255; 255*192/256 = 191. movingSpeed holds the
         // percent input post-scale; `speed` is the tile-hop clamp.
+        // Return matches OpenDUNE's `u->speed` after setSpeed.
         #expect(host.units[0].movingSpeed == 191)
-        #expect(engine.returnValue == 191)
+        #expect(engine.returnValue == UInt16(host.units[0].speed))
     }
 
     @Test("StopUnit writes speed = 0")

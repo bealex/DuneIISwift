@@ -72,4 +72,91 @@ struct TileMathTests {
 
         #expect(Pos32.of(Scripting.EncodedIndex(raw: 0), host: host) == nil)
     }
+
+    @Test("Pos32.targetTile adds layoutTileDiff for structure encodings (Tools_Index_GetTile parity)")
+    func targetTileLayoutAdjustsStructureCenter() throws {
+        // CYARD (type 8, layout s2x2) stored anchor at (7680, 6400).
+        // OpenDUNE's `Tools_Index_GetTile` returns anchor + (256, 256)
+        // for 2x2 layouts — the layout-adjusted centre.
+        var structures = Simulation.StructurePool()
+        structures.allocate(at: 0, type: 8, houseID: 0)
+        var s = structures[0]
+        s.positionX = 7680
+        s.positionY = 6400
+        structures[0] = s
+
+        let host = Scripting.Host(structures: structures)
+
+        let tgt = Pos32.targetTile(
+            Scripting.EncodedIndex.structure(0), host: host
+        )
+        #expect(tgt == Pos32(x: 7680 + 0x100, y: 6400 + 0x100),
+                "s2x2 tileDiff (0x100,0x100) must land on layout-adjusted centre")
+    }
+
+    @Test("Pos32.targetTile falls through to Pos32.of for non-structure encodings")
+    func targetTileFallsThroughForUnitsAndTiles() throws {
+        var units = Simulation.UnitPool()
+        units.allocate(at: 4, type: 0, houseID: 0)
+        var u = units[4]
+        u.positionX = 1234
+        u.positionY = 5678
+        units[4] = u
+        let host = Scripting.Host(units: units)
+        let unitPos = Pos32.targetTile(Scripting.EncodedIndex.unit(4), host: host)
+        #expect(unitPos == Pos32(x: 1234, y: 5678))
+
+        let tilePos = Pos32.targetTile(
+            Scripting.EncodedIndex.tile(packed: 64 &* 5 &+ 3), host: host
+        )
+        #expect(tilePos == Pos32(x: 896, y: 1408))
+    }
+
+    @Test("Pos32.distance(from:toEncoded:host:) picks the structure's edge tile for a 2x2 layout")
+    func distanceToEncodedEdgeAdjustsStructures() throws {
+        // u37 attacker at (7651, 6941). CYARD (s2x2, type 8) at
+        // (7680, 6400). Direction from attacker to centre (7680,
+        // 6400) is ≈ N (dy=-541, dx=29) → orient8=0 → edgeIdx=4 →
+        // s2x2 offsets[4] = 65 (anchor + 1 right + 1 south). CYARD
+        // anchor tile = (30, 25) packed = 1630 → edge = 1695 =
+        // (31, 26) → position (8064, 6784). Distance from (7651,
+        // 6941) to (8064, 6784) = max(413, 157) + min/2 = 491.
+        var structures = Simulation.StructurePool()
+        structures.allocate(at: 0, type: 8, houseID: 0)
+        var s = structures[0]
+        s.positionX = 7680
+        s.positionY = 6400
+        structures[0] = s
+        let host = Scripting.Host(structures: structures)
+
+        let attacker = Pos32(x: 7651, y: 6941)
+        let edge = Pos32.distance(
+            from: attacker,
+            toEncoded: Scripting.EncodedIndex.structure(0),
+            host: host
+        )
+        #expect(edge == 491,
+                "structure-target distance must measure to nearest edge tile, not centre")
+    }
+
+    @Test("Pos32.distance(from:toEncoded:host:) returns same result as centre distance for unit targets")
+    func distanceToEncodedNoAdjustForUnits() throws {
+        var units = Simulation.UnitPool()
+        units.allocate(at: 10, type: 0, houseID: 0)
+        var u = units[10]
+        u.positionX = 2000
+        u.positionY = 3000
+        units[10] = u
+        let host = Scripting.Host(units: units)
+
+        let from = Pos32(x: 1000, y: 1000)
+        let centre = Pos32(x: 2000, y: 3000)
+        let expected = Pos32.distance(from, centre)
+        let actual = Pos32.distance(
+            from: from,
+            toEncoded: Scripting.EncodedIndex.unit(10),
+            host: host
+        )
+        #expect(actual == expected)
+    }
 }

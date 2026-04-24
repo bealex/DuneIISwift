@@ -139,6 +139,16 @@ extension Simulation {
         /// draw with its owning unit (e.g. "wobble u13") and surface
         /// where our stream advances when OpenDUNE's doesn't.
         public var movementRNG: ((Int) -> UInt8)?
+
+        /// Optional `Tools_RandomLCG_Range` source used by scheduler
+        /// passes that mirror OpenDUNE's LCG call sites — notably
+        /// `tickStarportAvailability` at `src/house.c:105`. When nil,
+        /// passes that would call LCG fall back to `harvestRNG`
+        /// (Tools_Random_256) for gameplay compatibility; parity runs
+        /// wire the real LCG so the OpenDUNE-comparable byte stream
+        /// matches.
+        public var lcgRange: ((UInt16, UInt16) -> UInt16)?
+
         private var harvestTickCounter: Int = 0
 
         /// Monotonic per-tick counter. Mirrors OpenDUNE's `g_timerGame`
@@ -226,6 +236,17 @@ extension Simulation {
         /// refresh. OpenDUNE fires every 1800 game ticks (~60 s); our
         /// cadence is every 300 sim ticks, same wall-clock ballpark.
         public static let starportAvailabilityCadenceTicks = 300
+        /// OpenDUNE `src/house.c:89..92` — `s_tickHouseStarportAvailability`
+        /// is zero-initialised, so the availability refresh fires on
+        /// the very first tick after load, then reschedules 1800 ticks
+        /// out. Matching that gate is required for LCG-byte parity —
+        /// the tick-1 fire draws one `Tools_RandomLCG_Range` byte that
+        /// shifts the whole LCG stream by one.
+        public static let openDUNEStarportAvailabilityReschedule: UInt32 = 1800
+        /// Next `timerGame` at which the OpenDUNE-style availability
+        /// gate fires. Used only when `perTickCadenceGatesEnabled`;
+        /// gameplay keeps the simpler tick-counter modulo path.
+        private var nextStarportAvailabilityGate: UInt32 = 0
         /// Port of `HouseInfo.starportDeliveryTime` (= 10 for houses
         /// 0..2, 0 for 3..5). Counts in `tickStarport` units.
         public static let starportDeliveryTimeByHouse: [UInt16] = [10, 10, 10, 0, 0, 0]
@@ -808,7 +829,13 @@ extension Simulation {
             // `orientationTarget`, clamping to target when within one
             // step; zeros `orientationSpeed` on arrival. Cadence is
             // gameSpeed-dependent (2..8 ticks). Runs per-unit.
-            if unitRotationEnabledThisTick { tickRotation() }
+            //
+            // In interleaved mode rotation fires per-unit inside the
+            // main loop BETWEEN movement and sprite (matches OpenDUNE's
+            // `src/unit.c:220..221` ordering), so skip the batched call.
+            if unitRotationEnabledThisTick, !perUnitInterleavedTickOrder {
+                tickRotation()
+            }
             // Infantry walk-cycle animation advance. OpenDUNE runs
             // `tickUnknown5` AFTER `tickMovement` (src/unit.c:239) — so
             // when a foot unit reaches its destination this tick,
@@ -874,12 +901,16 @@ extension Simulation {
                 // `.count` each iteration so the new tail gets visited
                 // in the same pass, matching `Unit_Find`'s semantics.
                 let runScripts = unitScriptEnabledThisTick
+                let rotationFires = unitRotationEnabledThisTick
                 let spriteFires = spriteAnimationGateFiresThisTick()
                 var cursor = 0
                 while cursor < host.units.findArray.count {
                     let idx = host.units.findArray[cursor]
                     if unitMovementEnabledThisTick {
                         tickMovement(fromFindArrayIndex: cursor, singleUnit: true)
+                    }
+                    if rotationFires {
+                        tickRotationForUnit(idx: idx)
                     }
                     if spriteFires {
                         tickSpriteOffsetForUnit(idx: idx)
@@ -942,7 +973,19 @@ extension Simulation {
                 tickFrigateUnload()
             }
             starportAvailabilityTickCounter &+= 1
-            if starportAvailabilityTickCounter % Self.starportAvailabilityCadenceTicks == 0 {
+            // Two gate paths: the OpenDUNE-matching
+            // `s_tickHouseStarportAvailability` gate fires at tick 1
+            // (zero-init) and every 1800 ticks after, drawing one
+            // LCG byte — this is the byte OpenDUNE's tick-1 ctx=sX
+            // attribution points at. Gameplay without `lcgRange` keeps
+            // the 300-tick counter so existing tests stay unchanged.
+            if perTickCadenceGatesEnabled {
+                if nextStarportAvailabilityGate <= timerGame {
+                    nextStarportAvailabilityGate =
+                        timerGame &+ Self.openDUNEStarportAvailabilityReschedule
+                    tickStarportAvailability()
+                }
+            } else if starportAvailabilityTickCounter % Self.starportAvailabilityCadenceTicks == 0 {
                 tickStarportAvailability()
             }
             // Per-house power-maintenance drain. Port of
@@ -1212,12 +1255,21 @@ extension Simulation {
         /// - `stock >= 10` → cap (OpenDUNE's cap; keeps CHOAM stock
         ///   bounded).
         ///
-        /// Gated on `harvestRNG` availability (we reuse the same
-        /// `Tools_Random_256` port — no separate starport RNG needed).
+        /// Gated on an available RNG. When `lcgRange` is wired (parity
+        /// runs), prefer it — OpenDUNE's `src/house.c:105` uses
+        /// `Tools_RandomLCG_Range(0, UNIT_MAX - 1)`, not
+        /// `Tools_Random_256`. Falls back to `harvestRNG` for gameplay
+        /// where the LCG isn't wired yet.
         public mutating func tickStarportAvailability() {
-            guard let rng = harvestRNG else { return }
-            // Draw a type in 0..26 (UNIT_MAX-1 in OpenDUNE terms).
-            let type = Int(rng()) % starportStock.count
+            let typeRaw: Int
+            if let lcgRange = lcgRange {
+                typeRaw = Int(lcgRange(0, UInt16(starportStock.count - 1)))
+            } else if let rng = harvestRNG {
+                typeRaw = Int(rng()) % starportStock.count
+            } else {
+                return
+            }
+            let type = typeRaw % starportStock.count
             let stock = starportStock[type]
             guard stock != 0, stock < 10 else { return }
             starportStock[type] = (stock == -1) ? 1 : stock + 1
@@ -2273,6 +2325,58 @@ extension Simulation {
                            slot.isWobbling, let rng = movementRNG {
                             slot.wobbleIndex = rng(idx) & 7
                         }
+                        // Port of OpenDUNE `Unit_Move` (`src/unit.c:1399..1416`):
+                        // a UNIT_BULLET that steps into a LST_WALL /
+                        // LST_STRUCTURE / LST_ENTIRELY_MOUNTAIN tile
+                        // explodes at its new position and gets freed,
+                        // regardless of `distanceToDestination` arrival
+                        // checks. Load-bearing for parity — a SOLDIER's
+                        // bullet aimed at a CYARD arrives mid-step
+                        // (post-step tile is the CYARD's footprint)
+                        // rather than at its exact `currentDestination`
+                        // centre, and the distance-based arrival
+                        // check misses by ~16 pixels.
+                        //
+                        // Friendly-fire exemption (`src/unit.c:1402..1406`):
+                        // when the bullet's origin is a structure that
+                        // owns the tile being hit, remap to
+                        // LST_NORMAL_SAND so the bullet flies through.
+                        // Our Swift port doesn't track per-tile houseID
+                        // yet — we approximate by skipping the
+                        // detonation for bullets whose target isn't a
+                        // structure of a different houseID.
+                        if slot.type == 23, // UNIT_BULLET
+                           let lookup = host.landscapeAt {
+                            let packed = Simulation.Pathfinder.packedTile(
+                                x: slot.positionX, y: slot.positionY
+                            )
+                            let lst = lookup(packed)
+                            if lst == UInt8(LandscapeType.wall.rawValue)
+                                || lst == UInt8(LandscapeType.structure.rawValue)
+                                || lst == UInt8(LandscapeType.entirelyMountain.rawValue)
+                            {
+                                let explosionType = Simulation.UnitInfo.lookup(slot.type)?.explosionType
+                                    ?? Simulation.ExplosionType.invalid
+                                let damage = slot.hitpoints
+                                let origin = slot.originEncoded
+                                let explodePos = Pos32(x: slot.positionX, y: slot.positionY)
+                                Log.info(
+                                    "bullet \(idx) stepped into structure/wall/mountain tile — exploding type=\(explosionType) dmg=\(damage) at (\(explodePos.x),\(explodePos.y))",
+                                    tracer: .label("scheduler")
+                                )
+                                host.units[idx] = slot
+                                Simulation.Units.untargetUnit(poolIndex: idx, host: host)
+                                host.units.free(at: idx)
+                                Simulation.Explosions.makeExplosion(
+                                    type: explosionType,
+                                    position: explodePos,
+                                    hitpoints: damage,
+                                    unitOriginEncoded: origin,
+                                    host: host
+                                )
+                                continue
+                            }
+                        }
                         didStep = true
                     }
                 }
@@ -2375,6 +2479,28 @@ extension Simulation {
                         if isGroundUnit {
                             slot.positionX = goal.x
                             slot.positionY = goal.y
+                            // Port of OpenDUNE `Unit_Move` → `Unit_EnterStructure`
+                            // (`src/unit.c:1491..1499` + `:2226..2265`): a ground
+                            // unit arriving on a structure tile owned by a
+                            // different house deals
+                            // `min(unit.hp * 2, structure.hp / 2)` damage to
+                            // that structure and gets removed. SAVE007 tick
+                            // 622 has SOLDIER u37 walk onto the enemy CYARD
+                            // and deal 40 hp damage before being consumed.
+                            host.units[idx] = slot
+                            let arrivalPacked = Simulation.Pathfinder.packedTile(
+                                x: slot.positionX, y: slot.positionY
+                            )
+                            if let sIdx = Simulation.Explosions.structureAt(
+                                packed: arrivalPacked, host: host
+                            ) {
+                                if Simulation.Units.enterStructure(
+                                    poolIndex: idx, structureIndex: sIdx, host: host
+                                ) {
+                                    continue
+                                }
+                            }
+                            slot = host.units[idx]
                         }
                         Log.debug(
                             "move-snap u\(idx) arrived — pos→(\(slot.positionX),\(slot.positionY)) dTD=\(slot.distanceToDestination) distA=\(distAfterU16) parity=\(perTickCadenceGatesEnabled)",
@@ -2529,6 +2655,54 @@ extension Simulation {
 
                 if changed { host.units[idx] = slot }
             }
+        }
+
+        /// Per-unit rotation extracted from `tickRotation` for the
+        /// interleaved tick path. Mirrors OpenDUNE's `Unit_Rotate(u, 0)`
+        /// + `Unit_Rotate(u, 1)` at `src/unit.c:220..221`, which runs
+        /// once per unit between `Unit_MovementTick` and `tickUnknown5`
+        /// (sprite animation).
+        private mutating func tickRotationForUnit(idx: Int) {
+            guard idx < host.units.slots.count else { return }
+            var slot = host.units.slots[idx]
+            var changed = false
+
+            if slot.orientationSpeed != 0 {
+                let target = Int(slot.orientationTarget)
+                let current = Int(slot.orientationCurrent)
+                var diff = target - current
+                if diff > 128 { diff -= 256 }
+                if diff < -128 { diff += 256 }
+                let absDiff = abs(diff)
+                let speed = Int(slot.orientationSpeed)
+                var newCurrent = current &+ speed
+                if abs(speed) >= absDiff {
+                    slot.orientationSpeed = 0
+                    newCurrent = target
+                }
+                slot.orientationCurrent = Int8(truncatingIfNeeded: newCurrent)
+                changed = true
+            }
+
+            if slot.turretOrientationSpeed != 0,
+               Simulation.UnitInfo.lookup(slot.type)?.hasTurret == true {
+                let target = Int(slot.turretOrientationTarget)
+                let current = Int(slot.turretOrientationCurrent)
+                var diff = target - current
+                if diff > 128 { diff -= 256 }
+                if diff < -128 { diff += 256 }
+                let absDiff = abs(diff)
+                let speed = Int(slot.turretOrientationSpeed)
+                var newCurrent = current &+ speed
+                if abs(speed) >= absDiff {
+                    slot.turretOrientationSpeed = 0
+                    newCurrent = target
+                }
+                slot.turretOrientationCurrent = Int8(truncatingIfNeeded: newCurrent)
+                changed = true
+            }
+
+            if changed { host.units[idx] = slot }
         }
 
         private mutating func tickUnits() {

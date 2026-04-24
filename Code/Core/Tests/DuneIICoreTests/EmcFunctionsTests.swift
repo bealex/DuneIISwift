@@ -60,6 +60,41 @@ struct EmcFunctionsTests {
         #expect(engine.returnValue >= 10 && engine.returnValue <= 20)
     }
 
+    @Test("RandomSource.lcgRange fires onLCGDraw hook with value + current context tag")
+    func lcgRangeHookFiresWithContext() throws {
+        let source = Scripting.RandomSource(seed: 42)
+        var captured: [(UInt16, String)] = []
+        source.onLCGDraw = { value, context in
+            captured.append((value, context))
+        }
+        source.currentTraceContext = "alpha"
+        _ = source.lcgRange(0, 10)
+        source.currentTraceContext = "beta"
+        _ = source.lcgRange(0, 10)
+        source.currentTraceContext = ""
+        _ = source.lcgRange(0, 10)
+        #expect(captured.count == 3)
+        #expect(captured[0].1 == "alpha")
+        #expect(captured[1].1 == "beta")
+        #expect(captured[2].1 == "")
+        // Hook value must equal the return value of the matching draw.
+        var reference = RNG.BorlandLCG(seed: 42)
+        #expect(captured[0].0 == reference.range(0, 10))
+        #expect(captured[1].0 == reference.range(0, 10))
+        #expect(captured[2].0 == reference.range(0, 10))
+    }
+
+    @Test("RandomSource.lcgRange return value matches direct BorlandLCG.range (hook is side-effect-only)")
+    func lcgRangeBypassesLCGWhenNotHooked() throws {
+        let seed: UInt16 = 1234
+        var reference = RNG.BorlandLCG(seed: seed)
+        let expected = reference.range(5, 25)
+
+        let source = Scripting.RandomSource(seed: seed)
+        let actual = source.lcgRange(5, 25)
+        #expect(actual == expected)
+    }
+
     @Test("RandomRange shares LCG state between consecutive calls")
     func randomRangeSharedState() throws {
         // Draw once via a direct BorlandLCG; draw once via the host-fn factory

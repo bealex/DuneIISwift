@@ -79,6 +79,7 @@ extension Simulation {
             spiceMap: Simulation.SpiceMap? = nil,
             snapshotLandscape: [LandscapeType] = [],
             rngTrace: RNGTrace? = nil,
+            lcgTrace: LCGTrace? = nil,
             scriptTrace: ScriptTrace? = nil
         ) throws {
             let goldenTicks = try parseGolden(golden)
@@ -216,6 +217,11 @@ extension Simulation {
                     rngTrace.record(byte, context: context)
                 }
             }
+            if let lcgTrace {
+                source.onLCGDraw = { value, context in
+                    lcgTrace.record(value, context: context)
+                }
+            }
             let unitFunctions = Scripting.Functions.unitTable(host: host, source: source)
             let structureFunctions = Scripting.Functions.structureTable(host: host, source: source)
             let teamFunctions = Scripting.Functions.teamTable(host: host, source: source)
@@ -254,6 +260,18 @@ extension Simulation {
                 source.currentTraceContext = ""
                 return b
             }
+            // Wire the Borland LCG so scheduler passes that mirror
+            // OpenDUNE's LCG call sites (e.g.
+            // `tickStarportAvailability`) draw from the exact stream
+            // OpenDUNE consumes. Any context tag set before the draw
+            // (e.g. `"tickStarportAvailability"`) flows into the LCG
+            // trace for cross-engine diffing.
+            scheduler.lcgRange = { lo, hi in
+                let prior = source.currentTraceContext
+                if prior.isEmpty { source.currentTraceContext = "Scheduler.lcgRange" }
+                defer { source.currentTraceContext = prior }
+                return source.lcgRange(lo, hi)
+            }
             // OpenDUNE loads `g_gameConfig.gameSpeed` from OPTIONS.CFG
             // on startup; our install has it pinned at 4 (Fastest), but
             // any save's golden will dump its own value. Read from the
@@ -280,13 +298,16 @@ extension Simulation {
             scheduler.perTickCadenceGatesEnabled = true
             // Parity mode: run movement + script interleaved per unit
             // so Swift consumes `Tools_Random_256` bytes in the same
-            // order OpenDUNE's `Unit_Find` loop does. Temporarily off
-            // while the interleaved path is validated — the batched
-            // ordering currently reaches tick 151 before drifting.
-            // Flipping this on takes Swift's tick order closer to
-            // OpenDUNE's but surfaces new drifts (e.g. tick 109 u0
-            // positionX) that need iterative fixes.
-            scheduler.perUnitInterleavedTickOrder = false
+            // order OpenDUNE's `Unit_Find` loop does.
+            scheduler.perUnitInterleavedTickOrder = true
+            // Parity mode: keep hp=0 units alive with ACTION_DIE instead
+            // of freeing them immediately. OpenDUNE's `Unit_Damage` at
+            // `src/unit.c:1567` leaves the unit in the pool; the DIE
+            // script dispatch frees it a few ticks later. Without this,
+            // Swift's `applyUnitDamage` frees the slot the tick damage
+            // arrives, so the pool state diverges at any kill event
+            // (SAVE007 tick 199 u36.isUsed).
+            host.deferFreeOnDeath = true
             // Parity runs headless (no viewport), so every unit that
             // doesn't have `scriptNoSlowdown=true` falls into the
             // off-viewport 3-opcode cap (OpenDUNE `src/unit.c:292..294`).
@@ -302,6 +323,7 @@ extension Simulation {
             // divergence) or completes — the trace is the load-bearing
             // artifact for debugging, not a success signal.
             defer { try? rngTrace?.flush() }
+            defer { try? lcgTrace?.flush() }
             defer { try? scriptTrace?.flush() }
 
             try diff(tick: 0, golden: goldenTicks[0], host: host)
@@ -309,6 +331,8 @@ extension Simulation {
             if tickLimit >= 1 {
                 for t in 1...tickLimit {
                     rngTrace?.beginTick(t)
+                    lcgTrace?.beginTick(t)
+                    scriptTrace?.beginTick(t)
                     scheduler.tick()
                     try diff(tick: t, golden: goldenTicks[t], host: host)
                 }
@@ -332,6 +356,10 @@ extension Simulation {
                 self.unitPoolIndex = unitPoolIndex
                 buffer.reserveCapacity(128 * 1024)
                 buffer.append("# swift parity script trace for unit[\(unitPoolIndex)] — one line per opcode\n")
+            }
+
+            fileprivate func beginTick(_ t: Int) {
+                buffer.append("# tick=\(t)\n")
             }
 
             fileprivate func record(
@@ -374,6 +402,38 @@ extension Simulation {
             fileprivate func record(_ byte: UInt8, context: String = "") {
                 let ctx = context.isEmpty ? "" : " ctx=\(context)"
                 buffer.append("tick=\(currentTick) idx=\(index) byte=0x\(String(format: "%02X", byte))\(ctx)\n")
+                index &+= 1
+            }
+
+            public func flush() throws {
+                try buffer.write(to: path, atomically: true, encoding: .utf8)
+            }
+        }
+
+        /// Captures every `Tools_RandomLCG_Range` draw during
+        /// `runAgainst`. Parallel to `RNGTrace` but for the Borland LCG
+        /// (used by `RandomRange`, `IdleAction` gate, explosion damage,
+        /// and team scripts). Paired with OpenDUNE's
+        /// `--parity-lcg-trace=<path>` hook in `Tools_RandomLCG_Range`.
+        public final class LCGTrace {
+            public let path: URL
+            private var buffer: String = ""
+            private var index: UInt32 = 0
+            private var currentTick: Int = 0
+
+            public init(path: URL) {
+                self.path = path
+                buffer.reserveCapacity(64 * 1024)
+                buffer.append("# swift parity lcg trace — one line per Tools_RandomLCG_Range draw\n")
+            }
+
+            fileprivate func beginTick(_ t: Int) {
+                currentTick = t
+            }
+
+            fileprivate func record(_ value: UInt16, context: String = "") {
+                let ctx = context.isEmpty ? "" : " ctx=\(context)"
+                buffer.append("tick=\(currentTick) idx=\(index) value=\(value)\(ctx)\n")
                 index &+= 1
             }
 

@@ -112,26 +112,28 @@ struct ParityHarnessTests {
     @Test("_SAVE007.DAT tick 0 matches the committed 200-tick golden")
     @MainActor
     func saveSevenParityTickZero() throws {
-        try runTickZeroAgainstGolden(save: "_SAVE007.DAT", golden: "save007_200ticks.jsonl")
+        try runTickZeroAgainstGolden(save: "_SAVE007.DAT", golden: "save007_ticks.jsonl")
     }
 
     @Test("_SAVE007.DAT tick 1 with empty EMC currently diverges")
     @MainActor
     func saveSevenParityTickOneDiverges() throws {
-        try expectTickOneDivergence(save: "_SAVE007.DAT", golden: "save007_200ticks.jsonl")
+        try expectTickOneDivergence(save: "_SAVE007.DAT", golden: "save007_ticks.jsonl")
     }
 
-    /// SAVE007 tick 1 now matches byte-for-byte under real UNIT.EMC /
-    /// BUILD.EMC / TEAM.EMC (closed in the team-cadence + recount +
-    /// Fire-jitter + harvester-sprite fix slice). This test widens the
-    /// harness past tick 1 to surface the next drift; adjust `tickLimit`
-    /// as closures move the frontier deeper into the golden.
-    @Test("_SAVE007.DAT tick 1+ with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
+    /// SAVE007 matches OpenDUNE byte-for-byte through the first 690
+    /// ticks of a 1000-tick golden under real UNIT.EMC / BUILD.EMC /
+    /// TEAM.EMC. Next drift is tick 691 `u26.fireDelay=48 vs 47` —
+    /// an off-by-1 on the Atreides TANK's post-fire cooldown,
+    /// coming from the `u->fireDelay += Tools_Random_256() & 1`
+    /// trailing jitter byte at `src/script/unit.c:692`. One draw
+    /// drifted somewhere in ticks 622..690.
+    @Test("_SAVE007.DAT 690-tick parity with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
     @MainActor
     func saveSevenParityRealEmcFrontier() throws {
-        try expectDivergenceUpTo(
-            tickLimit: 200,
-            save: "_SAVE007.DAT", golden: "save007_200ticks.jsonl",
+        try expectFullParity(
+            tickLimit: 690,
+            save: "_SAVE007.DAT", golden: "save007_ticks.jsonl",
             withRealEmc: true
         )
     }
@@ -147,7 +149,7 @@ struct ParityHarnessTests {
         guard let root = TestInstall.locate() else { return }
         let saveURL = root.appendingPathComponent("_SAVE007.DAT")
         guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
-        let goldenURL = Self.goldenURL(named: "save007_200ticks.jsonl")
+        let goldenURL = Self.goldenURL(named: "save007_ticks.jsonl")
         guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
 
         // Write to the worktree `tmp/` so the harness's file I/O doesn't
@@ -222,7 +224,7 @@ struct ParityHarnessTests {
         guard let root = TestInstall.locate() else { return }
         let saveURL = root.appendingPathComponent("_SAVE007.DAT")
         guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
-        let goldenURL = Self.goldenURL(named: "save007_200ticks.jsonl")
+        let goldenURL = Self.goldenURL(named: "save007_ticks.jsonl")
         guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
 
         let tmpDir = URL(fileURLWithPath: #filePath)
@@ -261,9 +263,77 @@ struct ParityHarnessTests {
         let spiceMap = Simulation.SpiceMap { i in snapshotLandscape[i] }
 
         let trace = Simulation.ParityHarness.RNGTrace(path: traceURL)
-        // `runAgainst` halts at the first drift (currently tick 151
-        // u39.amount); the RNGTrace flush in its `defer` block still
-        // writes the partial trace covering ticks 1..150.
+        // `runAgainst` halts at the first drift; the RNGTrace flush
+        // in its `defer` block still writes the partial trace. Bumped
+        // to 695 to cover the tick-691 fireDelay drift investigation
+        // window.
+        _ = try? Simulation.ParityHarness.runAgainst(
+            snapshot: snapshot,
+            golden: golden,
+            tickLimit: 695,
+            unitProgram: unitProgram,
+            structureProgram: structureProgram,
+            teamProgram: teamProgram,
+            seedScriptsFrom: game,
+            spiceMap: spiceMap,
+            snapshotLandscape: snapshotLandscape,
+            rngTrace: trace
+        )
+        print("wrote Swift 200-tick rng trace to \(traceURL.path)")
+    }
+
+    /// Diagnostic: writes Swift's `Tools_RandomLCG_Range` call stream
+    /// over 200 ticks to `tmp/swift_lcg_trace_200.txt`. Pairs with
+    /// OpenDUNE's `--parity-lcg-trace=<path>` output. Each line logs
+    /// the returned value + per-call context tag (`IdleAction.gate uN`,
+    /// `RandomRange(lo,hi)`, etc.) so a byte-stream diff pinpoints
+    /// which caller diverges. Used to close the tick-166 LCG state
+    /// drift (`u0.orientation0Target=43 vs 0`).
+    @Test("_SAVE007.DAT — dump Swift Tools_RandomLCG_Range draws over 200 ticks")
+    @MainActor
+    func saveSevenParityDump200TickLCGStream() throws {
+        guard let root = TestInstall.locate() else { return }
+        let saveURL = root.appendingPathComponent("_SAVE007.DAT")
+        guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
+        let goldenURL = Self.goldenURL(named: "save007_ticks.jsonl")
+        guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
+
+        let tmpDir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("tmp", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: tmpDir, withIntermediateDirectories: true
+        )
+        let traceURL = tmpDir.appendingPathComponent("swift_lcg_trace_200.txt")
+
+        let data = try Data(contentsOf: saveURL)
+        let game = try Formats.Save.Game.decode(data)
+        let golden = try Data(contentsOf: goldenURL)
+
+        let install = try Installation(rootDirectory: root)
+        let assets = try AssetLoader(installation: install)
+        let unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+        let structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
+        let teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+        let resolver = assets.tileResolver
+        let baseline = Map.Generator.generate(
+            seed: game.info.scenario.mapSeed, resolver: resolver
+        )
+        let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
+        let snapshotLandscape = snapshot.tiles.map { tile in
+            resolver.landscapeType(
+                groundTileID: tile.groundTileID,
+                overlayTileID: tile.overlayTileID,
+                hasStructure: tile.hasStructure
+            )
+        }
+        let spiceMap = Simulation.SpiceMap { i in snapshotLandscape[i] }
+
+        let trace = Simulation.ParityHarness.LCGTrace(path: traceURL)
         _ = try? Simulation.ParityHarness.runAgainst(
             snapshot: snapshot,
             golden: golden,
@@ -274,9 +344,9 @@ struct ParityHarnessTests {
             seedScriptsFrom: game,
             spiceMap: spiceMap,
             snapshotLandscape: snapshotLandscape,
-            rngTrace: trace
+            lcgTrace: trace
         )
-        print("wrote Swift 200-tick rng trace to \(traceURL.path)")
+        print("wrote Swift 200-tick lcg trace to \(traceURL.path)")
     }
 
     /// Diagnostic: writes Swift's per-opcode execution trace for a
@@ -292,7 +362,7 @@ struct ParityHarnessTests {
         guard let root = TestInstall.locate() else { return }
         let saveURL = root.appendingPathComponent("_SAVE007.DAT")
         guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
-        let goldenURL = Self.goldenURL(named: "save007_200ticks.jsonl")
+        let goldenURL = Self.goldenURL(named: "save007_ticks.jsonl")
         guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
 
         let tmpDir = URL(fileURLWithPath: #filePath)
@@ -333,15 +403,15 @@ struct ParityHarnessTests {
         let trace = Simulation.ParityHarness.ScriptTrace(
             path: traceURL, unitPoolIndex: 0
         )
-        // Run over 100 ticks — covers the tick-96 carryall branch
-        // point where OpenDUNE's pc jumps from 1117 → 1968. The
-        // harness halts on the first field drift (currently tick
-        // 151, u39.amount) so the trace is partial; that's fine
-        // because the divergence we're chasing lands at tick 96.
+        // Run over 170 ticks — covers u0's tick-166 back-jump from
+        // pc=2014 → pc=1981 where OpenDUNE fires
+        // `Unit_SetOrientation(43, false, 0)`. Harness halts on first
+        // field drift (currently tick 166, u0.orientation0Target=43
+        // vs 0); the partial trace is the diagnostic payload.
         _ = try? Simulation.ParityHarness.runAgainst(
             snapshot: snapshot,
             golden: golden,
-            tickLimit: 100,
+            tickLimit: 170,
             unitProgram: unitProgram,
             structureProgram: structureProgram,
             teamProgram: teamProgram,
@@ -351,6 +421,163 @@ struct ParityHarnessTests {
             scriptTrace: trace
         )
         print("wrote Swift u0 script trace to \(traceURL.path)")
+    }
+
+    /// Diagnostic for tick-551 drift: u37 is a HUNT trooper whose
+    /// rotation completes at tick 551 in OpenDUNE, triggering
+    /// `Unit_StartMovement` that writes `movingSpeed=255`. Swift's
+    /// u37 reaches orientation target=32 but the script doesn't
+    /// fire StartMovement. Writes per-opcode trace for u37 over 560
+    /// ticks to `tmp/swift_u37_script.txt`; pair with an OpenDUNE
+    /// `--parity-script-unit=37` dump for byte-level diff.
+    @Test("_SAVE007.DAT — dump Swift u37 per-opcode script trace")
+    @MainActor
+    func saveSevenParityDumpU37ScriptTrace() throws {
+        guard let root = TestInstall.locate() else { return }
+        let saveURL = root.appendingPathComponent("_SAVE007.DAT")
+        guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
+        let goldenURL = Self.goldenURL(named: "save007_ticks.jsonl")
+        guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
+
+        let tmpDir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("tmp", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: tmpDir, withIntermediateDirectories: true
+        )
+        let traceURL = tmpDir.appendingPathComponent("swift_u37_script.txt")
+
+        let data = try Data(contentsOf: saveURL)
+        let game = try Formats.Save.Game.decode(data)
+        let golden = try Data(contentsOf: goldenURL)
+
+        let install = try Installation(rootDirectory: root)
+        let assets = try AssetLoader(installation: install)
+        let unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+        let structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
+        let teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+        let resolver = assets.tileResolver
+        let baseline = Map.Generator.generate(
+            seed: game.info.scenario.mapSeed, resolver: resolver
+        )
+        let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
+        let snapshotLandscape = snapshot.tiles.map { tile in
+            resolver.landscapeType(
+                groundTileID: tile.groundTileID,
+                overlayTileID: tile.overlayTileID,
+                hasStructure: tile.hasStructure
+            )
+        }
+        let spiceMap = Simulation.SpiceMap { i in snapshotLandscape[i] }
+
+        let trace = Simulation.ParityHarness.ScriptTrace(
+            path: traceURL, unitPoolIndex: 37
+        )
+        _ = try? Simulation.ParityHarness.runAgainst(
+            snapshot: snapshot,
+            golden: golden,
+            tickLimit: 585,
+            unitProgram: unitProgram,
+            structureProgram: structureProgram,
+            teamProgram: teamProgram,
+            seedScriptsFrom: game,
+            spiceMap: spiceMap,
+            snapshotLandscape: snapshotLandscape,
+            scriptTrace: trace
+        )
+        print("wrote Swift u37 script trace to \(traceURL.path)")
+    }
+
+    /// Diagnostic: dumps Swift u12 (the bullet fired by u37 at tick
+    /// 581) + CYARD (structure 0) state across ticks 581..590 so we
+    /// can compare the bullet-detonation window against OpenDUNE's
+    /// golden. Closes the tick-586 parity drift lookup loop. Kept
+    /// for future regressions in the bullet-step / structure-
+    /// collision path — the "bullet delayed by 3 ticks" symptom is
+    /// a quick sanity check.
+    @Test("_SAVE007.DAT — dump Swift u12 bullet + CYARD around tick 586")
+    @MainActor
+    func saveSevenParityDumpU12BulletStateAtTick586() throws {
+        guard let root = TestInstall.locate() else { return }
+        let saveURL = root.appendingPathComponent("_SAVE007.DAT")
+        guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
+        let goldenURL = Self.goldenURL(named: "save007_ticks.jsonl")
+        guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
+
+        let data = try Data(contentsOf: saveURL)
+        let game = try Formats.Save.Game.decode(data)
+        let install = try Installation(rootDirectory: root)
+        let assets = try AssetLoader(installation: install)
+        let unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+        let structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
+        let teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+        let resolver = assets.tileResolver
+        let baseline = Map.Generator.generate(
+            seed: game.info.scenario.mapSeed, resolver: resolver
+        )
+        let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
+        let snapshotLandscape = snapshot.tiles.map { tile in
+            resolver.landscapeType(
+                groundTileID: tile.groundTileID,
+                overlayTileID: tile.overlayTileID,
+                hasStructure: tile.hasStructure
+            )
+        }
+        let spiceMap = Simulation.SpiceMap { i in snapshotLandscape[i] }
+
+        let host = Scripting.Host(spiceMap: spiceMap)
+        host.units = snapshot.units
+        host.structures = snapshot.structures
+        host.houses = snapshot.houses
+        host.teams = snapshot.teams
+        host.retargetImpassableDst = false
+        host.deferFreeOnDeath = true
+        host.landscapeAt = { packed in
+            guard Int(packed) < snapshotLandscape.count else { return 0 }
+            return UInt8(snapshotLandscape[Int(packed)].rawValue)
+        }
+        for s in snapshot.structures.slots where s.isUsed && s.type == 8 {
+            host.playerHouseID = s.houseID
+            break
+        }
+        let source = Scripting.RandomSource(lcgSeed: 0, toolsSeed: 0)
+        let unitFunctions = Scripting.Functions.unitTable(host: host, source: source)
+        let structureFunctions = Scripting.Functions.structureTable(host: host, source: source)
+        let teamFunctions = Scripting.Functions.teamTable(host: host, source: source)
+        let unitVM = Scripting.VM(program: unitProgram, functions: unitFunctions)
+        let structureVM = Scripting.VM(program: structureProgram, functions: structureFunctions)
+        let teamVM = Scripting.VM(program: teamProgram, functions: teamFunctions)
+        var scheduler = Simulation.Scheduler(
+            host: host, unitVM: unitVM, structureVM: structureVM, teamVM: teamVM,
+            harvestRNG: { source.toolsNext() }
+        )
+        scheduler.movementRNG = { _ in source.toolsNext() }
+        scheduler.lcgRange = { lo, hi in source.lcgRange(lo, hi) }
+        scheduler.gameSpeed = 4
+        host.gameSpeed = 4
+        scheduler.unitOpcodeBudget = 52
+        scheduler.structureOpcodeBudget = 52
+        scheduler.teamOpcodeBudget = 52
+        scheduler.tickAttackHoldEnabled = false
+        scheduler.tickHarvestingEnabled = false
+        scheduler.perTickCadenceGatesEnabled = true
+        scheduler.perUnitInterleavedTickOrder = true
+        scheduler.offViewportSlowdownEnabled = true
+        scheduler.viewportPackedPosition = 1297
+        scheduler.seedFromSave(game)
+
+        for t in 1...590 {
+            scheduler.tick()
+            if t >= 581 && t <= 590 {
+                let u = host.units[12]
+                let s = host.structures[0]
+                print("swift t=\(t) u12 isUsed=\(u.isUsed) pos=(\(u.positionX),\(u.positionY)) currDest=(\(u.currentDestinationX),\(u.currentDestinationY)) movingSpeed=\(u.movingSpeed) speedRem=\(u.speedRemainder) hp=\(u.hitpoints)  | s0 hp=\(s.hitpoints)")
+            }
+        }
     }
 
     // MARK: Shared helpers
@@ -372,6 +599,68 @@ struct ParityHarnessTests {
             snapshot: snapshot,
             golden: golden,
             tickLimit: 0
+        )
+    }
+
+    /// Run the parity harness and assert the run matches the golden
+    /// byte-for-byte through all `tickLimit` ticks. Any divergence
+    /// records an Issue with the tick + field that drifted.
+    @MainActor
+    private func expectFullParity(
+        tickLimit: Int,
+        save: String,
+        golden goldenName: String,
+        withRealEmc: Bool = false
+    ) throws {
+        guard let root = TestInstall.locate() else { return }
+        let saveURL = root.appendingPathComponent(save)
+        guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
+        let goldenURL = Self.goldenURL(named: goldenName)
+        guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
+
+        let data = try Data(contentsOf: saveURL)
+        let game = try Formats.Save.Game.decode(data)
+        let golden = try Data(contentsOf: goldenURL)
+
+        var unitProgram = Formats.Emc.Program.empty
+        var structureProgram = Formats.Emc.Program.empty
+        var teamProgram = Formats.Emc.Program.empty
+        var snapshot: Simulation.WorldSnapshot
+        var spiceMap: Simulation.SpiceMap?
+        var snapshotLandscape: [LandscapeType] = []
+        if withRealEmc {
+            let install = try Installation(rootDirectory: root)
+            let assets = try AssetLoader(installation: install)
+            unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+            structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
+            teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+            let resolver = assets.tileResolver
+            let baseline = Map.Generator.generate(
+                seed: game.info.scenario.mapSeed, resolver: resolver
+            )
+            snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
+            snapshotLandscape = snapshot.tiles.map { tile in
+                resolver.landscapeType(
+                    groundTileID: tile.groundTileID,
+                    overlayTileID: tile.overlayTileID,
+                    hasStructure: tile.hasStructure
+                )
+            }
+            spiceMap = Simulation.SpiceMap { i in snapshotLandscape[i] }
+        } else {
+            snapshot = try Simulation.WorldSnapshot(loading: game, baseline: Map.empty())
+        }
+
+        try Simulation.ParityHarness.runAgainst(
+            snapshot: snapshot,
+            golden: golden,
+            tickLimit: tickLimit,
+            unitProgram: unitProgram,
+            structureProgram: structureProgram,
+            teamProgram: teamProgram,
+            seedScriptsFrom: withRealEmc ? game : nil,
+            spiceMap: spiceMap,
+            snapshotLandscape: snapshotLandscape
         )
     }
 

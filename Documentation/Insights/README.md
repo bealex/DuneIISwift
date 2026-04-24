@@ -101,6 +101,8 @@ OpenDUNE `src/...` or dunepak `src/...` or the raw bytes of
 - [simulation-off-viewport-3-opcode-cap](simulation-off-viewport-3-opcode-cap.md) — OpenDUNE caps unit scripts at 3 opcodes/tick for off-viewport units with `scriptNoSlowdown=false` (`src/unit.c:292..294`); a 17× script-throughput difference that only showed up via opcode-level VM tracing.
 - [simulation-tick-sprite-runs-after-movement](simulation-tick-sprite-runs-after-movement.md) — OpenDUNE's `tickUnknown5` sprite-animation pass runs AFTER `Unit_MovementTick` in the per-unit loop; a reversed order animates one extra frame on every foot-unit arrival tick.
 - [simulation-per-tick-rng-order-matters](simulation-per-tick-rng-order-matters.md) — identical RNG byte sequences can still diverge per-caller when two engines interleave draws differently; OpenDUNE runs per-unit {movement, rotation, script} while Swift batches those passes, so byte assignments drift silently until a `& 1` lands wrong hundreds of ticks later.
+- [simulation-defer-free-on-death](simulation-defer-free-on-death.md) — `Unit_Damage` at hp=0 transitions to `ACTION_DIE` and leaves the slot alive; the DIE script dispatch (slot 0x0F `Script_Unit_Die`) frees it a few ticks later. Immediate-free on damage diverges the pool at every kill tick even though the visual corpse looks identical.
+- [simulation-untarget-me-sweep](simulation-untarget-me-sweep.md) — `Unit_Remove` calls `Unit_UntargetMe` before `Unit_Free` to wipe stale `targetMove` / `targetAttack` encoded-index references across the pool. Skipping the sweep leaves attackers chasing ghosts and diverges parity dumps on every kill tick.
 
 ### Render
 

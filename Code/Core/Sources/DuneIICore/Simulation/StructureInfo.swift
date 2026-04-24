@@ -23,6 +23,48 @@ extension Simulation {
             }
         }
 
+        /// Port of `g_table_structure_layoutEdgeTiles[layout][8]`
+        /// (`src/table/structureinfo.c:1261`). For a given
+        /// orientation8 index in 0..7, returns the packed-tile offset
+        /// from the structure's origin tile to the edge tile nearest
+        /// an attacker approaching from that direction. Used by
+        /// `Object_GetDistanceToEncoded` to compute fire-range
+        /// distance from the structure's perimeter rather than its
+        /// centre — without this a SOLDIER firing at a 2x2 CYARD from
+        /// just outside its south edge reads distance ~555 (centre)
+        /// vs the correct ~235 (south edge), and the fire gate
+        /// rejects the shot.
+        public var edgeTileOffsets: [Int16] {
+            switch self {
+            case .s1x1: return [0, 0,    0,     0,     0,     0,     0, 0]
+            case .s2x1: return [0, 1,    1,     1,     1,     0,     0, 0]
+            case .s1x2: return [0, 0,    0,  64,    64,    64,     0, 0]
+            case .s2x2: return [0, 1,    1,  65,    65,    64,    64, 0]
+            case .s2x3: return [0, 1,   65, 129,   129,   128,    64, 0]
+            case .s3x2: return [1, 2,    2,  66,    65,    64,     0, 0]
+            case .s3x3: return [1, 2,   66, 130,   129,   128,    64, 0]
+            }
+        }
+
+        /// Port of `g_table_structure_layoutTileDiff` (pixel offsets in
+        /// the tile32 coordinate system). Added to the structure's
+        /// stored top-left position to get the layout-adjusted tile
+        /// centre — what OpenDUNE's `Tools_Index_GetTile` returns for
+        /// a structure encoded-index. Used by Fire's orientation-diff
+        /// gate + anywhere else that needs the "target tile" of a
+        /// structure rather than its raw anchor.
+        public var tileDiff: (x: UInt16, y: UInt16) {
+            switch self {
+            case .s1x1: return (0x80, 0x80)
+            case .s2x1: return (0x100, 0x80)
+            case .s1x2: return (0x80, 0x100)
+            case .s2x2: return (0x100, 0x100)
+            case .s2x3: return (0x100, 0x180)
+            case .s3x2: return (0x280, 0x100)
+            case .s3x3: return (0x180, 0x180)
+            }
+        }
+
         /// `(dx, dy)` tile offsets from the anchor covered by this
         /// layout. Port of OpenDUNE's `g_table_structure_layoutTiles`
         /// (`src/table/structureinfo.c`), decomposed from packed-tile
