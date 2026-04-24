@@ -11,7 +11,25 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**🎯 SAVE007 parity frontier at tick 151 `unit[39].amount: expected=12 actual=11`.** Classic harvester-drain drift — u39 (player harvester) has accumulated 12 spice units in OpenDUNE vs 11 in Swift by tick 151. Harvest drain bumps amount by 1 every N ticks when standing on a spice tile; Swift's `Script_Unit_Harvest` port already looks byte-exact at the RNG draws. Candidate causes: (a) the harvester moved tiles and its current-tile spice check flickered by one tick; (b) scheduler cadence gate for the script fires one tick later in Swift than OpenDUNE after the tick-101 fix. Next step: trace u39's `amount + positionX/Y + actionID + scriptPc + scriptDelay` across ticks 100..151 in both engines.
+**🎯 SAVE007 parity frontier at tick 151 `unit[39].amount: expected=12 actual=11`.** The apparent harvester-drain drift is actually a downstream symptom of a u0 (player carryall) script divergence — diagnostic narrowing via temporary skip-list in `ParityHarness.compareUnit` showed:
+
+- skip `amount` → next drift tick 166 `u0.orientation0Target=43 vs -15`
+- skip `orientation0Target/Speed` too → tick 167 `u0.orientation0Current=-3 vs -15`
+- skip all u0 orientation0 → tick 171 `u0.movingSpeed=255 vs 200`
+- skip u0 speed fields → tick 172 `u0.positionX=5813 vs 5720`
+- skip u0 position → tick 196 `u26.fireDelay=50 vs 51` (tiny off-by-one, clean far-field)
+
+Conclusion: **every drift between ticks 151 and ~195 is the same u0 carryall script divergence** — Swift's carryall reached `orientationTarget=-15` by tick ~140 (rotation completed, `orientationSpeed=0`), but OpenDUNE's script at tick 166 fires a new `Unit_SetOrientation(u, 43, false, 0)` + a jump to pc=1981. Swift's script never executes that opcode, so the carryall stays facing -15, never accelerates to speed 255 (OpenDUNE did this at tick 96), and lags behind. The RNG stream differential from u0 running different opcodes cascades into u39's tick-151 harvest bump.
+
+OpenDUNE's u0 trace (from golden):
+- tick 80..95: pc=1117 (loop, speed=200/9), `orient0=(126,126,0)`, flying south-east.
+- tick 96: pc=1968 (+851 jump), speed bumped to 255/12.
+- tick 96..100: pc=1968.
+- tick 101: pc=2014, `orient0=(126,-15,12)` (new target via SetOrientation or SetDestinationDirect), `delay=12`.
+- tick 101..165: pc=2014, delay counts down, rotation walks current 126 → -15.
+- tick 166: pc=1981 (back-jump), `orient0=(-15,43,12)` (new target fired again).
+
+Candidate roots for next session: (a) a script function we haven't ported that normally advances pc from 1117 → 1968 at tick 96 — likely `Script_Unit_MoveToTarget` (slot 0x16) which currently only returns 0/1 instead of running OpenDUNE's smooth-close logic. (b) `Script_Unit_Rotate` or `Unit_SetOrientation` pc flow. Next concrete step: add diagnostic printouts to `ParityHarness.runAgainst` that log `(tick, unit[0].scriptPc, scriptDelay, orientation0*)` every tick, then compare against the golden's tick 80..170 u0 dump (already captured above). First tick where Swift's pc trajectory deviates is the root cause.
 
 **Prior (shipped 2026-04-24 session):**
 - Tick 101 `unit[0].orientation0Current: expected=126 actual=-15` closed by rewriting `Script_Unit_SetDestinationDirect` byte-exact against `src/script/unit.c:918..936`. Removed the spurious `targetMove` write, switched from `orientationCurrent = ...` snap to `Units.setOrientation(rotateInstantly: false)`, and gated the `currentDestination` write on `currentDestination == (0, 0)` (carryall semantics — `isNormalUnit` flag not yet tracked but no non-normal non-carryall caller hits this slot today).

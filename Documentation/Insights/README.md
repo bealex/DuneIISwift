@@ -99,6 +99,7 @@ OpenDUNE `src/...` or dunepak `src/...` or the raw bytes of
 - [simulation-action-id-drives-script-reload](simulation-action-id-drives-script-reload.md) — writing `slot.actionID` is enough to re-enter the unit script; the scheduler's per-tick `loadedUnitAction` delta-check reloads the engine without explicit `Script_Reset` / `Script_Load` calls.
 - [simulation-route-orientation-locked-to-step](simulation-route-orientation-locked-to-step.md) — while following a pathfinder route, `tickMovement` must pin `orientationCurrent = route[0] * 32` (canonical octant midpoint); recomputing from continuous pos32 delta made the sprite flicker across octant boundaries when the unit was off-axis.
 - [simulation-off-viewport-3-opcode-cap](simulation-off-viewport-3-opcode-cap.md) — OpenDUNE caps unit scripts at 3 opcodes/tick for off-viewport units with `scriptNoSlowdown=false` (`src/unit.c:292..294`); a 17× script-throughput difference that only showed up via opcode-level VM tracing.
+- [simulation-tick-sprite-runs-after-movement](simulation-tick-sprite-runs-after-movement.md) — OpenDUNE's `tickUnknown5` sprite-animation pass runs AFTER `Unit_MovementTick` in the per-unit loop; a reversed order animates one extra frame on every foot-unit arrival tick.
 
 ### Render
 
@@ -113,3 +114,4 @@ OpenDUNE `src/...` or dunepak `src/...` or the raw bytes of
 - [workflow-tdd-loop](workflow-tdd-loop.md) — write the test first, implement, update history + insight. See CLAUDE.md for the full loop.
 - [workflow-opendune-parity-rng-reseed](workflow-opendune-parity-rng-reseed.md) — OpenDUNE's `SaveGame_LoadFile` never restores RNG state, and `OpenDune_Init` seeds the LCG from `time(NULL)`; parity harnesses must re-seed both RNGs *before and after* the save load to get reproducible replays.
 - [workflow-parity-harness-audits-save-loader](workflow-parity-harness-audits-save-loader.md) — `ParityHarness` at `tickLimit=0` diffs post-save-load state against OpenDUNE's golden in ~50ms; catches the common class of bug where `Formats.Save.*` decodes a field but `WorldSnapshot(loading:baseline:)` forgets to copy it onto the live slot.
+- [workflow-parity-skip-list-narrowing](workflow-parity-skip-list-narrowing.md) — when a parity drift lands on a tangential field (e.g. `u39.amount`), temporarily comment out its diff in `compareUnit` and rerun; the cascade of next-in-sequence halts on the same unit points straight at the real root cause.
