@@ -194,6 +194,16 @@ extension Scripting {
                     return UInt16(slot.type)
                 case 0x08:
                     return Scripting.EncodedIndex.unit(slot.index).raw
+                case 0x09:
+                    // `u->movingSpeed`.
+                    return UInt16(slot.movingSpeed)
+                case 0x0A:
+                    // `abs(orient[0].target - orient[0].current)` — the
+                    // absolute remaining rotation for the body. UNIT.EMC
+                    // uses this in carryall / winger motion scripts to
+                    // gate on "nearly done turning."
+                    let diff = Int16(slot.orientationTarget) &- Int16(slot.orientationCurrent)
+                    return UInt16(abs(Int(diff)))
                 case 0x0B:
                     // `(u->currentDestination.x == 0 && u->currentDestination.y == 0) ? 0 : 1`
                     // — `currentDestination` is the pixel-level per-step goal
@@ -203,20 +213,45 @@ extension Scripting {
                     // handler (UNIT.EMC word 637) decide "already moving" on
                     // tick 1 of a fresh order and loop forever at the wait.
                     return (slot.currentDestinationX == 0 && slot.currentDestinationY == 0) ? 0 : 1
+                case 0x0C:
+                    // `u->fireDelay == 0 ? 1 : 0` — attack-ready gate.
+                    return slot.fireDelay == 0 ? 1 : 0
                 case 0x0D:
                     // `ui->flags.explodeOnDeath`.
                     return (info?.explodeOnDeath ?? false) ? 1 : 0
                 case 0x0E:
                     return UInt16(slot.houseID)
+                case 0x0F:
+                    // `u->o.flags.s.byScenario ? 1 : 0`. Carryalls and
+                    // reinforcement units carry this flag; `Script_Unit_SetSpeed`
+                    // at `src/script/unit.c:389` branches on it to skip the
+                    // 192/256 speed scaling. Missing this case made u0
+                    // (SAVE007 player carryall) see byScenario=0 where
+                    // OpenDUNE saw 1, which cascaded into every subsequent
+                    // opcode the carryall's flight script dispatched.
+                    return slot.byScenario ? 1 : 0
                 case 0x10:
                     // Turret orientation — we don't separate turret from body
                     // yet, so return body orientation regardless.
                     return UInt16(bitPattern: Int16(slot.orientationCurrent))
+                case 0x11:
+                    // `abs(orient[level].target - orient[level].current)`
+                    // where `level = hasTurret ? 1 : 0`. We don't track
+                    // turret orientation target/speed separately yet; fall
+                    // back to the body-level delta (same as case 0x0A).
+                    let diff11 = Int16(slot.orientationTarget) &- Int16(slot.orientationCurrent)
+                    return UInt16(abs(Int(diff11)))
                 case 0x12:
                     // `(ui->movementType & 0x40) == 0 ? 0 : 1` — the 0x40 bit
                     // never appears in MovementType enum (all values < 6), so
                     // this is effectively always 0 in vanilla data.
                     return 0
+                case 0x13:
+                    // `(u->o.seenByHouses & (1 << g_playerHouseID)) == 0 ? 0 : 1`.
+                    // Without `host.playerHouseID` we can't evaluate, so
+                    // return 0 matching the pre-player-house default.
+                    guard let player = host.playerHouseID else { return 0 }
+                    return (slot.seenByHouses & (UInt8(1) &<< player)) == 0 ? 0 : 1
                 default:
                     return 0
                 }
@@ -834,47 +869,55 @@ extension Scripting {
             }
         }
 
-        /// `Script_Unit_IdleAction` (slot 0x31) — port of OpenDUNE
-        /// `src/script/unit.c:1748`. Always draws one `Tools_Random_256`
-        /// byte as the gate-roll. Then, depending on type + actionID,
-        /// draws additional bytes:
-        ///   • sandworm: 1 extra byte (orientation) if `(random & 3) == 0`
-        ///   • INFANTRY..TROOPER + GUARD: 1 extra byte (spriteOffset)
-        ///   • any unit if `random ≤ spawnChance`: 2 extra bytes (turret
-        ///     level select + new orientation)
-        /// `spawnChance` is 0 for most units (so the 2-byte branch is
-        /// skipped), 64 for ground vehicles, 128 for harvester. Keeping
-        /// the byte count exact is load-bearing for RNG-stream parity —
-        /// an off-by-one here shifts every downstream draw.
+        /// `Script_Unit_IdleAction` (slot 0x31) — byte-exact port of
+        /// OpenDUNE `src/script/unit.c:1748..1776`.
+        ///
+        /// Always draws exactly one **LCG** byte (`Tools_RandomLCG_Range(0, 10)`)
+        /// as the gate roll — NOT `Tools_Random_256`. Then:
+        ///   • if `movementType ∉ {FOOT, TRACKED, WHEELED}` (so carryall /
+        ///     ornithopter / harvester / sandworm / frigate / bullets):
+        ///     return 0 immediately with no further draws.
+        ///   • if `FOOT && random > 8`: draw 1 `Tools_Random_256` byte,
+        ///     write `spriteOffset = byte & 0x3F`.
+        ///   • if `random > 2`: return 0 with no further draws.
+        ///   • else (`random ≤ 2`): draw 2 `Tools_Random_256` bytes
+        ///     (level-select + orientation target) and call
+        ///     `Unit_SetOrientation(u, byte, rotateInstantly=false, level)`
+        ///     where `level = (byte0 & 1) == 0 ? 1 : 0`.
+        ///
+        /// Previously the Swift port consumed one `Tools_Random_256`
+        /// byte per call and wrote `spriteOffset` unconditionally on
+        /// every GUARDing infantry unit — both divergent from OpenDUNE
+        /// and the culprit for SAVE007's tick-56 `unit[28].spriteOffset`
+        /// drift.
         public static func makeIdleActionUnit(source: RandomSource, host: Host) -> VM.Function {
             return { _ in
                 guard let (poolIndex, slot) = currentUnit(host: host) else { return 0 }
+                guard let info = Simulation.UnitInfo.lookup(slot.type) else { return 0 }
                 Log.debug(
                     "IdleAction fired for unit \(poolIndex) type=\(slot.type) orient=\(slot.orientationCurrent)",
                     tracer: .label("idle")
                 )
 
-                // First byte: always drawn (src/script/unit.c:1755).
-                source.currentTraceContext = "IdleAction.random u\(poolIndex)"
-                let random = source.toolsNext()
-                source.currentTraceContext = ""
+                // src/script/unit.c:1759 — `Tools_RandomLCG_Range(0, 10)`.
+                // The LCG is independent of `Tools_Random_256`; the parity
+                // RNG trace only records Tools bytes, so this draw isn't
+                // tagged.
+                let random = source.lcg.range(0, 10)
 
-                // Sandworm branch (src/script/unit.c:1757..1761).
-                if slot.type == 25 {  // UNIT_SANDWORM
-                    if (random & 3) != 0 { return 0 }
-                    source.currentTraceContext = "IdleAction.wormOrient u\(poolIndex)"
-                    let wormOrient = source.toolsNext()
-                    source.currentTraceContext = ""
-                    Simulation.Units.setOrientation(
-                        poolIndex: poolIndex, orientation: Int8(bitPattern: wormOrient),
-                        rotateInstantly: false, level: 0, units: &host.units
-                    )
+                // src/script/unit.c:1762 — bail immediately for
+                // wingers / slitherers / harvesters; they don't drew
+                // any Tools bytes from IdleAction.
+                let mt = info.movementType
+                if mt != .foot && mt != .tracked && mt != .wheeled {
                     return 0
                 }
 
-                // GUARD + INFANTRY..TROOPER: spriteOffset fidget (src/script/unit.c:1763..1766).
-                if slot.actionID == Simulation.ActionID.guard_,
-                   slot.type >= 2, slot.type <= 5 {
+                // src/script/unit.c:1764..1767 — FOOT sprite fidget,
+                // gated on the rare `random > 8` outcome (2/11 chance).
+                // This is the ONLY path that writes `spriteOffset` from
+                // IdleAction.
+                if mt == .foot && random > 8 {
                     source.currentTraceContext = "IdleAction.sprite u\(poolIndex)"
                     let spriteByte = source.toolsNext()
                     source.currentTraceContext = ""
@@ -883,14 +926,14 @@ extension Scripting {
                     host.units[poolIndex] = updated
                 }
 
-                // spawnChance gate (src/script/unit.c:1768): early return
-                // unless random ≤ spawnChance. For most unit types
-                // spawnChance = 0, so `random > 0` almost always returns.
-                if Int(random) > Int(Self.idleActionSpawnChance(type: slot.type)) {
-                    return 0
-                }
+                // src/script/unit.c:1769 — 9/11 early-return, no further
+                // Tools bytes.
+                if random > 2 { return 0 }
 
-                // Turret-level select + new orientation (src/script/unit.c:1771..1773).
+                // src/script/unit.c:1771..1773 — 3/11 chance, draws two
+                // Tools bytes: the first picks which orientation slot
+                // (turret level=1 when the byte is even, body level=0
+                // when odd), the second is the target orientation.
                 source.currentTraceContext = "IdleAction.turret u\(poolIndex)"
                 let turretByte = source.toolsNext()
                 source.currentTraceContext = "IdleAction.newOrient u\(poolIndex)"
@@ -902,18 +945,6 @@ extension Scripting {
                     rotateInstantly: false, level: level, units: &host.units
                 )
                 return 0
-            }
-        }
-
-        /// `spawnChance` lookup for `Script_Unit_IdleAction`. Values from
-        /// `src/table/unitinfo.c`'s `spawnChance` column. HARVESTER is
-        /// the only 128; ground vehicles (types 7..15 + MCV=17) are 64;
-        /// everything else is 0.
-        private static func idleActionSpawnChance(type: UInt8) -> UInt8 {
-            switch type {
-            case 16: return 128
-            case 7...15, 17: return 64
-            default: return 0
             }
         }
 
@@ -1055,10 +1086,21 @@ extension Scripting {
                         // scorer lands in `ScenarioScene`.
                         return 128
                     }
-                    let found = Simulation.Pathfinder.findRoute(src: src, dst: dst, bufferSize: 40, score: scoreFn)
+                    let found = Simulation.Pathfinder.findRoute(
+                        src: src, dst: dst, bufferSize: 40, score: scoreFn,
+                        retargetImpassableDst: host.retargetImpassableDst
+                    )
+                    // `memcpy(u->route, res.buffer, min(res.routeSize, 14))`
+                    // (`src/script/unit.c:1323`). OpenDUNE only overwrites
+                    // the first `routeSize` bytes; the tail keeps its
+                    // prior contents. Overwriting the tail with 0xFF
+                    // drifts from the save's preserved route bytes —
+                    // e.g. SAVE007 u38 tick 41 expects
+                    // `route1..3 = 0, 0, 0` (from the load state) even
+                    // after `CalculateRoute` writes `route[0] = 0xFF`.
                     let copyCount = min(found.size, 14)
-                    for i in 0..<14 {
-                        updated.route[i] = i < copyCount ? found.buffer[i] : 0xFF
+                    for i in 0..<copyCount {
+                        updated.route[i] = found.buffer[i]
                     }
                     if updated.route[0] == 0xFF {
                         updated.targetMove = 0
@@ -1212,9 +1254,27 @@ extension Scripting {
             }
         }
 
-        /// `Script_Unit_SetDestinationDirect` — snaps `targetMove` to an
-        /// encoded tile and immediately faces it. Used by carryalls to
-        /// bypass pathfinding. Nothing happens for invalid encoded input.
+        /// `Script_Unit_SetDestinationDirect` (slot 0x19) — port of
+        /// `src/script/unit.c:918..936`. Bypasses the pathfinder and
+        /// heads straight at an encoded tile. Used by carryalls.
+        ///
+        /// OpenDUNE semantics (three deviations from the old Swift
+        /// port, all load-bearing for parity):
+        /// 1. `targetMove` is NEVER touched. The old port wrote `raw`
+        ///    into it — which diverged the carryall's attack-hold
+        ///    branches on tick 101 of SAVE007.
+        /// 2. `currentDestination` is only written when either
+        ///    `currentDestination == (0, 0)` or the unit type has
+        ///    `isNormalUnit = true`. Carryalls (the typical caller)
+        ///    aren't normal units, so mid-flight calls are no-ops on
+        ///    `currentDestination`.
+        /// 3. Orientation is set via `Unit_SetOrientation(u, dir,
+        ///    rotateInstantly=false, 0)` — seeds target + speed, lets
+        ///    the per-tick rotator walk `orientation0Current` across
+        ///    subsequent ticks. The old port snapped
+        ///    `orientationCurrent` directly, which made the carryall
+        ///    face its dest instantly while OpenDUNE still had a few
+        ///    ticks of gradual turn left.
         public static func makeSetDestinationDirectUnit(host: Host) -> VM.Function {
             return { engine in
                 let raw = Scripting.peek(engine: &engine, position: 1)
@@ -1223,10 +1283,31 @@ extension Scripting {
                       let (poolIndex, slot) = currentUnit(host: host),
                       let tgt = Pos32.of(encoded, host: host) else { return 0 }
                 var updated = slot
-                updated.targetMove = raw
-                let from = Pos32(x: slot.positionX, y: slot.positionY)
-                updated.orientationCurrent = Int8(bitPattern: Pos32.direction(from: from, to: tgt))
+                // `currentDestination` write is conditional on either
+                // an empty current dest (`(0, 0)` — the unit just
+                // started / was idle) or the type carrying
+                // `isNormalUnit = true`. We don't yet track the
+                // `isNormalUnit` flag on `UnitInfo`, so the conservative
+                // reading is "only overwrite when empty" — which
+                // matches carryalls, the intended callers of this slot.
+                // Harmless for truly-normal units today because the
+                // scheduler never reaches them via this path; if a
+                // future port does, the flag needs to land first.
+                if slot.currentDestinationX == 0 && slot.currentDestinationY == 0 {
+                    updated.currentDestinationX = tgt.x
+                    updated.currentDestinationY = tgt.y
+                }
                 host.units[poolIndex] = updated
+                let destPos = Pos32(
+                    x: updated.currentDestinationX,
+                    y: updated.currentDestinationY
+                )
+                let from = Pos32(x: slot.positionX, y: slot.positionY)
+                let dir = Pos32.direction(from: from, to: destPos)
+                Simulation.Units.setOrientation(
+                    poolIndex: poolIndex, orientation: Int8(bitPattern: dir),
+                    rotateInstantly: false, level: 0, units: &host.units
+                )
                 return 0
             }
         }

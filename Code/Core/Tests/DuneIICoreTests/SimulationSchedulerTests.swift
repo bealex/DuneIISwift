@@ -216,6 +216,66 @@ struct SimulationSchedulerTests {
         #expect(scheduler.structureEngines[2].delay == 1) // wall skipped
         #expect(scheduler.structureEngines[3].delay == 0) // real building ticked
     }
+
+    @Test("tickHousePowerMaintenance fires once at tick 70 then every 10 800 ticks, draining (powerUsage / 32) + 1 credits per house")
+    func houseMaintenanceDrain() throws {
+        // Port of `src/house.c:270..273` — every `tickPowerMaintenance`
+        // cadence, each allocated house pays
+        // `min(credits, (powerUsage / 32) + 1)`. First fire comes from
+        // `opendune.c:1503` which seeds the gate to
+        // `max(g_timerGame + 70, saved_value)`; for a freshly loaded
+        // scheduler that's 70.
+        var houses = Simulation.HousePool()
+        houses.allocate(at: 1) // Atreides
+        houses.allocate(at: 2) // Ordos
+        var atreides = houses[1]
+        atreides.credits = 305
+        atreides.powerUsage = 30           // → cost 1
+        houses[1] = atreides
+        var ordos = houses[2]
+        ordos.credits = 0
+        ordos.powerUsage = 0               // → cost 1 but credits clamp to 0
+        houses[2] = ordos
+
+        let host = Scripting.Host(houses: houses)
+        var scheduler = makeScheduler(
+            host: host,
+            unitProgram: emptyProgram(),
+            structureProgram: emptyProgram()
+        )
+        // Ticks 1..69 must leave credits untouched — the gate hasn't
+        // fired yet.
+        for _ in 1..<70 { scheduler.tick() }
+        #expect(host.houses[1].credits == 305)
+        #expect(host.houses[2].credits == 0)
+        // Tick 70 fires the first drain.
+        scheduler.tick()
+        #expect(host.houses[1].credits == 304)
+        #expect(host.houses[2].credits == 0)  // clamped at 0
+        // The gate reschedules to 10 880; no further drain until then.
+        scheduler.tick()
+        #expect(host.houses[1].credits == 304)
+    }
+
+    @Test("Power-maintenance drain scales with powerUsage: 30 → 1, 64 → 3, 200 → 7")
+    func houseMaintenanceDrainScale() throws {
+        // `(usage / 32) + 1` — rounding-down integer math. 30/32=0+1=1,
+        // 64/32=2+1=3, 200/32=6+1=7.
+        for (usage, cost) in [(UInt16(30), UInt16(1)), (UInt16(64), UInt16(3)), (UInt16(200), UInt16(7))] {
+            var houses = Simulation.HousePool()
+            houses.allocate(at: 1)
+            var h = houses[1]; h.credits = 1000; h.powerUsage = usage; houses[1] = h
+            let host = Scripting.Host(houses: houses)
+            var scheduler = makeScheduler(
+                host: host,
+                unitProgram: emptyProgram(),
+                structureProgram: emptyProgram()
+            )
+            for _ in 1...70 { scheduler.tick() }
+            #expect(host.houses[1].credits == 1000 - cost,
+                    "powerUsage=\(usage) expected cost=\(cost), got credits=\(host.houses[1].credits)")
+        }
+    }
 }
 
 // MARK: - Builders

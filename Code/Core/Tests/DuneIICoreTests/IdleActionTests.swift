@@ -71,31 +71,38 @@ struct IdleActionTests {
         #expect(host.units[0].orientationCurrent == 0)
     }
 
-    @Test("IdleAction nudges spriteOffset on a GUARDing infantry-class unit")
+    @Test("IdleAction nudges spriteOffset on a FOOT unit when the LCG gate rolls > 8")
     func footSpriteOffset() throws {
-        // Port of `src/script/unit.c:1763..1766`: when actionID=GUARD AND
-        // type is in INFANTRY..TROOPER (2..5), IdleAction draws a second
-        // Tools_Random_256 byte for `spriteOffset = byte & 0x3F`. The
-        // first byte is the gate; we need toolsSeed such that the SECOND
-        // draw has `& 0x3F != 0` so the assertion is robust.
+        // Port of `src/script/unit.c:1764..1766`: the sprite-offset
+        // write fires when `movementType == MOVEMENT_FOOT` AND the
+        // gate roll `Tools_RandomLCG_Range(0, 10) > 8` (2/11 chance).
+        // Pick an LCG seed that rolls 9 or 10, and a Tools_Random_256
+        // seed whose first byte has `& 0x3F != 0` so the assertion is
+        // robust (the spriteOffset write is `byte & 0x3F`).
+        var lcgSeed: UInt16 = 0
+        for candidate in 0..<1024 {
+            var lcg = RNG.BorlandLCG(seed: UInt16(truncatingIfNeeded: candidate))
+            if lcg.range(0, 10) > 8 {
+                lcgSeed = UInt16(truncatingIfNeeded: candidate)
+                break
+            }
+        }
         var toolsSeed: UInt32 = 1
         for candidate in UInt32(1)..<UInt32(256) {
             var t = RNG.ToolsRandom256(seed: candidate)
-            _ = t.next()                        // gate byte
             if (t.next() & 0x3F) != 0 { toolsSeed = candidate; break }
         }
         var units = Simulation.UnitPool()
-        units.allocate(at: 0, type: 2, houseID: 0)   // INFANTRY
+        units.allocate(at: 0, type: 2, houseID: 0)   // INFANTRY (MOVEMENT_FOOT)
         var u = units[0]
         u.spriteOffset = 0
-        u.actionID = Simulation.ActionID.guard_
         units[0] = u
         let host = Scripting.Host(
             units: units, structures: .init(),
             currentObject: .unit(poolIndex: 0),
             texts: [], textLog: [], voiceLog: []
         )
-        let source = Scripting.RandomSource(lcgSeed: 0, toolsSeed: toolsSeed)
+        let source = Scripting.RandomSource(lcgSeed: lcgSeed, toolsSeed: toolsSeed)
         var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
         functions[0] = Scripting.Functions.makeIdleActionUnit(source: source, host: host)
         let vm = Scripting.VM(
@@ -105,6 +112,44 @@ struct IdleActionTests {
         var engine = Scripting.Engine.reset()
         _ = vm.step(&engine)
         #expect(host.units[0].spriteOffset != 0)
+    }
+
+    @Test("IdleAction leaves spriteOffset alone when the LCG gate rolls ≤ 8")
+    func footSpriteOffsetGateClosed() throws {
+        // Complement of `footSpriteOffset`: same setup but an LCG seed
+        // whose `range(0, 10)` rolls ≤ 8. The 9/11 outcome skips the
+        // sprite write entirely — OpenDUNE `src/script/unit.c:1764`
+        // requires `random > 8`, not `>= 8`.
+        var lcgSeed: UInt16 = 0
+        for candidate in 0..<1024 {
+            var lcg = RNG.BorlandLCG(seed: UInt16(truncatingIfNeeded: candidate))
+            let r = lcg.range(0, 10)
+            // Want the gate closed (≤ 8) but `random > 2` so we don't
+            // then go draw orientation Tools bytes — this isolates the
+            // sprite-write gate.
+            if r > 2 && r <= 8 {
+                lcgSeed = UInt16(truncatingIfNeeded: candidate)
+                break
+            }
+        }
+        var units = Simulation.UnitPool()
+        units.allocate(at: 0, type: 2, houseID: 0)   // INFANTRY (MOVEMENT_FOOT)
+        var u = units[0]; u.spriteOffset = 11; units[0] = u
+        let host = Scripting.Host(
+            units: units, structures: .init(),
+            currentObject: .unit(poolIndex: 0),
+            texts: [], textLog: [], voiceLog: []
+        )
+        let source = Scripting.RandomSource(lcgSeed: lcgSeed, toolsSeed: 1)
+        var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
+        functions[0] = Scripting.Functions.makeIdleActionUnit(source: source, host: host)
+        let vm = Scripting.VM(
+            program: (try? Formats.Emc.Program.decodeCode(ins(14, 0))) ?? .empty,
+            functions: functions
+        )
+        var engine = Scripting.Engine.reset()
+        _ = vm.step(&engine)
+        #expect(host.units[0].spriteOffset == 11)
     }
 
     @Test("IdleAction skips body rotation half the time (i==1 → turret-target; no-op on non-turret unit)")

@@ -78,7 +78,8 @@ extension Simulation {
             seedScriptsFrom game: Formats.Save.Game? = nil,
             spiceMap: Simulation.SpiceMap? = nil,
             snapshotLandscape: [LandscapeType] = [],
-            rngTrace: RNGTrace? = nil
+            rngTrace: RNGTrace? = nil,
+            scriptTrace: ScriptTrace? = nil
         ) throws {
             let goldenTicks = try parseGolden(golden)
             guard !goldenTicks.isEmpty else { throw ParseError.goldenEmpty }
@@ -106,6 +107,59 @@ extension Simulation {
                 guard Int(packed) < snapshotLandscape.count else { return 0 }
                 return UInt8(snapshotLandscape[Int(packed)].rawValue)
             }
+            // Playable tile rect for this save's `mapScale`
+            // (`g_mapInfos[mapScale]`, `src/map.c:57`). Needed by the
+            // `Unit_GetTileEnterScore` port below — tiles outside the
+            // rect score 256 for non-winger movers, which makes the
+            // pathfinder return empty for units stranded outside
+            // (e.g. SAVE007 u38 at (17,62)). Without this, our
+            // fallback `return 128` let findRoute succeed where
+            // OpenDUNE's bailed, and `Script_Unit_CalculateRoute`
+            // wrote `orientation0Target` from a bogus route[0].
+            let mapScale: UInt16 = game?.info.scenario.mapScale ?? 1
+            let playableRect: (originX: Int, width: Int, originY: Int, height: Int) = {
+                switch mapScale {
+                case 0: return (1, 62, 1, 62)
+                case 2: return (21, 21, 21, 21)
+                default: return (16, 32, 16, 32)
+                }
+            }()
+            // Port of `Unit_GetTileEnterScore` (`src/unit.c:2335..2387`),
+            // trimmed to the checks the pathfinder needs for parity:
+            //   - MOVEMENT_WINGER bypasses the playable-rect check; all
+            //     other movement types score 256 outside the rect.
+            //   - Landscape speed from `LandscapeInfo.table`, indexed
+            //     by movement type. `0` → score 256 (impassable).
+            //   - Diagonal step (`orient8 & 1 != 0`) gets a speed
+            //     penalty (res -= res/4 + res/8).
+            //   - Final step: `res ^ 0xFF` inverts the speed to an
+            //     approximate cost.
+            // Structure-occupancy is handled implicitly: the
+            // `landscapeAt` closure returns `LandscapeType.structure`
+            // (`rawValue=12`), and `LandscapeInfo[12].movementSpeed`
+            // is 0 for every non-winger type, which already trips the
+            // `res == 0 → 256` branch.
+            let tileEnterScore: (_ packed: UInt16, _ orient8: UInt8, _ movementType: Simulation.MovementType) -> Int32 = { packed, orient8, movementType in
+                let tx = Int(packed & 0x3F)
+                let ty = Int((packed >> 6) & 0x3F)
+                if movementType != .winger {
+                    if tx < playableRect.originX || tx >= playableRect.originX + playableRect.width ||
+                       ty < playableRect.originY || ty >= playableRect.originY + playableRect.height {
+                        return 256
+                    }
+                }
+                let lst = Int(landscapeAt(packed))
+                guard lst >= 0, lst < Simulation.LandscapeInfo.table.count else { return 256 }
+                let land = Simulation.LandscapeInfo.table[lst]
+                let mIdx = Int(movementType.rawValue)
+                guard mIdx < land.movementSpeed.count else { return 256 }
+                var res = Int32(land.movementSpeed[mIdx])
+                if res == 0 { return 256 }
+                if (orient8 & 1) != 0 {
+                    res -= res / 4 + res / 8
+                }
+                return res ^ 0xFF
+            }
             let host = Scripting.Host(
                 units: snapshot.units,
                 structures: snapshot.structures,
@@ -115,9 +169,37 @@ extension Simulation {
                 currentObject: nil,
                 texts: [],
                 textLog: [],
+                tileEnterScore: tileEnterScore,
                 landscapeAt: landscapeAt,
                 spiceMap: spiceMap
             )
+            // OpenDUNE's `Script_Unit_Pathfinder` never retargets an
+            // impassable destination — it returns routeSize=0 and lets
+            // `Script_Unit_CalculateRoute` clear `u->targetMove`. Our
+            // gameplay default slides to the nearest passable neighbour
+            // so hunting enemies don't halt one tile short of a CYARD;
+            // parity needs the faithful behaviour.
+            host.retargetImpassableDst = false
+            // `g_playerHouseID` analogue. OpenDUNE derives this from
+            // the scenario filename at load; the save itself doesn't
+            // record it. Heuristic: pick the lowest-indexed house that
+            // owns a CYARD (structure type 8) — every scenario we care
+            // about has a unique player CYARD. Falls back to Atreides
+            // (1) when no CYARD exists so the default isn't silently
+            // 0 (Harkonnen). Wired so `Unit_Create`'s
+            // `Unit_SetAction(u, houseID == player ? actionsPlayer[3] : actionAI)`
+            // branches correctly for freshly-created bullets — the
+            // difference is visible on `actionID` because bullets have
+            // `actionAI = ACTION_INVALID`.
+            if host.playerHouseID == nil {
+                for s in host.structures.slots where s.isUsed && s.type == 8 {
+                    host.playerHouseID = s.houseID
+                    break
+                }
+                if host.playerHouseID == nil {
+                    host.playerHouseID = Simulation.House.atreides
+                }
+            }
             let source = Scripting.RandomSource(
                 lcgSeed: UInt16(truncatingIfNeeded: rngSeed),
                 toolsSeed: rngSeed
@@ -137,9 +219,24 @@ extension Simulation {
             let unitFunctions = Scripting.Functions.unitTable(host: host, source: source)
             let structureFunctions = Scripting.Functions.structureTable(host: host, source: source)
             let teamFunctions = Scripting.Functions.teamTable(host: host, source: source)
-            let unitVM = Scripting.VM(program: unitProgram, functions: unitFunctions)
+            var unitVM = Scripting.VM(program: unitProgram, functions: unitFunctions)
             let structureVM = Scripting.VM(program: structureProgram, functions: structureFunctions)
             let teamVM = Scripting.VM(program: teamProgram, functions: teamFunctions)
+            // Per-opcode script trace, filtered to one unit. Hooks the
+            // unit VM only — structure / team VMs dispatch off their
+            // own pools, and OpenDUNE's matching `--parity-script-unit`
+            // flag also targets a unit slot specifically.
+            if let scriptTrace {
+                let targetIdx = scriptTrace.unitPoolIndex
+                unitVM.trace = { pc, opcode, parameter, engine in
+                    if case .unit(let poolIndex)? = host.currentObject,
+                       poolIndex == targetIdx {
+                        scriptTrace.record(
+                            pc: pc, opcode: opcode, parameter: parameter, engine: engine
+                        )
+                    }
+                }
+            }
 
             var scheduler = Simulation.Scheduler(
                 host: host,
@@ -151,7 +248,12 @@ extension Simulation {
             // Same `Tools_Random_256` source for the `Unit_Move` wobble
             // byte draw (`src/unit.c:1322`). Must share the stream with
             // scripts + harvesting for byte-exact RNG parity.
-            scheduler.movementRNG = { source.toolsNext() }
+            scheduler.movementRNG = { idx in
+                source.currentTraceContext = "wobble u\(idx)"
+                let b = source.toolsNext()
+                source.currentTraceContext = ""
+                return b
+            }
             // OpenDUNE loads `g_gameConfig.gameSpeed` from OPTIONS.CFG
             // on startup; our install has it pinned at 4 (Fastest), but
             // any save's golden will dump its own value. Read from the
@@ -176,6 +278,15 @@ extension Simulation {
             scheduler.tickAttackHoldEnabled = false
             scheduler.tickHarvestingEnabled = false
             scheduler.perTickCadenceGatesEnabled = true
+            // Parity mode: run movement + script interleaved per unit
+            // so Swift consumes `Tools_Random_256` bytes in the same
+            // order OpenDUNE's `Unit_Find` loop does. Temporarily off
+            // while the interleaved path is validated — the batched
+            // ordering currently reaches tick 151 before drifting.
+            // Flipping this on takes Swift's tick order closer to
+            // OpenDUNE's but surfaces new drifts (e.g. tick 109 u0
+            // positionX) that need iterative fixes.
+            scheduler.perUnitInterleavedTickOrder = false
             // Parity runs headless (no viewport), so every unit that
             // doesn't have `scriptNoSlowdown=true` falls into the
             // off-viewport 3-opcode cap (OpenDUNE `src/unit.c:292..294`).
@@ -191,6 +302,7 @@ extension Simulation {
             // divergence) or completes — the trace is the load-bearing
             // artifact for debugging, not a success signal.
             defer { try? rngTrace?.flush() }
+            defer { try? scriptTrace?.flush() }
 
             try diff(tick: 0, golden: goldenTicks[0], host: host)
 
@@ -200,6 +312,42 @@ extension Simulation {
                     scheduler.tick()
                     try diff(tick: t, golden: goldenTicks[t], host: host)
                 }
+            }
+        }
+
+        /// Captures every opcode executed by the unit VM for a single
+        /// pool slot, matching the line format emitted by OpenDUNE's
+        /// `--parity-script-trace=<path>` + `--parity-script-unit=<idx>`
+        /// combo (see `parity.c`). Used to pinpoint where our scripted
+        /// behaviour diverges on a specific unit — e.g. SAVE007 u0 mid-
+        /// flight where Swift's carryall never jumps from pc=1117 to
+        /// pc=1968 the way OpenDUNE does around tick 96.
+        public final class ScriptTrace {
+            public let path: URL
+            public let unitPoolIndex: Int
+            private var buffer: String = ""
+
+            public init(path: URL, unitPoolIndex: Int) {
+                self.path = path
+                self.unitPoolIndex = unitPoolIndex
+                buffer.reserveCapacity(128 * 1024)
+                buffer.append("# swift parity script trace for unit[\(unitPoolIndex)] — one line per opcode\n")
+            }
+
+            fileprivate func record(
+                pc: Int, opcode: UInt8, parameter: Int, engine: Scripting.Engine
+            ) {
+                // Line format lifted from OpenDUNE's `parity.c` so diff
+                // output is visually aligned across the two engines.
+                buffer.append(
+                    "pc=\(pc) op=\(opcode) param=\(parameter) delay=\(engine.delay)"
+                    + " SP=\(engine.stackPointer) FP=\(engine.framePointer)"
+                    + " return=\(engine.returnValue)\n"
+                )
+            }
+
+            public func flush() throws {
+                try buffer.write(to: path, atomically: true, encoding: .utf8)
             }
         }
 
@@ -387,8 +535,10 @@ extension Simulation {
             try eq(tick, "house", g.index, "creditsQuota",   g.creditsQuota,   s.creditsQuota)
             try eq(tick, "house", g.index, "starportTimeLeft",  g.starportTimeLeft,  s.starportTimeLeft)
             try eq(tick, "house", g.index, "starportLinkedID", g.starportLinkedID, s.starportLinkedID)
+            try eq(tick, "house", g.index, "powerProduction", g.powerProduction, s.powerProduction)
+            try eq(tick, "house", g.index, "powerUsage",      g.powerUsage,      s.powerUsage)
             // Skipped (Swift side not yet tracking these):
-            //   powerProduction, powerUsage, unitCount, unitCountMax, harvestersIncoming
+            //   unitCount, unitCountMax, harvestersIncoming
         }
 
         private static func compareStructure(

@@ -81,6 +81,16 @@ extension Simulation {
         /// aligns everything to OpenDUNE's schedule.
         public var perTickCadenceGatesEnabled: Bool = false
 
+        /// When `true`, `tick()` runs a per-unit interleaved dispatch
+        /// that matches OpenDUNE's `GameLoop_Unit` (`src/unit.c:175..306`):
+        /// for each unit in `findArray`, movement (with its wobble RNG
+        /// draw) runs immediately before the script dispatch, so Swift
+        /// and OpenDUNE consume the shared `Tools_Random_256` stream in
+        /// the same order per caller. Off by default — gameplay
+        /// gets the batched tick-pass ordering that its tests expect.
+        /// Parity harness flips this on.
+        public var perUnitInterleavedTickOrder: Bool = false
+
         /// `offViewportSlowdownEnabled`: emulates OpenDUNE's off-viewport
         /// 3-opcode cap on unit scripts (`src/unit.c:292..294`). When
         /// true, units whose type has `scriptNoSlowdown == false` AND
@@ -123,7 +133,12 @@ extension Simulation {
         /// `canWobble && isWobbling`. Tests that don't wire this get
         /// the non-parity "no wobble draw" behaviour, which is fine
         /// since `wobbleIndex` isn't compared in the default golden.
-        public var movementRNG: (() -> UInt8)?
+        /// `Tools_Random_256` byte source for the per-step wobble draw
+        /// (`src/unit.c:1322`). Signature carries the unit's pool
+        /// index so the parity harness's RNG-trace hook can tag each
+        /// draw with its owning unit (e.g. "wobble u13") and surface
+        /// where our stream advances when OpenDUNE's doesn't.
+        public var movementRNG: ((Int) -> UInt8)?
         private var harvestTickCounter: Int = 0
 
         /// Monotonic per-tick counter. Mirrors OpenDUNE's `g_timerGame`
@@ -180,6 +195,14 @@ extension Simulation {
         /// Slowest, 4 at Normal. Calls `Unit_Rotate` once per fire.
         private var nextUnitRotationGate: UInt32 = 0
         private var unitRotationEnabledThisTick: Bool = false
+
+        /// Next `timerGame` at which `tickHousePowerMaintenance` fires.
+        /// Port of OpenDUNE `g_tickHousePowerMaintenance`
+        /// (`src/house.c:38`). Init path in `opendune.c:1503` pins it
+        /// to `max(g_timerGame + 70, saved)` on load — for a fresh
+        /// save-load (g_timerGame = 0, saved = 0) that's 70 ticks.
+        /// Each fire reschedules at `+ 10800` ticks.
+        private var nextHousePowerMaintenanceGate: UInt32 = 70
 
         /// STARPORT slice 5b — live per-game stock. Indexed by
         /// `UnitInfo.typeID` (27 entries). Seeded from
@@ -752,8 +775,6 @@ extension Simulation {
             // gate (`src/unit.c:199..217`) — fires every 3 ticks, not
             // every tick. Match that cadence.
             if unitMovementEnabledThisTick { tickFireCooldowns() }
-            // Infantry walk-cycle animation advance.
-            tickSpriteOffsets()
             // Explosion frame decrement — simple lifetime tick for the
             // presentation layer. Matches OpenDUNE's `Explosion_Tick`
             // reducing each active slot's `timeOut`, but simplified to
@@ -771,7 +792,15 @@ extension Simulation {
             // `CalculateRoute`) observe the updated position when deciding
             // whether to pop the next step or re-plan. Gated by
             // OpenDUNE's `s_tickUnitMovement` cadence (every 3 ticks).
-            if unitMovementEnabledThisTick { tickMovement() }
+            //
+            // When `perUnitInterleavedTickOrder` is on (parity mode),
+            // the batched `tickMovement()` call is SKIPPED here — it
+            // runs per-unit, just before each unit's script dispatch,
+            // in the interleaved loop below. Matches OpenDUNE's
+            // `GameLoop_Unit` at `src/unit.c:175..306`.
+            if unitMovementEnabledThisTick, !perUnitInterleavedTickOrder {
+                tickMovement()
+            }
             // tickRotation — port of OpenDUNE `Unit_Rotate` (src/unit.c:65)
             // called from GameLoop_Unit at src/unit.c:220..221 when
             // the s_tickUnitRotation gate fires. Advances
@@ -780,6 +809,21 @@ extension Simulation {
             // step; zeros `orientationSpeed` on arrival. Cadence is
             // gameSpeed-dependent (2..8 ticks). Runs per-unit.
             if unitRotationEnabledThisTick { tickRotation() }
+            // Infantry walk-cycle animation advance. OpenDUNE runs
+            // `tickUnknown5` AFTER `tickMovement` (src/unit.c:239) — so
+            // when a foot unit reaches its destination this tick,
+            // `Unit_MovementTick` clears `speed` FIRST and the sprite
+            // gate `FOOT && speed != 0` correctly refuses to bump. Our
+            // earlier ordering ran the sprite pass before movement,
+            // which snuck in one extra bump on the arrival tick (the
+            // SAVE007 u37 tick-76 drift).
+            //
+            // In interleaved mode, tickMovement runs per-unit AFTER
+            // this pass would fire — so defer the sprite pass until
+            // after the interleaved loop finishes.
+            if !perUnitInterleavedTickOrder {
+                tickSpriteOffsets()
+            }
             // Carryall arrival drop-off (slice 8c). tickMovement snaps
             // an in-transport carryall to its destination refinery and
             // clears `targetMove`; we pick that up here and detach the
@@ -818,9 +862,47 @@ extension Simulation {
             // instead of 0. Without this catch-up the SAVE007 tick-31
             // bullet u13 (from u26 firing) diverges on `speedRemainder`.
             let preTickUnitsFindCount = host.units.findArray.count
-            tickUnits()
+            if perUnitInterleavedTickOrder {
+                // Interleaved dispatch: mirror OpenDUNE's
+                // `GameLoop_Unit` per-unit loop. For each slot in
+                // `findArray`, run movement → sprite → script in that
+                // order (with its wobble `Tools_Random_256` draw
+                // landing in the movement step) so callers consume
+                // the shared RNG stream in the same order OpenDUNE
+                // does. `findArray` can grow mid-loop (e.g.
+                // `Script_Unit_Fire` allocates a bullet); we re-read
+                // `.count` each iteration so the new tail gets visited
+                // in the same pass, matching `Unit_Find`'s semantics.
+                let runScripts = unitScriptEnabledThisTick
+                let spriteFires = spriteAnimationGateFiresThisTick()
+                var cursor = 0
+                while cursor < host.units.findArray.count {
+                    let idx = host.units.findArray[cursor]
+                    if unitMovementEnabledThisTick {
+                        tickMovement(fromFindArrayIndex: cursor, singleUnit: true)
+                    }
+                    if spriteFires {
+                        tickSpriteOffsetForUnit(idx: idx)
+                    }
+                    // Re-read the slot; earlier passes may have mutated it.
+                    guard idx < host.units.slots.count else { cursor += 1; continue }
+                    let slot = host.units.slots[idx]
+                    if slot.isUsed, slot.isAllocated {
+                        runUnitScript(slot: slot, runScripts: runScripts)
+                    }
+                    cursor += 1
+                }
+            } else {
+                tickUnits()
+            }
             let postTickUnitsFindCount = host.units.findArray.count
-            if postTickUnitsFindCount > preTickUnitsFindCount {
+            // Catch-up pass for units newly allocated during script
+            // dispatch (e.g. bullets from `Script_Unit_Fire`). OpenDUNE's
+            // `Unit_Find` visits new appendages in the same tick; the
+            // batched path doesn't. In interleaved mode the main loop
+            // already visited them, so skip.
+            if postTickUnitsFindCount > preTickUnitsFindCount,
+               !perUnitInterleavedTickOrder {
                 if unitMovementEnabledThisTick {
                     tickMovement(fromFindArrayIndex: preTickUnitsFindCount)
                 }
@@ -828,6 +910,10 @@ extension Simulation {
                     tickRotation(fromFindArrayIndex: preTickUnitsFindCount)
                 }
             }
+            // In interleaved mode, sprite animation fires per-unit
+            // inside the main loop (between movement and script) via
+            // `tickSpriteOffsetForUnit`, so no deferred batched pass
+            // is needed here.
             tickStructures()
             // Harvest / refine runs after unit & structure ticks so the
             // script-driven action / linkedID state is settled for the
@@ -859,7 +945,33 @@ extension Simulation {
             if starportAvailabilityTickCounter % Self.starportAvailabilityCadenceTicks == 0 {
                 tickStarportAvailability()
             }
+            // Per-house power-maintenance drain. Port of
+            // `src/house.c:270..273`:
+            //   uint16 cost = (h->powerUsage / 32) + 1;
+            //   h->credits -= min(h->credits, cost);
+            // OpenDUNE runs this at the end of `GameLoop_House`; we
+            // match that ordering by firing after all structure /
+            // starport passes have settled.
+            tickHousePowerMaintenance()
             host.currentObject = nil
+        }
+
+        private mutating func tickHousePowerMaintenance() {
+            guard nextHousePowerMaintenanceGate <= timerGame else { return }
+            nextHousePowerMaintenanceGate = timerGame &+ 10800
+            for idx in host.houses.findArray {
+                var h = host.houses[idx]
+                let cost = (h.powerUsage / 32) &+ 1
+                let drain = min(h.credits, cost)
+                if drain != 0 {
+                    h.credits &-= drain
+                    host.houses[idx] = h
+                    Log.debug(
+                        "power-maintenance house=\(idx) usage=\(h.powerUsage) cost=\(cost) drain=\(drain) credits=\(h.credits)",
+                        tracer: .label("economy")
+                    )
+                }
+            }
         }
 
         /// Attack-hold pass. OpenDUNE's UNIT.EMC handles this via per-
@@ -1675,72 +1787,88 @@ extension Simulation {
         /// Gated by `spriteAnimationStride` so the walk cycle plays at
         /// a reasonable visual pace.
         public static let spriteAnimationStride = 5
+
+        /// Returns true if this tick's sprite-cadence gate is open, and
+        /// advances the counter as a side effect. Isolated so the
+        /// interleaved tick path can sample it once per tick and then
+        /// fire per-unit sprite animation between movement and script.
+        private mutating func spriteAnimationGateFiresThisTick() -> Bool {
+            let fires = spriteAnimationCounter % Self.spriteAnimationStride == 0
+            spriteAnimationCounter &+= 1
+            return fires
+        }
+
         private mutating func tickSpriteOffsets() {
-            guard spriteAnimationCounter % Self.spriteAnimationStride == 0 else {
-                spriteAnimationCounter &+= 1
+            guard spriteAnimationGateFiresThisTick() else { return }
+            for idx in host.units.findArray {
+                tickSpriteOffsetForUnit(idx: idx)
+            }
+        }
+
+        /// Per-unit sprite-animation body extracted so the interleaved
+        /// tick path can fire it between movement and script (matches
+        /// OpenDUNE's `tickUnknown5` at `src/unit.c:239..287`, which
+        /// runs after `Unit_MovementTick` and before `Script_Run`).
+        private mutating func tickSpriteOffsetForUnit(idx: Int) {
+            guard idx >= 0, idx < host.units.slots.count else { return }
+            var slot = host.units.slots[idx]
+            guard let info = Simulation.UnitInfo.lookup(slot.type) else { return }
+
+            // Port of OpenDUNE `src/unit.c:240..286`:
+            //   if (u->timer == 0) {
+            //       <animate + set timer = ui->animationSpeed / 5>
+            //   } else {
+            //       u->timer--;
+            //   }
+            // The timer gate applies to ALL per-unit animation
+            // branches (foot infantry, ornithopter, harvester).
+            // Decrement first when the timer is pending so the
+            // animation step only fires once the pause elapses.
+            if slot.timer != 0 {
+                slot.timer &-= 1
+                host.units[idx] = slot
                 return
             }
-            spriteAnimationCounter &+= 1
-            for idx in host.units.findArray {
-                var slot = host.units.slots[idx]
-                guard let info = Simulation.UnitInfo.lookup(slot.type) else { continue }
 
-                // Port of OpenDUNE `src/unit.c:240..286`:
-                //   if (u->timer == 0) {
-                //       <animate + set timer = ui->animationSpeed / 5>
-                //   } else {
-                //       u->timer--;
-                //   }
-                // The timer gate applies to ALL per-unit animation
-                // branches (foot infantry, ornithopter, harvester).
-                // Decrement first when the timer is pending so the
-                // animation step only fires once the pause elapses.
-                if slot.timer != 0 {
-                    slot.timer &-= 1
-                    host.units[idx] = slot
-                    continue
-                }
+            var animated = false
 
-                var animated = false
-
-                // Foot-infantry branch. OpenDUNE gates on
-                // `movementType==FOOT && u->speed != 0 || isSmoking`.
-                if info.movementType == .foot, slot.speed != 0,
-                   slot.spriteOffset >= 0,
-                   (info.displayMode == .infantry3 || info.displayMode == .infantry4) {
-                    let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
-                    slot.spriteOffset = Int8(bitPattern: bumped)
-                    slot.timer = info.animationSpeed / 5
-                    animated = true
-                }
-
-                // Ornithopter branch — the animation plays regardless
-                // of speed / move state because the rotors spin in
-                // place. `spriteOffset >= 0` gate keeps the "not
-                // allocated" sentinel out of the bump.
-                if slot.type == 1 /* ORNITHOPTER */, slot.spriteOffset >= 0 {
-                    let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
-                    slot.spriteOffset = Int8(bitPattern: bumped)
-                    slot.timer = 1
-                    animated = true
-                }
-
-                // Harvester branch — bumps while ACTION_HARVEST,
-                // resets to 0 otherwise. Timer stays pinned at 4.
-                if slot.type == 16 /* HARVESTER */ {
-                    if slot.actionID == Simulation.ActionID.harvest {
-                        let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
-                        slot.spriteOffset = Int8(bitPattern: bumped)
-                        slot.timer = 4
-                        animated = true
-                    } else if slot.spriteOffset != 0 {
-                        slot.spriteOffset = 0
-                    }
-                }
-
-                _ = animated
-                host.units[idx] = slot
+            // Foot-infantry branch. OpenDUNE gates on
+            // `movementType==FOOT && u->speed != 0 || isSmoking`.
+            if info.movementType == .foot, slot.speed != 0,
+               slot.spriteOffset >= 0,
+               (info.displayMode == .infantry3 || info.displayMode == .infantry4) {
+                let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
+                slot.spriteOffset = Int8(bitPattern: bumped)
+                slot.timer = info.animationSpeed / 5
+                animated = true
             }
+
+            // Ornithopter branch — the animation plays regardless
+            // of speed / move state because the rotors spin in
+            // place. `spriteOffset >= 0` gate keeps the "not
+            // allocated" sentinel out of the bump.
+            if slot.type == 1 /* ORNITHOPTER */, slot.spriteOffset >= 0 {
+                let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
+                slot.spriteOffset = Int8(bitPattern: bumped)
+                slot.timer = 1
+                animated = true
+            }
+
+            // Harvester branch — bumps while ACTION_HARVEST,
+            // resets to 0 otherwise. Timer stays pinned at 4.
+            if slot.type == 16 /* HARVESTER */ {
+                if slot.actionID == Simulation.ActionID.harvest {
+                    let bumped = (UInt8(bitPattern: slot.spriteOffset) & 0x3F) &+ 1
+                    slot.spriteOffset = Int8(bitPattern: bumped)
+                    slot.timer = 4
+                    animated = true
+                } else if slot.spriteOffset != 0 {
+                    slot.spriteOffset = 0
+                }
+            }
+
+            _ = animated
+            host.units[idx] = slot
         }
         private var spriteAnimationCounter: Int = 0
 
@@ -1802,10 +1930,18 @@ extension Simulation {
         /// `Unit_Free(u12)` shifts u13 into slot 19 (u12's old position),
         /// the cursor advances to 20 (now u14), skipping u13. Only at
         /// tick 37 does u13 get its next `Unit_MovementTick`.
-        private mutating func tickMovement(fromFindArrayIndex: Int? = nil) {
+        private mutating func tickMovement(
+            fromFindArrayIndex: Int? = nil,
+            singleUnit: Bool = false
+        ) {
             let arrivalThreshold: Int32 = 16
             var cursor = fromFindArrayIndex ?? 0
-            while cursor < host.units.findArray.count {
+            // For `singleUnit`, cap iteration at exactly one visit past
+            // `cursor`. Can't rely on an `if singleUnit { return }`
+            // after the body because the body has many `continue`
+            // statements that bypass the end-of-iteration tail.
+            let endCursor = singleUnit ? cursor &+ 1 : Int.max
+            while cursor < host.units.findArray.count && cursor < endCursor {
                 let idx = host.units.findArray[cursor]
                 // Inlined re-bind so the `for idx in indices` body below
                 // keeps its existing structure.
@@ -2135,7 +2271,7 @@ extension Simulation {
                         slot.wobbleIndex = 0
                         if Simulation.UnitInfo.canWobble(type: slot.type),
                            slot.isWobbling, let rng = movementRNG {
-                            slot.wobbleIndex = rng() & 7
+                            slot.wobbleIndex = rng(idx) & 7
                         }
                         didStep = true
                     }
@@ -2403,62 +2539,64 @@ extension Simulation {
             let runScripts = unitScriptEnabledThisTick
             var query = Simulation.PoolQuery()
             while let slot = host.units.next(&query) {
-                let idx = Int(slot.index)
-                host.currentObject = .unit(poolIndex: idx)
-                // OpenDUNE's `Script_Load` runs once per action change.
-                // Load the per-unit-type entry point (mirrors
-                // `Script_Load(&u->o.script, u->o.type)` in
-                // `src/unit.c:521`) and then overwrite `variables[0]`
-                // with the action — the top-level dispatch in UNIT.EMC
-                // branches on `variables[0]`. Passing `action` as
-                // `typeID` (earlier scheduler shape) landed the PC at
-                // `entryPoints[action]` — a completely different unit
-                // type's entry — and made trikes execute the ornithopter
-                // prologue, etc.
-                let action = Int(slot.actionID)
-                if loadedUnitAction[idx] != action {
-                    let type = Int(slot.type)
-                    unitVM.load(engine: &unitEngines[idx], typeID: type)
-                    unitEngines[idx].variables[0] = UInt16(truncatingIfNeeded: action)
-                    Log.debug(
-                        "unit \(idx) (type \(type) house \(slot.houseID)) → action \(action), pc=\(unitEngines[idx].pc)",
-                        tracer: .label("scheduler")
-                    )
-                    loadedUnitAction[idx] = action
-                }
-                if !runScripts {
-                    // Script gate closed this tick — skip dispatch but
-                    // keep per-unit engine state intact.
-                    continue
-                }
-                let priorPC = unitEngines[idx].pc
-                // Per-unit budget for OpenDUNE parity (`src/unit.c:292..294`):
-                //   if scriptNoSlowdown == true OR unit is in viewport:
-                //       opcodesLeft = SCRIPT_UNIT_OPCODES_PER_TICK + 2 = 52
-                //   else:
-                //       opcodesLeft = 3
-                // `unitOpcodeBudget` is the global cap (default 7 for
-                // gameplay, 52 for the parity harness). The per-unit
-                // slowdown only engages when the harness enables it.
-                let budget: Int
-                if offViewportSlowdownEnabled,
-                   !Simulation.UnitInfo.scriptNoSlowdown(type: slot.type),
-                   !isInViewport(pos32X: slot.positionX, pos32Y: slot.positionY) {
-                    budget = min(unitOpcodeBudget, 3)
-                } else {
-                    budget = unitOpcodeBudget
-                }
-                dispatch(
-                    engine: &unitEngines[idx],
-                    vm: unitVM,
-                    budget: budget
+                runUnitScript(slot: slot, runScripts: runScripts)
+            }
+        }
+
+        /// Per-unit body extracted from `tickUnits` so the interleaved
+        /// tick path (`perUnitInterleavedTickOrder == true`) can call
+        /// it one unit at a time, matching OpenDUNE's
+        /// `GameLoop_Unit`'s `Unit_Find`-based iteration where
+        /// movement, rotation, sprite animation and script all run
+        /// inside a single per-unit visit (`src/unit.c:175..306`).
+        private mutating func runUnitScript(
+            slot: Simulation.UnitSlot, runScripts: Bool
+        ) {
+            let idx = Int(slot.index)
+            host.currentObject = .unit(poolIndex: idx)
+            // OpenDUNE's `Script_Load` runs once per action change.
+            // Load the per-unit-type entry point (mirrors
+            // `Script_Load(&u->o.script, u->o.type)` in
+            // `src/unit.c:521`) and then overwrite `variables[0]`
+            // with the action — the top-level dispatch in UNIT.EMC
+            // branches on `variables[0]`. Passing `action` as
+            // `typeID` (earlier scheduler shape) landed the PC at
+            // `entryPoints[action]` — a completely different unit
+            // type's entry — and made trikes execute the ornithopter
+            // prologue, etc.
+            let action = Int(slot.actionID)
+            if loadedUnitAction[idx] != action {
+                let type = Int(slot.type)
+                unitVM.load(engine: &unitEngines[idx], typeID: type)
+                unitEngines[idx].variables[0] = UInt16(truncatingIfNeeded: action)
+                Log.debug(
+                    "unit \(idx) (type \(type) house \(slot.houseID)) → action \(action), pc=\(unitEngines[idx].pc)",
+                    tracer: .label("scheduler")
                 )
-                if unitEngines[idx].halted && priorPC != unitEngines[idx].pc {
-                    Log.warning(
-                        "unit \(idx) halted at pc=\(unitEngines[idx].pc)",
-                        tracer: .label("scheduler")
-                    )
-                }
+                loadedUnitAction[idx] = action
+            }
+            if !runScripts {
+                return
+            }
+            let priorPC = unitEngines[idx].pc
+            let budget: Int
+            if offViewportSlowdownEnabled,
+               !Simulation.UnitInfo.scriptNoSlowdown(type: slot.type),
+               !isInViewport(pos32X: slot.positionX, pos32Y: slot.positionY) {
+                budget = min(unitOpcodeBudget, 3)
+            } else {
+                budget = unitOpcodeBudget
+            }
+            dispatch(
+                engine: &unitEngines[idx],
+                vm: unitVM,
+                budget: budget
+            )
+            if unitEngines[idx].halted && priorPC != unitEngines[idx].pc {
+                Log.warning(
+                    "unit \(idx) halted at pc=\(unitEngines[idx].pc)",
+                    tracer: .label("scheduler")
+                )
             }
         }
 

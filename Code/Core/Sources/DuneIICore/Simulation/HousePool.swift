@@ -27,6 +27,20 @@ extension Simulation {
         /// Scenario win-condition target (harvester revenue needed).
         /// Pure read — never written by the engine.
         public var creditsQuota: UInt16
+        /// Sum of windtrap power output for every active structure this
+        /// house owns. `House_CalculatePowerAndCredit` recomputes it on
+        /// each `tickHouse`; for now we only surface the save-loaded
+        /// value so the `tickPowerMaintenance` drain formula has real
+        /// numbers to read.
+        public var powerProduction: UInt16
+        /// Sum of power consumption across active structures this house
+        /// owns. Read by `tickPowerMaintenance` (`src/house.c:270..273`):
+        /// every 10 800 ticks the house pays `(powerUsage / 32) + 1`
+        /// credits, capped at its current balance. With Atreides at
+        /// `powerUsage=30` in SAVE007 this costs exactly 1 credit
+        /// starting at tick 70 — which is precisely what OpenDUNE's
+        /// `max(g_timerGame + 70, saved)` load-time seed produces.
+        public var powerUsage: UInt16
 
         public init(
             isUsed: Bool = false,
@@ -35,7 +49,9 @@ extension Simulation {
             starportTimeLeft: UInt16 = 0,
             credits: UInt16 = 0,
             creditsStorage: UInt16 = 0,
-            creditsQuota: UInt16 = 0
+            creditsQuota: UInt16 = 0,
+            powerProduction: UInt16 = 0,
+            powerUsage: UInt16 = 0
         ) {
             self.isUsed = isUsed
             self.index = index
@@ -44,6 +60,8 @@ extension Simulation {
             self.credits = credits
             self.creditsStorage = creditsStorage
             self.creditsQuota = creditsQuota
+            self.powerProduction = powerProduction
+            self.powerUsage = powerUsage
         }
     }
 
