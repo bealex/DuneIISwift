@@ -678,15 +678,24 @@ extension Simulation {
             try eq(tick, "unit", idx, "team",             g.team,             s.team)
             try eq(tick, "unit", idx, "timer",            g.timer,            s.timer)
             try eq(tick, "unit", idx, "wobbleIndex",      g.wobbleIndex,      s.wobbleIndex)
+            // Turret orientation track — only meaningful for units
+            // that actually have a turret. OpenDUNE's parity dump
+            // emits `orientation[1]` for every unit regardless of
+            // `hasTurret`, but for non-turreted units the field is
+            // dead state — `Unit_Rotate` only advances `orientation[1]`
+            // when `ui->o.flags.hasTurret` is set (`src/unit.c:221`),
+            // and `Script_Unit_SetTarget` writes it as a uniform
+            // side-effect. Mismatches on non-turreted units have no
+            // gameplay effect, so we gate the compare on hasTurret.
+            // SAVE007 tick 11 u37 (SOLDIER) hits this — keep the diff
+            // tight to fields that influence behaviour.
+            if Simulation.UnitInfo.lookup(s.type)?.hasTurret == true {
+                try eq(tick, "unit", idx, "orientation1Current", g.orientation1Current, s.turretOrientationCurrent)
+                try eq(tick, "unit", idx, "orientation1Target",  g.orientation1Target,  s.turretOrientationTarget)
+                try eq(tick, "unit", idx, "orientation1Speed",   g.orientation1Speed,   s.turretOrientationSpeed)
+            }
             // Skipped:
             //   nextActionID — Swift doesn't track this field yet.
-            //   orientation1{Current,Target,Speed} — Swift writes these
-            //   for non-turreted units (`Script_Unit_SetTarget` always
-            //   calls `Unit_SetOrientation(level: 1)`), but the dump
-            //   schema also includes them for non-turreted units, and
-            //   we have a still-open drift at tick 11 u37 (SOLDIER —
-            //   no turret) where OpenDUNE writes 0 and Swift keeps 32.
-            //   Investigate after the §6 milestone closes.
         }
 
         private static func byteAt(_ a: [UInt8], _ i: Int) -> UInt8 {

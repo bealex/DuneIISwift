@@ -17,7 +17,7 @@ This file is the single source of truth for "what's happening right now." Read i
 
 1. **Tick 3011 `u39.targetMove=54699 vs 54441`** (5000-tick golden, not committed). Both engines have u39 at the same position; SearchSpice returns different tiles. Spice maps differ at u39's current tile (20, 20) — OpenDUNE has drained it, Swift hasn't. Almost certainly accumulated spice-map state divergence over the 3000-tick horizon that the current schema can't see. Investigation needs a map-tile parity dump.
 
-2. **Tick 11 `u37.orientation1Target=32 vs 0`** (1000-tick golden, with `orientation1{Current,Target,Speed}` added to compare schema). u37 is a SOLDIER — non-turreted — so writing `orientation[1]` is technically dead state, but the dump captures it and OpenDUNE writes 0 at tick 11 while Swift keeps the saved 32. Suspect Swift's `Script_Unit_SetTarget` path for non-turreted units doesn't fire SetOrientation(level: 1) the same way OpenDUNE does — verify against `src/script/unit.c:855..859`.
+2. **Tick 11 `u37.orientation1Target=32 vs 0`** (SOLDIER, non-turreted). RESOLVED at the schema level by gating `orientation1` compare on `hasTurret` — `Unit_Rotate` only advances `orientation[1]` for turreted units (`src/unit.c:221`), so non-turreted unit orientation[1] is dead state. The underlying `Script_Unit_SetTarget`-on-non-turreted SetOrientation(level: 1) nuance remains for future investigation if anything else surfaces.
 
 3. **Widen `compareHouse` with `unitCount` / `unitCountMax` / `harvestersIncoming`.** These fields exist in the save record's `Players.Slot` decoder but aren't on `HouseSlot` yet. Adding them needs full `Unit_HouseUnitCount_Add/Remove` ports + maintenance from `Unit_Allocate` / `Unit_Free` / `Unit_Recount`. Larger surface area than the other two follow-ups.
 
@@ -251,6 +251,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
+
+- **2026-04-24 — Parity schema widening: `orientation1{*}` added to `compareUnit`, gated on `hasTurret`.** Turret-equipped units (u26 TANK in SAVE007) now have their full turret orientation track diffed against OpenDUNE across 1000 ticks. Non-turreted units skip the compare since `Unit_Rotate` only advances `orientation[1]` when `hasTurret` (`src/unit.c:221`). **1032 / 101 / zero warnings.**
 
 - **2026-04-24 — Parity schema widening: `wobbleIndex` added to `compareUnit`.** SAVE007 now also matches every unit's `wobbleIndex` byte across all 1000 ticks. Scouted deeper too: 2000-tick parity holds, 3010-tick parity holds, but tick 3011 `u39.targetMove=54699 vs 54441` surfaces a NEW frontier — spice-map state divergence (Swift sees tile (20, 20) as spice; OpenDUNE has drained it). Reverted golden to 1000 ticks (5000-tick dump = 53MB, too large to commit). Tried adding `orientation1{*}` to compare schema — surfaces tick 11 `u37.orientation1Target=32 vs 0` for non-turreted SOLDIER, deferred. **1032 / 101 / zero warnings.**
 
