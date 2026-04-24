@@ -11,7 +11,11 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**Tick-parity harness — Script_Unit_Harvest ported + Team-first pass order; drift at u39.amount (RNG off-by-one).** SAVE007 tick-1 real-EMC drift progressed:
+**Clamp player move orders to `playableRect` (shipped 2026-04-23) — next up is the u39.amount RNG off-by-one drift.** The out-of-playable-rect regression landed: right-clicks / staged-A / staged-M / staged-H on a veiled-border tile now reject with `ClickOutcome.orderMove(ok: false)` instead of walking the unit off the scenario area. 4 order sites gated in `ScenarioRuntime.leftClick / rightClick` via the new `isInPlayableRect(tileX:tileY:)` helper; target-based `orderAttack` / `orderAttackStructure` paths untouched. 1 regression test (`rightClickOutsidePlayableRectRejected`), 1 existing pathfinder test retargeted (50,50) → (45,45). Next concrete step: resume the deferred **u39.amount RNG off-by-one drift** — add `Tools_Random_256` call tracing to `parity.c` + wire `Scripting.RandomSource.toolsNext()` through the Swift call sites so a byte-stream diff pins the divergent consumption site (the Scripting.RandomSource `onToolsDraw` hook was added in an earlier slice but isn't wired into call sites yet).
+
+---
+
+**Prior (tick-parity): Script_Unit_Harvest ported + Team-first pass order; drift at u39.amount (RNG off-by-one).** SAVE007 tick-1 real-EMC drift progressed:
 1. Was `unit[39].actionID=6 RETURN` (script wrong-branch drift — closed by porting slot 0x2A).
 2. Now `unit[39].amount=8` (expected 9) — our `(tools.next() & 1)` bumps by 0, OpenDUNE bumps by 1. **Single-byte RNG stream offset** somewhere in the tick-1 execution.
 
@@ -73,7 +77,7 @@ What works now:
 - Unit sprites render at native pixel size (harvester > trike > infantry). Units pathfind around each other.
 - Attack visuals: muzzle flash + impact dimmed to 30% alpha so they're a hint, not a clutter.
 
-Test status: **979 / 96** suites green, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`), 2 golden parity JSONLs (`Fixtures/ParityGoldens/save001_200ticks.jsonl` + `save007_200ticks.jsonl`).
+Test status: **980 / 96** suites green, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`), 2 golden parity JSONLs (`Fixtures/ParityGoldens/save001_200ticks.jsonl` + `save007_200ticks.jsonl`).
 
 Latest session (2026-04-23) shipped, across two merged lines of work: (1) movement polish + STARPORT slices 5a/5b/5c-sim (fallback-slide per-tile gate, OpenDUNE crush parity, `[CHOAM]` INI loader + buildable mask, order commit + frigate delivery + availability bump, `StarportController` + pricing + runtime stock seeding); (2) harvester RETURN replan + adjacency dock + coherence pin + `Map_FixupSpiceEdges` port + CLAUDE.md "consult OpenDUNE" rule. Previous session (2026-04-22) shipped 27 commits. Details in today's `Documentation/History/2026-04.md` bullets.
 
@@ -93,6 +97,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
+
+- **2026-04-23 — Player move orders clamped to `playableRect`.** User-reported: units could be right-clicked into the veiled border (outside the scenario's playable rect) and would happily walk off the scenario area. Fix in `ScenarioRuntime`: new `isInPlayableRect(tileX:tileY:)` helper; all four move-style order sites (`rightClick .orderMove`, staged-left-click `.orderMove` / `.orderHarvest`, A-key force-attack-on-empty fallback) now early-return `ClickOutcome.orderMove(ok: false)` / `.orderHarvest(ok: false)` with a logged `REJECTED out-of-playable` line. Target-based orders (`orderAttack`, `orderAttackStructure`) untouched. 1 new test pinning the rejection + 1 existing pathfinder test retargeted (50,50) → (45,45) so it still forces routing around CYARD while staying inside mission-1's `(16,16,32,32)` rect. **980 / 96 / zero warnings.**
 
 - **2026-04-23 — Script_Unit_Harvest ported + tick-pass reorder to match OpenDUNE (Team → Unit → Structure).** Wired slot 0x2A (was nil / `noOperation`). Port of `src/script/unit.c:1640..1670` — guards on HARVESTER type / `amount < 100` / `host.spiceMap != nil` + current tile being `.thin` or `.thick` spice; consumes exactly 2 `tools.next()` bytes (amount bump & 1, keep/drain roll & 0x1F), sets `inTransport = true`, clamps amount to 100, and decrements spice via `SpiceMap.apply(delta:-1, at:)` on the 1/32 drain branch. Parity harness builds real `spiceMap` from `AssetLoader.tileResolver` + `Map.Generator.generate(seed:resolver:)` so `landscapeType` reports spice tiles correctly (previous `Map.empty()` baseline left every tile `.notSand`, short-circuiting Harvest to return 0). Also reordered `Scheduler.tick()` pass sequence: `tickTeams` now runs BEFORE `tickUnits` / `tickStructures`, matching OpenDUNE's `GameLoop_Main` at `src/opendune.c:1117..1120`. TEAM.EMC's RNG consumption now happens before unit-tick RNG consumption (no-op on saves without teams, but structurally correct). Drift advanced from `unit[39].actionID=6 RETURN` (script wrong-branch — closed) to `unit[39].amount=8` (expected 9 — 1-byte RNG sequence offset, needs per-call `Tools_Random_256` tracing on both sides to isolate). **979 / 96 / zero warnings.**
 

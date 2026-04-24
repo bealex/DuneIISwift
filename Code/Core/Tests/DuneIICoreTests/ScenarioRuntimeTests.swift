@@ -158,6 +158,31 @@ struct ScenarioRuntimeTests {
         #expect(ok)
     }
 
+    @Test("Right-click on a veiled-border tile rejects orderMove (playableRect guard)")
+    func rightClickOutsidePlayableRectRejected() throws {
+        guard let r = try loadMission1() else { return }
+        // Mission 1 uses mapScale=1 → playable rect (16,16,32,32), so
+        // valid x,y are [16..47]. Tile (5, 5) sits in the veiled
+        // border: in Dune 2 the UI wouldn't let the cursor land there,
+        // but our scene renders the whole 64×64 grid.
+        _ = r.leftClick(tileX: 29, tileY: 23)
+        let host = try #require(r.host)
+        let idx = try #require(r.commandController.selectedUnitIndex)
+        let priorAction = host.units.slots[idx].actionID
+        let priorTarget = host.units.slots[idx].targetMove
+
+        let outcome = r.rightClick(tileX: 5, tileY: 5)
+        guard case .orderMove(_, let tx, let ty, let ok) = outcome else {
+            Issue.record("expected orderMove outcome (ok=false), got \(outcome)")
+            return
+        }
+        #expect(tx == 5 && ty == 5)
+        #expect(ok == false, "out-of-playable orderMove should not dispatch")
+        // Sim state must be untouched — no targetMove set, no action flip.
+        #expect(host.units.slots[idx].actionID == priorAction)
+        #expect(host.units.slots[idx].targetMove == priorTarget)
+    }
+
     @Test("Right-click with selection on enemy unit issues orderAttack")
     func rightClickAttacks() throws {
         guard let r = try loadMission1() else { return }
@@ -385,10 +410,12 @@ struct ScenarioRuntimeTests {
     @Test("Pathfinder routes a TRIKE around the CYARD rather than through it")
     func pathfinderAvoidsCyard() throws {
         guard let r = try loadMission1() else { return }
-        // Select Atreides trike at (29, 23). Order it to (50, 50) —
+        // Select Atreides trike at (29, 23). Order it to (45, 45) —
         // direct SE path would cross CYARD at (30,25)(31,25)(30,26)(31,26).
+        // (45, 45) is still inside mission-1's playable rect (16..47)
+        // but forces the same routing decision.
         _ = r.leftClick(tileX: 29, tileY: 23)
-        _ = r.rightClick(tileX: 50, tileY: 50)
+        _ = r.rightClick(tileX: 45, tileY: 45)
 
         // Tick enough for the UNIT.EMC CalculateRoute to run. Scripts
         // dispatch inside tick(), but orderMove + calculateRoute run on
