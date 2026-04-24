@@ -130,6 +130,78 @@ struct ParityHarnessTests {
         )
     }
 
+    /// One-off diagnostic: writes the Swift Tools_Random_256 byte
+    /// stream for SAVE007 tick 1 to the worktree `tmp/` directory so
+    /// a byte-for-byte diff against OpenDUNE's matching trace pins the
+    /// remaining u39.amount RNG-sequence offset. Gated on the install
+    /// being present + the tmp dir existing; no assertions.
+    @Test("_SAVE007.DAT tick 1 — dump Swift Tools_Random_256 byte stream")
+    @MainActor
+    func saveSevenParityTickOneDumpRandomStream() throws {
+        guard let root = TestInstall.locate() else { return }
+        let saveURL = root.appendingPathComponent("_SAVE007.DAT")
+        guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
+        let goldenURL = Self.goldenURL(named: "save007_200ticks.jsonl")
+        guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
+
+        // Write to the worktree `tmp/` so the harness's file I/O doesn't
+        // hit sandbox restrictions on `/tmp`. `#filePath` points to this
+        // file; 5 deletingLastPathComponent hops up lands on the
+        // worktree root (Code/Core/Tests/DuneIICoreTests → worktree).
+        let tmpDir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // DuneIICoreTests/
+            .deletingLastPathComponent()  // Tests/
+            .deletingLastPathComponent()  // Core/
+            .deletingLastPathComponent()  // Code/
+            .deletingLastPathComponent()  // <worktree-root>/
+            .appendingPathComponent("tmp", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: tmpDir, withIntermediateDirectories: true
+        )
+        let traceURL = tmpDir.appendingPathComponent("swift_rng_trace.txt")
+
+        let data = try Data(contentsOf: saveURL)
+        let game = try Formats.Save.Game.decode(data)
+        let golden = try Data(contentsOf: goldenURL)
+
+        let install = try Installation(rootDirectory: root)
+        let assets = try AssetLoader(installation: install)
+        let unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+        let structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
+        let teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+        let resolver = assets.tileResolver
+        let baseline = Map.Generator.generate(
+            seed: game.info.scenario.mapSeed, resolver: resolver
+        )
+        let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
+        let spiceMap = Simulation.SpiceMap { i in
+            let tile = snapshot.tiles[i]
+            return resolver.landscapeType(
+                groundTileID: tile.groundTileID,
+                overlayTileID: tile.overlayTileID,
+                hasStructure: tile.hasStructure
+            )
+        }
+
+        let trace = Simulation.ParityHarness.RNGTrace(path: traceURL)
+        // Run — will throw on first divergence, which is fine; we still
+        // want the partial trace up to that point to diff against
+        // OpenDUNE's.
+        _ = try? Simulation.ParityHarness.runAgainst(
+            snapshot: snapshot,
+            golden: golden,
+            tickLimit: 1,
+            unitProgram: unitProgram,
+            structureProgram: structureProgram,
+            teamProgram: teamProgram,
+            seedScriptsFrom: game,
+            spiceMap: spiceMap,
+            rngTrace: trace
+        )
+        // Diff-against-OpenDUNE is manual for now; the trace is on disk.
+        print("wrote Swift rng trace to \(traceURL.path)")
+    }
+
     // MARK: Shared helpers
 
     @MainActor

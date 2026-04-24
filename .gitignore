@@ -3,3 +3,6 @@
 .build
 /Logs
 /Repositories/patched_107_unofficial
+/tmp
+/Repositories/OpenDUNE/objs
+/Repositories/OpenDUNE/bin/opendune

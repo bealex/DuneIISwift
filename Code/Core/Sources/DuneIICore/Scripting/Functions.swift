@@ -9,6 +9,31 @@ extension Scripting {
         public var lcg: RNG.BorlandLCG
         public var tools: RNG.ToolsRandom256
 
+        /// Parity-harness trace hook. When non-nil, `toolsNext()` logs
+        /// every byte drawn from `tools` so a bit-exact diff against
+        /// OpenDUNE's `Tools_Random_256` call stream can pinpoint
+        /// RNG-sequence drift. Direct `source.tools.next()` callers
+        /// bypass this hook — the parity harness routes its own
+        /// `harvestRNG` closure through `toolsNext()` too.
+        ///
+        /// The `context` string is an optional free-form tag (e.g.
+        /// unit pool index + function name) the scheduler/scripts can
+        /// poke via `currentTraceContext` so the diff narrows to the
+        /// exact call site, not just the byte position.
+        public var onToolsDraw: ((UInt8, String) -> Void)?
+
+        /// Per-call context tag. Scheduler / scripts set this right
+        /// before they expect RNG draws so the trace records who
+        /// asked. `""` when unknown.
+        public var currentTraceContext: String = ""
+
+        /// Draw a byte from `tools` with optional trace.
+        public func toolsNext() -> UInt8 {
+            let b = tools.next()
+            onToolsDraw?(b, currentTraceContext)
+            return b
+        }
+
         public init(seed: UInt16) {
             self.lcg = RNG.BorlandLCG(seed: seed)
             self.tools = RNG.ToolsRandom256(seed: UInt32(seed))
@@ -447,7 +472,7 @@ extension Scripting {
                         from: origin,
                         distance: radius,
                         center: false,
-                        random: { source.tools.next() }
+                        random: { source.toolsNext() }
                     )
                     let damage = source.lcg.range(75, 150)
                     Simulation.Explosions.makeExplosion(
@@ -738,7 +763,9 @@ extension Scripting {
 
                 // Foot units occasionally randomise sprite-offset.
                 if mt == .foot && random > 8 {
-                    let spriteRaw = source.tools.next()
+                    source.currentTraceContext = "IdleAction.sprite u\(poolIndex)"
+                    let spriteRaw = source.toolsNext()
+                    source.currentTraceContext = ""
                     updated.spriteOffset = Int8(bitPattern: spriteRaw & 0x3F)
                 }
 
@@ -760,8 +787,11 @@ extension Scripting {
                 // OpenDUNE draws two RNG bytes unconditionally — consume
                 // them here regardless of whether we apply the rotation
                 // so the RNG sequence stays in lockstep.
-                let turretByte = source.tools.next()
-                _ = source.tools.next()  // newOrientation (target).
+                source.currentTraceContext = "IdleAction.turret u\(poolIndex)"
+                let turretByte = source.toolsNext()
+                source.currentTraceContext = "IdleAction.newOrient u\(poolIndex)"
+                _ = source.toolsNext()  // newOrientation (target).
+                source.currentTraceContext = ""
                 let i: UInt8 = (turretByte & 1) == 0 ? 1 : 0
                 _ = i
                 // OpenDUNE calls `Unit_SetOrientation(u, newOrientation,
@@ -1444,10 +1474,19 @@ extension Scripting {
         /// `Script_General_DelayRandom` — `(Tools_Random_256() * peek(1)) / 256 / 5`.
         /// Writes `engine.delay` and returns the same value. Shares the
         /// `RandomSource.tools` stream with any other consumer.
-        public static func makeDelayRandom(source: RandomSource) -> VM.Function {
+        public static func makeDelayRandom(source: RandomSource, host: Host) -> VM.Function {
             return { engine in
                 let peek = Scripting.peek(engine: &engine, position: 1)
-                let r = UInt16(source.tools.next())
+                let ctxObj: String
+                switch host.currentObject {
+                case .unit(let idx): ctxObj = "u\(idx)"
+                case .structure(let idx): ctxObj = "s\(idx)"
+                case .team(let idx): ctxObj = "t\(idx)"
+                case .none: ctxObj = "?"
+                }
+                source.currentTraceContext = "DelayRandom \(ctxObj)"
+                let r = UInt16(source.toolsNext())
+                source.currentTraceContext = ""
                 let d = (r &* peek) / 256 / 5
                 engine.delay = d
                 return d
@@ -1581,13 +1620,17 @@ extension Scripting {
 
                 var updated = slot
                 // Consume RNG byte #1 — low bit is the amount bump.
-                let bump = source.tools.next() & 1
+                source.currentTraceContext = "Harvest.bump u\(poolIndex)"
+                let bump = source.toolsNext() & 1
                 updated.amount = updated.amount &+ bump
                 updated.inTransport = true
                 if updated.amount > 100 { updated.amount = 100 }
                 host.units[poolIndex] = updated
                 // Consume RNG byte #2 — 31/32 chance of "keep going".
-                if (source.tools.next() & 0x1F) != 0 {
+                source.currentTraceContext = "Harvest.drainRoll u\(poolIndex)"
+                let roll = source.toolsNext()
+                source.currentTraceContext = ""
+                if (roll & 0x1F) != 0 {
                     return 1
                 }
                 // Drain one spice level on this tile. `spiceMap` is a

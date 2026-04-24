@@ -123,7 +123,7 @@ extension Scripting.Functions {
         table[0x3A] = Scripting.Functions.makeSetTargetUnit(host: host)
         // 0x3B — Script_General_Unknown0288 (not ported; corner case)
         // 0x3C — Script_General_DelayRandom
-        table[0x3C] = Scripting.Functions.makeDelayRandom(source: source)
+        table[0x3C] = Scripting.Functions.makeDelayRandom(source: source, host: host)
         // 0x3D — Script_Unit_Rotate (not ported; needs orientation-speed state)
         // 0x3E — Script_General_GetDistanceToObject
         table[0x3E] = Scripting.Functions.makeGetDistanceToObject(host: host)
@@ -219,7 +219,7 @@ extension Scripting.Functions {
         // 0x09 — Script_Team_Load2
         table[0x09] = Scripting.Functions.makeLoad2Team(host: host)
         // 0x0A — Script_General_DelayRandom
-        table[0x0A] = Scripting.Functions.makeDelayRandom(source: source)
+        table[0x0A] = Scripting.Functions.makeDelayRandom(source: source, host: host)
         // 0x0B — Script_General_DisplayModalMessage (not ported; GUI)
         // 0x0C — Script_Team_GetVariable6
         table[0x0C] = Scripting.Functions.makeGetVariable6Team(host: host)

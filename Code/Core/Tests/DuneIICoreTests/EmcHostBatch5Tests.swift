@@ -16,7 +16,10 @@ struct EmcHostBatch5Tests {
         let want = (r &* peek) / 256 / 5
 
         var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
-        functions[0] = Scripting.Functions.makeDelayRandom(source: source)
+        functions[0] = Scripting.Functions.makeDelayRandom(
+            source: source,
+            host: Scripting.Host(landscapeAt: { _ in 0 })
+        )
         let vm = makeVM(words: ins(3, peek) + ins(14, 0), functions: functions)
         var engine = Scripting.Engine.reset()
         _ = vm.step(&engine)
@@ -30,7 +33,10 @@ struct EmcHostBatch5Tests {
         let source = Scripting.RandomSource(lcgSeed: 1, toolsSeed: 1)
 
         var functions = [Scripting.VM.Function?](repeating: nil, count: 64)
-        functions[0] = Scripting.Functions.makeDelayRandom(source: source)
+        functions[0] = Scripting.Functions.makeDelayRandom(
+            source: source,
+            host: Scripting.Host(landscapeAt: { _ in 0 })
+        )
 
         let vm = makeVM(words: ins(3, 100) + ins(14, 0), functions: functions)
         var e1 = Scripting.Engine.reset()
