@@ -300,7 +300,7 @@ struct ParityHarnessTests {
     @MainActor
     func saveSevenParityLandscapeFrontier() throws {
         try expectFullParity(
-            tickLimit: 9245,
+            tickLimit: 14795,
             save: "_SAVE007.DAT", golden: "save007_ticks.jsonl",
             withRealEmc: true,
             compareLandscape: true
@@ -459,7 +459,7 @@ struct ParityHarnessTests {
         _ = try? Simulation.ParityHarness.runAgainst(
             snapshot: snapshot,
             golden: golden,
-            tickLimit: 695,
+            tickLimit: 9250,
             unitProgram: unitProgram,
             structureProgram: structureProgram,
             teamProgram: teamProgram,
@@ -468,7 +468,7 @@ struct ParityHarnessTests {
             snapshotLandscape: snapshotLandscape,
             rngTrace: trace
         )
-        print("wrote Swift 200-tick rng trace to \(traceURL.path)")
+        print("wrote Swift 9250-tick rng trace to \(traceURL.path)")
     }
 
     /// Diagnostic: writes Swift's `Tools_RandomLCG_Range` call stream

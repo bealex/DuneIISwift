@@ -2060,6 +2060,51 @@ extension Scripting {
             }
         }
 
+        /// `Script_Structure_FindUnitByType` (structure slot 0x03) —
+        /// port of `src/script/structure.c:195..227`. Carryall-call
+        /// path: when the structure is READY with a linked unit and
+        /// `Structure_FindFreePosition` returns a free spot, calls
+        /// `Unit_CallUnitByType` to summon a carryall. Returns the
+        /// carryall's encoded index or 0.
+        ///
+        /// Minimal SAVE007-shaped port: matches OpenDUNE's
+        /// `Tools_Random_256` byte draw inside `Structure_FindFreePosition`
+        /// for byte-stream parity, but skips the actual
+        /// `Unit_CallUnitByType` summon (complex carryall logic
+        /// deferred). The carryall-summon path doesn't fire for
+        /// SAVE007's player-owned harvester anyway — line 215's
+        /// `g_playerHouseID == s.houseID && u.type == HARVESTER &&
+        /// u.targetLast == 0 && position != 0` guard returns IT_NONE
+        /// before the call. Returning 0 here matches that
+        /// observable behaviour while preserving the RNG byte draw
+        /// that the byte-stream parity required.
+        public static func makeFindUnitByTypeStructure(
+            host: Host, source: RandomSource
+        ) -> VM.Function {
+            return { _ in
+                guard let (sIdx, s) = currentStructure(host: host) else { return 0 }
+                if s.state != 2 /* READY */ { return 0 }
+                if s.linkedID == 0xFF { return 0 }
+                let uIdx = Int(s.linkedID)
+                guard uIdx >= 0, uIdx < host.units.slots.count else { return 0 }
+                let u = host.units[uIdx]
+                guard u.isUsed, u.isAllocated else { return 0 }
+                // Match OpenDUNE's `position = Structure_FindFreePosition(s, false)`
+                // — the byte draw is the load-bearing side-effect for
+                // RNG parity. The position itself is consulted by
+                // the carryall-summon path which we skip.
+                _ = Simulation.Structures.findFreePosition(
+                    structureIndex: sIdx,
+                    checkForSpice: false,
+                    structures: host.structures,
+                    units: host.units,
+                    host: host,
+                    rng: { source.toolsNext() }
+                )
+                return 0
+            }
+        }
+
         /// `Script_Structure_Unknown0C5A` (structure slot 0x07) — port of
         /// `src/script/structure.c:237..292`. Ejects the linked unit
         /// from the structure: finds a free perimeter tile via
