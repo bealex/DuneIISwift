@@ -649,20 +649,9 @@ extension Simulation {
             try eq(tick, "house", g.index, "starportLinkedID", g.starportLinkedID, s.starportLinkedID)
             try eq(tick, "house", g.index, "powerProduction", g.powerProduction, s.powerProduction)
             try eq(tick, "house", g.index, "powerUsage",      g.powerUsage,      s.powerUsage)
+            try eq(tick, "house", g.index, "unitCount",          g.unitCount,          s.unitCount)
             try eq(tick, "house", g.index, "unitCountMax",       g.unitCountMax,       s.unitCountMax)
             try eq(tick, "house", g.index, "harvestersIncoming", g.harvestersIncoming, s.harvestersIncoming)
-            // Skipped: unitCount. Swift's end-of-tick `recount(from:
-            // units)` works, but Swift doesn't port `Unit_Move`'s
-            // winger-off-map `Unit_Remove` branch (`src/unit.c:1305..1314`)
-            // yet — so a CARRYALL that flies off the 64×64 map edge
-            // stays in Swift's pool while OpenDUNE frees it. SAVE007
-            // u0 surfaces this at tick 367. Unblocking the compare
-            // needs either (a) the Unit_Move Tile_IsValid port (plus
-            // the `byScenario && linkedID==0xFF && scriptVariables[4]==0`
-            // secondary gate for `mustStayInMap=true` wingers, which
-            // needs per-unit script variables exposed), or (b) a
-            // per-unit off-map-death handler wired through the
-            // scheduler's winger movement block.
         }
 
         private static func compareStructure(
