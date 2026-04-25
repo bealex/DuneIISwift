@@ -86,7 +86,8 @@ extension Scripting.Functions {
         // 0x22 — Script_Unit_Pickup (not ported; transport)
         // 0x23 — Script_Unit_CallUnitByType (not ported)
         // 0x24 — Script_Unit_Unknown2552 (not ported)
-        // 0x25 — Script_Unit_FindStructure (not ported)
+        // 0x25 — Script_Unit_FindStructure
+        table[0x25] = Scripting.Functions.makeFindStructureUnit(host: host)
         // 0x26 — Script_General_VoicePlay
         table[0x26] = Scripting.Functions.makeVoicePlay(host: host)
         // 0x27 — Script_Unit_DisplayDestroyedText (not ported; GUI)
@@ -110,7 +111,8 @@ extension Scripting.Functions {
         table[0x31] = Scripting.Functions.makeIdleActionUnit(source: source, host: host)
         // 0x32 — Script_General_UnitCount
         table[0x32] = Scripting.Functions.makeUnitCount(host: host)
-        // 0x33 — Script_Unit_GoToClosestStructure (not ported)
+        // 0x33 — Script_Unit_GoToClosestStructure
+        table[0x33] = Scripting.Functions.makeGoToClosestStructureUnit(host: host)
         // 0x34 / 0x35 — NoOp
         table[0x34] = Scripting.Functions.noOperation
         table[0x35] = Scripting.Functions.noOperation

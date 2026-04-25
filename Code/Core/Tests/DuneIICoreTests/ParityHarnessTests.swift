@@ -184,7 +184,7 @@ struct ParityHarnessTests {
         _ = try? Simulation.ParityHarness.runAgainst(
             snapshot: snapshot,
             golden: golden,
-            tickLimit: 5263,
+            tickLimit: 5267,
             unitProgram: unitProgram,
             structureProgram: structureProgram,
             teamProgram: teamProgram,
@@ -209,7 +209,7 @@ struct ParityHarnessTests {
     @MainActor
     func saveSevenParityScriptPcFrontier() throws {
         try expectFullParity(
-            tickLimit: 5265,
+            tickLimit: 5270,
             save: "_SAVE007.DAT", golden: "save007_ticks.jsonl",
             withRealEmc: true,
             compareScriptPc: true,
@@ -229,7 +229,7 @@ struct ParityHarnessTests {
     @MainActor
     func saveSevenParityLandscapeFrontier() throws {
         try expectFullParity(
-            tickLimit: 5265,
+            tickLimit: 5270,
             save: "_SAVE007.DAT", golden: "save007_ticks.jsonl",
             withRealEmc: true,
             compareLandscape: true
