@@ -144,6 +144,12 @@ extension Simulation {
         /// Also used by a handful of other per-unit timers (bullets'
         /// arrival, etc.) — we use it as a catch-all counter field.
         public var timer: UInt16
+        /// `o.script.variables[4]` shadow on the slot (mirrors
+        /// `StructureSlot.scriptVariable4`). `0` means no link.
+        /// Written by `Object_Script_Variable4_Link` /
+        /// `linkVariable4` when the unit's RETURN/MOVE script targets
+        /// a same-house structure.
+        public var scriptVariable4: UInt16
 
         public init(
             isUsed: Bool = false,
@@ -185,7 +191,8 @@ extension Simulation {
             fireDelay: UInt8 = 0,
             fireTwiceFlip: Bool = false,
             team: UInt8 = 0,
-            timer: UInt16 = 0
+            timer: UInt16 = 0,
+            scriptVariable4: UInt16 = 0
         ) {
             self.isUsed = isUsed
             self.isAllocated = isAllocated
@@ -227,6 +234,7 @@ extension Simulation {
             self.fireTwiceFlip = fireTwiceFlip
             self.team = team
             self.timer = timer
+            self.scriptVariable4 = scriptVariable4
         }
     }
 

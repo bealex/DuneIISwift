@@ -519,14 +519,24 @@ extension Scripting {
 
         // MARK: Batch 6 — position-dependent generics
 
-        /// `Script_General_GetDistanceToTile` — distance from the current
-        /// object to the tile encoded in peek(1). `0xFFFF` when the
-        /// reference is invalid.
+        /// `Script_General_GetDistanceToTile` — port of
+        /// `src/script/general.c:71..82`. Reads peek(1) as an
+        /// encoded reference and returns `Tile_GetDistance(o.position,
+        /// Tools_Index_GetTile(encoded))`. For STRUCTURE refs,
+        /// `Tools_Index_GetTile` adds the layout-tile-diff to the
+        /// anchor (`src/tools.c:164..174`), so the distance is to the
+        /// structure's layout-adjusted CENTER, not its raw anchor.
+        /// `Pos32.targetTile` already implements that adjustment;
+        /// using `Pos32.of` here would underreport distance for
+        /// 2x2+ structures and skew the harvester's MOVE-handler
+        /// distance gate (SAVE007 tick 5436: u39 reading 704 vs
+        /// OpenDUNE's 1344 to the refinery centre, then jumping the
+        /// jumpNE branch the wrong way).
         public static func makeGetDistanceToTile(host: Host) -> VM.Function {
             return { engine in
                 let encoded = Scripting.EncodedIndex(raw: Scripting.peek(engine: &engine, position: 1))
                 guard let from = currentPosition(host: host) else { return 0xFFFF }
-                guard let to = Pos32.of(encoded, host: host) else { return 0xFFFF }
+                guard let to = Pos32.targetTile(encoded, host: host) else { return 0xFFFF }
                 return Pos32.distance(from, to)
             }
         }

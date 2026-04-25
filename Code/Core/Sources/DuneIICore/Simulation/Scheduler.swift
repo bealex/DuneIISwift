@@ -2597,14 +2597,6 @@ extension Simulation {
                         if isGroundUnit {
                             slot.positionX = goal.x
                             slot.positionY = goal.y
-                            // Port of OpenDUNE `Unit_Move` → `Unit_EnterStructure`
-                            // (`src/unit.c:1491..1499` + `:2226..2265`): a ground
-                            // unit arriving on a structure tile owned by a
-                            // different house deals
-                            // `min(unit.hp * 2, structure.hp / 2)` damage to
-                            // that structure and gets removed. SAVE007 tick
-                            // 622 has SOLDIER u37 walk onto the enemy CYARD
-                            // and deal 40 hp damage before being consumed.
                             host.units[idx] = slot
                             let arrivalPacked = Simulation.Pathfinder.packedTile(
                                 x: slot.positionX, y: slot.positionY
@@ -2612,10 +2604,36 @@ extension Simulation {
                             if let sIdx = Simulation.Explosions.structureAt(
                                 packed: arrivalPacked, host: host
                             ) {
-                                if Simulation.Units.enterStructure(
+                                let consumed = Simulation.Units.enterStructure(
                                     poolIndex: idx, structureIndex: sIdx, host: host
-                                ) {
+                                )
+                                if consumed {
+                                    // Hostile entry: unit was freed.
                                     continue
+                                }
+                                // Same-house dock: OpenDUNE's
+                                // `Unit_Move` arrival branch
+                                // (`src/unit.c:1452, 1497, 1512`)
+                                // sets `newPosition = currentDestination`
+                                // *but* commits `unit->o.position =
+                                // newPosition` only on the
+                                // no-structure-arrival fall-through.
+                                // The `Unit_EnterStructure` early-
+                                // return at line 1497 keeps
+                                // `o.position` at its pre-step value.
+                                // Revert to the pre-step position
+                                // (priorX/Y captured at the top of
+                                // this iteration). SAVE007 tick 5485:
+                                // u39's last step started from
+                                // (6512, 6016), would have advanced
+                                // to (6528, 6016), but the structure
+                                // dock fires and OpenDUNE keeps the
+                                // unit at (6512, 6016).
+                                if host.units.slots[idx].isUsed {
+                                    var u = host.units[idx]
+                                    u.positionX = priorX
+                                    u.positionY = priorY
+                                    host.units[idx] = u
                                 }
                             }
                             slot = host.units[idx]

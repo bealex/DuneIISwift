@@ -55,6 +55,23 @@ extension Simulation {
         /// `Simulation.Structures.setRallyPoint`. Not persisted across
         /// saves — a UI-layer convenience, not a logic-parity field.
         public var rallyPointPacked: UInt16
+        /// `o.script.variables[4]` shadow on the slot. OpenDUNE's
+        /// `Object_Script_Variable4_Set` writes the engine variable
+        /// directly; Swift mirrors it onto the slot so the pathfinder
+        /// + tile-enter score can read it without touching engine
+        /// state. `0` means "no link". The structure-side companion
+        /// to `UnitSlot.scriptVariable4` — `Object_Script_Variable4_Link`
+        /// updates both.
+        ///
+        /// Read by the parity-harness `tileEnterScore` wrapper to
+        /// distinguish the post-link `Unit_IsValidMovementIntoStructure`
+        /// return of 2 (variables[4] points back at the calling unit;
+        /// score = -2 → `Unit_StartMovement` accepts) from the pre-link
+        /// return of 1 (score = -1 → `Unit_StartMovement` rejects).
+        /// SAVE007 tick 5436 surfaced this: u39's 3rd east step into
+        /// the refinery footprint needs the score=-2 path because the
+        /// refinery and harvester are already linked via SetDestination.
+        public var scriptVariable4: UInt16
 
         public init(
             isUsed: Bool = false,
@@ -73,7 +90,8 @@ extension Simulation {
             objectType: UInt16 = 0xFFFF,
             rotationSpriteDiff: UInt8 = 0,
             degrades: Bool = false,
-            rallyPointPacked: UInt16 = 0xFFFF
+            rallyPointPacked: UInt16 = 0xFFFF,
+            scriptVariable4: UInt16 = 0
         ) {
             self.isUsed = isUsed
             self.isAllocated = isAllocated
@@ -92,6 +110,7 @@ extension Simulation {
             self.rotationSpriteDiff = rotationSpriteDiff
             self.degrades = degrades
             self.rallyPointPacked = rallyPointPacked
+            self.scriptVariable4 = scriptVariable4
         }
     }
 

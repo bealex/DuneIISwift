@@ -1236,23 +1236,44 @@ extension Simulation {
             clear: Bool = false
         ) {
             guard structureIndex >= 0, structureIndex < host.structures.slots.count else { return }
+            guard unitIndex >= 0, unitIndex < host.units.slots.count else { return }
             var s = host.structures.slots[structureIndex]
-            guard s.isUsed else { return }
-            guard let info = StructureInfo.lookup(s.type), info.busyStateIsIncoming else { return }
-            // OpenDUNE early-returns when a unit is already linked
-            // (`src/object.c:69` `Structure_GetLinkedUnit(s) != NULL`).
-            // Mirror via `linkedID != 0xFF` since that's the on-slot
-            // representation of `Structure_GetLinkedUnit`.
-            guard s.linkedID == 0xFF else { return }
+            var u = host.units.slots[unitIndex]
+            guard s.isUsed, u.isUsed else { return }
+
+            // Mirror `Object_Script_Variable4_Link` (`src/object.c:23..47`):
+            // both sides write each other's encoded index. Clears via
+            // the `clear: true` overload — passes 0 to both sides
+            // (matches `Object_Script_Variable4_Clear` /
+            // `Object_Script_Variable4_Set(o, 0)`).
+            let unitEncoded = clear ? 0 : Scripting.EncodedIndex.unit(UInt16(unitIndex)).raw
+            let structEncoded = clear ? 0 : Scripting.EncodedIndex.structure(UInt16(structureIndex)).raw
+            u.scriptVariable4 = structEncoded
+            s.scriptVariable4 = unitEncoded
+            host.units[unitIndex] = u
+
+            // Structure-side state transition only fires for
+            // busyStateIsIncoming structures (REFINERY / STARPORT)
+            // with no live unit linked via `linkedID`. Mirrors
+            // `Object_Script_Variable4_Set`'s structure tail at
+            // `src/object.c:54..72`.
+            guard let info = StructureInfo.lookup(s.type), info.busyStateIsIncoming else {
+                host.structures[structureIndex] = s
+                return
+            }
+            guard s.linkedID == 0xFF else {
+                host.structures[structureIndex] = s
+                return
+            }
             let newState: Int16 = clear ? 0 /* IDLE */ : 1 /* BUSY */
             if s.state != newState {
                 s.state = newState
-                host.structures[structureIndex] = s
                 Log.debug(
                     "linkVariable4 unit=\(unitIndex) → structure=\(structureIndex) state=\(s.state) (busyStateIsIncoming)",
                     tracer: .label("setdest")
                 )
             }
+            host.structures[structureIndex] = s
         }
     }
 }

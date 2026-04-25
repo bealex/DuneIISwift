@@ -831,11 +831,42 @@ extension Simulation {
             // + consume branch is what SAVE007 parity needs.
             let attackerHouse = u.houseID
             let defenderHouse = s.houseID
-            // Allied / same-house entry is a no-op (the OpenDUNE
-            // `House_AreAllied` branch at line 2204 handles
-            // REPAIR docking + linkedID chaining — not needed for
-            // the parity window).
-            if attackerHouse == defenderHouse { return false }
+            // Same-house entry: friendly docking. Mirrors
+            // `Unit_EnterStructure`'s allied branch
+            // (`src/unit.c:2204..2223`):
+            //   Structure_SetState(s, busyStateIsIncoming ? READY : BUSY)
+            //   unit->linkedID = s->linkedID
+            //   s->linkedID = unit->index
+            // Plus the `Object_Script_Variable4_Clear` cleanup
+            // (mirror `linkVariable4(clear: true)`) since the
+            // incoming-link is now consumed by the actual docking.
+            // SAVE007 tick 5485 surfaces this: u39 (HARVESTER) walks
+            // onto the refinery's anchor tile (25, 23) and the
+            // refinery transitions BUSY → READY.
+            if attackerHouse == defenderHouse {
+                guard let info = StructureInfo.lookup(s.type) else { return false }
+                guard Structures.canUnitEnter(unitType: u.type, structure: s) else { return false }
+                var u2 = host.units.slots[poolIndex]
+                var s2 = host.structures.slots[structureIndex]
+                let priorHead = s2.linkedID
+                u2.linkedID = priorHead
+                u2.inTransport = true
+                host.units[poolIndex] = u2
+                s2.linkedID = UInt8(truncatingIfNeeded: poolIndex)
+                let newState: Int16 = info.busyStateIsIncoming ? 2 /* READY */ : 1 /* BUSY */
+                s2.state = newState
+                // Clear variable4 link on both sides — the unit has
+                // arrived, so the incoming-link bookkeeping is done.
+                s2.scriptVariable4 = 0
+                u2.scriptVariable4 = 0
+                host.structures[structureIndex] = s2
+                host.units[poolIndex] = u2
+                Log.info(
+                    "enterStructure-dock u\(poolIndex) (t=\(u.type) h=\(attackerHouse)) → s\(structureIndex) (t=\(s.type)) state=\(newState) priorHead=\(priorHead)",
+                    tracer: .label("enter-structure")
+                )
+                return false  // unit not consumed; harvester continues live
+            }
 
             // Damage + remove.
             let dmg = min(

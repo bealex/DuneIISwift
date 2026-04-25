@@ -222,10 +222,25 @@ extension Simulation {
                         let u = host.units.slots[uIdx]
                         if u.houseID != s.houseID { return 256 }
                         if Simulation.Structures.canUnitEnter(unitType: u.type, structure: s) {
-                            // OpenDUNE returns `-Unit_IsValidMovementIntoStructure(...)` =
-                            // `-1` (signed int16). Pathfinder treats
-                            // negative scores as low-cost.
-                            return -1
+                            // Port of `Unit_IsValidMovementIntoStructure`'s
+                            // `s->o.script.variables[4] == unitEnc`
+                            // branch (`src/unit.c:689`): when the
+                            // structure's variable[4] already points
+                            // back at the calling unit (i.e. the link
+                            // is established via `Object_Script_Variable4_Link`),
+                            // returns 2 → score = -2. Otherwise the
+                            // raw "valid entry" path returns 1 →
+                            // score = -1. The distinction matters for
+                            // the equivalent of `Unit_StartMovement`'s
+                            // `score == -1` rejection (`src/unit.c:1086`):
+                            // -1 rejects, -2 accepts. SAVE007 tick
+                            // 5436 surfaces this — u39's 3rd east
+                            // step into the refinery footprint needs
+                            // the score=-2 path because the refinery
+                            // and harvester are already linked via
+                            // SetDestination at tick 5266.
+                            let unitEnc = Scripting.EncodedIndex.unit(UInt16(uIdx)).raw
+                            return s.scriptVariable4 == unitEnc ? -2 : -1
                         }
                         return 256
                     }
