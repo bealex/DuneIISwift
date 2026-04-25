@@ -153,7 +153,10 @@ extension Scripting.Functions {
         // 0x01 — NoOp
         table[0x01] = Scripting.Functions.noOperation
         // 0x02 — Script_Structure_Unknown0A81 (not ported; linking edge case)
-        // 0x03 — Script_Structure_FindUnitByType (not ported; carryall)
+        // 0x03 — Script_Structure_FindUnitByType (minimal port: matches
+        // OpenDUNE's Tools_Random_256 byte draw via FindFreePosition
+        // for byte-stream parity; carryall summon side-effect skipped)
+        table[0x03] = Scripting.Functions.makeFindUnitByTypeStructure(host: host, source: source)
         // 0x04 — Script_Structure_SetState
         table[0x04] = Scripting.Functions.makeSetStateStructure(host: host)
         // 0x05 — Script_General_DisplayText

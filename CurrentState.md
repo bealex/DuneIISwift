@@ -29,7 +29,7 @@ This file is the single source of truth for "what's happening right now." Read i
 
 2. **Port `Unit_Move`'s winger-off-map `Unit_Remove` path** — **DONE** this session. Both gates wired; `compareHouse.unitCount` now in the schema and passing. The bounce branch (`src/unit.c:1316..1317`, random-orient retarget for mustStayInMap wingers that don't qualify for remove) remains a position-hold stub — no SAVE007 path reaches it, but a future save with an active ORNITHOPTER on patrol could surface it.
 
-**🎯🎯🎯 Tick 5556 closed (this session). SAVE007 parity holds clean through tick 9245** — a +3690-tick advance on top of the prior 5555 ceiling. Two pieces shipped:
+**🎯🎯🎯 SAVE007 parity holds clean through tick 14795** — +9240 ticks on top of the 5555 ceiling at the start of these sessions. Closed via three stacked fixes: `Game_Prepare`'s `Script_Load`, `Script_Structure_Unknown0C5A` (slot 0x07) + `Structure_FindFreePosition`, and minimal `Script_Structure_FindUnitByType` (slot 0x03) for byte-stream alignment. Two pieces shipped:
 
 1. **`Game_Prepare`'s `Script_Load` port** in `Scheduler.seedScripts(from:)`. After `.fromSave(s.object.script)` reconstructs the saved engine state, override `pc = structureVM.program.entryPoints[typeID]`, reset `framePointer = 17`, `stackPointer = 15`, `isSubroutine = false` — preserve `delay`, `returnValue`, `variables`, `stack`. Mirrors OpenDUNE's `src/opendune.c:1464` call to `Script_Load(&s->o.script, s->o.type)` for every loaded structure post-`SaveGame_LoadFile`. Without this, Swift's saved word-offset (e.g. SAVE007 s2 = 329) showed up as Swift's pc instead of OpenDUNE's entry-point pc (291) — manifesting as the previously-described 30-tick offset on first BUILD.EMC opcode reach.
 
@@ -55,11 +55,17 @@ Tick 5436 was a `GetDistanceToTile` slot 0x03 fix — was using `Pos32.of` (anch
 
 First divergence at tick 5496: `unit[39].targetMove=32770 vs 0`. OpenDUNE keeps u39's `targetMove` set to the encoded refinery for many ticks post-dock; Swift clears it. Need to find the Swift-side writer (likely a `SetDestination(0)` from the post-dock script flow or a stale `tickMovement` arrival-clear) and gate it. Plus at tick 5485 the diagnostic scriptPc compare also fires (`u39.pc=0 vs 745`) — OpenDUNE Script_Reset's the engine in `Unit_Hide` (`src/unit.c:2107..2120`); Swift doesn't port `Unit_Hide` yet. The full Unit_Hide port (isNotOnMap flag, Script_Reset, Unit_UntargetMe sweep, House_UnitCount_Remove decrement, GameLoop_Unit isNotOnMap-skip) is queued.
 
-**Next step (tick 9246 frontier — slot 0x07 wired, narrowed but not closed)**: with `Script_Structure_Unknown0C5A` (slot 0x07) ported including `Structure_FindFreePosition`, the immediate `structure[2].state=0 vs 2` divergence is closed (Swift now transitions to IDLE on harvester eject). New divergence at the SAME tick 9246: `unit[39].positionY=6272 vs 5760` — Swift ejects u39 to tile (24, 22) (NW corner), OpenDUNE ejects to (24, 24) (W column row 2).
+**Next step (tick 14796 frontier)**: `unit[39].movingSpeed=67 vs 96`. Different from prior frontiers — u39 now well past the dock cycle and moving differently. Probably a different speed/movement-type interaction with terrain (rock vs dune vs spice) on a tile we haven't matched. Investigate u39's path around tick 14790..14796 with `compareScriptPc: true` for the unit-side trace, plus position-stream diff against OpenDUNE's golden to spot when u39 first picks a different movement path.
 
-**Root cause is RNG-byte-stream misalignment** at tick 9246. OpenDUNE's `--parity-random-trace=` dump shows the byte at this call is `0xC8` (ctx=s2, idx=2543, low nibble = 8 → start offset 8 in `Structure_FindFreePosition`'s 16-tile loop, hits tile (24, 24) first among the 3 distance-tied candidates {(24, 22), (24, 23), (24, 24)} — strict `<` keeps the first). Swift's `findFreePosition` instrumented trace shows iteration starting at offset 13 (byte's low nibble = D), so Swift sees (24, 22) first and locks in.
+---
 
-Both engines pass byte-for-byte parity through tick 9245 (pool-state). The RNG STATE itself isn't compared, just observable state. Some RNG consumer between tick 9245's end and tick 9246's slot-0x07 fire is consuming a different byte count between the two engines. Diagnostic path: run Swift's `RNGTrace` writer + OpenDUNE's `--parity-random-trace=tmp/opendune_rng_9250.txt`, diff line-by-line to find the first idx where bytes diverge — that's the misaligned consumer (could be a script DelayRandom, an explosion scatter draw, or a wobble-byte mismatch on a unit that's now isNotOnMap when it shouldn't be).
+**Earlier this session (tick 9246 frontier closed)**:
+
+OpenDUNE `--parity-random-trace` + Swift's `RNGTrace` byte-stream diff revealed: byte values are byte-for-byte identical through idx=2540 in both engines, then diverge at idx=2541 — OpenDUNE consumes bytes at ticks 9236, 9238, 9246, 9248 with `ctx=s2`; Swift consumes only at 9238, 9246. OpenDUNE drew an extra byte at tick 9236 from `Script_Structure_FindUnitByType` (slot 0x03)'s `Structure_FindFreePosition` call (`src/script/structure.c:211`). Swift's slot 0x03 was an unwired NoOp, so the byte never fired and the stream offset by one — causing the slot-0x07 eject byte to read the wrong value.
+
+**Fix**: minimal `makeFindUnitByTypeStructure(host:source:)` port in `Functions.swift`. Matches OpenDUNE's READY+linkedID guard, then invokes `findFreePosition(checkForSpice: false)` purely for the byte-draw side-effect. Returns 0 (the carryall-summon side-effect is skipped — for SAVE007's player-owned harvester the line-215 `g_playerHouseID == s.houseID && u.type == HARVESTER && u.targetLast == 0 && position != 0` guard returns IT_NONE before the summon anyway). With this, the RNG stream realigns and slot 0x07's eject byte is `0xC8` (low nibble 8 → start offset 8 → walks (24, 24) first), matching OpenDUNE's choice.
+
+**Parity ceiling**: 9245 → **14795** (+5550 ticks).
 
 ---
 
