@@ -97,13 +97,18 @@ extension Simulation {
             // Landscape oracle: `Script_Unit_CalculateRoute`'s SetSpeed
             // block (port of `Unit_StartMovement` at `src/unit.c:1088`)
             // reads `Map_GetLandscapeType` to pick `movementSpeed[type]`
-            // from the landscape info table. Without this closure, the
-            // SetSpeed block short-circuits and `movingSpeed` stays 0,
-            // diverging from OpenDUNE on any unit that CalculateRoute
-            // routed a step. Pulls from `snapshotLandscape` — the
-            // harness builder passes it in as the matching LandscapeType
-            // closure for each tile. DO NOT reuse `spiceMap?[packed]` —
-            // that closure returns `SpiceMap.Level` (0..3), not
+            // from the landscape info table. The local stub below uses
+            // the static save-time `snapshotLandscape` and feeds
+            // `tileEnterScore`'s pathfinding lookups; it gets *replaced*
+            // post-host-init with a live-composing version that overlays
+            // the current spice levels and structure footprints — the
+            // closer match to OpenDUNE's `Map_GetLandscapeType`. Without
+            // the live overlay, a harvester moving onto a tile it (or a
+            // sibling) already drained reads the snapshot's old
+            // movementSpeed and `Unit_SetSpeed` produces a faster
+            // `movingSpeed` than OpenDUNE — observable on SAVE007 at
+            // tick 14796. DO NOT reuse `spiceMap?[packed]` — that
+            // closure returns `SpiceMap.Level` (0..3), not
             // `LandscapeType` (0..14), and conflating the two made
             // normalSand (`LandscapeType.rawValue=0`) look like
             // partialRock (`rawValue=1` in the landscape table but
@@ -247,6 +252,53 @@ extension Simulation {
                     }
                 }
                 return baseScore(packed, orient8, mt)
+            }
+            // Replace `host.landscapeAt` with a live-composing closure
+            // that mirrors OpenDUNE `Map_GetLandscapeType` (`src/map.c:541`):
+            // structure footprints win, then live spice levels, then
+            // baseline. The init-time `landscapeAt` above only sees the
+            // save-time snapshot; without this swap a harvester reading
+            // the speed of a tile it (or a sibling) already drained
+            // gets the snapshot's pre-drain `movementSpeed` and
+            // `Unit_SetSpeed` produces a faster `movingSpeed` than
+            // OpenDUNE. SAVE007 tick 14796 is the surfacing test: u39
+            // moves onto a tile that drained from THICK_SPICE to
+            // NORMAL_SAND between save-time and tick 14796 — Swift's
+            // stale read gave `movingSpeed=96`, OpenDUNE's live read
+            // `=67`.
+            host.landscapeAt = { [weak host] packed in
+                guard let host = host else {
+                    guard Int(packed) < snapshotLandscape.count else { return 0 }
+                    return UInt8(snapshotLandscape[Int(packed)].rawValue)
+                }
+                let tx = Int(packed & 0x3F)
+                let ty = Int((packed >> 6) & 0x3F)
+                for sIdx in host.structures.findArray {
+                    let s = host.structures.slots[sIdx]
+                    let ax = Int(s.positionX) / 256
+                    let ay = Int(s.positionY) / 256
+                    let fp = Simulation.Structures.footprintTiles(
+                        type: s.type, anchorX: ax, anchorY: ay
+                    )
+                    if fp.contains(where: { $0.0 == tx && $0.1 == ty }) {
+                        return UInt8(LandscapeType.structure.rawValue)
+                    }
+                }
+                let baseRaw: Int = (Int(packed) < snapshotLandscape.count)
+                    ? snapshotLandscape[Int(packed)].rawValue : 0
+                if let map = host.spiceMap, Int(packed) < map.cells.count {
+                    switch map.cells[Int(packed)] {
+                    case .thick: return UInt8(LandscapeType.thickSpice.rawValue)
+                    case .thin:  return UInt8(LandscapeType.spice.rawValue)
+                    case .bare:
+                        if baseRaw == LandscapeType.spice.rawValue
+                            || baseRaw == LandscapeType.thickSpice.rawValue {
+                            return UInt8(LandscapeType.normalSand.rawValue)
+                        }
+                    case .notSand: break
+                    }
+                }
+                return UInt8(baseRaw)
             }
             // `Script_General_SearchSpice` (slot 0x29) — wire to
             // `Scheduler.findSpiceNear` so the harvester's UNIT.EMC

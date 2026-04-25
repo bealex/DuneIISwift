@@ -11,6 +11,18 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
+**🎯🎯🎯 SAVE007 parity 14795 → 15300 ticks via live-landscape composition in the parity harness's `host.landscapeAt` closure (+505 ticks).** Tick-14796 frontier `unit[39].movingSpeed=67 vs 96` was caused by Swift's static `snapshotLandscape[packed]` lookup feeding `Script_Unit_CalculateRoute`'s SetSpeed slice (Swift port of `Unit_StartMovement`) the save-time landscape value, while OpenDUNE's `Map_GetLandscapeType` reads the live `g_map[].groundTileID`. u39's path crossed tile (20,22) which had drained from THICK_SPICE → bare via ~1500 ticks of harvest cycling: OpenDUNE saw NORMAL_SAND (`movementSpeed[harvester]=112` → `movingSpeed=67`); Swift saw the snapshot's THICK_SPICE (`=160` → `movingSpeed=96`).
+
+**Fix**: in `ParityHarness.runAgainst`, after `host` is constructed, replace `host.landscapeAt` with a `[weak host]` closure that mirrors `Map_GetLandscapeType` (`src/map.c:541`): structure footprints win (returns `LST_STRUCTURE`), then live `host.spiceMap.cells` overlay (THICK/THIN spice + bare→sand for spice baselines), then baseline. The original static stub stays as init-time placeholder for `tileEnterScore` (pathfinding score for HARVESTER's movementType is unaffected by spice/sand transitions). Opcode-level u39 trace through tick 14800 (Swift via `saveSevenParityDumpU39ScriptTrace`, OpenDUNE via `--parity-script-trace=39`) confirmed byte-identical PC streams — only one benign `pc=2123 return=0 vs 2` divergence at tick 5261 that doesn't propagate. Golden regenerated to 30000 ticks.
+
+**Next step (tick 15301 frontier)**: `house[1].credits=1005 vs 1024` — Swift +19 credits over OpenDUNE. Almost certainly the refinery deposit cadence (slot 0x15 `Script_Structure_RefineSpice`'s drain rate or `Tools_Random_256`-jittered cycle for AI-driven harvesters). Investigate via the existing `saveSevenParityDumpS2StructureScriptTrace` regenerated to ~15500 ticks + a sibling u39-side dump to see which engine bumped credits at the divergent tick.
+
+New insight: `Documentation/Insights/simulation-parity-harness-stale-landscape.md`. Tests **1036 / 101 green, zero warnings**.
+
+---
+
+**🎯🎯🎯 SAVE007 prior frontier (closed earlier this session): 9245 → 14795 ticks** via `Script_Structure_FindUnitByType` (slot 0x03) minimal port. Now historical context only — see `Documentation/History/2026-04.md` for full session log.
+
 **🎯🎯🎯 SAVE007 now passes FULL 3050-tick byte-for-byte parity with OpenDUNE under real UNIT.EMC / BUILD.EMC / TEAM.EMC, plus a new per-tile `Map_GetLandscapeType` landscape comparator on top.** The tick-3011 `u39.targetMove=54699 vs 54441` drift is closed.
 
 **Root cause was NOT the hypothesized spice-map state divergence** — the new landscape comparator proved the tile grids are identical on both engines through tick 3011. Real cause: `Scripting.Functions.makeSearchSpice` passed the calling harvester as `excludingUnit` to `Scheduler.findSpiceNear`, but OpenDUNE's `Map_SearchSpice` (`src/map.c:1117`) has no caller-exclusion parameter — it skips tiles via `Unit_Get_ByPackedTile`, and a stationary HARVEST harvester IS registered on its current tile via `Unit_UpdateMap` (`src/unit.c:2466..2525`). At tick 3011 both engines drained tile (20, 20) from THICK → THIN; OpenDUNE's SearchSpice skipped (20, 20) because u39 was registered there and returned adjacent (21, 21); Swift's `excludingUnit: idx` kept (20, 20) as a valid pick. **Fix**: `makeSearchSpice` passes `-1` for `excludingUnit` so the occupancy set includes the caller. Gameplay `tickHarvesting` auto-seek keeps its own `excludingUnit: idx` (Swift-only convenience, gated off in parity mode via `tickHarvestingEnabled = false`).
@@ -562,7 +574,7 @@ Reverse-chronological; link to the day's history bullet for detail.
 
 ## Test status
 
-`cd Code/Core && swift test` — **1032 tests across 101 suites, all green** as of 2026-04-24 (🎯 FULL 1000-tick SAVE007 parity, plus full 200-tick SAVE001 parity, all under real UNIT.EMC / BUILD.EMC / TEAM.EMC). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 11 s clean, < 5 s incremental).
+`cd Code/Core && swift test` — **1036 tests across 101 suites, all green** as of 2026-04-25 (🎯 SAVE007 parity now holds through tick **15300** under real UNIT.EMC / BUILD.EMC / TEAM.EMC + landscape comparator, plus full 200-tick SAVE001 parity). `swift package clean && swift build` reports **zero warnings** (library + tests). `swift build` also builds the `duneii` executable (< 12 s clean, < 5 s incremental).
 
 ## Open questions / risks (pointers)
 

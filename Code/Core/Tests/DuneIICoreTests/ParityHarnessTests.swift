@@ -300,7 +300,7 @@ struct ParityHarnessTests {
     @MainActor
     func saveSevenParityLandscapeFrontier() throws {
         try expectFullParity(
-            tickLimit: 14795,
+            tickLimit: 15300,
             save: "_SAVE007.DAT", golden: "save007_ticks.jsonl",
             withRealEmc: true,
             compareLandscape: true
