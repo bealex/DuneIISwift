@@ -51,14 +51,14 @@ struct ParityHarnessTests {
     /// Stepping past tick 0 is expected to diverge immediately on our
     /// current sim (fog, sprite, RNG cascades are unported) — that's the
     /// signal we're meant to chase, not a pass/fail line.
-    @Test("_SAVE001.DAT tick 0 matches the committed 200-tick golden")
+    @Test("_SAVE001.DAT tick 0 matches the 1000-tick golden")
     @MainActor
     func saveOneParityTickZero() throws {
         guard let root = TestInstall.locate() else { return }
         let saveURL = root.appendingPathComponent("_SAVE001.DAT")
         guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
 
-        let goldenURL = Self.goldenURL(named: "save001_200ticks.jsonl")
+        let goldenURL = Self.goldenURL(named: "save001_ticks.jsonl")
         guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
 
         let data = try Data(contentsOf: saveURL)
@@ -87,24 +87,26 @@ struct ParityHarnessTests {
     @Test("_SAVE001.DAT tick 1 with empty EMC currently diverges")
     @MainActor
     func saveOneParityTickOneDiverges() throws {
-        try expectTickOneDivergence(save: "_SAVE001.DAT", golden: "save001_200ticks.jsonl")
+        try expectTickOneDivergence(save: "_SAVE001.DAT", golden: "save001_ticks.jsonl")
     }
 
     /// Same as `saveOneParityTickOneDiverges` but with real `UNIT.EMC`
     /// / `BUILD.EMC` / `TEAM.EMC` loaded via `AssetLoader`. SAVE001
     /// historically diverged at tick 1 with `unit[22].actionID=5
     /// HARVEST vs 6 RETURN` (harvester transition class). The
-    /// SearchSpice port (slot 0x29) closed that drift here as a
-    /// side-effect of fixing SAVE007 — the same harvester EMC path
-    /// reads SearchSpice and falls through to RETURN when it returns
-    /// 0. Now widened to 200 ticks (the full SAVE001 golden window).
-    @Test("_SAVE001.DAT 200-tick parity with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
+    /// SearchSpice port (slot 0x29) closed that drift as a side-effect
+    /// of fixing SAVE007 — the same harvester EMC path reads
+    /// SearchSpice and falls through to RETURN when it returns 0.
+    /// Widened to the full 1000-tick golden with landscape parity on
+    /// top (same schema as SAVE007).
+    @Test("_SAVE001.DAT FULL 1000-tick parity with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
     @MainActor
     func saveOneParityRealEmc() throws {
         try expectFullParity(
-            tickLimit: 200,
-            save: "_SAVE001.DAT", golden: "save001_200ticks.jsonl",
-            withRealEmc: true
+            tickLimit: 1000,
+            save: "_SAVE001.DAT", golden: "save001_ticks.jsonl",
+            withRealEmc: true,
+            compareLandscape: true
         )
     }
 
@@ -123,6 +125,25 @@ struct ParityHarnessTests {
     @MainActor
     func saveSevenParityTickOneDiverges() throws {
         try expectTickOneDivergence(save: "_SAVE007.DAT", golden: "save007_ticks.jsonl")
+    }
+
+    /// Landscape-parity diagnostic for SAVE007. Widens the compare
+    /// with per-tile `Map_GetLandscapeType` and walks forward until
+    /// the first tile diverges. Wired to hunt the tick-3011
+    /// `u39.targetMove` drift — the hypothesis is that Swift's spice
+    /// map silently desynced from OpenDUNE's over thousands of ticks
+    /// and `Script_General_SearchSpice` eventually reads a different
+    /// tile on the two engines. Gated on the long (>3011 ticks)
+    /// golden being present locally — short-circuits when it isn't.
+    @Test("_SAVE007.DAT landscape parity — walk to first tile divergence")
+    @MainActor
+    func saveSevenParityLandscapeFrontier() throws {
+        try expectFullParity(
+            tickLimit: 3050,
+            save: "_SAVE007.DAT", golden: "save007_ticks.jsonl",
+            withRealEmc: true,
+            compareLandscape: true
+        )
     }
 
     /// 🎯 SAVE007 matches OpenDUNE byte-for-byte across the FULL
@@ -617,7 +638,8 @@ struct ParityHarnessTests {
         tickLimit: Int,
         save: String,
         golden goldenName: String,
-        withRealEmc: Bool = false
+        withRealEmc: Bool = false,
+        compareLandscape: Bool = false
     ) throws {
         guard let root = TestInstall.locate() else { return }
         let saveURL = root.appendingPathComponent(save)
@@ -667,7 +689,8 @@ struct ParityHarnessTests {
             teamProgram: teamProgram,
             seedScriptsFrom: withRealEmc ? game : nil,
             spiceMap: spiceMap,
-            snapshotLandscape: snapshotLandscape
+            snapshotLandscape: snapshotLandscape,
+            compareLandscape: compareLandscape
         )
     }
 

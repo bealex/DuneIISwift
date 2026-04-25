@@ -57,22 +57,32 @@ The `CXX` override with `-isysroot` is needed because `Makefile.src.in`
 builds the tiny `depend` C++ helper without passing sysroot via
 `CFLAGS_BUILD`.
 
-## Regenerate the golden fixture
+## Generate the golden fixtures
+
+The `ParityGoldens/*.jsonl` files are **not committed** to the repo
+(they're listed in `.gitignore`). The parity tests short-circuit when
+they're missing, so a fresh checkout builds and the rest of the suite
+stays green. Regenerate them locally whenever you want to run the
+parity tests:
 
 ```
 INSTALL="$(cd ../../Repositories/patched_107_unofficial && pwd)"   # or wherever v1.07 lives
+GOLDENS="$(cd ../../Code/Core/Tests/DuneIICoreTests/Fixtures/ParityGoldens && pwd)"
+
 ./bin/opendune \
     --parity-data-dir="$INSTALL" \
     --parity-load=_SAVE001.DAT \
-    --parity-ticks=200 \
-    --parity-dump="$(pwd)/save001_200ticks.jsonl"
+    --parity-ticks=1000 \
+    --parity-dump="$GOLDENS/save001_ticks.jsonl"
 
-diff -q save001_200ticks.jsonl \
-    ../../Code/Core/Tests/DuneIICoreTests/Fixtures/ParityGoldens/save001_200ticks.jsonl
-# Expected: files match. Commit any intentional schema change.
+./bin/opendune \
+    --parity-data-dir="$INSTALL" \
+    --parity-load=_SAVE007.DAT \
+    --parity-ticks=3050 \
+    --parity-dump="$GOLDENS/save007_ticks.jsonl"
 ```
 
-On an M-series Mac the run completes in roughly one wall-clock second
+On an M-series Mac each run completes in roughly one wall-clock second
 (the sim loop itself is a handful of ms; most time is PAK init).
 
 ## Verifying determinism

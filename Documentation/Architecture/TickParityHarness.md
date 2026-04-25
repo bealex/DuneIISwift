@@ -83,9 +83,9 @@ make -j
 # no display required, no audio touched, completes in <1 s
 ```
 
-The resulting `/tmp/golden.jsonl` is committed at `Code/Core/Tests/DuneIICoreTests/Fixtures/ParityGoldens/save001_200ticks.jsonl` for reproducible CI.
+The resulting `/tmp/golden.jsonl` is dropped into `Code/Core/Tests/DuneIICoreTests/Fixtures/ParityGoldens/save001_ticks.jsonl` for the parity tests to read. The fixtures under `ParityGoldens/*.jsonl` are **gitignored — not committed**: regenerate them locally from OpenDUNE whenever you need them. Tests short-circuit (no-op return) when the golden is missing, so a fresh checkout still builds and the rest of the suite stays green.
 
-We do **not** vendor a pre-built OpenDUNE binary. Anyone regenerating the fixture runs the patch locally. The fixture itself is the ground truth and only gets regenerated when we decide to widen the state schema.
+We do **not** vendor a pre-built OpenDUNE binary either. Anyone regenerating a fixture builds the patched OpenDUNE locally and runs it. The OpenDUNE source + parity patch is the ground truth; the JSONL files are just a cache of its output.
 
 ### What the patch must NOT change
 
@@ -193,7 +193,7 @@ A single SwiftTesting test case:
 func saveOneParity() throws {
     guard let installRoot = TestInstall.locate() else { return }
     let save = try Data(contentsOf: installRoot.appending(path: "_SAVE001.DAT"))
-    let goldenURL = Bundle.module.url(forResource: "save001_200ticks", withExtension: "jsonl")!
+    let goldenURL = Bundle.module.url(forResource: "save001_ticks", withExtension: "jsonl")!
     let golden = try Data(contentsOf: goldenURL)
     try ParityHarness.runAgainst(save: save, golden: golden, tickLimit: 200)
 }

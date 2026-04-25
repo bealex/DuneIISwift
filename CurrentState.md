@@ -11,17 +11,25 @@ This file is the single source of truth for "what's happening right now." Read i
 
 ## Active task
 
-**🎯🎯 SAVE007 achieves FULL 1000-tick byte-for-byte parity with OpenDUNE under real UNIT.EMC / BUILD.EMC / TEAM.EMC, plus `wobbleIndex` in the diff schema.** This is the §6 closure milestone, plus one parity-schema widening on top. Five fixes shipped today: (1) inline per-unit `fireDelay--`; (2) `Script_General_SearchSpice` slot 0x29; (3) `findSpiceNear` tie-break `<` → `<=`; (4) `Unit_Move` `targetMove` auto-clear on arrival; (5) `compareUnit` widened with `wobbleIndex`. Bonus: SAVE001 also matches its full 200-tick golden now.
+**🎯🎯🎯 SAVE007 now passes FULL 3050-tick byte-for-byte parity with OpenDUNE under real UNIT.EMC / BUILD.EMC / TEAM.EMC, plus a new per-tile `Map_GetLandscapeType` landscape comparator on top.** The tick-3011 `u39.targetMove=54699 vs 54441` drift is closed.
 
-**Three follow-up frontiers surfaced while scouting deeper**, all deferred — the §6 milestone holds:
+**Root cause was NOT the hypothesized spice-map state divergence** — the new landscape comparator proved the tile grids are identical on both engines through tick 3011. Real cause: `Scripting.Functions.makeSearchSpice` passed the calling harvester as `excludingUnit` to `Scheduler.findSpiceNear`, but OpenDUNE's `Map_SearchSpice` (`src/map.c:1117`) has no caller-exclusion parameter — it skips tiles via `Unit_Get_ByPackedTile`, and a stationary HARVEST harvester IS registered on its current tile via `Unit_UpdateMap` (`src/unit.c:2466..2525`). At tick 3011 both engines drained tile (20, 20) from THICK → THIN; OpenDUNE's SearchSpice skipped (20, 20) because u39 was registered there and returned adjacent (21, 21); Swift's `excludingUnit: idx` kept (20, 20) as a valid pick. **Fix**: `makeSearchSpice` passes `-1` for `excludingUnit` so the occupancy set includes the caller. Gameplay `tickHarvesting` auto-seek keeps its own `excludingUnit: idx` (Swift-only convenience, gated off in parity mode via `tickHarvestingEnabled = false`).
 
-1. **Tick 3011 `u39.targetMove=54699 vs 54441`** (5000-tick golden, not committed). Both engines have u39 at the same position; SearchSpice returns different tiles. Spice maps differ at u39's current tile (20, 20) — OpenDUNE has drained it, Swift hasn't. Almost certainly accumulated spice-map state divergence over the 3000-tick horizon that the current schema can't see. Investigation needs a map-tile parity dump.
+**New infrastructure shipped this session**:
+- OpenDUNE `Parity_DumpLandscape` in `src/parity.c` — emits 4096 hex nibbles per tick (`Map_GetLandscapeType(packed) & 0xF`); `tick_parity_dump.patch` refreshed (+26 lines; parity.c hunk is now 329 lines).
+- Swift `ParityHarness.diffLandscape` + `buildLandscape` — composes baseline + spice-level overlay + structure-footprint overlay, compares to OpenDUNE's hex string, reports first tile divergence as `Divergence(kind: "landscape", slot: packed, field: "type(x,y)")`. Skips `wall` / `destroyedWall` / `bloomField` (Swift doesn't simulate those yet). Runs BEFORE pool-state diff when enabled so cause surfaces before symptom.
+- `compareLandscape: Bool = false` parameter on `runAgainst` + new `saveSevenParityLandscapeFrontier` test (3050-tick diagnostic) passing clean.
+- `GoldenTick.landscape: String?` (optional, so older-schema goldens still decode).
+- Goldens at `Fixtures/ParityGoldens/*.jsonl` added to `.gitignore` (tests short-circuit when missing; regen command in `Documentation/Architecture/opendune-parity-patch/README.md`).
+- New insight `Documentation/Insights/simulation-search-spice-no-caller-exclusion.md`.
 
-2. **Tick 11 `u37.orientation1Target=32 vs 0`** (SOLDIER, non-turreted). RESOLVED at the schema level by gating `orientation1` compare on `hasTurret` — `Unit_Rotate` only advances `orientation[1]` for turreted units (`src/unit.c:221`), so non-turreted unit orientation[1] is dead state. The underlying `Script_Unit_SetTarget`-on-non-turreted SetOrientation(level: 1) nuance remains for future investigation if anything else surfaces.
+**Two smaller follow-ups from the prior 1000-tick frontier remain**, both non-urgent:
 
-3. **Widen `compareHouse` with `unitCount` / `unitCountMax` / `harvestersIncoming`.** These fields exist in the save record's `Players.Slot` decoder but aren't on `HouseSlot` yet. Adding them needs full `Unit_HouseUnitCount_Add/Remove` ports + maintenance from `Unit_Allocate` / `Unit_Free` / `Unit_Recount`. Larger surface area than the other two follow-ups.
+1. **Tick 11 `u37.orientation1Target=32 vs 0`** (SOLDIER, non-turreted). RESOLVED at the schema level by gating `orientation1` compare on `hasTurret` — `Unit_Rotate` only advances `orientation[1]` for turreted units (`src/unit.c:221`), so non-turreted unit orientation[1] is dead state. The underlying `Script_Unit_SetTarget`-on-non-turreted SetOrientation(level: 1) nuance remains for future investigation if anything else surfaces.
 
-**Next step**: pick (1) — write a `Map_GetLandscapeType` parity-dump extension to OpenDUNE's `parity.c` so we can diff per-tile spice levels. Then walk back from tick 3011 to find the first cell that drifts.
+2. **Widen `compareHouse` with `unitCount` / `unitCountMax` / `harvestersIncoming`.** These fields exist in the save record's `Players.Slot` decoder but aren't on `HouseSlot` yet. Adding them needs full `Unit_HouseUnitCount_Add/Remove` ports + maintenance from `Unit_Allocate` / `Unit_Free` / `Unit_Recount`. Larger surface area than the orientation nuance.
+
+**Next step**: no active frontier. Pick from the "Next up" queue — either one of the above two, SAVE001 tick-1 harvester transition drift (pre-existing `unit[22].actionID=5 HARVEST vs 6 RETURN` — separate class from SAVE007 resolutions), or back to §7 presentation-layer work (frigate landing animation, BULLET.EMC wiring, HP bars).
 
 **Earlier this session — RNG / LCG trace diagnostics shipped (preserved for context)**: three new fixes closed the tick-551 / tick-581 drifts: (1) `LST_STRUCTURE → LST_CONCRETE_SLAB` remap in `makeCalculateRouteUnit` (`src/unit.c:1088..1089`) — foot units walking across structure tiles now read concrete-slab speed 255 instead of 0; (2) OpenDUNE's `Object_GetDistanceToEncoded` edge-tile distance semantics ported as `Pos32.distance(from:toEncoded:host:)` + `Tools_Index_GetTile` layout-centre semantics as `Pos32.targetTile(encoded:host:)` — a SOLDIER firing at a 2x2 CYARD now reads the edge-adjusted distance (491 vs 555 to centre), and Fire's orientation-diff gate sees the layout-adjusted centre (7936, 6656) not the raw anchor (7680, 6400); (3) `isWobbling = letUnitWobble` enhanced clear (`src/unit.c:1097..1101`, `g_dune2_enhanced=true` default path) — canWobble units that step off rock now stop wobbling, eliminating the ~1-byte-per-step Tools_Random_256 drift.
 
@@ -231,7 +239,7 @@ What works now:
 - Unit sprites render at native pixel size (harvester > trike > infantry). Units pathfind around each other.
 - Attack visuals: muzzle flash + impact dimmed to 30% alpha so they're a hint, not a clutter.
 
-Test status: **993 / 97** tests in suites green, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`), 2 golden parity JSONLs (`Fixtures/ParityGoldens/save001_200ticks.jsonl` + `save007_200ticks.jsonl`).
+Test status: **1033 / 101** tests green, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`). Parity JSONL fixtures (`Fixtures/ParityGoldens/save001_ticks.jsonl` + `save007_ticks.jsonl`) are gitignored — regenerate locally from OpenDUNE per `Documentation/Architecture/opendune-parity-patch/README.md`.
 
 Latest session (2026-04-23) shipped, across two merged lines of work: (1) movement polish + STARPORT slices 5a/5b/5c-sim (fallback-slide per-tile gate, OpenDUNE crush parity, `[CHOAM]` INI loader + buildable mask, order commit + frigate delivery + availability bump, `StarportController` + pricing + runtime stock seeding); (2) harvester RETURN replan + adjacency dock + coherence pin + `Map_FixupSpiceEdges` port + CLAUDE.md "consult OpenDUNE" rule. Previous session (2026-04-22) shipped 27 commits. Details in today's `Documentation/History/2026-04.md` bullets.
 
@@ -251,6 +259,10 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
+
+- **2026-04-24 — 🎯 SAVE001 FULL 1000-tick parity under landscape compare.** Followed the SAVE007 SearchSpice fix with a SAVE001 horizon bump from 200 → 1000 ticks. Regenerated `save001_200ticks.jsonl` → `save001_ticks.jsonl` (dropped the legacy `200ticks` suffix). Passes clean. Non-history doc refs updated. **1033 / 101 / zero warnings.**
+
+- **2026-04-24 — 🎯 SAVE007 FULL 3050-tick parity: tick 3011 `u39.targetMove` drift closed via `makeSearchSpice` caller-exclusion fix + new per-tile landscape parity comparator.** Landscape diff (OpenDUNE `Parity_DumpLandscape` hex string + Swift `ParityHarness.diffLandscape` derivation) proved the earlier "spice maps differ at (20,20)" hypothesis wrong. Real fix: `Scripting.Functions.makeSearchSpice` no longer excludes the calling harvester from the unit-occupancy set (`excludingUnit: -1`); OpenDUNE's `Map_SearchSpice` relies on `Unit_UpdateMap` tile registration for natural caller exclusion. Gameplay auto-seek keeps the `excludingUnit: idx` convenience. New insight `simulation-search-spice-no-caller-exclusion`. Goldens `ParityGoldens/*.jsonl` are now gitignored. **1033 / 101 / zero warnings.**
 
 - **2026-04-24 — Parity schema widening: `orientation1{*}` added to `compareUnit`, gated on `hasTurret`.** Turret-equipped units (u26 TANK in SAVE007) now have their full turret orientation track diffed against OpenDUNE across 1000 ticks. Non-turreted units skip the compare since `Unit_Rotate` only advances `orientation[1]` when `hasTurret` (`src/unit.c:221`). **1032 / 101 / zero warnings.**
 
