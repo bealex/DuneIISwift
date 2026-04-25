@@ -172,6 +172,19 @@ extension Simulation {
         /// HIGH_TECH (5), WOR_TROOPER (7), BARRACKS (10). Default is
         /// an all-`0xFF` array — non-factory rows inherit it. Slice 5a.
         public let buildableUnits: [UInt8]
+        /// `StructureInfo.flags.busyStateIsIncoming` from
+        /// `src/table/structureinfo.c`. True only for STARPORT (11) and
+        /// REFINERY (12) — structures whose BUSY animation represents
+        /// "an incoming transport / harvester is on the way", not "I'm
+        /// currently producing." Read by `Object_Script_Variable4_Set`
+        /// (`src/object.c:54..72`): when a same-house unit links to one
+        /// of these via `Unit_SetDestination`, the structure
+        /// transitions to BUSY (or back to IDLE on clear) so the
+        /// animation runs while the unit is still en route. SAVE007
+        /// surfaces this at tick 5266: u39 (HARVESTER) RETURNs and
+        /// calls SetDestination(refinery), and the refinery's state
+        /// flips to BUSY *before* the harvester arrives.
+        public let busyStateIsIncoming: Bool
 
         public init(
             hitpoints: UInt16,
@@ -187,7 +200,8 @@ extension Simulation {
             sortPriority: UInt16,
             buildTime: UInt16,
             notOnConcrete: Bool = false,
-            buildableUnits: [UInt8] = Array(repeating: 0xFF, count: 8)
+            buildableUnits: [UInt8] = Array(repeating: 0xFF, count: 8),
+            busyStateIsIncoming: Bool = false
         ) {
             self.hitpoints = hitpoints
             self.buildCredits = buildCredits
@@ -203,6 +217,7 @@ extension Simulation {
             self.buildTime = buildTime
             self.notOnConcrete = notOnConcrete
             self.buildableUnits = buildableUnits
+            self.busyStateIsIncoming = busyStateIsIncoming
         }
 
         /// `FLAG_STRUCTURE_NEVER` sentinel. Used for CONSTRUCTION_YARD:
@@ -289,13 +304,15 @@ extension Simulation {
                           priorityBuild: 0, priorityTarget: 250,
                           availableCampaign: 6,  availableHouse: House.flagAll,
                           structuresRequired: (1 << 12) | (1 << 9), upgradeLevelRequired: 0,
-                          sortPriority: 32, buildTime: 120),
+                          sortPriority: 32, buildTime: 120,
+                          busyStateIsIncoming: true),
             // 12 REFINERY — needs WINDTRAP
             StructureInfo(hitpoints: 450, buildCredits: 400, fogUncoverRadius: 4, layout: .s3x2,
                           priorityBuild: 0, priorityTarget: 300,
                           availableCampaign: 1,  availableHouse: House.flagAll,
                           structuresRequired: 1 << 9, upgradeLevelRequired: 0,
-                          sortPriority: 8, buildTime: 80),
+                          sortPriority: 8, buildTime: 80,
+                          busyStateIsIncoming: true),
             // 13 REPAIR — needs OUTPOST|WINDTRAP|LIGHT_VEHICLE
             StructureInfo(hitpoints: 200, buildCredits: 700, fogUncoverRadius: 3, layout: .s3x2,
                           priorityBuild: 0, priorityTarget: 600,

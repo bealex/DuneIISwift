@@ -279,10 +279,38 @@ extension Scripting {
             }
         }
 
-        /// `Script_Unit_SetAction` (unit slot 0x01) — writes `peek(1) & 0xFF`
-        /// to the current unit's `actionID`. Always returns `0`. The
-        /// player-side `ACTION_HARVEST` early-out and the richer
-        /// `Unit_SetAction` side-effects are deferred.
+        /// `Script_Unit_SetAction` (unit slot 0x01) — port of
+        /// `src/script/unit.c:872..886` which calls `Unit_SetAction`
+        /// (`src/unit.c:497..531`). Reads action from `peek(1)`, then:
+        ///
+        /// - Player-side `ACTION_HARVEST` early-out when
+        ///   `nextActionID != ACTION_INVALID` (`src/script/unit.c:881`).
+        /// - DIE / DESTRUCT early-return when the unit is already in
+        ///   one of those terminal actions, or when action ==
+        ///   ACTION_INVALID (`src/unit.c:502`).
+        /// - `switchType=0` actions (everything except DIE / DESTRUCT):
+        ///   if `currentDestination != (0, 0)` queue via
+        ///   `nextActionID = action`; else fall through to the hard
+        ///   reset.
+        /// - `switchType=1` actions OR fall-through: hard reset:
+        ///   write `actionID`, clear `nextActionID` and
+        ///   `currentDestination`, then `Script_Reset + Script_Load`
+        ///   the unit's per-type entry point. Sets
+        ///   `engine.variables[0] = action` so the new bytecode
+        ///   block's top-level dispatch reads the action correctly.
+        ///
+        /// `switchType=2` (`Script_LoadAsSubroutine`) isn't reached
+        /// here because no action sets it in the 1.07 table — it's
+        /// the structure-side path.
+        ///
+        /// The reload mutates `engine` directly so the remainder of
+        /// the in-tick dispatch budget runs on the new action's
+        /// bytecode (matching OpenDUNE — same-tick transition). It
+        /// also writes `host.unitActionLoaded[idx]` so the
+        /// scheduler's "load on action change" check on the next
+        /// tick sees no delta and skips a duplicate reload.
+        ///
+        /// Always returns `0`.
         public static func makeSetActionUnit(host: Host) -> VM.Function {
             return { engine in
                 let action = UInt8(truncatingIfNeeded: Scripting.peek(engine: &engine, position: 1))
@@ -291,15 +319,186 @@ extension Scripting {
                       host.units.slots[poolIndex].isUsed else { return 0 }
                 var slot = host.units.slots[poolIndex]
                 let prior = slot.actionID
+                // Early-return clauses from `Unit_SetAction`
+                // (`src/unit.c:502`).
+                if action == Simulation.ActionID.invalid { return 0 }
+                if prior == Simulation.ActionID.die
+                    || prior == Simulation.ActionID.destruct { return 0 }
+                // Player-side HARVEST queue gate
+                // (`src/script/unit.c:881`): the player can issue
+                // ACTION_HARVEST only when no other action is queued.
+                if let player = host.playerHouseID, slot.houseID == player,
+                   action == Simulation.ActionID.harvest,
+                   slot.nextActionID != Simulation.ActionID.invalid {
+                    return 0
+                }
+                let switchType = Simulation.ActionID.switchType(action: action)
+                let dstActive = slot.currentDestinationX != 0 || slot.currentDestinationY != 0
+                if switchType == 0 && dstActive {
+                    // Queue for after the unit reaches its current
+                    // destination (`src/unit.c:507..511`).
+                    slot.nextActionID = action
+                    host.units[poolIndex] = slot
+                    return 0
+                }
+                // switchType == 0 fall-through OR switchType == 1.
                 slot.actionID = action
+                slot.nextActionID = Simulation.ActionID.invalid
+                slot.currentDestinationX = 0
+                slot.currentDestinationY = 0
                 host.units[poolIndex] = slot
+                // Script_Reset + Script_Load (`src/unit.c:518..521`).
+                // We mutate `engine` directly because the dispatch
+                // loop's `step(_:)` reads `engine.pc` at the top of
+                // its next iteration — a host fn that rewrites pc
+                // makes the remainder of the in-tick budget execute
+                // from the new entry point.
+                let type = Int(slot.type)
+                if type >= 0, type < host.unitEntryPoints.count {
+                    let entry = host.unitEntryPoints[type]
+                    engine = .reset()
+                    engine.pc = Int(entry)
+                    if !engine.variables.isEmpty {
+                        engine.variables[0] = UInt16(action)
+                    }
+                }
+                if poolIndex < host.unitActionLoaded.count {
+                    host.unitActionLoaded[poolIndex] = Int(action)
+                }
                 if prior != action {
                     Log.debug(
-                        "SetAction unit \(poolIndex): \(prior) → \(action)",
+                        "SetAction unit \(poolIndex): \(prior) → \(action) → pc=\(engine.pc)",
                         tracer: .label("setaction")
                     )
                 }
                 return 0
+            }
+        }
+
+        /// `Script_Unit_FindStructure` (unit slot 0x25) — port of
+        /// `src/script/unit.c:1560..1584`. Searches all same-house
+        /// IDLE structures of `peek(1)` type with `linkedID == 0xFF`
+        /// and (deferred) `script.variables[4] == 0`. Returns the
+        /// encoded structure index on first match, 0 otherwise.
+        ///
+        /// Pure read — no side effects on the structure. Used by the
+        /// harvester's RETURN dispatch to gate "is there a refinery
+        /// I can target?" before falling through to
+        /// `GoToClosestStructure` further down the EMC.
+        public static func makeFindStructureUnit(host: Host) -> VM.Function {
+            return { engine in
+                let wantedType = UInt8(truncatingIfNeeded:
+                    Scripting.peek(engine: &engine, position: 1)
+                )
+                guard let (_, slot) = currentUnit(host: host) else { return 0 }
+                for sIdx in host.structures.findArray {
+                    let s = host.structures.slots[sIdx]
+                    guard s.isUsed, s.type == wantedType,
+                          s.houseID == slot.houseID else { continue }
+                    guard s.state == 0, s.linkedID == 0xFF else { continue }
+                    // `script.variables[4] != 0` filter deferred —
+                    // structure script variables aren't tracked yet.
+                    return Scripting.EncodedIndex.structure(UInt16(sIdx)).raw
+                }
+                return 0
+            }
+        }
+
+        /// `Script_Unit_GoToClosestStructure` (unit slot 0x33) — port of
+        /// `src/script/unit.c:1786..1824`. Searches for the closest IDLE
+        /// same-house structure of the requested type with `linkedID
+        /// == 0xFF` (and `script.variables[4] == 0`, deferred). When
+        /// found:
+        /// - `Unit_SetAction(MOVE)` — script reset to MOVE entry
+        ///   (`src/unit.c:518..521`). Mutates `engine.pc` directly so
+        ///   the remainder of the in-tick budget runs the MOVE
+        ///   handler.
+        /// - `Unit_SetDestination(encoded_struct)` — sets `targetMove`
+        ///   AND triggers `Object_Script_Variable4_Link` which
+        ///   transitions REFINERY / STARPORT to BUSY via
+        ///   `linkVariable4`.
+        /// Returns 1 on success, 0 when no structure matched.
+        ///
+        /// SAVE007 tick 5266 surfaces this: u39's RETURN handler runs
+        /// `Script_Unit_GoToClosestStructure(REFINERY)`. Without the
+        /// port the host fn returned 0 (NoOp default) and Swift's u39
+        /// continued the RETURN dispatch into the next-action
+        /// fallback rather than transitioning straight to MOVE — the
+        /// observable u39 fields ended up matching by coincidence
+        /// further down the dispatch chain, but the structure-side
+        /// `linkVariable4` never fired and s2 stayed IDLE.
+        public static func makeGoToClosestStructureUnit(host: Host) -> VM.Function {
+            return { engine in
+                let wantedType = UInt8(truncatingIfNeeded:
+                    Scripting.peek(engine: &engine, position: 1)
+                )
+                guard let (poolIndex, slot) = currentUnit(host: host) else { return 0 }
+
+                // Search closest IDLE same-house structure.
+                var bestIdx: Int? = nil
+                var bestDist = Int.max
+                let ux = Int(slot.positionX) / 256
+                let uy = Int(slot.positionY) / 256
+                for sIdx in host.structures.findArray {
+                    let s = host.structures.slots[sIdx]
+                    guard s.isUsed, s.type == wantedType,
+                          s.houseID == slot.houseID else { continue }
+                    guard s.state == 0 /* IDLE */, s.linkedID == 0xFF else { continue }
+                    // `s.script.variables[4] != 0` filter is deferred —
+                    // Swift doesn't track structure script variables
+                    // yet. SAVE007's lone REFINERY won't have it set
+                    // pre-tick 5266 anyway.
+                    let sx = Int(s.positionX) / 256
+                    let sy = Int(s.positionY) / 256
+                    let dx = abs(sx - ux), dy = abs(sy - uy)
+                    let d = max(dx, dy) + min(dx, dy) / 2
+                    if d < bestDist {
+                        bestDist = d
+                        bestIdx = sIdx
+                    }
+                }
+                guard let sIdx = bestIdx else { return 0 }
+
+                // Side effect 1: Unit_SetAction(MOVE) — hard reset
+                // (matches the `makeSetActionUnit` switchType=0
+                // fall-through branch at this call site since u39's
+                // currentDestination is (0, 0)).
+                let moveAction = Simulation.ActionID.move
+                var u = host.units.slots[poolIndex]
+                u.actionID = moveAction
+                u.nextActionID = Simulation.ActionID.invalid
+                u.currentDestinationX = 0
+                u.currentDestinationY = 0
+                host.units[poolIndex] = u
+                let type = Int(u.type)
+                if type >= 0, type < host.unitEntryPoints.count {
+                    let entry = host.unitEntryPoints[type]
+                    engine = .reset()
+                    engine.pc = Int(entry)
+                    if !engine.variables.isEmpty {
+                        engine.variables[0] = UInt16(moveAction)
+                    }
+                }
+                if poolIndex < host.unitActionLoaded.count {
+                    host.unitActionLoaded[poolIndex] = Int(moveAction)
+                }
+
+                // Side effect 2: Unit_SetDestination(encoded_struct).
+                // Inline rather than re-invoking `makeSetDestinationUnit`
+                // because the engine has just been reloaded and we
+                // don't want to clobber its state.
+                let encoded = Scripting.EncodedIndex.structure(UInt16(sIdx)).raw
+                u = host.units.slots[poolIndex]
+                u.targetMove = encoded
+                host.units[poolIndex] = u
+                Simulation.Structures.linkVariable4(
+                    unitIndex: poolIndex, structureIndex: sIdx, host: host
+                )
+                Log.debug(
+                    "GoToClosestStructure unit \(poolIndex) → structure \(sIdx) (type \(wantedType))",
+                    tracer: .label("setaction")
+                )
+                return 1
             }
         }
 
@@ -320,14 +519,24 @@ extension Scripting {
 
         // MARK: Batch 6 — position-dependent generics
 
-        /// `Script_General_GetDistanceToTile` — distance from the current
-        /// object to the tile encoded in peek(1). `0xFFFF` when the
-        /// reference is invalid.
+        /// `Script_General_GetDistanceToTile` — port of
+        /// `src/script/general.c:71..82`. Reads peek(1) as an
+        /// encoded reference and returns `Tile_GetDistance(o.position,
+        /// Tools_Index_GetTile(encoded))`. For STRUCTURE refs,
+        /// `Tools_Index_GetTile` adds the layout-tile-diff to the
+        /// anchor (`src/tools.c:164..174`), so the distance is to the
+        /// structure's layout-adjusted CENTER, not its raw anchor.
+        /// `Pos32.targetTile` already implements that adjustment;
+        /// using `Pos32.of` here would underreport distance for
+        /// 2x2+ structures and skew the harvester's MOVE-handler
+        /// distance gate (SAVE007 tick 5436: u39 reading 704 vs
+        /// OpenDUNE's 1344 to the refinery centre, then jumping the
+        /// jumpNE branch the wrong way).
         public static func makeGetDistanceToTile(host: Host) -> VM.Function {
             return { engine in
                 let encoded = Scripting.EncodedIndex(raw: Scripting.peek(engine: &engine, position: 1))
                 guard let from = currentPosition(host: host) else { return 0xFFFF }
-                guard let to = Pos32.of(encoded, host: host) else { return 0xFFFF }
+                guard let to = Pos32.targetTile(encoded, host: host) else { return 0xFFFF }
                 return Pos32.distance(from, to)
             }
         }
@@ -1042,10 +1251,17 @@ extension Scripting {
             }
         }
 
-        /// `Script_Unit_SetDestination` — writes `peek(1)` to `targetMove`
-        /// if it's a valid encoded index, else clears it. The harvester-
-        /// specific refinery-busy check (OpenDUNE `src/script/unit.c:809`)
-        /// is deferred until the economy lands.
+        /// `Script_Unit_SetDestination` (slot 0x05) — port of
+        /// `Unit_SetDestination` (`src/unit.c:701..733`). Writes
+        /// peek(1) to `targetMove` after validating the encoded index;
+        /// when the destination is a same-house structure that the
+        /// unit can validly enter, also triggers the
+        /// `Object_Script_Variable4_Link` side effect (`src/object.c:23..47`)
+        /// which transitions REFINERY / STARPORT (busyStateIsIncoming
+        /// structures) to BUSY before the harvester / frigate
+        /// arrives. SAVE007 tick 5266 surfaced this: u39 RETURN's
+        /// SetDestination(refinery) flipped s2 IDLE → BUSY in
+        /// OpenDUNE, while Swift's stub left it IDLE.
         public static func makeSetDestinationUnit(host: Host) -> VM.Function {
             return { engine in
                 let raw = Scripting.peek(engine: &engine, position: 1)
@@ -1054,12 +1270,33 @@ extension Scripting {
                 var slot = host.units.slots[poolIndex]
                 if raw == 0 || !isValid(encoded: encoded, host: host) {
                     slot.targetMove = 0
-                } else {
-                    slot.targetMove = raw
+                    host.units[poolIndex] = slot
+                    return 0
                 }
+                let priorTarget = slot.targetMove
+                slot.targetMove = raw
                 host.units[poolIndex] = slot
+                // Port of `Unit_SetDestination`'s structure-link side
+                // effect (`src/unit.c:724..728`): when destination is
+                // a same-house structure the unit can validly enter,
+                // call `Object_Script_Variable4_Link(unit,
+                // structure)`. The link's structure-side
+                // `Object_Script_Variable4_Set` transitions REFINERY
+                // / STARPORT to BUSY (`src/object.c:54..72`).
+                if priorTarget != raw, encoded.kind == .structure {
+                    let sIdx = Int(encoded.decoded)
+                    if sIdx >= 0, sIdx < host.structures.slots.count {
+                        let s = host.structures.slots[sIdx]
+                        if s.isUsed, s.houseID == slot.houseID,
+                           Simulation.Structures.canUnitEnter(unitType: slot.type, structure: s) {
+                            Simulation.Structures.linkVariable4(
+                                unitIndex: poolIndex, structureIndex: sIdx, host: host
+                            )
+                        }
+                    }
+                }
                 Log.debug(
-                    "SetDestination unit \(poolIndex) → \(String(format: "0x%04X", raw)) (valid=\(slot.targetMove != 0))",
+                    "SetDestination unit \(poolIndex) → \(String(format: "0x%04X", raw))",
                     tracer: .label("dest")
                 )
                 return 0

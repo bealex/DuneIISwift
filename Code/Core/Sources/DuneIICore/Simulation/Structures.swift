@@ -843,6 +843,24 @@ extension Simulation {
                 let slot = pool[idx]
                 guard slot.isUsed, slot.isAllocated else { continue }
                 guard slot.state == StructureState.busy.rawValue else { continue }
+                // BUSY means different things by structure kind:
+                //  - "currently producing" (CYARD / factory)
+                //    → advance countDown, drain credits, BUSY → READY.
+                //  - "incoming-unit animation playing" (REFINERY /
+                //    STARPORT with `busyStateIsIncoming = true`)
+                //    → DO NOT advance; the BUSY → READY transition
+                //    fires via `Unit_EnterStructure` when the
+                //    harvester / frigate actually arrives, NOT via
+                //    a countDown timer.
+                //
+                // Skip the busyStateIsIncoming case so the
+                // `linkVariable4` BUSY transition holds until
+                // arrival — without this gate, SAVE007 s2 (REFINERY)
+                // flipped BUSY → READY at tick 5267 one tick after
+                // `linkVariable4` set it BUSY, diverging from
+                // OpenDUNE.
+                if let info = StructureInfo.lookup(slot.type),
+                   info.busyStateIsIncoming { continue }
 
                 // Credit drain — dispatch by yard kind. Slice 6b handles
                 // CY via StructureInfo; slice 6c extends to factories
@@ -1150,6 +1168,112 @@ extension Simulation {
                 }
             }
             return nil
+        }
+
+        /// Coarse port of `Unit_IsValidMovementIntoStructure`
+        /// (`src/unit.c:660..693`) — tells `Unit_SetDestination`'s
+        /// link-variable4 path whether the link should fire. Same-house
+        /// callers only here (the cross-house saboteur / conquer
+        /// branches aren't the path SAVE007 tick 5266 walks). Filters:
+        ///
+        /// - REFINERY (type 12) accepts only HARVESTER (unit type 16).
+        /// - STARPORT (type 11) accepts only the FRIGATE delivery
+        ///   pickup (unit type 17). The starport delivery path runs
+        ///   through different infrastructure today; this filter is
+        ///   here so the linkage doesn't fire for unrelated units.
+        /// - REPAIR (type 13) accepts any tracked / wheeled / harvester
+        ///   ground unit (TRIKE..LAUNCHER..MCV); approximated as
+        ///   "non-foot, non-winger".
+        /// - Otherwise (yards, factories, walls, slabs): no entry.
+        ///
+        /// Returns `true` when the unit type is in the structure's
+        /// implicit `enterFilter`.
+        public static func canUnitEnter(unitType: UInt8, structure: StructureSlot) -> Bool {
+            switch structure.type {
+            case 11: // STARPORT
+                return unitType == 17 /* FRIGATE */
+            case 12: // REFINERY
+                return unitType == 16 /* HARVESTER */
+            case 13: // REPAIR
+                guard let info = UnitInfo.lookup(unitType) else { return false }
+                switch info.movementType {
+                case .tracked, .wheeled, .harvester: return true
+                default: return false
+                }
+            default:
+                return false
+            }
+        }
+
+        /// Port of `Object_Script_Variable4_Link` + the structure-side
+        /// `Object_Script_Variable4_Set` (`src/object.c:23..72`). Wires
+        /// the "incoming-unit" link between a unit and a structure so
+        /// REFINERY / STARPORT (`busyStateIsIncoming = true`)
+        /// transition to BUSY before the unit physically arrives. The
+        /// transition mirrors:
+        ///
+        /// ```
+        /// Object_Script_Variable4_Set(structure_obj, encoded_unit):
+        ///   if !busyStateIsIncoming: return
+        ///   if structure has linkedUnit: return
+        ///   Structure_SetState(s, encoded == 0 ? IDLE : BUSY)
+        /// ```
+        ///
+        /// Bypasses the `script.variables[4]` writes themselves —
+        /// Swift's per-engine variable arrays live on the scheduler
+        /// today; for SAVE007 the visible state transition is what the
+        /// parity comparator measures. The full variable-tracking
+        /// port lands when a future drift demands it.
+        ///
+        /// Calling with `encodedFrom == nil` clears the link and
+        /// transitions the structure back toward IDLE — used when
+        /// `Object_Script_Variable4_Clear` fires (tick where the
+        /// harvester arrives + unloads).
+        public static func linkVariable4(
+            unitIndex: Int,
+            structureIndex: Int,
+            host: Scripting.Host,
+            clear: Bool = false
+        ) {
+            guard structureIndex >= 0, structureIndex < host.structures.slots.count else { return }
+            guard unitIndex >= 0, unitIndex < host.units.slots.count else { return }
+            var s = host.structures.slots[structureIndex]
+            var u = host.units.slots[unitIndex]
+            guard s.isUsed, u.isUsed else { return }
+
+            // Mirror `Object_Script_Variable4_Link` (`src/object.c:23..47`):
+            // both sides write each other's encoded index. Clears via
+            // the `clear: true` overload — passes 0 to both sides
+            // (matches `Object_Script_Variable4_Clear` /
+            // `Object_Script_Variable4_Set(o, 0)`).
+            let unitEncoded = clear ? 0 : Scripting.EncodedIndex.unit(UInt16(unitIndex)).raw
+            let structEncoded = clear ? 0 : Scripting.EncodedIndex.structure(UInt16(structureIndex)).raw
+            u.scriptVariable4 = structEncoded
+            s.scriptVariable4 = unitEncoded
+            host.units[unitIndex] = u
+
+            // Structure-side state transition only fires for
+            // busyStateIsIncoming structures (REFINERY / STARPORT)
+            // with no live unit linked via `linkedID`. Mirrors
+            // `Object_Script_Variable4_Set`'s structure tail at
+            // `src/object.c:54..72`.
+            guard let info = StructureInfo.lookup(s.type), info.busyStateIsIncoming else {
+                host.structures[structureIndex] = s
+                return
+            }
+            guard s.linkedID == 0xFF else {
+                host.structures[structureIndex] = s
+                return
+            }
+            let newState: Int16 = clear ? 0 /* IDLE */ : 1 /* BUSY */
+            if s.state != newState {
+                s.state = newState
+                Log.debug(
+                    "linkVariable4 unit=\(unitIndex) → structure=\(structureIndex) state=\(s.state) (busyStateIsIncoming)",
+                    tracer: .label("setdest")
+                )
+            }
+            host.structures[structureIndex] = s
         }
     }
 }

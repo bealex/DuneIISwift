@@ -81,7 +81,9 @@ extension Simulation {
             rngTrace: RNGTrace? = nil,
             lcgTrace: LCGTrace? = nil,
             scriptTrace: ScriptTrace? = nil,
-            compareLandscape: Bool = false
+            compareLandscape: Bool = false,
+            compareScriptPc: Bool = false,
+            compareScriptPcUnit: Int? = nil
         ) throws {
             let goldenTicks = try parseGolden(golden)
             guard !goldenTicks.isEmpty else { throw ParseError.goldenEmpty }
@@ -136,11 +138,21 @@ extension Simulation {
             //     penalty (res -= res/4 + res/8).
             //   - Final step: `res ^ 0xFF` inverts the speed to an
             //     approximate cost.
-            // Structure-occupancy is handled implicitly: the
-            // `landscapeAt` closure returns `LandscapeType.structure`
-            // (`rawValue=12`), and `LandscapeInfo[12].movementSpeed`
-            // is 0 for every non-winger type, which already trips the
-            // `res == 0 → 256` branch.
+            // Structure-tile handling matches OpenDUNE
+            // `Unit_GetTileEnterScore` (`src/unit.c:2357..2362`):
+            // when the tile holds a structure, replace the normal
+            // landscape lookup with `Unit_IsValidMovementIntoStructure`.
+            // For same-house enterable structures (REFINERY for
+            // HARVESTER, etc.), this returns a low cost (`-1`) so the
+            // pathfinder routes the unit *to* the structure tile.
+            // Without this branch the closure falls through to
+            // `LandscapeType.structure` which has `movementSpeed[*] = 0`
+            // and reports the tile impassable — diverging from OpenDUNE
+            // on the harvester→refinery move (SAVE007 tick 5271:
+            // OpenDUNE routes (22,23) → (25,23) east in 3 steps, Swift
+            // bails out one tile short). Structure check is wired AFTER
+            // `host` is constructed below since the closure needs to
+            // peek at `host.currentObject` and `host.structures`.
             let tileEnterScore: (_ packed: UInt16, _ orient8: UInt8, _ movementType: Simulation.MovementType) -> Int32 = { packed, orient8, movementType in
                 let tx = Int(packed & 0x3F)
                 let ty = Int((packed >> 6) & 0x3F)
@@ -182,6 +194,59 @@ extension Simulation {
             // so hunting enemies don't halt one tile short of a CYARD;
             // parity needs the faithful behaviour.
             host.retargetImpassableDst = false
+            // Now that `host` exists, wrap `tileEnterScore` with the
+            // structure-tile branch from `Unit_GetTileEnterScore`
+            // (`src/unit.c:2357..2362`). Inner closure captures `host`
+            // weakly to avoid a retain cycle through `host`.
+            let baseScore = tileEnterScore
+            host.tileEnterScore = { [weak host] packed, orient8, mt in
+                if let host = host {
+                    // Look up a structure footprint covering this tile.
+                    for sIdx in host.structures.findArray {
+                        let s = host.structures.slots[sIdx]
+                        let ax = Int(s.positionX) / 256
+                        let ay = Int(s.positionY) / 256
+                        let fp = Simulation.Structures.footprintTiles(
+                            type: s.type, anchorX: ax, anchorY: ay
+                        )
+                        let tx = Int(packed & 0x3F)
+                        let ty = Int((packed >> 6) & 0x3F)
+                        guard fp.contains(where: { $0.0 == tx && $0.1 == ty }) else { continue }
+                        // Found a structure on this tile. Match
+                        // `Unit_IsValidMovementIntoStructure` for the
+                        // current scripted unit.
+                        guard case .unit(let uIdx)? = host.currentObject,
+                              uIdx >= 0, uIdx < host.units.slots.count else {
+                            return 256
+                        }
+                        let u = host.units.slots[uIdx]
+                        if u.houseID != s.houseID { return 256 }
+                        if Simulation.Structures.canUnitEnter(unitType: u.type, structure: s) {
+                            // Port of `Unit_IsValidMovementIntoStructure`'s
+                            // `s->o.script.variables[4] == unitEnc`
+                            // branch (`src/unit.c:689`): when the
+                            // structure's variable[4] already points
+                            // back at the calling unit (i.e. the link
+                            // is established via `Object_Script_Variable4_Link`),
+                            // returns 2 → score = -2. Otherwise the
+                            // raw "valid entry" path returns 1 →
+                            // score = -1. The distinction matters for
+                            // the equivalent of `Unit_StartMovement`'s
+                            // `score == -1` rejection (`src/unit.c:1086`):
+                            // -1 rejects, -2 accepts. SAVE007 tick
+                            // 5436 surfaces this — u39's 3rd east
+                            // step into the refinery footprint needs
+                            // the score=-2 path because the refinery
+                            // and harvester are already linked via
+                            // SetDestination at tick 5266.
+                            let unitEnc = Scripting.EncodedIndex.unit(UInt16(uIdx)).raw
+                            return s.scriptVariable4 == unitEnc ? -2 : -1
+                        }
+                        return 256
+                    }
+                }
+                return baseScore(packed, orient8, mt)
+            }
             // `Script_General_SearchSpice` (slot 0x29) — wire to
             // `Scheduler.findSpiceNear` so the harvester's UNIT.EMC
             // HARVEST loop can find a fresh spice tile when its
@@ -363,6 +428,16 @@ extension Simulation {
                     host: host, baseline: snapshotLandscape
                 )
             }
+            // scriptPc diagnostic runs BEFORE pool-state too — same
+            // logic as the landscape diff: surface the cause (a script
+            // taking a different opcode path) before the symptom (a
+            // diverged action / position field).
+            if compareScriptPc {
+                try diffScriptPc(
+                    tick: 0, golden: goldenTicks[0], engines: scheduler.unitEngines,
+                    onlyUnit: compareScriptPcUnit
+                )
+            }
             try diff(tick: 0, golden: goldenTicks[0], host: host)
 
             if tickLimit >= 1 {
@@ -375,6 +450,12 @@ extension Simulation {
                         try diffLandscape(
                             tick: t, golden: goldenTicks[t],
                             host: host, baseline: snapshotLandscape
+                        )
+                    }
+                    if compareScriptPc {
+                        try diffScriptPc(
+                            tick: t, golden: goldenTicks[t], engines: scheduler.unitEngines,
+                            onlyUnit: compareScriptPcUnit
                         )
                     }
                     try diff(tick: t, golden: goldenTicks[t], host: host)
@@ -839,6 +920,38 @@ extension Simulation {
             case 0x30...0x39: return Int(c - 0x30)       // '0'..'9'
             case 0x61...0x66: return Int(c - 0x61) + 10  // 'a'..'f'
             default: return -1
+            }
+        }
+
+        // MARK: - Script PC diff
+
+        /// Diagnostic compare for `engine.pc` against the golden's
+        /// `scriptPc`. Both sides express PC in u16-word units —
+        /// OpenDUNE's `parity.c` dumps `script.script -
+        /// scriptInfo->start` (pointer arithmetic in `uint16 *` strides)
+        /// and Swift's `engine.pc` indexes the `[UInt16]` code array.
+        ///
+        /// Off by default — enabling fires earlier than the pool-state
+        /// diff because the same observable state can reach via slightly
+        /// different opcode paths. Useful for chasing where two scripts
+        /// branched apart, even when the visible state hasn't drifted
+        /// yet.
+        static func diffScriptPc(
+            tick: Int, golden: GoldenTick,
+            engines: [Scripting.Engine],
+            onlyUnit: Int? = nil
+        ) throws {
+            for g in golden.units {
+                let idx = Int(g.index)
+                if let only = onlyUnit, idx != only { continue }
+                guard idx >= 0, idx < engines.count else { continue }
+                let livePc = UInt32(engines[idx].pc)
+                if livePc != g.scriptPc {
+                    throw Divergence(
+                        tick: tick, kind: "unit", slot: idx, field: "scriptPc",
+                        expected: "\(g.scriptPc)", actual: "\(livePc)"
+                    )
+                }
             }
         }
 
