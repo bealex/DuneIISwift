@@ -218,6 +218,19 @@ extension Simulation {
         /// Each fire reschedules at `+ 10800` ticks.
         private var nextHousePowerMaintenanceGate: UInt32 = 70
 
+        /// Port of OpenDUNE's `s_tickStructureScript` cadence gate
+        /// (`src/structure.c:71..74`). Static state in OpenDUNE,
+        /// initialized to 0 — first post-load tick fires immediately,
+        /// then reschedules `+5` per fire. Without this gate, Swift's
+        /// every-game-tick `tickStructures` runs 5x faster than
+        /// OpenDUNE, which compounds into per-call `engine.delay`
+        /// drift once any non-trivial structure script function fires
+        /// (e.g. `Script_Structure_RefineSpice` resetting `delay = 6`
+        /// — clears in 6 game ticks for Swift, 30 for OpenDUNE).
+        /// Enabled only under `perTickCadenceGatesEnabled` so live
+        /// gameplay keeps its snappy every-tick cadence.
+        private var nextStructureScriptGate: UInt32 = 0
+
         /// STARPORT slice 5b — live per-game stock. Indexed by
         /// `UnitInfo.typeID` (27 entries). Seeded from
         /// `Scenario.choamInventory` at load; mutated by order commits
@@ -949,7 +962,7 @@ extension Simulation {
                         // also skips its fireDelay decrement.
                         if idx < host.units.slots.count {
                             var slot = host.units.slots[idx]
-                            if slot.isUsed, slot.fireDelay != 0 {
+                            if slot.isUsed, !slot.isNotOnMap, slot.fireDelay != 0 {
                                 slot.fireDelay &-= 1
                                 host.units[idx] = slot
                             }
@@ -991,7 +1004,14 @@ extension Simulation {
             // inside the main loop (between movement and script) via
             // `tickSpriteOffsetForUnit`, so no deferred batched pass
             // is needed here.
-            tickStructures()
+            if perTickCadenceGatesEnabled {
+                if nextStructureScriptGate <= timerGame {
+                    nextStructureScriptGate = timerGame &+ 5
+                    tickStructures()
+                }
+            } else {
+                tickStructures()
+            }
             // Harvest / refine runs after unit & structure ticks so the
             // script-driven action / linkedID state is settled for the
             // current tick. Gated on both a non-nil spiceMap (so tests
@@ -1919,6 +1939,7 @@ extension Simulation {
         private mutating func tickSpriteOffsetForUnit(idx: Int) {
             guard idx >= 0, idx < host.units.slots.count else { return }
             var slot = host.units.slots[idx]
+            if slot.isNotOnMap { return }
             guard let info = Simulation.UnitInfo.lookup(slot.type) else { return }
 
             // Port of OpenDUNE `src/unit.c:240..286`:
@@ -1984,6 +2005,10 @@ extension Simulation {
         private mutating func tickFireCooldowns() {
             for idx in host.units.findArray {
                 var slot = host.units.slots[idx]
+                // GameLoop_Unit's isNotOnMap skip (`src/unit.c:189`)
+                // also bypasses the inline `u->fireDelay--` at
+                // `src/unit.c:215`. Preserve that here.
+                if slot.isNotOnMap { continue }
                 if slot.fireDelay != 0 {
                     slot.fireDelay &-= 1
                     host.units[idx] = slot
@@ -2055,6 +2080,11 @@ extension Simulation {
                 cursor += 1
                 do {
                 var slot = host.units.slots[idx]
+                // Port of `GameLoop_Unit`'s `isNotOnMap` skip
+                // (`src/unit.c:189`) and `Unit_Move`'s early-return
+                // (`src/unit.c:1222`). Hidden units (docked,
+                // carryall-cargo) don't move.
+                if slot.isNotOnMap { continue }
                 let hasDestination = slot.currentDestinationX != 0 || slot.currentDestinationY != 0
                 let hasRoute = slot.route[0] != 0xFF
                 let hasTargetMove = slot.targetMove != 0
@@ -2769,6 +2799,7 @@ extension Simulation {
             }
             for idx in indices {
                 var slot = host.units.slots[idx]
+                if slot.isNotOnMap { continue }
                 var changed = false
 
                 // Level 0 — body orientation (Unit_Rotate, src/unit.c:65)
@@ -2820,6 +2851,7 @@ extension Simulation {
         private mutating func tickRotationForUnit(idx: Int) {
             guard idx < host.units.slots.count else { return }
             var slot = host.units.slots[idx]
+            if slot.isNotOnMap { return }
             var changed = false
 
             if slot.orientationSpeed != 0 {
@@ -2881,6 +2913,12 @@ extension Simulation {
         private mutating func runUnitScript(
             slot: Simulation.UnitSlot, runScripts: Bool
         ) {
+            // OpenDUNE `GameLoop_Unit` skips every per-unit pass
+            // when `isNotOnMap` is set (`src/unit.c:189`). For the
+            // script tick that means no Script_Load bookkeeping
+            // either — the engine state is frozen until the unit
+            // re-emerges (refinery spawn-out, carryall drop).
+            if slot.isNotOnMap { return }
             let idx = Int(slot.index)
             host.currentObject = .unit(poolIndex: idx)
             // OpenDUNE's `Script_Load` runs once per action change.
@@ -2943,7 +2981,7 @@ extension Simulation {
                     structureVM.load(engine: &structureEngines[idx], typeID: type)
                     loadedStructureType[idx] = type
                 }
-                dispatch(
+                dispatchStructure(
                     engine: &structureEngines[idx],
                     vm: structureVM,
                     budget: structureOpcodeBudget
@@ -3000,6 +3038,33 @@ extension Simulation {
             }
             var remaining = budget
             while remaining > 0 && engine.delay == 0 {
+                if vm.step(&engine) == .halted { break }
+                remaining -= 1
+            }
+        }
+
+        /// Structure-specific dispatch — port of `Structure_Tick`'s
+        /// inner loop at `src/structure.c:332`:
+        ///   for (i = 0; i < 3; i++) { if (!Script_Run(...)) break; }
+        /// **Unlike** the unit dispatch (`src/unit.c:299`), this loop
+        /// does NOT check `script.delay` between opcodes — even if a
+        /// `Script_General_Delay` call sets `delay = 12` mid-iteration,
+        /// the remaining 2 Script_Run calls still execute. Swift's
+        /// shared `dispatch` was exiting early on delay change, which
+        /// landed structure scripts ~5x more conservatively than
+        /// OpenDUNE per dispatch — surfaced by SAVE007 tick 5556's
+        /// refinery deposit drift.
+        private func dispatchStructure(
+            engine: inout Scripting.Engine,
+            vm: Scripting.VM,
+            budget: Int
+        ) {
+            if engine.delay != 0 {
+                engine.delay &-= 1
+                return
+            }
+            var remaining = budget
+            while remaining > 0 {
                 if vm.step(&engine) == .halted { break }
                 remaining -= 1
             }

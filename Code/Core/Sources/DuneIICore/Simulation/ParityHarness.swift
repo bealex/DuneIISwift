@@ -81,6 +81,7 @@ extension Simulation {
             rngTrace: RNGTrace? = nil,
             lcgTrace: LCGTrace? = nil,
             scriptTrace: ScriptTrace? = nil,
+            structureScriptTrace: StructureScriptTrace? = nil,
             compareLandscape: Bool = false,
             compareScriptPc: Bool = false,
             compareScriptPcUnit: Int? = nil
@@ -317,7 +318,7 @@ extension Simulation {
             let structureFunctions = Scripting.Functions.structureTable(host: host, source: source)
             let teamFunctions = Scripting.Functions.teamTable(host: host, source: source)
             var unitVM = Scripting.VM(program: unitProgram, functions: unitFunctions)
-            let structureVM = Scripting.VM(program: structureProgram, functions: structureFunctions)
+            var structureVM = Scripting.VM(program: structureProgram, functions: structureFunctions)
             let teamVM = Scripting.VM(program: teamProgram, functions: teamFunctions)
             // Per-opcode script trace, filtered to one unit. Hooks the
             // unit VM only — structure / team VMs dispatch off their
@@ -329,6 +330,17 @@ extension Simulation {
                     if case .unit(let poolIndex)? = host.currentObject,
                        poolIndex == targetIdx {
                         scriptTrace.record(
+                            pc: pc, opcode: opcode, parameter: parameter, engine: engine
+                        )
+                    }
+                }
+            }
+            if let structureScriptTrace {
+                let targetIdx = structureScriptTrace.structurePoolIndex
+                structureVM.trace = { pc, opcode, parameter, engine in
+                    if case .structure(let poolIndex)? = host.currentObject,
+                       poolIndex == targetIdx {
+                        structureScriptTrace.record(
                             pc: pc, opcode: opcode, parameter: parameter, engine: engine
                         )
                     }
@@ -377,7 +389,14 @@ extension Simulation {
             // scripts reach the same opcodes per tick (e.g. the carryall's
             // `Script_Unit_SetSpeed(u, 255)` call that bumps movingSpeed).
             scheduler.unitOpcodeBudget = 52
-            scheduler.structureOpcodeBudget = 52
+            // OpenDUNE's structure tick runs Script_Run **3 times** in
+            // a row (`src/structure.c:332`), not 52. Was 52 here as a
+            // copy-paste from the unit budget; surfaces when BUILD.EMC
+            // runs non-trivial code paths (e.g. SAVE007 tick 5491
+            // refinery deposit firing 65 ticks before OpenDUNE because
+            // Swift's structure script ran an entire polling iteration
+            // in one dispatch).
+            scheduler.structureOpcodeBudget = 3
             scheduler.teamOpcodeBudget = 52
             // Disable stopgap passes that pre-empt real EMC. Our
             // tickAttackHold clears `targetMove` inside fire range —
@@ -416,6 +435,7 @@ extension Simulation {
             defer { try? rngTrace?.flush() }
             defer { try? lcgTrace?.flush() }
             defer { try? scriptTrace?.flush() }
+            defer { try? structureScriptTrace?.flush() }
 
             // Landscape diff runs BEFORE pool-state diff when enabled
             // — the diagnostic's whole point is to surface tile-grid
@@ -445,6 +465,7 @@ extension Simulation {
                     rngTrace?.beginTick(t)
                     lcgTrace?.beginTick(t)
                     scriptTrace?.beginTick(t)
+                    structureScriptTrace?.beginTick(t)
                     scheduler.tick()
                     if compareLandscape {
                         try diffLandscape(
@@ -491,6 +512,45 @@ extension Simulation {
             ) {
                 // Line format lifted from OpenDUNE's `parity.c` so diff
                 // output is visually aligned across the two engines.
+                buffer.append(
+                    "pc=\(pc) op=\(opcode) param=\(parameter) delay=\(engine.delay)"
+                    + " SP=\(engine.stackPointer) FP=\(engine.framePointer)"
+                    + " return=\(engine.returnValue)\n"
+                )
+            }
+
+            public func flush() throws {
+                try buffer.write(to: path, atomically: true, encoding: .utf8)
+            }
+        }
+
+        /// Sibling of `ScriptTrace` for structure scripts. Same line
+        /// format so the two engines' BUILD.EMC streams diff cleanly
+        /// against OpenDUNE's `--parity-script-structure=<idx>` dump.
+        /// SAVE007 tick 5556 frontier needs this to find the
+        /// `Script_General_Delay` / polling-loop opcode that gates
+        /// OpenDUNE's first `Script_Structure_RefineSpice` deposit
+        /// 70 game ticks after dock — closing that timing offset
+        /// is what blocks the slot 0x15 wire-up.
+        public final class StructureScriptTrace {
+            public let path: URL
+            public let structurePoolIndex: Int
+            private var buffer: String = ""
+
+            public init(path: URL, structurePoolIndex: Int) {
+                self.path = path
+                self.structurePoolIndex = structurePoolIndex
+                buffer.reserveCapacity(128 * 1024)
+                buffer.append("# swift parity script trace for structure[\(structurePoolIndex)] — one line per opcode\n")
+            }
+
+            fileprivate func beginTick(_ t: Int) {
+                buffer.append("# tick=\(t)\n")
+            }
+
+            fileprivate func record(
+                pc: Int, opcode: UInt8, parameter: Int, engine: Scripting.Engine
+            ) {
                 buffer.append(
                     "pc=\(pc) op=\(opcode) param=\(parameter) delay=\(engine.delay)"
                     + " SP=\(engine.stackPointer) FP=\(engine.framePointer)"

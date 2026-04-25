@@ -150,6 +150,18 @@ extension Simulation {
         /// `linkVariable4` when the unit's RETURN/MOVE script targets
         /// a same-house structure.
         public var scriptVariable4: UInt16
+        /// `o.flags.s.isNotOnMap` — set by `Unit_Hide` when a unit
+        /// docks inside a structure or is picked up by a carryall.
+        /// `GameLoop_Unit` skips every per-unit pass (movement,
+        /// rotation, sprite, script) for `isNotOnMap` units
+        /// (`src/unit.c:189`), and `Unit_Move` early-returns
+        /// (`src/unit.c:1222`). Without this gate, Swift keeps
+        /// running u39's RETURN script after it docks at the
+        /// refinery and the script's `Script_Unit_CalculateRoute`
+        /// (src==dst at the refinery anchor) clears `targetMove`,
+        /// while OpenDUNE preserves the encoded refinery there for
+        /// many ticks post-dock. SAVE007 tick 5496 surfaced this.
+        public var isNotOnMap: Bool
 
         public init(
             isUsed: Bool = false,
@@ -192,7 +204,8 @@ extension Simulation {
             fireTwiceFlip: Bool = false,
             team: UInt8 = 0,
             timer: UInt16 = 0,
-            scriptVariable4: UInt16 = 0
+            scriptVariable4: UInt16 = 0,
+            isNotOnMap: Bool = false
         ) {
             self.isUsed = isUsed
             self.isAllocated = isAllocated
@@ -235,6 +248,7 @@ extension Simulation {
             self.team = team
             self.timer = timer
             self.scriptVariable4 = scriptVariable4
+            self.isNotOnMap = isNotOnMap
         }
     }
 

@@ -851,6 +851,19 @@ extension Simulation {
                 let priorHead = s2.linkedID
                 u2.linkedID = priorHead
                 u2.inTransport = true
+                // Port of `Unit_Hide`'s `isNotOnMap = true`
+                // (`src/unit.c:2118`), called from
+                // `Unit_EnterStructure` at `src/unit.c:2202` BEFORE
+                // the allied dock branch. With this flag set,
+                // `GameLoop_Unit` skips every per-unit pass for u39
+                // (`src/unit.c:189`) so its RETURN script never runs
+                // again while it's docked, preserving `targetMove`
+                // at the encoded refinery for the duration of the
+                // refinery's processing cycle. SAVE007 tick 5496
+                // surfaced this — without the flag the script's
+                // CalculateRoute (src==dst at the dock anchor)
+                // cleared targetMove a few ticks post-dock.
+                u2.isNotOnMap = true
                 host.units[poolIndex] = u2
                 s2.linkedID = UInt8(truncatingIfNeeded: poolIndex)
                 let newState: Int16 = info.busyStateIsIncoming ? 2 /* READY */ : 1 /* BUSY */

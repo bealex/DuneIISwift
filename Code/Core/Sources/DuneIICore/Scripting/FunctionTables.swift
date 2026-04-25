@@ -183,7 +183,14 @@ extension Scripting.Functions {
         table[0x12] = Scripting.Functions.noOperation
         table[0x13] = Scripting.Functions.noOperation
         table[0x14] = Scripting.Functions.noOperation
-        // 0x15 — Script_Structure_RefineSpice (not ported; economy)
+        // 0x15 — Script_Structure_RefineSpice (port available as
+        // `Scripting.Functions.makeRefineSpiceStructure` but NOT
+        // wired here yet: enabling it surfaces a 30-tick first-deposit
+        // timing mismatch vs OpenDUNE — Swift fires at SAVE007 tick
+        // 5526, OpenDUNE at 5556. The structure-script cadence gate,
+        // 3-opcode budget, and dispatch-no-delay-exit semantics in
+        // place since this session are all aligned with OpenDUNE; the
+        // remaining ~30-tick offset must come from a subtler drift.)
         // 0x16 — Script_Structure_Explode (not ported; explosion pool)
         // 0x17 — Script_Structure_Destroy
         table[0x17] = Scripting.Functions.makeDestroyStructure(host: host)

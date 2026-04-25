@@ -2009,6 +2009,57 @@ extension Scripting {
             }
         }
 
+        /// `Script_Structure_RefineSpice` (structure slot 0x15) — port of
+        /// `src/script/structure.c:105..153`. Drives the BUILD.EMC
+        /// REFINERY loop's per-step deposit: pulls `harvesterStep`
+        /// (`hp * 256 / hpMax * 3 / 256`) ore from the docked harvester's
+        /// `amount`, credits the owning house `creditsStep × harvesterStep`
+        /// (creditsStep = 7 for the player house, +/- 1 jitter for AI
+        /// harvesters), sets `engine.delay = 6`. Returns 1 when ore
+        /// flowed, 0 when the refinery is empty (linkedID == 0xFF) or
+        /// the harvester is drained. SAVE007 tick 5556 surfaced this:
+        /// without the slot wired, BUILD.EMC's RefineSpice call halted
+        /// the refinery's engine and Swift never credited any spice
+        /// deposits while u39 was docked — leaving Swift's `house[1].credits`
+        /// 7 short of OpenDUNE's after the first OpenDUNE deposit
+        /// landed.
+        public static func makeRefineSpiceStructure(
+            host: Host, source: RandomSource
+        ) -> VM.Function {
+            return { engine in
+                guard let (sIdx, s) = currentStructure(host: host) else { return 0 }
+                if s.linkedID == 0xFF {
+                    var s2 = host.structures.slots[sIdx]
+                    s2.state = 0  // STRUCTURE_STATE_IDLE
+                    host.structures[sIdx] = s2
+                    return 0
+                }
+                let harvIdx = Int(s.linkedID)
+                let player = host.playerHouseID ?? 0
+                let harvester = host.units.slots[harvIdx]
+                // Match OpenDUNE's enemy-jitter draw bytewise — only fires
+                // when the docked harvester's house is NOT the player's
+                // (`src/script/structure.c:131..134`). Skipping it for
+                // player harvesters preserves Tools_Random_256 stream
+                // parity.
+                let jitter: (() -> UInt8)? = (harvester.houseID != player)
+                    ? { source.toolsNext() }
+                    : nil
+                let gained = Simulation.Structures.refineSpiceStep(
+                    refineryIndex: sIdx,
+                    harvesterIndex: harvIdx,
+                    structures: host.structures,
+                    units: &host.units,
+                    houses: &host.houses,
+                    playerHouseID: player,
+                    enemyJitterByte: jitter
+                )
+                if gained == 0 { return 0 }
+                engine.delay = 6
+                return 1
+            }
+        }
+
         // MARK: Batch 5 — further generics (no new state)
 
         /// `Script_General_DelayRandom` — `(Tools_Random_256() * peek(1)) / 256 / 5`.

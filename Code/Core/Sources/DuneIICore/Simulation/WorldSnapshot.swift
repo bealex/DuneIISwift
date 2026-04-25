@@ -322,6 +322,7 @@ extension Simulation {
                 u.blinkCounter = slot.blinkCounter
                 u.inTransport = slot.object.flags.inTransport
                 u.byScenario = slot.object.flags.byScenario
+                u.isNotOnMap = slot.object.flags.isNotOnMap
                 u.fireDelay = slot.fireDelay
                 u.fireTwiceFlip = slot.object.flags.fireTwiceFlip
                 u.team = slot.team
