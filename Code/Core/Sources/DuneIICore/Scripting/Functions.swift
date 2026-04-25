@@ -279,10 +279,38 @@ extension Scripting {
             }
         }
 
-        /// `Script_Unit_SetAction` (unit slot 0x01) — writes `peek(1) & 0xFF`
-        /// to the current unit's `actionID`. Always returns `0`. The
-        /// player-side `ACTION_HARVEST` early-out and the richer
-        /// `Unit_SetAction` side-effects are deferred.
+        /// `Script_Unit_SetAction` (unit slot 0x01) — port of
+        /// `src/script/unit.c:872..886` which calls `Unit_SetAction`
+        /// (`src/unit.c:497..531`). Reads action from `peek(1)`, then:
+        ///
+        /// - Player-side `ACTION_HARVEST` early-out when
+        ///   `nextActionID != ACTION_INVALID` (`src/script/unit.c:881`).
+        /// - DIE / DESTRUCT early-return when the unit is already in
+        ///   one of those terminal actions, or when action ==
+        ///   ACTION_INVALID (`src/unit.c:502`).
+        /// - `switchType=0` actions (everything except DIE / DESTRUCT):
+        ///   if `currentDestination != (0, 0)` queue via
+        ///   `nextActionID = action`; else fall through to the hard
+        ///   reset.
+        /// - `switchType=1` actions OR fall-through: hard reset:
+        ///   write `actionID`, clear `nextActionID` and
+        ///   `currentDestination`, then `Script_Reset + Script_Load`
+        ///   the unit's per-type entry point. Sets
+        ///   `engine.variables[0] = action` so the new bytecode
+        ///   block's top-level dispatch reads the action correctly.
+        ///
+        /// `switchType=2` (`Script_LoadAsSubroutine`) isn't reached
+        /// here because no action sets it in the 1.07 table — it's
+        /// the structure-side path.
+        ///
+        /// The reload mutates `engine` directly so the remainder of
+        /// the in-tick dispatch budget runs on the new action's
+        /// bytecode (matching OpenDUNE — same-tick transition). It
+        /// also writes `host.unitActionLoaded[idx]` so the
+        /// scheduler's "load on action change" check on the next
+        /// tick sees no delta and skips a duplicate reload.
+        ///
+        /// Always returns `0`.
         public static func makeSetActionUnit(host: Host) -> VM.Function {
             return { engine in
                 let action = UInt8(truncatingIfNeeded: Scripting.peek(engine: &engine, position: 1))
@@ -291,11 +319,55 @@ extension Scripting {
                       host.units.slots[poolIndex].isUsed else { return 0 }
                 var slot = host.units.slots[poolIndex]
                 let prior = slot.actionID
+                // Early-return clauses from `Unit_SetAction`
+                // (`src/unit.c:502`).
+                if action == Simulation.ActionID.invalid { return 0 }
+                if prior == Simulation.ActionID.die
+                    || prior == Simulation.ActionID.destruct { return 0 }
+                // Player-side HARVEST queue gate
+                // (`src/script/unit.c:881`): the player can issue
+                // ACTION_HARVEST only when no other action is queued.
+                if let player = host.playerHouseID, slot.houseID == player,
+                   action == Simulation.ActionID.harvest,
+                   slot.nextActionID != Simulation.ActionID.invalid {
+                    return 0
+                }
+                let switchType = Simulation.ActionID.switchType(action: action)
+                let dstActive = slot.currentDestinationX != 0 || slot.currentDestinationY != 0
+                if switchType == 0 && dstActive {
+                    // Queue for after the unit reaches its current
+                    // destination (`src/unit.c:507..511`).
+                    slot.nextActionID = action
+                    host.units[poolIndex] = slot
+                    return 0
+                }
+                // switchType == 0 fall-through OR switchType == 1.
                 slot.actionID = action
+                slot.nextActionID = Simulation.ActionID.invalid
+                slot.currentDestinationX = 0
+                slot.currentDestinationY = 0
                 host.units[poolIndex] = slot
+                // Script_Reset + Script_Load (`src/unit.c:518..521`).
+                // We mutate `engine` directly because the dispatch
+                // loop's `step(_:)` reads `engine.pc` at the top of
+                // its next iteration — a host fn that rewrites pc
+                // makes the remainder of the in-tick budget execute
+                // from the new entry point.
+                let type = Int(slot.type)
+                if type >= 0, type < host.unitEntryPoints.count {
+                    let entry = host.unitEntryPoints[type]
+                    engine = .reset()
+                    engine.pc = Int(entry)
+                    if !engine.variables.isEmpty {
+                        engine.variables[0] = UInt16(action)
+                    }
+                }
+                if poolIndex < host.unitActionLoaded.count {
+                    host.unitActionLoaded[poolIndex] = Int(action)
+                }
                 if prior != action {
                     Log.debug(
-                        "SetAction unit \(poolIndex): \(prior) → \(action)",
+                        "SetAction unit \(poolIndex): \(prior) → \(action) → pc=\(engine.pc)",
                         tracer: .label("setaction")
                     )
                 }

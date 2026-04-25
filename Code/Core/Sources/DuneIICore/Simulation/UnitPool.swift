@@ -34,6 +34,16 @@ extension Simulation {
         /// Current action enum. Written by `Script_Unit_SetAction`, read by
         /// the unit state machine.
         public var actionID: UInt8
+        /// Pending action queued by `Script_Unit_SetAction` while the
+        /// unit still has a `currentDestination` in progress
+        /// (`src/unit.c:507..511`, `switchType=0`). `0xFF`
+        /// (ACTION_INVALID) means "nothing queued". When the unit
+        /// arrives and `Unit_Move` clears `currentDestination`, the
+        /// per-tick `GameLoop_Unit` tail (`src/unit.c:308..312`)
+        /// promotes this back to `actionID` via another
+        /// `Unit_SetAction`. Default `0xFF` matches `Unit_Allocate`'s
+        /// init at `src/unit.c:425`.
+        public var nextActionID: UInt8
         /// Cargo / payload counter (harvester spice, transport linked count,
         /// sandworm remaining feeds). Read by `Script_Unit_GetAmount`.
         public var amount: UInt8
@@ -149,6 +159,7 @@ extension Simulation {
             turretOrientationTarget: Int8 = 0,
             turretOrientationSpeed: Int8 = 0,
             actionID: UInt8 = 0,
+            nextActionID: UInt8 = 0xFF,
             amount: UInt8 = 0,
             targetAttack: UInt16 = 0,
             targetMove: UInt16 = 0,
@@ -189,6 +200,7 @@ extension Simulation {
             self.turretOrientationTarget = turretOrientationTarget
             self.turretOrientationSpeed = turretOrientationSpeed
             self.actionID = actionID
+            self.nextActionID = nextActionID
             self.amount = amount
             self.targetAttack = targetAttack
             self.targetMove = targetMove

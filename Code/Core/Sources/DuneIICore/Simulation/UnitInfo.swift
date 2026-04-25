@@ -52,6 +52,20 @@ extension Simulation {
         /// keep the `ACTION_GUARD` default `Unit_Create` writes at
         /// `src/unit.c:425`.
         public static let invalid: UInt8 = 0xFF
+
+        /// Port of `g_table_actionInfo[action].switchType`
+        /// (`src/table/actioninfo.c`). 0 for actions that defer the
+        /// reset until `currentDestination` reaches `(0, 0)`; 1 for
+        /// hard-reset actions (DIE, DESTRUCT); 2 isn't used in the
+        /// 1.07 table. Read by `Unit_SetAction`'s switch
+        /// (`src/unit.c:506..529`) and by the Swift port in
+        /// `Scripting.Functions.makeSetActionUnit`.
+        public static func switchType(action: UInt8) -> UInt8 {
+            switch action {
+            case die, destruct: return 1
+            default: return 0
+            }
+        }
     }
 
     /// Per-unit-type stats. Trimmed to the fields our wired host functions

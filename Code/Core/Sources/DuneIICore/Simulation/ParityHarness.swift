@@ -81,7 +81,9 @@ extension Simulation {
             rngTrace: RNGTrace? = nil,
             lcgTrace: LCGTrace? = nil,
             scriptTrace: ScriptTrace? = nil,
-            compareLandscape: Bool = false
+            compareLandscape: Bool = false,
+            compareScriptPc: Bool = false,
+            compareScriptPcUnit: Int? = nil
         ) throws {
             let goldenTicks = try parseGolden(golden)
             guard !goldenTicks.isEmpty else { throw ParseError.goldenEmpty }
@@ -363,6 +365,16 @@ extension Simulation {
                     host: host, baseline: snapshotLandscape
                 )
             }
+            // scriptPc diagnostic runs BEFORE pool-state too — same
+            // logic as the landscape diff: surface the cause (a script
+            // taking a different opcode path) before the symptom (a
+            // diverged action / position field).
+            if compareScriptPc {
+                try diffScriptPc(
+                    tick: 0, golden: goldenTicks[0], engines: scheduler.unitEngines,
+                    onlyUnit: compareScriptPcUnit
+                )
+            }
             try diff(tick: 0, golden: goldenTicks[0], host: host)
 
             if tickLimit >= 1 {
@@ -375,6 +387,12 @@ extension Simulation {
                         try diffLandscape(
                             tick: t, golden: goldenTicks[t],
                             host: host, baseline: snapshotLandscape
+                        )
+                    }
+                    if compareScriptPc {
+                        try diffScriptPc(
+                            tick: t, golden: goldenTicks[t], engines: scheduler.unitEngines,
+                            onlyUnit: compareScriptPcUnit
                         )
                     }
                     try diff(tick: t, golden: goldenTicks[t], host: host)
@@ -839,6 +857,38 @@ extension Simulation {
             case 0x30...0x39: return Int(c - 0x30)       // '0'..'9'
             case 0x61...0x66: return Int(c - 0x61) + 10  // 'a'..'f'
             default: return -1
+            }
+        }
+
+        // MARK: - Script PC diff
+
+        /// Diagnostic compare for `engine.pc` against the golden's
+        /// `scriptPc`. Both sides express PC in u16-word units —
+        /// OpenDUNE's `parity.c` dumps `script.script -
+        /// scriptInfo->start` (pointer arithmetic in `uint16 *` strides)
+        /// and Swift's `engine.pc` indexes the `[UInt16]` code array.
+        ///
+        /// Off by default — enabling fires earlier than the pool-state
+        /// diff because the same observable state can reach via slightly
+        /// different opcode paths. Useful for chasing where two scripts
+        /// branched apart, even when the visible state hasn't drifted
+        /// yet.
+        static func diffScriptPc(
+            tick: Int, golden: GoldenTick,
+            engines: [Scripting.Engine],
+            onlyUnit: Int? = nil
+        ) throws {
+            for g in golden.units {
+                let idx = Int(g.index)
+                if let only = onlyUnit, idx != only { continue }
+                guard idx >= 0, idx < engines.count else { continue }
+                let livePc = UInt32(engines[idx].pc)
+                if livePc != g.scriptPc {
+                    throw Divergence(
+                        tick: tick, kind: "unit", slot: idx, field: "scriptPc",
+                        expected: "\(g.scriptPc)", actual: "\(livePc)"
+                    )
+                }
             }
         }
 

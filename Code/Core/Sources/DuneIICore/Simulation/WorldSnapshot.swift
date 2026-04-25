@@ -300,6 +300,7 @@ extension Simulation {
                     u.turretOrientationSpeed = slot.orientation[1].speed
                 }
                 u.actionID = slot.actionID
+                u.nextActionID = slot.nextActionID
                 u.amount = slot.amount
                 u.targetAttack = slot.targetAttack
                 u.targetMove = slot.targetMove

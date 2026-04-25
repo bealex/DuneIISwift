@@ -127,6 +127,96 @@ struct ParityHarnessTests {
         try expectTickOneDivergence(save: "_SAVE007.DAT", golden: "save007_ticks.jsonl")
     }
 
+    /// Dumps Swift u39's per-opcode trace for the tick-5261 RETURN
+    /// drift investigation. Pair with an OpenDUNE
+    /// `--parity-script-trace=tmp/opendune_u39_script.txt
+    ///  --parity-script-unit=39 --parity-ticks=5300` run to diff the
+    /// two engines' opcode streams; the first divergent opcode tells
+    /// us which EMC branch read different state. No assertions —
+    /// gated on the long golden being present.
+    @Test("_SAVE007.DAT — dump Swift u39 per-opcode script trace")
+    @MainActor
+    func saveSevenParityDumpU39ScriptTrace() throws {
+        guard let root = TestInstall.locate() else { return }
+        let saveURL = root.appendingPathComponent("_SAVE007.DAT")
+        guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
+        let goldenURL = Self.goldenURL(named: "save007_ticks.jsonl")
+        guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
+
+        let tmpDir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("tmp", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: tmpDir, withIntermediateDirectories: true
+        )
+        let traceURL = tmpDir.appendingPathComponent("swift_u39_script.txt")
+
+        let data = try Data(contentsOf: saveURL)
+        let game = try Formats.Save.Game.decode(data)
+        let golden = try Data(contentsOf: goldenURL)
+
+        let install = try Installation(rootDirectory: root)
+        let assets = try AssetLoader(installation: install)
+        let unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+        let structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
+        let teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+        let resolver = assets.tileResolver
+        let baseline = Map.Generator.generate(
+            seed: game.info.scenario.mapSeed, resolver: resolver
+        )
+        let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
+        let snapshotLandscape = snapshot.tiles.map { tile in
+            resolver.landscapeType(
+                groundTileID: tile.groundTileID,
+                overlayTileID: tile.overlayTileID,
+                hasStructure: tile.hasStructure
+            )
+        }
+        let spiceMap = Simulation.SpiceMap { i in snapshotLandscape[i] }
+
+        let trace = Simulation.ParityHarness.ScriptTrace(
+            path: traceURL, unitPoolIndex: 39
+        )
+        _ = try? Simulation.ParityHarness.runAgainst(
+            snapshot: snapshot,
+            golden: golden,
+            tickLimit: 5263,
+            unitProgram: unitProgram,
+            structureProgram: structureProgram,
+            teamProgram: teamProgram,
+            seedScriptsFrom: game,
+            spiceMap: spiceMap,
+            snapshotLandscape: snapshotLandscape,
+            scriptTrace: trace
+        )
+        print("wrote Swift u39 script trace to \(traceURL.path)")
+    }
+
+    /// Diagnostic for the tick-5261 `unit[39].actionID=6 RETURN vs 7
+    /// STOP` frontier. Walks SAVE007 with `compareScriptPc: true` to
+    /// find the FIRST tick where Swift's u39 script PC diverges from
+    /// OpenDUNE's golden trajectory — well before the observable
+    /// pool-state drift surfaces. The same observable state can be
+    /// reached via slightly different opcode paths, so this test is
+    /// expected to fire earlier (or at) tick 5261; the first PC
+    /// divergence is the diagnostic payload, not a pass/fail line.
+    /// Wires off by default in expectFullParity.
+    @Test("_SAVE007.DAT scriptPc walk — find first PC divergence")
+    @MainActor
+    func saveSevenParityScriptPcFrontier() throws {
+        try expectFullParity(
+            tickLimit: 5265,
+            save: "_SAVE007.DAT", golden: "save007_ticks.jsonl",
+            withRealEmc: true,
+            compareScriptPc: true,
+            compareScriptPcUnit: 39
+        )
+    }
+
     /// Landscape-parity diagnostic for SAVE007. Widens the compare
     /// with per-tile `Map_GetLandscapeType` and walks forward until
     /// the first tile diverges. Wired to hunt the tick-3011
@@ -139,7 +229,7 @@ struct ParityHarnessTests {
     @MainActor
     func saveSevenParityLandscapeFrontier() throws {
         try expectFullParity(
-            tickLimit: 3050,
+            tickLimit: 5265,
             save: "_SAVE007.DAT", golden: "save007_ticks.jsonl",
             withRealEmc: true,
             compareLandscape: true
@@ -639,7 +729,9 @@ struct ParityHarnessTests {
         save: String,
         golden goldenName: String,
         withRealEmc: Bool = false,
-        compareLandscape: Bool = false
+        compareLandscape: Bool = false,
+        compareScriptPc: Bool = false,
+        compareScriptPcUnit: Int? = nil
     ) throws {
         guard let root = TestInstall.locate() else { return }
         let saveURL = root.appendingPathComponent(save)
@@ -690,7 +782,9 @@ struct ParityHarnessTests {
             seedScriptsFrom: withRealEmc ? game : nil,
             spiceMap: spiceMap,
             snapshotLandscape: snapshotLandscape,
-            compareLandscape: compareLandscape
+            compareLandscape: compareLandscape,
+            compareScriptPc: compareScriptPc,
+            compareScriptPcUnit: compareScriptPcUnit
         )
     }
 

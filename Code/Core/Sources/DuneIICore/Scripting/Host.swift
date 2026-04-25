@@ -117,6 +117,24 @@ extension Scripting {
         /// gameplay's runtime can wire the same closure if it cares.
         public var searchSpice: ((_ packedFrom: UInt16, _ radius: UInt16, _ excludingUnit: Int) -> UInt16)?
 
+        /// Per-unit-type EMC entry-point table. Populated by the
+        /// scheduler at construction time from `unitVM.program.entryPoints`.
+        /// Empty by default — host functions that need to reload a
+        /// script (e.g. `Script_Unit_SetAction`'s
+        /// `Script_Reset + Script_Load` port) read `unitEntryPoints[type]`
+        /// to set `engine.pc` to the new action's bytecode start.
+        /// Empty array means "no program loaded" — host fn falls back
+        /// to its pre-port behaviour.
+        public var unitEntryPoints: [UInt16] = []
+        /// Per-unit "last-loaded action" cache. The scheduler uses
+        /// `unitActionLoaded[idx] != actionID` as a signal to reload
+        /// the engine at the type's entry point on the next dispatch
+        /// (analogous to OpenDUNE's `Script_Load` cadence — once per
+        /// action change). Lives on Host so host functions that
+        /// reload synchronously (the Unit_SetAction port) can update
+        /// it inline and prevent a duplicate reload on the next tick.
+        public var unitActionLoaded: [Int] = []
+
         public enum ObjectRef: Sendable, Equatable {
             case unit(poolIndex: Int)
             case structure(poolIndex: Int)
