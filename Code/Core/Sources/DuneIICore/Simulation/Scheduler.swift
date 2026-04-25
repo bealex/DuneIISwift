@@ -772,8 +772,30 @@ extension Simulation {
             for s in game.structures.slots {
                 let idx = Int(s.object.index)
                 guard idx >= 0, idx < structureEngines.count else { continue }
-                structureEngines[idx] = .fromSave(s.object.script)
-                loadedStructureType[idx] = Int(s.object.type)
+                var engine = Scripting.Engine.fromSave(s.object.script)
+                // OpenDUNE's `Game_Prepare` (`src/opendune.c:1464`)
+                // calls `Script_Load(&s->o.script, s->o.type)` for
+                // every loaded structure AFTER `SaveGame_LoadFile`,
+                // which:
+                //   - resets fp=17, sp=15, isSubroutine=false (per
+                //     `Script_Reset` at `src/script/script.c:266..276`)
+                //   - sets pc = scriptInfo->offsets[typeID]
+                //   - preserves delay, returnValue, variables, stack
+                // Apply the same here so Swift's structure-script PC
+                // matches OpenDUNE's at tick 0 of replay. Without
+                // this, the saved word-offset (e.g. SAVE007 s2 = 329)
+                // shows up as Swift's pc instead of OpenDUNE's
+                // entry-point pc (e.g. 291) — manifesting as a
+                // ~30-tick offset on first BUILD.EMC opcode reach.
+                let typeID = Int(s.object.type)
+                if typeID >= 0, typeID < structureVM.program.entryPoints.count {
+                    engine.pc = Int(structureVM.program.entryPoints[typeID])
+                    engine.framePointer = 17
+                    engine.stackPointer = 15
+                    engine.isSubroutine = false
+                }
+                structureEngines[idx] = engine
+                loadedStructureType[idx] = typeID
             }
             // TEAM chunk decoder is deferred (save-chunk TEAM decoder is
             // queued as P6 work per Plans/01.Initial.md §6 + queued item

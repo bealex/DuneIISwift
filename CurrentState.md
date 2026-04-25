@@ -29,7 +29,21 @@ This file is the single source of truth for "what's happening right now." Read i
 
 2. **Port `Unit_Move`'s winger-off-map `Unit_Remove` path** — **DONE** this session. Both gates wired; `compareHouse.unitCount` now in the schema and passing. The bounce branch (`src/unit.c:1316..1317`, random-orient retarget for mustStayInMap wingers that don't qualify for remove) remains a position-hold stub — no SAVE007 path reaches it, but a future save with an active ORNITHOPTER on patrol could surface it.
 
-**Tick 5496 closed via partial `Unit_Hide` port (this session): SAVE007 parity holds clean through tick 5555.** Added `UnitSlot.isNotOnMap` (loaded from save's flag-bit), set to `true` in the same-house dock branch of `Simulation.Units.enterStructure`, and gated every per-unit pass (`tickMovement`, `tickRotation`/`tickRotationForUnit`, `tickSpriteOffsetForUnit`, `tickFireCooldowns`, the inline interleaved-tick fireDelay decrement, and `runUnitScript`) on `!isNotOnMap` — port of OpenDUNE's `GameLoop_Unit` skip at `src/unit.c:189` and `Unit_Move` early-return at `src/unit.c:1222`. Without it, post-dock u39 kept running its RETURN script and `Script_Unit_CalculateRoute`'s `src == dst` branch cleared `targetMove` (encoded refinery `0x8002`) ~10 ticks after dock, while OpenDUNE preserves it across the entire refining cycle.
+**🎯🎯🎯 Tick 5556 closed (this session). SAVE007 parity holds clean through tick 9245** — a +3690-tick advance on top of the prior 5555 ceiling. Two pieces shipped:
+
+1. **`Game_Prepare`'s `Script_Load` port** in `Scheduler.seedScripts(from:)`. After `.fromSave(s.object.script)` reconstructs the saved engine state, override `pc = structureVM.program.entryPoints[typeID]`, reset `framePointer = 17`, `stackPointer = 15`, `isSubroutine = false` — preserve `delay`, `returnValue`, `variables`, `stack`. Mirrors OpenDUNE's `src/opendune.c:1464` call to `Script_Load(&s->o.script, s->o.type)` for every loaded structure post-`SaveGame_LoadFile`. Without this, Swift's saved word-offset (e.g. SAVE007 s2 = 329) showed up as Swift's pc instead of OpenDUNE's entry-point pc (291) — manifesting as the previously-described 30-tick offset on first BUILD.EMC opcode reach.
+
+2. **Slot 0x15 `Script_Structure_RefineSpice` wired** in `FunctionTables.structureTable`. Port already lived in `Functions.swift` from the prior session (`makeRefineSpiceStructure(host:source:)`); fix #1 lets it fire at the right tick.
+
+Diagnostic trail that found this: `saveSevenParityDumpS2StructureScriptTrace` test wrote Swift's BUILD.EMC opcode trace; OpenDUNE's `--parity-script-structure=2` dump (under `tmp/opendune_s2_structure_script.txt`) showed pc=291 at first dispatch while Swift was at pc=329. Reading `src/opendune.c:1393..1473`'s Game_Prepare loop pinpointed the missing Script_Load.
+
+Golden regenerated to 10000 ticks. Test ceiling pinned at 9245.
+
+**New frontier at tick 9246**: `structure[2].state: expected=0 actual=2`. Refinery state — Swift has READY (2), OpenDUNE has IDLE (0). Likely the harvester drained completely and OpenDUNE transitioned the refinery to IDLE via either RefineSpice's `linkedID == 0xFF` early-return path or another BUILD.EMC slot that Swift hasn't ported yet. Investigate next.
+
+---
+
+**Tick 5496 closed via partial `Unit_Hide` port (prior in this session): SAVE007 parity through tick 5555.** Added `UnitSlot.isNotOnMap` (loaded from save's flag-bit), set to `true` in the same-house dock branch of `Simulation.Units.enterStructure`, and gated every per-unit pass (`tickMovement`, `tickRotation`/`tickRotationForUnit`, `tickSpriteOffsetForUnit`, `tickFireCooldowns`, the inline interleaved-tick fireDelay decrement, and `runUnitScript`) on `!isNotOnMap` — port of OpenDUNE's `GameLoop_Unit` skip at `src/unit.c:189` and `Unit_Move` early-return at `src/unit.c:1222`. Without it, post-dock u39 kept running its RETURN script and `Script_Unit_CalculateRoute`'s `src == dst` branch cleared `targetMove` (encoded refinery `0x8002`) ~10 ticks after dock, while OpenDUNE preserves it across the entire refining cycle.
 
 Skipped from the full `Unit_Hide` port (deferred — surface when a downstream parity test demands them): `Script_Reset` on hide (Swift's u39 keeps its mid-script PC instead of OpenDUNE's reset-to-0; `compareScriptPc` is off in the main parity test, but matters once the refinery spawns u39 back onto the map); `Unit_UntargetMe` sweep (no SAVE007 unit targets u39 today); `Unit_HouseUnitCount_Remove` (touches `unitCountAllied`/`unitCountEnemy`, not the `unitCount` field we currently compare).
 
@@ -41,7 +55,11 @@ Tick 5436 was a `GetDistanceToTile` slot 0x03 fix — was using `Pos32.of` (anch
 
 First divergence at tick 5496: `unit[39].targetMove=32770 vs 0`. OpenDUNE keeps u39's `targetMove` set to the encoded refinery for many ticks post-dock; Swift clears it. Need to find the Swift-side writer (likely a `SetDestination(0)` from the post-dock script flow or a stale `tickMovement` arrival-clear) and gate it. Plus at tick 5485 the diagnostic scriptPc compare also fires (`u39.pc=0 vs 745`) — OpenDUNE Script_Reset's the engine in `Unit_Hide` (`src/unit.c:2107..2120`); Swift doesn't port `Unit_Hide` yet. The full Unit_Hide port (isNotOnMap flag, Script_Reset, Unit_UntargetMe sweep, House_UnitCount_Remove decrement, GameLoop_Unit isNotOnMap-skip) is queued.
 
-**Next step (tick 5556 frontier — substantially narrowed; ~30-tick offset remains)**:
+**Next step (tick 9246 frontier)**: `structure[2].state: expected=0 actual=2`. Refinery harvester u39 has finished depositing all spice (amount drained 0→100 over many cycles, ~1430 ticks of cycle time at +21 credits per Delay(6)-gated dispatch). At drain completion OpenDUNE transitions s2.state IDLE; Swift keeps READY. Investigate: (a) `Script_Structure_RefineSpice` early-return when `s.linkedID == 0xFF`, which calls `Structure_SetState(s, IDLE)` — does Swift's port hit that branch? Probably not, because `s.linkedID` still points at u39 even after drain (the dock cycle's UNDOCK step hasn't fired). (b) `Script_Structure_Unknown0C5A` (slot 0x07) — looks like the harvester-eject path (`src/script/structure.c:248..262`); it eventually clears `s.linkedID` and sets state IDLE. (c) `Script_Structure_FindUnitByType` (slot 0x03) — calls a carryall to pick up the harvester. Wire 0x07 first (it's the natural "after drain, eject") and confirm whether state transitions to IDLE.
+
+---
+
+**Earlier in this session (tick 5556 frontier — investigated, narrowed to 30-tick offset before the Game_Prepare fix landed)**:
 
 Three OpenDUNE-cadence porting bugs landed this session via direct BUILD.EMC disassembly + the new `StructureScriptTrace` (sibling of the unit-side `ScriptTrace`, hooks `structureVM.trace` filtered to one structure index):
 
