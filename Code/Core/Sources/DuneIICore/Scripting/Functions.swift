@@ -1896,12 +1896,21 @@ extension Scripting {
                 let radius = Scripting.peek(engine: &engine, position: 1)
                 guard let pos = currentPosition(host: host) else { return 0 }
                 let packedFrom = Simulation.Pathfinder.packedTile(x: pos.x, y: pos.y)
-                let excluding: Int = {
-                    if case .unit(let idx)? = host.currentObject { return idx }
-                    return -1
-                }()
+                // OpenDUNE's `Map_SearchSpice` has no caller-exclusion
+                // parameter — it skips any tile where
+                // `Unit_Get_ByPackedTile(curPacked) != NULL`. A stationary
+                // harvester IS registered on its current tile via
+                // `Unit_UpdateMap`, so the tile gets skipped naturally
+                // (the harvester's *own* tile is an invalid pick).
+                // SAVE007 tick 3011 surfaced this: u39 harvests (20,20)
+                // thick→thin on the same tick its script calls
+                // SearchSpice; OpenDUNE skipped (20,20) and returned
+                // (21,21), Swift's `excludingUnit: idx` wiring kept
+                // (20,20) as a valid pick and drifted.
+                // Pass `-1` so the occupancy set treats the caller like
+                // any other unit.
                 guard let search = host.searchSpice else { return 0 }
-                let packed = search(packedFrom, radius, excluding)
+                let packed = search(packedFrom, radius, -1)
                 if packed == 0 { return 0 }
                 return Scripting.EncodedIndex.tile(packed: packed).raw
             }

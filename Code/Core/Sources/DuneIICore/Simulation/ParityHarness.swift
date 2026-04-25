@@ -80,7 +80,8 @@ extension Simulation {
             snapshotLandscape: [LandscapeType] = [],
             rngTrace: RNGTrace? = nil,
             lcgTrace: LCGTrace? = nil,
-            scriptTrace: ScriptTrace? = nil
+            scriptTrace: ScriptTrace? = nil,
+            compareLandscape: Bool = false
         ) throws {
             let goldenTicks = try parseGolden(golden)
             guard !goldenTicks.isEmpty else { throw ParseError.goldenEmpty }
@@ -351,6 +352,17 @@ extension Simulation {
             defer { try? lcgTrace?.flush() }
             defer { try? scriptTrace?.flush() }
 
+            // Landscape diff runs BEFORE pool-state diff when enabled
+            // — the diagnostic's whole point is to surface tile-grid
+            // drift *before* it manifests as a unit/house/structure
+            // field. Running landscape second would let the symptom
+            // (e.g. tick 3011 `u39.targetMove`) mask the cause.
+            if compareLandscape {
+                try diffLandscape(
+                    tick: 0, golden: goldenTicks[0],
+                    host: host, baseline: snapshotLandscape
+                )
+            }
             try diff(tick: 0, golden: goldenTicks[0], host: host)
 
             if tickLimit >= 1 {
@@ -359,6 +371,12 @@ extension Simulation {
                     lcgTrace?.beginTick(t)
                     scriptTrace?.beginTick(t)
                     scheduler.tick()
+                    if compareLandscape {
+                        try diffLandscape(
+                            tick: t, golden: goldenTicks[t],
+                            host: host, baseline: snapshotLandscape
+                        )
+                    }
                     try diff(tick: t, golden: goldenTicks[t], host: host)
                 }
             }
@@ -501,6 +519,15 @@ extension Simulation {
             let houses: [GoldenHouse]
             let structures: [GoldenStructure]
             let units: [GoldenUnit]
+            /// Per-tile current landscape from OpenDUNE's
+            /// `Map_GetLandscapeType(packed)` (`src/map.c:541`), 4096
+            /// tiles emitted as hex nibbles (0..14 → '0'..'e'). Optional
+            /// because it's a later schema widening; older goldens
+            /// without it still decode. Used by the landscape-parity
+            /// diagnostic to hunt spice-map drift silently accumulating
+            /// over thousands of ticks (see
+            /// `Parity_DumpLandscape` in `src/parity.c`).
+            let landscape: String?
         }
 
         struct GoldenHouse: Decodable, Equatable {
@@ -700,6 +727,118 @@ extension Simulation {
 
         private static func byteAt(_ a: [UInt8], _ i: Int) -> UInt8 {
             i < a.count ? a[i] : 0xFF
+        }
+
+        // MARK: - Landscape diff
+
+        /// Compose Swift's current landscape view per tile as a 4096-char
+        /// hex nibble string, matching OpenDUNE's `Parity_DumpLandscape`
+        /// layout. Composition order mirrors `Map_GetLandscapeType`:
+        /// structure footprints win, then spice level, then baseline.
+        /// Walls / bloom / destroyed-wall aren't tracked yet, so tiles
+        /// whose baseline is any of those pass through unchanged — the
+        /// diagnostic caller gates the compare on tiles we actually
+        /// model (see `diffLandscape`).
+        static func buildLandscape(
+            host: Scripting.Host,
+            baseline: [LandscapeType]
+        ) -> [UInt8] {
+            precondition(
+                baseline.count == SpiceMap.cellCount,
+                "landscape baseline size mismatch"
+            )
+            var types = [UInt8](repeating: 0, count: baseline.count)
+            for i in 0..<baseline.count {
+                types[i] = UInt8(baseline[i].rawValue & 0x0F)
+            }
+            if let map = host.spiceMap {
+                for i in 0..<types.count {
+                    switch map.cells[i] {
+                    case .thin:
+                        types[i] = UInt8(LandscapeType.spice.rawValue & 0x0F)
+                    case .thick:
+                        types[i] = UInt8(LandscapeType.thickSpice.rawValue & 0x0F)
+                    case .bare:
+                        if baseline[i] == .spice || baseline[i] == .thickSpice {
+                            types[i] = UInt8(LandscapeType.normalSand.rawValue & 0x0F)
+                        }
+                    case .notSand:
+                        break
+                    }
+                }
+            }
+            for s in host.structures.slots where s.isUsed {
+                let ax = Int(s.positionX) / 256
+                let ay = Int(s.positionY) / 256
+                for (fx, fy) in Simulation.Structures.footprintTiles(
+                    type: s.type, anchorX: ax, anchorY: ay
+                ) {
+                    guard fx >= 0, fx < 64, fy >= 0, fy < 64 else { continue }
+                    types[fy * 64 + fx] = UInt8(LandscapeType.structure.rawValue & 0x0F)
+                }
+            }
+            return types
+        }
+
+        /// Walk `host`'s derived landscape against the golden's hex
+        /// string, throw `Divergence(kind: "landscape", slot: packed)`
+        /// on first mismatch. Skipped when either side doesn't ship a
+        /// landscape string (old golden) or the baseline is empty
+        /// (harness caller didn't plumb snapshotLandscape through).
+        ///
+        /// Skipped tile kinds: wall, destroyedWall, bloomField. Swift
+        /// doesn't simulate those yet; the diff would fire on static
+        /// baseline mismatches that aren't the bug we're hunting.
+        static func diffLandscape(
+            tick: Int, golden: GoldenTick,
+            host: Scripting.Host, baseline: [LandscapeType]
+        ) throws {
+            guard let hex = golden.landscape, !baseline.isEmpty else { return }
+            let goldenBytes = Array(hex.utf8)
+            guard goldenBytes.count == SpiceMap.cellCount else {
+                throw Divergence(
+                    tick: tick, kind: "landscape", slot: -1, field: "length",
+                    expected: "\(SpiceMap.cellCount)",
+                    actual: "\(goldenBytes.count)"
+                )
+            }
+            let liveTypes = buildLandscape(host: host, baseline: baseline)
+            let hexDigits: [UInt8] = Array("0123456789abcdef".utf8)
+            for i in 0..<SpiceMap.cellCount {
+                let expectedChar = goldenBytes[i]
+                let expectedValue = landscapeHexToValue(expectedChar)
+                // Skip tile kinds Swift doesn't simulate yet — wall,
+                // destroyedWall, bloomField — both because we don't
+                // track them and because they'd drown the real signal
+                // (spice drift) in unrelated baseline mismatches.
+                switch expectedValue {
+                case LandscapeType.wall.rawValue,
+                     LandscapeType.destroyedWall.rawValue,
+                     LandscapeType.bloomField.rawValue:
+                    continue
+                default:
+                    break
+                }
+                let liveChar = hexDigits[Int(liveTypes[i])]
+                if liveChar != expectedChar {
+                    let x = i % 64
+                    let y = i / 64
+                    throw Divergence(
+                        tick: tick, kind: "landscape", slot: i,
+                        field: "type(\(x),\(y))",
+                        expected: String(UnicodeScalar(expectedChar)),
+                        actual: String(UnicodeScalar(liveChar))
+                    )
+                }
+            }
+        }
+
+        private static func landscapeHexToValue(_ c: UInt8) -> Int {
+            switch c {
+            case 0x30...0x39: return Int(c - 0x30)       // '0'..'9'
+            case 0x61...0x66: return Int(c - 0x61) + 10  // 'a'..'f'
+            default: return -1
+            }
         }
 
         @inline(__always)

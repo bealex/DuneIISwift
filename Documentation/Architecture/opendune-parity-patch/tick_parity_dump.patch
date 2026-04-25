@@ -175,7 +175,7 @@ new file mode 100644
 index 0000000..2e687c6
 --- /dev/null
 +++ b/src/parity.c
-@@ -0,0 +1,304 @@
+@@ -0,0 +1,329 @@
 +/** @file src/parity.c Tick-parity golden-dump harness (patch).
 + *
 + * See Documentation/Architecture/TickParityHarness.md for the design.
@@ -210,6 +210,7 @@ index 0000000..2e687c6
 +#include "config.h"
 +#include "house.h"
 +#include "load.h"
++#include "map.h"
 +#include "pool/house.h"
 +#include "pool/structure.h"
 +#include "pool/unit.h"
@@ -397,6 +398,29 @@ index 0000000..2e687c6
 +
 +extern uint16 g_viewportPosition;
 +
++/* Per-tile landscape dump: one hex nibble per packed tile (0..4095)
++ * carrying the current Map_GetLandscapeType(packed) value (0..14,
++ * LST_MAX=15 fits in 4 bits). Drives the Swift-side per-tile drift
++ * hunt at `ParityHarness.compareLandscape` — needed because spice
++ * drain / grow happens silently inside `Map_ChangeSpiceAmount`
++ * (`src/map.c:771`) and can desync the two engines' spice grids
++ * over thousands of ticks without touching any unit/house field
++ * until a harvester eventually queries `Map_SearchSpice`. */
++static void Parity_DumpLandscape(FILE *f)
++{
++	static const char kHex[16] = {
++		'0','1','2','3','4','5','6','7',
++		'8','9','a','b','c','d','e','f'
++	};
++	uint16 packed;
++	fputs(",\"landscape\":\"", f);
++	for (packed = 0; packed < 64 * 64; packed++) {
++		uint16 type = Map_GetLandscapeType(packed);
++		fputc(kHex[type & 0x0F], f);
++	}
++	fputc('"', f);
++}
++
 +static void Parity_DumpTick(FILE *f, uint32 tick)
 +{
 +	fprintf(f,
@@ -406,6 +430,7 @@ index 0000000..2e687c6
 +	Parity_DumpHouses(f);
 +	Parity_DumpStructures(f);
 +	Parity_DumpUnits(f);
++	Parity_DumpLandscape(f);
 +	fputs("}\n", f);
 +}
 +

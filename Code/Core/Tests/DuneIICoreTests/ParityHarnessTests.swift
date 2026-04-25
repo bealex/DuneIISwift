@@ -125,6 +125,25 @@ struct ParityHarnessTests {
         try expectTickOneDivergence(save: "_SAVE007.DAT", golden: "save007_ticks.jsonl")
     }
 
+    /// Landscape-parity diagnostic for SAVE007. Widens the compare
+    /// with per-tile `Map_GetLandscapeType` and walks forward until
+    /// the first tile diverges. Wired to hunt the tick-3011
+    /// `u39.targetMove` drift — the hypothesis is that Swift's spice
+    /// map silently desynced from OpenDUNE's over thousands of ticks
+    /// and `Script_General_SearchSpice` eventually reads a different
+    /// tile on the two engines. Gated on the long (>3011 ticks)
+    /// golden being present locally — short-circuits when it isn't.
+    @Test("_SAVE007.DAT landscape parity — walk to first tile divergence")
+    @MainActor
+    func saveSevenParityLandscapeFrontier() throws {
+        try expectFullParity(
+            tickLimit: 3050,
+            save: "_SAVE007.DAT", golden: "save007_ticks.jsonl",
+            withRealEmc: true,
+            compareLandscape: true
+        )
+    }
+
     /// 🎯 SAVE007 matches OpenDUNE byte-for-byte across the FULL
     /// 1000-tick golden under real UNIT.EMC / BUILD.EMC / TEAM.EMC.
     /// Closing this frontier required (across two same-day sessions):
@@ -617,7 +636,8 @@ struct ParityHarnessTests {
         tickLimit: Int,
         save: String,
         golden goldenName: String,
-        withRealEmc: Bool = false
+        withRealEmc: Bool = false,
+        compareLandscape: Bool = false
     ) throws {
         guard let root = TestInstall.locate() else { return }
         let saveURL = root.appendingPathComponent(save)
@@ -667,7 +687,8 @@ struct ParityHarnessTests {
             teamProgram: teamProgram,
             seedScriptsFrom: withRealEmc ? game : nil,
             spiceMap: spiceMap,
-            snapshotLandscape: snapshotLandscape
+            snapshotLandscape: snapshotLandscape,
+            compareLandscape: compareLandscape
         )
     }
 
