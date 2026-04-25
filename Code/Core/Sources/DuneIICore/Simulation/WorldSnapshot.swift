@@ -266,6 +266,13 @@ extension Simulation {
                 // before the first `tickHouse`) has correct numbers.
                 h.powerProduction = slot.powerProduction
                 h.powerUsage = slot.powerUsage
+                // `unitCount` seeded from save, then `Unit_Recount`
+                // equivalent runs after the unit pool loads below so
+                // the final count matches `Unit_Allocate`/`Unit_Free`
+                // semantics. See `src/pool/unit.c:75`.
+                h.unitCount = slot.unitCount
+                h.unitCountMax = slot.unitCountMax
+                h.harvestersIncoming = slot.harvestersIncoming
                 houses[idx] = h
             }
 
@@ -328,6 +335,12 @@ extension Simulation {
             // the RNG stream position for per-unit DelayRandom / Harvest
             // draws.
             units.recount()
+            // Match the house-side of `Unit_Recount` (`src/pool/unit.c:82..93`):
+            // zero every house's `unitCount`, then bump per loaded unit.
+            // The save's per-house `unitCount` field isn't authoritative
+            // across engines (OpenDUNE rebuilds it after load), so our
+            // baseline has to be derived from the live pool too.
+            houses.recount(from: units)
 
             // Structures
             var structures = StructurePool()

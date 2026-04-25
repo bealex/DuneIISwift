@@ -1031,6 +1031,15 @@ extension Simulation {
             // match that ordering by firing after all structure /
             // starport passes have settled.
             tickHousePowerMaintenance()
+            // Recount per-house `unitCount` at end-of-tick to match
+            // OpenDUNE's incremental `Unit_Allocate`/`Unit_Free`
+            // maintenance (`src/pool/unit.c:136, 179`). OpenDUNE keeps
+            // it live on every allocate/free; Swift's pool API doesn't
+            // carry the house context through those call sites yet, so
+            // we rebuild from the live unit pool at the end of each
+            // tick. Cheap (6 × 102 scan); the parity golden's
+            // `unitCount` diffs only against the end-of-tick snapshot.
+            host.houses.recount(from: host.units)
             host.currentObject = nil
         }
 

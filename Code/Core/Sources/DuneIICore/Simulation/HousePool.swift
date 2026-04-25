@@ -41,6 +41,25 @@ extension Simulation {
         /// starting at tick 70 — which is precisely what OpenDUNE's
         /// `max(g_timerGame + 70, saved)` load-time seed produces.
         public var powerUsage: UInt16
+        /// Live count of units owned by this house. Mirrors OpenDUNE's
+        /// `h->unitCount` (`src/house.h:80`): `Unit_Allocate` increments,
+        /// `Unit_Free` decrements, `Unit_Recount` rebuilds from the
+        /// unit pool. Used by `Unit_Allocate`'s `h->unitCount >=
+        /// h->unitCountMax` cap gate (`src/pool/unit.c:115`) and by
+        /// the parity golden's compareHouse diff.
+        public var unitCount: UInt16
+        /// Cap on simultaneous owned units. Scenario-seeded and
+        /// normally static through a mission (upgrades can raise it
+        /// but we haven't ported that path yet). Enforces
+        /// `Unit_Allocate`'s return-NULL on overflow.
+        public var unitCountMax: UInt16
+        /// Number of harvesters queued for deferred delivery. Set to
+        /// 1 by `Unit_CreateWrapper`/`Unit_Create` when a fresh
+        /// harvester allocation fails because the house is already at
+        /// `unitCountMax` (`src/unit.c:1801..1818`); decremented when
+        /// a carryall actually delivers the queued harvester. Only
+        /// meaningful when the delayed-delivery path fires.
+        public var harvestersIncoming: UInt16
 
         public init(
             isUsed: Bool = false,
@@ -51,7 +70,10 @@ extension Simulation {
             creditsStorage: UInt16 = 0,
             creditsQuota: UInt16 = 0,
             powerProduction: UInt16 = 0,
-            powerUsage: UInt16 = 0
+            powerUsage: UInt16 = 0,
+            unitCount: UInt16 = 0,
+            unitCountMax: UInt16 = 0,
+            harvestersIncoming: UInt16 = 0
         ) {
             self.isUsed = isUsed
             self.index = index
@@ -62,6 +84,9 @@ extension Simulation {
             self.creditsQuota = creditsQuota
             self.powerProduction = powerProduction
             self.powerUsage = powerUsage
+            self.unitCount = unitCount
+            self.unitCountMax = unitCountMax
+            self.harvestersIncoming = harvestersIncoming
         }
     }
 
@@ -102,6 +127,27 @@ extension Simulation {
             guard index >= 0, index < Self.capacity, slots[index].isUsed else { return }
             if let position = findArray.firstIndex(of: index) {
                 findArray.remove(at: position)
+            }
+        }
+
+        /// Port of OpenDUNE's `Unit_Recount` side effect
+        /// (`src/pool/unit.c:75..97`): zeroes every house's
+        /// `unitCount`, then walks the unit pool and bumps the owning
+        /// house's counter for each `isUsed` slot. OpenDUNE runs
+        /// this once after `SaveGame_LoadFile` and relies on
+        /// incremental `Unit_Allocate`/`Unit_Free` maintenance
+        /// otherwise. Swift currently runs it also at end-of-tick for
+        /// the same effect (cheap — 6 houses × 102 units), pending a
+        /// full migration of every `UnitPool.allocate/.free` call
+        /// site to an inline-bump helper.
+        public mutating func recount(from units: UnitPool) {
+            for i in 0..<Self.capacity {
+                if slots[i].isUsed { slots[i].unitCount = 0 }
+            }
+            for slot in units.slots where slot.isUsed {
+                let h = Int(slot.houseID)
+                guard h >= 0, h < Self.capacity, slots[h].isUsed else { continue }
+                slots[h].unitCount &+= 1
             }
         }
     }
