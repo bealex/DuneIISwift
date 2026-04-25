@@ -1031,6 +1031,15 @@ extension Simulation {
             // match that ordering by firing after all structure /
             // starport passes have settled.
             tickHousePowerMaintenance()
+            // Recount per-house `unitCount` at end-of-tick to match
+            // OpenDUNE's incremental `Unit_Allocate`/`Unit_Free`
+            // maintenance (`src/pool/unit.c:136, 179`). OpenDUNE keeps
+            // it live on every allocate/free; Swift's pool API doesn't
+            // carry the house context through those call sites yet, so
+            // we rebuild from the live unit pool at the end of each
+            // tick. Cheap (6 × 102 scan); the parity golden's
+            // `unitCount` diffs only against the end-of-tick snapshot.
+            host.houses.recount(from: host.units)
             host.currentObject = nil
         }
 
@@ -2340,6 +2349,69 @@ extension Simulation {
                                     continue
                                 }
                             }
+                        }
+                        // Port of `Unit_Move`'s off-map gate
+                        // (`src/unit.c:1305..1317`): if the next position
+                        // leaves the 64×64 map, the unit either gets
+                        // removed (bullets / fremen / sandworm;
+                        // save-initial idle escort CARRYALLs +
+                        // ORNITHOPTERs via the second gate) or bounces
+                        // (random orientation, position held). The
+                        // OpenDUNE Tile_IsValid macro is a high-bit
+                        // mask (`src/tile.h:14`): invalid iff bit 14 or
+                        // 15 set on either axis — so `x >= 0x4000`
+                        // (tile ≥ 64) fails the check. See
+                        // `Insights/simulation-winger-offmap-removal.md`
+                        // for the two Unit_Remove gates.
+                        if (next.x & 0xC000) != 0 || (next.y & 0xC000) != 0 {
+                            let info = Simulation.UnitInfo.lookup(slot.type)
+                            let mustStay = info?.mustStayInMap ?? false
+                            let var4: UInt16 = {
+                                guard idx < unitEngines.count else { return 0 }
+                                return unitEngines[idx].variables.count > 4
+                                    ? unitEngines[idx].variables[4] : 0
+                            }()
+                            let shouldRemove = !mustStay
+                                || (slot.byScenario && slot.linkedID == 0xFF && var4 == 0)
+                            if shouldRemove {
+                                // Inline the Unit_Remove (`src/unit.c:897`)
+                                // trimmed to the state we track:
+                                // untargetMe sweep (clears stale
+                                // targetMove / targetAttack encoded
+                                // refs on every OTHER unit) + pool
+                                // free. Skipped: `Unit_UpdateMap(0)`
+                                // (fog-of-war layer not modelled) and
+                                // `bulletIsBig = true` (visual-only
+                                // hint). `Script_Reset` is implicit —
+                                // the slot's `isUsed = false` means
+                                // `tickUnits` skips dispatching.
+                                host.units[idx] = slot
+                                Simulation.Units.untargetUnit(poolIndex: idx, host: host)
+                                host.units.free(at: idx)
+                                Log.info(
+                                    "winger-offmap u\(idx) (type \(slot.type)) next-pos=(\(next.x),\(next.y)) mustStay=\(mustStay) — removed",
+                                    tracer: .label("winger-offmap")
+                                )
+                                continue
+                            }
+                            // Bounce branch (`src/unit.c:1316..1317`):
+                            // hold position, pick a new orientation
+                            // `current + (Tools_Random_256() & 0xF)`.
+                            // Swift doesn't plumb movementRNG into
+                            // Unit_SetOrientation here yet — keeps the
+                            // carryall pinned at its last in-bounds
+                            // position for this tick, which is
+                            // behaviourally close to the bounce (no
+                            // step applied; script will retry next
+                            // tick) and avoids a second RNG draw that
+                            // OpenDUNE's gate doesn't guarantee
+                            // either (the random orientation only
+                            // fires when the mustStay path falls
+                            // through to bounce). No SAVE007 unit
+                            // hits this path — u0 CARRYALL qualifies
+                            // for remove via the second gate.
+                            host.units[idx] = slot
+                            continue
                         }
                         slot.positionX = next.x
                         slot.positionY = next.y

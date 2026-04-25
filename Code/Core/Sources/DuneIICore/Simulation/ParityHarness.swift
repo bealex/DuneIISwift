@@ -649,8 +649,9 @@ extension Simulation {
             try eq(tick, "house", g.index, "starportLinkedID", g.starportLinkedID, s.starportLinkedID)
             try eq(tick, "house", g.index, "powerProduction", g.powerProduction, s.powerProduction)
             try eq(tick, "house", g.index, "powerUsage",      g.powerUsage,      s.powerUsage)
-            // Skipped (Swift side not yet tracking these):
-            //   unitCount, unitCountMax, harvestersIncoming
+            try eq(tick, "house", g.index, "unitCount",          g.unitCount,          s.unitCount)
+            try eq(tick, "house", g.index, "unitCountMax",       g.unitCountMax,       s.unitCountMax)
+            try eq(tick, "house", g.index, "harvestersIncoming", g.harvestersIncoming, s.harvestersIncoming)
         }
 
         private static func compareStructure(

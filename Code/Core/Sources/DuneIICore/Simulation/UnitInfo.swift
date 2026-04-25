@@ -120,6 +120,21 @@ extension Simulation {
         /// ORNITHOPTER). When true and HP > maxHP/2, every other shot
         /// uses the 5-tick quick reload.
         public let firesTwice: Bool
+        /// `UnitInfo.flags.mustStayInMap` — true for CARRYALL + ORNITHOPTER
+        /// (rows 0 and 1 in `src/table/unitinfo.c`). When a winger's
+        /// next step would leave the 64×64 map, `Unit_Move`
+        /// (`src/unit.c:1305..1317`) either:
+        ///   - `!mustStayInMap` → `Unit_Remove` (used by bullets /
+        ///     fremen / sandworm / save-initial escort flights),
+        ///   - `mustStayInMap && byScenario && linkedID==0xFF &&
+        ///     scriptVariables[4]==0` → `Unit_Remove` too (idle
+        ///     save-initial escort carryall / ornithopter),
+        ///   - else → bounce (random new orientation, position held).
+        /// Without the port, wingers would fly forever off-map in Swift
+        /// while OpenDUNE frees them — surfaces as SAVE007 tick 367
+        /// `house[1].unitCount=6 vs 7` (u0 CARRYALL leaves the east
+        /// edge).
+        public let mustStayInMap: Bool
         /// Explosion this unit's bullet creates on impact (`src/table/unitinfo.c`
         /// `/* explosionType */`). Also used by `explodeOnDeath` units
         /// when they die (deferred wiring). `nil` → no explosion
@@ -181,7 +196,8 @@ extension Simulation {
             structuresRequired: UInt32 = 0,
             upgradeLevelRequired: UInt8 = 0,
             buildTime: UInt16 = 0,
-            buildCredits: UInt16 = 0
+            buildCredits: UInt16 = 0,
+            mustStayInMap: Bool = false
         ) {
             self.hitpoints = hitpoints
             self.fireDistance = fireDistance
@@ -211,6 +227,7 @@ extension Simulation {
             self.upgradeLevelRequired = upgradeLevelRequired
             self.buildTime = buildTime
             self.buildCredits = buildCredits
+            self.mustStayInMap = mustStayInMap
         }
 
         public static let table: [UnitInfo] = [
@@ -224,7 +241,7 @@ extension Simulation {
                      priority: true, targetAir: false, priorityBuild: 20, priorityTarget: 16,
                      indexStart: 0, indexEnd: 10, bulletType: nil, firesTwice: false,
                      explosionType: nil,
-                     buildTime: 64, buildCredits: 800),
+                     buildTime: 64, buildCredits: 800, mustStayInMap: true),
             // 1 ORNITHOPTER
             UnitInfo(hitpoints: 25, fireDistance: 50, fireDelay: 50, damage: 50,
                      movementType: .winger, hasTurret: false, explodeOnDeath: true,
@@ -237,7 +254,7 @@ extension Simulation {
                      indexStart: 0, indexEnd: 10, bulletType: 22, firesTwice: true,
                      explosionType: 0,
                      availableHouse: 62, structuresRequired: 1 << 6, upgradeLevelRequired: 1,
-                     buildTime: 96, buildCredits: 600),
+                     buildTime: 96, buildCredits: 600, mustStayInMap: true),
             // 2 INFANTRY (squad)
             UnitInfo(hitpoints: 50, fireDistance: 2, fireDelay: 45, damage: 3,
                      movementType: .foot, hasTurret: false, explodeOnDeath: false,
