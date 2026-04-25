@@ -196,6 +196,77 @@ struct ParityHarnessTests {
         print("wrote Swift u39 script trace to \(traceURL.path)")
     }
 
+    /// Dumps Swift's BUILD.EMC opcode trace for the SAVE007 refinery
+    /// (s2) across the dock window. Pair with an OpenDUNE
+    /// `--parity-script-structure=2 --parity-ticks=5560` run to diff
+    /// the two engines' structure-engine PC streams from tick 0 to
+    /// just past dock + first RefineSpice. The first divergent
+    /// opcode tells us which BUILD.EMC slot Swift's port handles
+    /// differently than OpenDUNE — load-bearing for closing the
+    /// tick-5556 +7 credits drift. No assertions; gated on the
+    /// install + long golden being present.
+    @Test("_SAVE007.DAT — dump Swift s2 (refinery) per-opcode structure script trace")
+    @MainActor
+    func saveSevenParityDumpS2StructureScriptTrace() throws {
+        guard let root = TestInstall.locate() else { return }
+        let saveURL = root.appendingPathComponent("_SAVE007.DAT")
+        guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
+        let goldenURL = Self.goldenURL(named: "save007_ticks.jsonl")
+        guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
+
+        let tmpDir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("tmp", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: tmpDir, withIntermediateDirectories: true
+        )
+        let traceURL = tmpDir.appendingPathComponent("swift_s2_structure_script.txt")
+
+        let data = try Data(contentsOf: saveURL)
+        let game = try Formats.Save.Game.decode(data)
+        let golden = try Data(contentsOf: goldenURL)
+
+        let install = try Installation(rootDirectory: root)
+        let assets = try AssetLoader(installation: install)
+        let unitProgram = (try assets.loadEmc(named: "UNIT.EMC")) ?? .empty
+        let structureProgram = (try assets.loadEmc(named: "BUILD.EMC")) ?? .empty
+        let teamProgram = (try assets.loadEmc(named: "TEAM.EMC")) ?? .empty
+        let resolver = assets.tileResolver
+        let baseline = Map.Generator.generate(
+            seed: game.info.scenario.mapSeed, resolver: resolver
+        )
+        let snapshot = try Simulation.WorldSnapshot(loading: game, baseline: baseline)
+        let snapshotLandscape = snapshot.tiles.map { tile in
+            resolver.landscapeType(
+                groundTileID: tile.groundTileID,
+                overlayTileID: tile.overlayTileID,
+                hasStructure: tile.hasStructure
+            )
+        }
+        let spiceMap = Simulation.SpiceMap { i in snapshotLandscape[i] }
+
+        let trace = Simulation.ParityHarness.StructureScriptTrace(
+            path: traceURL, structurePoolIndex: 2
+        )
+        _ = try? Simulation.ParityHarness.runAgainst(
+            snapshot: snapshot,
+            golden: golden,
+            tickLimit: 5560,
+            unitProgram: unitProgram,
+            structureProgram: structureProgram,
+            teamProgram: teamProgram,
+            seedScriptsFrom: game,
+            spiceMap: spiceMap,
+            snapshotLandscape: snapshotLandscape,
+            structureScriptTrace: trace
+        )
+        print("wrote Swift s2 structure script trace to \(traceURL.path)")
+    }
+
     /// Diagnostic for the tick-5261 `unit[39].actionID=6 RETURN vs 7
     /// STOP` frontier. Walks SAVE007 with `compareScriptPc: true` to
     /// find the FIRST tick where Swift's u39 script PC diverges from
@@ -229,7 +300,7 @@ struct ParityHarnessTests {
     @MainActor
     func saveSevenParityLandscapeFrontier() throws {
         try expectFullParity(
-            tickLimit: 5495,
+            tickLimit: 5555,
             save: "_SAVE007.DAT", golden: "save007_ticks.jsonl",
             withRealEmc: true,
             compareLandscape: true
