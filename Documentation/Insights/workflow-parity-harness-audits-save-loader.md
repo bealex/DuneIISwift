@@ -36,7 +36,7 @@ Step 5 used to be "run the whole scenario and eyeball the behaviour." It's now o
 
 - `Code/Core/Sources/DuneIICore/Simulation/ParityHarness.swift` — `runAgainst(...)` + `compareUnit` / `compareStructure` / `compareHouse`. The skip-list comments show which fields are live-slot-backed but not yet diffed.
 - `Code/Core/Tests/DuneIICoreTests/ParityHarnessTests.swift:saveOneParityTickZero` — pins the contract for tick 0.
-- `Code/Core/Tests/DuneIICoreTests/Fixtures/ParityGoldens/save001_200ticks.jsonl` — the ground truth (gitignored; regenerate from OpenDUNE per `Documentation/Architecture/opendune-parity-patch/README.md`).
+- `Code/Core/Tests/DuneIICoreTests/Fixtures/ParityGoldens/save001_ticks.jsonl` — the ground truth (gitignored; regenerate from OpenDUNE per `Documentation/Architecture/opendune-parity-patch/README.md`).
 
 ## Where it lives in the reference
 

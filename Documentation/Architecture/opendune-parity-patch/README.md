@@ -72,13 +72,13 @@ GOLDENS="$(cd ../../Code/Core/Tests/DuneIICoreTests/Fixtures/ParityGoldens && pw
 ./bin/opendune \
     --parity-data-dir="$INSTALL" \
     --parity-load=_SAVE001.DAT \
-    --parity-ticks=200 \
-    --parity-dump="$GOLDENS/save001_200ticks.jsonl"
+    --parity-ticks=1000 \
+    --parity-dump="$GOLDENS/save001_ticks.jsonl"
 
 ./bin/opendune \
     --parity-data-dir="$INSTALL" \
     --parity-load=_SAVE007.DAT \
-    --parity-ticks=1000 \
+    --parity-ticks=3050 \
     --parity-dump="$GOLDENS/save007_ticks.jsonl"
 ```
 

@@ -239,7 +239,7 @@ What works now:
 - Unit sprites render at native pixel size (harvester > trike > infantry). Units pathfind around each other.
 - Attack visuals: muzzle flash + impact dimmed to 30% alpha so they're a hint, not a clutter.
 
-Test status: **1033 / 101** tests green, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`). Parity JSONL fixtures (`Fixtures/ParityGoldens/save001_200ticks.jsonl` + `save007_ticks.jsonl`) are gitignored — regenerate locally from OpenDUNE per `Documentation/Architecture/opendune-parity-patch/README.md`.
+Test status: **1033 / 101** tests green, zero warnings on clean build. 5 golden screenshot fixtures (`Fixtures/Screenshots/`). Parity JSONL fixtures (`Fixtures/ParityGoldens/save001_ticks.jsonl` + `save007_ticks.jsonl`) are gitignored — regenerate locally from OpenDUNE per `Documentation/Architecture/opendune-parity-patch/README.md`.
 
 Latest session (2026-04-23) shipped, across two merged lines of work: (1) movement polish + STARPORT slices 5a/5b/5c-sim (fallback-slide per-tile gate, OpenDUNE crush parity, `[CHOAM]` INI loader + buildable mask, order commit + frigate delivery + availability bump, `StarportController` + pricing + runtime stock seeding); (2) harvester RETURN replan + adjacency dock + coherence pin + `Map_FixupSpiceEdges` port + CLAUDE.md "consult OpenDUNE" rule. Previous session (2026-04-22) shipped 27 commits. Details in today's `Documentation/History/2026-04.md` bullets.
 
@@ -259,6 +259,8 @@ Ordered by value. Each one follows the `CLAUDE.md` feature workflow (design doc 
 ## Recently completed
 
 Reverse-chronological; link to the day's history bullet for detail.
+
+- **2026-04-24 — 🎯 SAVE001 FULL 1000-tick parity under landscape compare.** Followed the SAVE007 SearchSpice fix with a SAVE001 horizon bump from 200 → 1000 ticks. Regenerated `save001_200ticks.jsonl` → `save001_ticks.jsonl` (dropped the legacy `200ticks` suffix). Passes clean. Non-history doc refs updated. **1033 / 101 / zero warnings.**
 
 - **2026-04-24 — 🎯 SAVE007 FULL 3050-tick parity: tick 3011 `u39.targetMove` drift closed via `makeSearchSpice` caller-exclusion fix + new per-tile landscape parity comparator.** Landscape diff (OpenDUNE `Parity_DumpLandscape` hex string + Swift `ParityHarness.diffLandscape` derivation) proved the earlier "spice maps differ at (20,20)" hypothesis wrong. Real fix: `Scripting.Functions.makeSearchSpice` no longer excludes the calling harvester from the unit-occupancy set (`excludingUnit: -1`); OpenDUNE's `Map_SearchSpice` relies on `Unit_UpdateMap` tile registration for natural caller exclusion. Gameplay auto-seek keeps the `excludingUnit: idx` convenience. New insight `simulation-search-spice-no-caller-exclusion`. Goldens `ParityGoldens/*.jsonl` are now gitignored. **1033 / 101 / zero warnings.**
 

@@ -51,14 +51,14 @@ struct ParityHarnessTests {
     /// Stepping past tick 0 is expected to diverge immediately on our
     /// current sim (fog, sprite, RNG cascades are unported) — that's the
     /// signal we're meant to chase, not a pass/fail line.
-    @Test("_SAVE001.DAT tick 0 matches the committed 200-tick golden")
+    @Test("_SAVE001.DAT tick 0 matches the 1000-tick golden")
     @MainActor
     func saveOneParityTickZero() throws {
         guard let root = TestInstall.locate() else { return }
         let saveURL = root.appendingPathComponent("_SAVE001.DAT")
         guard FileManager.default.fileExists(atPath: saveURL.path) else { return }
 
-        let goldenURL = Self.goldenURL(named: "save001_200ticks.jsonl")
+        let goldenURL = Self.goldenURL(named: "save001_ticks.jsonl")
         guard FileManager.default.fileExists(atPath: goldenURL.path) else { return }
 
         let data = try Data(contentsOf: saveURL)
@@ -87,24 +87,26 @@ struct ParityHarnessTests {
     @Test("_SAVE001.DAT tick 1 with empty EMC currently diverges")
     @MainActor
     func saveOneParityTickOneDiverges() throws {
-        try expectTickOneDivergence(save: "_SAVE001.DAT", golden: "save001_200ticks.jsonl")
+        try expectTickOneDivergence(save: "_SAVE001.DAT", golden: "save001_ticks.jsonl")
     }
 
     /// Same as `saveOneParityTickOneDiverges` but with real `UNIT.EMC`
     /// / `BUILD.EMC` / `TEAM.EMC` loaded via `AssetLoader`. SAVE001
     /// historically diverged at tick 1 with `unit[22].actionID=5
     /// HARVEST vs 6 RETURN` (harvester transition class). The
-    /// SearchSpice port (slot 0x29) closed that drift here as a
-    /// side-effect of fixing SAVE007 — the same harvester EMC path
-    /// reads SearchSpice and falls through to RETURN when it returns
-    /// 0. Now widened to 200 ticks (the full SAVE001 golden window).
-    @Test("_SAVE001.DAT 200-tick parity with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
+    /// SearchSpice port (slot 0x29) closed that drift as a side-effect
+    /// of fixing SAVE007 — the same harvester EMC path reads
+    /// SearchSpice and falls through to RETURN when it returns 0.
+    /// Widened to the full 1000-tick golden with landscape parity on
+    /// top (same schema as SAVE007).
+    @Test("_SAVE001.DAT FULL 1000-tick parity with real UNIT.EMC / BUILD.EMC / TEAM.EMC")
     @MainActor
     func saveOneParityRealEmc() throws {
         try expectFullParity(
-            tickLimit: 200,
-            save: "_SAVE001.DAT", golden: "save001_200ticks.jsonl",
-            withRealEmc: true
+            tickLimit: 1000,
+            save: "_SAVE001.DAT", golden: "save001_ticks.jsonl",
+            withRealEmc: true,
+            compareLandscape: true
         )
     }
 
