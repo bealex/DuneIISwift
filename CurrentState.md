@@ -55,7 +55,25 @@ Tick 5436 was a `GetDistanceToTile` slot 0x03 fix — was using `Pos32.of` (anch
 
 First divergence at tick 5496: `unit[39].targetMove=32770 vs 0`. OpenDUNE keeps u39's `targetMove` set to the encoded refinery for many ticks post-dock; Swift clears it. Need to find the Swift-side writer (likely a `SetDestination(0)` from the post-dock script flow or a stale `tickMovement` arrival-clear) and gate it. Plus at tick 5485 the diagnostic scriptPc compare also fires (`u39.pc=0 vs 745`) — OpenDUNE Script_Reset's the engine in `Unit_Hide` (`src/unit.c:2107..2120`); Swift doesn't port `Unit_Hide` yet. The full Unit_Hide port (isNotOnMap flag, Script_Reset, Unit_UntargetMe sweep, House_UnitCount_Remove decrement, GameLoop_Unit isNotOnMap-skip) is queued.
 
-**Next step (tick 9246 frontier)**: `structure[2].state: expected=0 actual=2`. Refinery harvester u39 has finished depositing all spice (amount drained 0→100 over many cycles, ~1430 ticks of cycle time at +21 credits per Delay(6)-gated dispatch). At drain completion OpenDUNE transitions s2.state IDLE; Swift keeps READY. Investigate: (a) `Script_Structure_RefineSpice` early-return when `s.linkedID == 0xFF`, which calls `Structure_SetState(s, IDLE)` — does Swift's port hit that branch? Probably not, because `s.linkedID` still points at u39 even after drain (the dock cycle's UNDOCK step hasn't fired). (b) `Script_Structure_Unknown0C5A` (slot 0x07) — looks like the harvester-eject path (`src/script/structure.c:248..262`); it eventually clears `s.linkedID` and sets state IDLE. (c) `Script_Structure_FindUnitByType` (slot 0x03) — calls a carryall to pick up the harvester. Wire 0x07 first (it's the natural "after drain, eject") and confirm whether state transitions to IDLE.
+**Next step (tick 9246 frontier — slot 0x07 wired, narrowed but not closed)**: with `Script_Structure_Unknown0C5A` (slot 0x07) ported including `Structure_FindFreePosition`, the immediate `structure[2].state=0 vs 2` divergence is closed (Swift now transitions to IDLE on harvester eject). New divergence at the SAME tick 9246: `unit[39].positionY=6272 vs 5760` — Swift ejects u39 to tile (24, 22) (NW corner), OpenDUNE ejects to (24, 24) (W column row 2).
+
+**Root cause is RNG-byte-stream misalignment** at tick 9246. OpenDUNE's `--parity-random-trace=` dump shows the byte at this call is `0xC8` (ctx=s2, idx=2543, low nibble = 8 → start offset 8 in `Structure_FindFreePosition`'s 16-tile loop, hits tile (24, 24) first among the 3 distance-tied candidates {(24, 22), (24, 23), (24, 24)} — strict `<` keeps the first). Swift's `findFreePosition` instrumented trace shows iteration starting at offset 13 (byte's low nibble = D), so Swift sees (24, 22) first and locks in.
+
+Both engines pass byte-for-byte parity through tick 9245 (pool-state). The RNG STATE itself isn't compared, just observable state. Some RNG consumer between tick 9245's end and tick 9246's slot-0x07 fire is consuming a different byte count between the two engines. Diagnostic path: run Swift's `RNGTrace` writer + OpenDUNE's `--parity-random-trace=tmp/opendune_rng_9250.txt`, diff line-by-line to find the first idx where bytes diverge — that's the misaligned consumer (could be a script DelayRandom, an explosion scatter draw, or a wobble-byte mismatch on a unit that's now isNotOnMap when it shouldn't be).
+
+---
+
+**Earlier this session's tick-5556 closure (still active above)**:
+
+Two pieces shipped to land slot 0x07:
+
+1. **`Simulation.Structures.findFreePosition(structureIndex:checkForSpice:...)`** — port of `src/structure.c:1253..1299`. Walks the 16-entry `StructureLayout.packedDeltasAround` ring around the structure's anchor packed tile, starting at a `Tools_Random_256() & 0xF` offset, returns first passable + unoccupied tile (no-spice) OR closest-to-spice tile (harvester case). Sibling `packedDistanceForFree` ports `Tile_GetDistancePacked` exactly (chebyshev + half-shorter, in pixel units, shifted right 8 to tile units).
+
+2. **`StructureLayout.packedDeltasAround`** byte-for-byte port of `g_table_structure_layoutTilesAround` (`src/table/structureinfo.c:1305..1313`). The clockwise walk order is DIFFERENT from `adjacentOffsets` — this table is the authoritative ordering used by the RNG-driven free-position search.
+
+3. **`Scripting.Functions.makeUnknown0C5AStructure(host:source:)`** — slot 0x07 port covering the ground (non-winger) eject branch: calls findFreePosition, places the unit at the chosen tile center, chains `s.linkedID = u.linkedID; u.linkedID = 0xFF`, transitions state to IDLE on chain-empty, clears `scriptVariable4`, snaps body+turret orientation toward the eject vector, sets the unit's actionID to `UnitInfo.actionAI` (HARVEST for harvesters), forces `unitActionLoaded[idx] = -1` so the engine reload picks up the new action on next tick. Skipped (deferred): winger branch, `Unit_HouseUnitCount_Add`, `Unit_FindClosestRefinery`, `seenByHouses |= s.seenByHouses` (StructureSlot doesn't expose seenByHouses today).
+
+Tests stay 1036/101 green (parity ceiling holds at 9245 — slot 0x07 ports the right behavior but doesn't move the ceiling because of the new RNG-misalignment frontier). Zero warnings.
 
 ---
 

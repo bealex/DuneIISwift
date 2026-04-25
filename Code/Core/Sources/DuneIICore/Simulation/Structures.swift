@@ -1150,6 +1150,118 @@ extension Simulation {
             return gained
         }
 
+        /// Port of OpenDUNE's `Structure_FindFreePosition`
+        /// (`src/structure.c:1253..1299`). Walks the 16-entry
+        /// `StructureLayout.packedDeltasAround` ring around the
+        /// structure's anchor packed tile, starting at a
+        /// `Tools_Random_256() & 0xF` offset, and returns the first
+        /// passable + unoccupied tile (when `checkForSpice == false`)
+        /// OR the closest such tile to the nearest spice tile (when
+        /// `checkForSpice == true`, harvester case). Returns 0 when
+        /// no candidate qualifies.
+        ///
+        /// SAVE007 needs this to drive `Script_Structure_Unknown0C5A`
+        /// (slot 0x07) — the harvester-eject path called by BUILD.EMC's
+        /// REFINERY arm when `RefineSpice` returns 0 (drained).
+        public static func findFreePosition(
+            structureIndex: Int,
+            checkForSpice: Bool,
+            structures: StructurePool,
+            units: UnitPool,
+            host: Scripting.Host,
+            rng: () -> UInt8
+        ) -> UInt16 {
+            guard structureIndex >= 0, structureIndex < StructurePool.capacityHard else { return 0 }
+            let s = structures[structureIndex]
+            guard s.isUsed, s.isAllocated else { return 0 }
+            guard let info = StructureInfo.lookup(s.type) else { return 0 }
+
+            // OpenDUNE's `packed = Tile_PackTile(Tile_Center(s->o.position))`
+            // — `Tile_Center` only normalises the sub-tile pixel offset,
+            // it doesn't shift to the layout centroid. So `packed` is the
+            // anchor (top-left) packed tile.
+            let ax = Int(s.positionX) / 256
+            let ay = Int(s.positionY) / 256
+            let packed = UInt16((ay & 0x3F) << 6 | (ax & 0x3F))
+
+            let spicePacked: UInt16 = checkForSpice
+                ? (host.searchSpice?(packed, 10, -1) ?? 0)
+                : 0
+
+            var bestPacked: UInt16 = 0
+            var bestDistance: UInt16 = 0
+            let deltas = info.layout.packedDeltasAround
+            let startByte = rng()
+            var i = Int(startByte & 0xF)
+            for _ in 0..<16 {
+                defer { i = (i + 1) & 0xF }
+                let offset = deltas[i]
+                if offset == 0 { continue }
+                let curPackedInt = Int(packed) + Int(offset)
+                if curPackedInt < 0 || curPackedInt > 0xFFFF { continue }
+                let curPacked = UInt16(curPackedInt)
+                if let validate = host.isValidPosition, !validate(curPacked) { continue }
+
+                // `Map_GetLandscapeType` filter — skip walls /
+                // entirely / partial mountains (`src/structure.c:1284`).
+                if let lookup = host.landscapeAt {
+                    let raw = Int(lookup(curPacked))
+                    let type = LandscapeType(rawValue: raw) ?? .normalSand
+                    if type == .wall || type == .entirelyMountain || type == .partialMountain {
+                        continue
+                    }
+                }
+
+                // Tile-occupancy: skip if any allocated unit OR
+                // structure footprint covers the candidate tile.
+                let tx = Int(curPacked & 0x3F)
+                let ty = Int((curPacked >> 6) & 0x3F)
+                var hasOccupant = false
+                for u in units.slots where u.isUsed && u.isAllocated && !u.isNotOnMap {
+                    let utx = Int(u.positionX) / 256
+                    let uty = Int(u.positionY) / 256
+                    if utx == tx && uty == ty { hasOccupant = true; break }
+                }
+                if hasOccupant { continue }
+                if structureOwnerAt(pool: structures, tileX: tx, tileY: ty) != nil {
+                    continue
+                }
+
+                if !checkForSpice { return curPacked }
+
+                let d = packedDistanceForFree(curPacked, spicePacked)
+                if bestDistance == 0 {
+                    bestPacked = curPacked
+                    bestDistance = d
+                } else if d < bestDistance {
+                    bestPacked = curPacked
+                    bestDistance = d
+                }
+            }
+            return bestPacked
+        }
+
+        /// Port of OpenDUNE's `Tile_GetDistancePacked`
+        /// (`src/tile.c:88..94`). Unpacks both packed tiles to
+        /// pixel-tile coords (each with the 0x80 sub-tile centre
+        /// offset baked in), runs `Tile_GetDistance` (chebyshev plus
+        /// half-shorter), then shifts right 8 to get a tile-unit
+        /// distance. Used by `findFreePosition`'s tie-break (closest
+        /// to spice).
+        private static func packedDistanceForFree(_ a: UInt16, _ b: UInt16) -> UInt16 {
+            let ax = Int(a & 0x3F) * 256 + 0x80
+            let ay = Int((a >> 6) & 0x3F) * 256 + 0x80
+            let bx = Int(b & 0x3F) * 256 + 0x80
+            let by = Int((b >> 6) & 0x3F) * 256 + 0x80
+            let dx = abs(ax - bx)
+            let dy = abs(ay - by)
+            let mn = min(dx, dy)
+            let mx = max(dx, dy)
+            // `Tile_GetDistance` returns `mx + mn/2` in pixel units;
+            // `>> 8` gives tile units.
+            return UInt16(clamping: (mx + mn / 2) >> 8)
+        }
+
         /// Walks the non-reserved structure pool and returns the
         /// houseID of the structure whose footprint covers `(tileX,
         /// tileY)`, or nil when none does. Used by the adjacency gate

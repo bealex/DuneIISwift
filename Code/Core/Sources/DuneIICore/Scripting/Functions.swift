@@ -2060,6 +2060,142 @@ extension Scripting {
             }
         }
 
+        /// `Script_Structure_Unknown0C5A` (structure slot 0x07) — port of
+        /// `src/script/structure.c:237..292`. Ejects the linked unit
+        /// from the structure: finds a free perimeter tile via
+        /// `Structure_FindFreePosition`, places the unit there, chains
+        /// `s.linkedID = u.linkedID; u.linkedID = 0xFF`, transitions
+        /// state to IDLE when the chain empties, clears
+        /// `s.scriptVariable4`, and sets the unit's body+turret
+        /// orientation toward the eject vector.
+        ///
+        /// SAVE007 tick 9246 surfaced this: BUILD.EMC's REFINERY arm
+        /// reaches slot 0x07 after `RefineSpice` finishes draining the
+        /// docked harvester's amount. Without the port, Swift's
+        /// `noOperation` stub returned 0, the script branched back into
+        /// the Delay loop, and `s2.state` stayed at READY (2) instead
+        /// of transitioning to IDLE (0).
+        ///
+        /// Skipped from the OpenDUNE port (deferred — none observed
+        /// at the SAVE007 frontier under test): the carryall winger
+        /// branch (`src/script/structure.c:252..262`); the unveil-tile
+        /// `Unit_HouseUnitCount_Add` side-effect (touches
+        /// `unitCountAllied` / `unitCountEnemy`, not the `unitCount`
+        /// field in current parity schema); `Unit_FindClosestRefinery`
+        /// origin assignment (only fires when `originEncoded == 0`
+        /// — the harvester re-emerging from a refinery already has
+        /// its origin set).
+        public static func makeUnknown0C5AStructure(
+            host: Host, source: RandomSource
+        ) -> VM.Function {
+            return { _ in
+                guard let (sIdx, s) = currentStructure(host: host) else { return 0 }
+                if s.linkedID == 0xFF { return 0 }
+                let uIdx = Int(s.linkedID)
+                guard uIdx >= 0, uIdx < host.units.slots.count else { return 0 }
+                let u = host.units[uIdx]
+                guard u.isUsed, u.isAllocated else { return 0 }
+
+                // Ground branch — winger eject deferred. SAVE007 only
+                // exercises the harvester path.
+                let info = Simulation.UnitInfo.lookup(u.type)
+                let isHarvester = u.type == 16 /* HARVESTER */
+                let position = Simulation.Structures.findFreePosition(
+                    structureIndex: sIdx,
+                    checkForSpice: isHarvester,
+                    structures: host.structures,
+                    units: host.units,
+                    host: host,
+                    rng: { source.toolsNext() }
+                )
+                if position == 0 { return 0 }
+
+                let tx = Int(position & 0x3F)
+                let ty = Int((position >> 6) & 0x3F)
+                let centerX = UInt16(tx * 256 + 128)
+                let centerY = UInt16(ty * 256 + 128)
+
+                // Compute eject orientation (body) before mutating
+                // unit position — `Tile_GetDirection(s.position,
+                // u.position)` after `u.position = tile`. Use the new
+                // tile center vs the structure anchor.
+                let sPos = Pos32(x: s.positionX, y: s.positionY)
+                let uPos = Pos32(x: centerX, y: centerY)
+                // `Tile_GetDirection(s.position, u.position) & 0xE0`
+                // — 8-octant snap for the body orientation
+                // (`src/script/structure.c:276`).
+                let orientation = UInt16(Pos32.direction(from: sPos, to: uPos)) & 0xE0
+
+                var u2 = host.units[uIdx]
+                u2.isNotOnMap = false
+                u2.positionX = centerX
+                u2.positionY = centerY
+                // Match `Unit_SetPosition` (`src/unit.c:866..869`):
+                // clear targetMove + currentDestination + targetAttack.
+                u2.scriptVariable4 = 0
+                u2.currentDestinationX = 0
+                u2.currentDestinationY = 0
+                u2.targetMove = 0
+                u2.targetAttack = 0
+                u2.spriteOffset = 0
+                // OpenDUNE bumps `u.seenByHouses |= s.seenByHouses`
+                // (`src/script/structure.c:267`); StructureSlot doesn't
+                // expose seenByHouses today, so this is deferred — the
+                // current parity schema doesn't compare seenByHouses.
+
+                // Unit_SetAction(actionAI) for harvesters / non-player.
+                // SAVE007 u39 is the player's harvester → also actionAI
+                // path because of the type override at
+                // `src/unit.c:878`.
+                if let info {
+                    let action = info.actionAI
+                    u2.actionID = action
+                    u2.nextActionID = 0xFF
+                    // Mirror Script_Unit_SetAction's switchType=0
+                    // hard-reset semantics for the slot's state, so the
+                    // engine reload picks up the new action on the next
+                    // unit-tick.
+                    if uIdx >= 0, uIdx < host.unitActionLoaded.count {
+                        host.unitActionLoaded[uIdx] = -1  // force reload
+                    }
+                }
+
+                // Body orientation rotates instantly; turret follows
+                // body on level=1 with rotateInstantly. Mirrors lines
+                // 276..277.
+                u2.orientationCurrent = Int8(bitPattern: UInt8(truncatingIfNeeded: orientation))
+                u2.orientationTarget = u2.orientationCurrent
+                u2.orientationSpeed = 0
+                if Simulation.UnitInfo.lookup(u2.type)?.hasTurret == true {
+                    u2.turretOrientationCurrent = u2.orientationCurrent
+                    u2.turretOrientationTarget = u2.orientationCurrent
+                    u2.turretOrientationSpeed = 0
+                }
+
+                host.units[uIdx] = u2
+
+                // Chain linkedID + clear structure state.
+                var s2 = host.structures[sIdx]
+                let nextHead = u2.linkedID
+                s2.linkedID = nextHead
+                if s2.linkedID == 0xFF {
+                    s2.state = 0  // STRUCTURE_STATE_IDLE
+                }
+                s2.scriptVariable4 = 0
+                host.structures[sIdx] = s2
+
+                var u3 = host.units[uIdx]
+                u3.linkedID = 0xFF
+                host.units[uIdx] = u3
+
+                Log.info(
+                    "Unknown0C5A s\(sIdx)→u\(uIdx) eject tile=(\(tx),\(ty)) state→\(s2.state) action→\(u2.actionID) chain→0x\(String(nextHead, radix: 16))",
+                    tracer: .label("dock")
+                )
+                return 1
+            }
+        }
+
         // MARK: Batch 5 — further generics (no new state)
 
         /// `Script_General_DelayRandom` — `(Tools_Random_256() * peek(1)) / 256 / 5`.

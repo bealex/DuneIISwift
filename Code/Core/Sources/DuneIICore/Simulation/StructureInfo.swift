@@ -112,6 +112,36 @@ extension Simulation {
             result.append((x: -1, y: -1))
             return result
         }
+
+        /// Byte-for-byte port of OpenDUNE's
+        /// `g_table_structure_layoutTilesAround[layout][16]` at
+        /// `src/table/structureinfo.c:1305..1313`. Each entry is a
+        /// PACKED-tile delta to add to the structure's anchor packed
+        /// position; trailing `0` entries indicate "no more candidate
+        /// tiles" (`Structure_FindFreePosition` skips them at
+        /// `src/structure.c:1279`). Different from
+        /// `adjacentOffsets`'s clockwise walk: this table is the
+        /// authoritative ordering used by the RNG-driven free-position
+        /// search, so we port it exactly to keep tile choice in sync
+        /// across the two engines.
+        public var packedDeltasAround: [Int16] {
+            switch self {
+            case .s1x1:
+                return [-64, -64+1, 1, 64+1, 64, 64-1, -1, -64-1, 0, 0, 0, 0, 0, 0, 0, 0]
+            case .s2x1:
+                return [-64, -64+1, -64+2, 2, 64+2, 64+1, 64, 64-1, -1, -64-1, 0, 0, 0, 0, 0, 0]
+            case .s1x2:
+                return [-64, -64+1, 1, 64+1, 128+1, 128, 128-1, 64-1, -1, -64-1, 0, 0, 0, 0, 0, 0]
+            case .s2x2:
+                return [-64, -64+1, -64+2, 2, 64+2, 128+2, 128+1, 128, 128-1, 64-1, -1, -64-1, 0, 0, 0, 0]
+            case .s2x3:
+                return [-64, -64+1, -64+2, 2, 64+2, 128+2, 192+2, 192+1, 192, 192-1, 128-1, 64-1, -1, -64-1, 0, 0]
+            case .s3x2:
+                return [-64, -64+1, -64+2, -64+3, 3, 64+3, 128+3, 128+2, 128+1, 128, 128-1, 64-1, -1, -64-1, 0, 0]
+            case .s3x3:
+                return [-64, -64+1, -64+2, -64+3, 3, 64+3, 128+3, 192+3, 192+2, 192+1, 192, 192-1, 128-1, 64-1, -1, -64-1]
+            }
+        }
     }
 
     /// Per-structure-type stats, trimmed to what our wired host functions

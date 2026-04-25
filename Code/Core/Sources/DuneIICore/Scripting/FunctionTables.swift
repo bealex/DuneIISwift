@@ -159,7 +159,8 @@ extension Scripting.Functions {
         // 0x05 — Script_General_DisplayText
         table[0x05] = Scripting.Functions.makeDisplayText(host: host)
         // 0x06 — Script_Structure_Unknown11B9 (not ported)
-        // 0x07 — Script_Structure_Unknown0C5A (not ported; carryall release)
+        // 0x07 — Script_Structure_Unknown0C5A
+        table[0x07] = Scripting.Functions.makeUnknown0C5AStructure(host: host, source: source)
         // 0x08 — Script_Structure_FindTargetUnit
         table[0x08] = Scripting.Functions.makeFindTargetUnitStructure(host: host)
         // 0x09 — Script_Structure_RotateTurret
