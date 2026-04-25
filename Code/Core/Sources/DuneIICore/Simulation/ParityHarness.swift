@@ -138,11 +138,21 @@ extension Simulation {
             //     penalty (res -= res/4 + res/8).
             //   - Final step: `res ^ 0xFF` inverts the speed to an
             //     approximate cost.
-            // Structure-occupancy is handled implicitly: the
-            // `landscapeAt` closure returns `LandscapeType.structure`
-            // (`rawValue=12`), and `LandscapeInfo[12].movementSpeed`
-            // is 0 for every non-winger type, which already trips the
-            // `res == 0 → 256` branch.
+            // Structure-tile handling matches OpenDUNE
+            // `Unit_GetTileEnterScore` (`src/unit.c:2357..2362`):
+            // when the tile holds a structure, replace the normal
+            // landscape lookup with `Unit_IsValidMovementIntoStructure`.
+            // For same-house enterable structures (REFINERY for
+            // HARVESTER, etc.), this returns a low cost (`-1`) so the
+            // pathfinder routes the unit *to* the structure tile.
+            // Without this branch the closure falls through to
+            // `LandscapeType.structure` which has `movementSpeed[*] = 0`
+            // and reports the tile impassable — diverging from OpenDUNE
+            // on the harvester→refinery move (SAVE007 tick 5271:
+            // OpenDUNE routes (22,23) → (25,23) east in 3 steps, Swift
+            // bails out one tile short). Structure check is wired AFTER
+            // `host` is constructed below since the closure needs to
+            // peek at `host.currentObject` and `host.structures`.
             let tileEnterScore: (_ packed: UInt16, _ orient8: UInt8, _ movementType: Simulation.MovementType) -> Int32 = { packed, orient8, movementType in
                 let tx = Int(packed & 0x3F)
                 let ty = Int((packed >> 6) & 0x3F)
@@ -184,6 +194,44 @@ extension Simulation {
             // so hunting enemies don't halt one tile short of a CYARD;
             // parity needs the faithful behaviour.
             host.retargetImpassableDst = false
+            // Now that `host` exists, wrap `tileEnterScore` with the
+            // structure-tile branch from `Unit_GetTileEnterScore`
+            // (`src/unit.c:2357..2362`). Inner closure captures `host`
+            // weakly to avoid a retain cycle through `host`.
+            let baseScore = tileEnterScore
+            host.tileEnterScore = { [weak host] packed, orient8, mt in
+                if let host = host {
+                    // Look up a structure footprint covering this tile.
+                    for sIdx in host.structures.findArray {
+                        let s = host.structures.slots[sIdx]
+                        let ax = Int(s.positionX) / 256
+                        let ay = Int(s.positionY) / 256
+                        let fp = Simulation.Structures.footprintTiles(
+                            type: s.type, anchorX: ax, anchorY: ay
+                        )
+                        let tx = Int(packed & 0x3F)
+                        let ty = Int((packed >> 6) & 0x3F)
+                        guard fp.contains(where: { $0.0 == tx && $0.1 == ty }) else { continue }
+                        // Found a structure on this tile. Match
+                        // `Unit_IsValidMovementIntoStructure` for the
+                        // current scripted unit.
+                        guard case .unit(let uIdx)? = host.currentObject,
+                              uIdx >= 0, uIdx < host.units.slots.count else {
+                            return 256
+                        }
+                        let u = host.units.slots[uIdx]
+                        if u.houseID != s.houseID { return 256 }
+                        if Simulation.Structures.canUnitEnter(unitType: u.type, structure: s) {
+                            // OpenDUNE returns `-Unit_IsValidMovementIntoStructure(...)` =
+                            // `-1` (signed int16). Pathfinder treats
+                            // negative scores as low-cost.
+                            return -1
+                        }
+                        return 256
+                    }
+                }
+                return baseScore(packed, orient8, mt)
+            }
             // `Script_General_SearchSpice` (slot 0x29) — wire to
             // `Scheduler.findSpiceNear` so the harvester's UNIT.EMC
             // HARVEST loop can find a fresh spice tile when its
