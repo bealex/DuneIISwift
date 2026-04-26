@@ -218,6 +218,21 @@ extension Simulation {
         /// Each fire reschedules at `+ 10800` ticks.
         private var nextHousePowerMaintenanceGate: UInt32 = 70
 
+        /// Next `timerGame` at which `tickHouseHouse` fires. Port of
+        /// OpenDUNE `s_tickHouseHouse` (`src/house.c:40, 64..67`):
+        ///   if (s_tickHouseHouse <= g_timerGame) {
+        ///       tickHouse = true;
+        ///       s_tickHouseHouse = g_timerGame + 900;
+        ///   }
+        /// Static, zero-initialised — fires on the first post-load tick
+        /// then every 900 ticks. Drives the player credit-storage clamp
+        /// (`src/house.c:184..198`): credits exceeding `creditsStorage`
+        /// are dropped on each fire. Without this gate, Swift's house[1]
+        /// credits creep past the storage cap (1005 in SAVE007) and
+        /// diverge from OpenDUNE at the first cadence boundary where
+        /// the cap is exceeded — tick 15301 in SAVE007.
+        private var nextHouseHouseGate: UInt32 = 0
+
         /// Port of OpenDUNE's `s_tickStructureScript` cadence gate
         /// (`src/structure.c:71..74`). Static state in OpenDUNE,
         /// initialized to 0 — first post-load tick fires immediately,
@@ -1083,6 +1098,16 @@ extension Simulation {
             // OpenDUNE runs this at the end of `GameLoop_House`; we
             // match that ordering by firing after all structure /
             // starport passes have settled.
+            // Per-house storage clamp + bookkeeping. Port of
+            // `src/house.c:184..198` (the `tickHouse` branch). Fires on
+            // the OpenDUNE 900-tick `s_tickHouseHouse` cadence; only the
+            // credits-vs-creditsStorage clamp is ported today (the other
+            // side-effects — `House_EnsureHarvesterAvailable`,
+            // `House_CalculatePowerAndCredit`, timer decrements — surface
+            // when downstream parity tests demand them).
+            if perTickCadenceGatesEnabled {
+                tickHouseHouse()
+            }
             tickHousePowerMaintenance()
             // Recount per-house `unitCount` at end-of-tick to match
             // OpenDUNE's incremental `Unit_Allocate`/`Unit_Free`
@@ -1094,6 +1119,30 @@ extension Simulation {
             // `unitCount` diffs only against the end-of-tick snapshot.
             host.houses.recount(from: host.units)
             host.currentObject = nil
+        }
+
+        /// Port of OpenDUNE's `tickHouse` branch (`src/house.c:184..198`).
+        /// For each allocated house: clamp `credits` down to
+        /// `creditsStorage` (player branch is `max(creditsStorage,
+        /// g_playerCreditsNoSilo)` but `g_playerCreditsNoSilo` resets to
+        /// 0 once any storage exists — SAVE007's player has 1005 storage,
+        /// so the floor is just `creditsStorage`). The display-text
+        /// side-effects are intentionally skipped — Swift doesn't surface
+        /// the "spice storage available, spice is lost" UI string yet.
+        private mutating func tickHouseHouse() {
+            guard nextHouseHouseGate <= timerGame else { return }
+            nextHouseHouseGate = timerGame &+ 900
+            for idx in host.houses.findArray {
+                var h = host.houses[idx]
+                if h.credits > h.creditsStorage {
+                    Log.debug(
+                        "house-storage-clamp house=\(idx) credits=\(h.credits) -> \(h.creditsStorage)",
+                        tracer: .label("economy")
+                    )
+                    h.credits = h.creditsStorage
+                    host.houses[idx] = h
+                }
+            }
         }
 
         private mutating func tickHousePowerMaintenance() {
