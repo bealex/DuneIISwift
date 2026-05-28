@@ -42,4 +42,22 @@ struct RendererTests {
         let palette = try Palette(Data(count: 768))
         #expect(IndexedImage.cgImage(indices: [ 0, 1 ], width: 4, height: 4, palette: palette) == nil)
     }
+
+    @Test("palette animation shifts the wind-trap index toward its target each 5 ticks")
+    func paletteAnimation() throws {
+        var bytes = [UInt8](repeating: 0, count: 768)
+        bytes[10 * 3] = 20; bytes[10 * 3 + 1] = 20; bytes[10 * 3 + 2] = 63    // entry 10 = blue
+        bytes[223 * 3] = 10; bytes[223 * 3 + 1] = 10; bytes[223 * 3 + 2] = 10 // wind-trap entry, mid
+        let base = try Palette(bytes: bytes)
+
+        // tick 0 and 4: not yet a multiple of 5, unchanged.
+        #expect(PaletteAnimator.animatedPalette(base: base, tick: 0).colors[223] == Palette.Color(red: 10, green: 10, blue: 10))
+        #expect(PaletteAnimator.animatedPalette(base: base, tick: 4).colors[223] == Palette.Color(red: 10, green: 10, blue: 10))
+        // tick 5: one step toward entry 12 (black) -> (9,9,9).
+        #expect(PaletteAnimator.animatedPalette(base: base, tick: 5).colors[223] == Palette.Color(red: 9, green: 9, blue: 9))
+    }
+}
+
+private extension Palette {
+    init(bytes: [UInt8]) throws { try self.init(Data(bytes)) }
 }

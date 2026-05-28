@@ -1,0 +1,9 @@
+# Palette-cycled indices render as magenta placeholders if not animated
+
+**Finding:** Dune II animates specific palette *indices* over time (not pixels). `IBM.PAL` stores indices **223** (wind-trap / structure power light), **239** (repair flash), and **255** (selection marker) as **magenta placeholders** — they are meant to be overwritten every GUI tick by `GUI_PaletteAnimate`. A static renderer that ignores palette cycling shows solid magenta wherever those indices appear (e.g. the wind-trap's "purple pixels"). The cycling is hardcoded (`gui/gui.c:643`, not file-loaded): index 223 pulses between palette entries 12 (black) and 10 (blue), one RGB step per component every 5 ticks; 255 toward 15/13 (four steps every 3 ticks); 239 copies entry 15 or 6 every 60 ticks. Tick = 1/60 s.
+
+**Why it matters:** Correct rendering *requires* palette cycling — without it, animated tiles look wrong (magenta). A tile is palette-animated iff its ICN `RPAL` row references 223/239/255.
+
+**Evidence:** `PaletteAnimator` in `Code/Frameworks/DuneIIRenderer/PaletteAnimator.swift`; test in `Code/Tests/RendererTests/RendererTests.swift`; OpenDUNE `gui/gui.c:620-713`.
+
+**How to apply:** Render with the time-cycled palette (`PaletteAnimator.animatedPalette(base:tick:)`), not the raw `IBM.PAL`, for any tile/sprite that may use indices 223/239/255. The render-test app does this by default ("Palette cycling" toggle, on).

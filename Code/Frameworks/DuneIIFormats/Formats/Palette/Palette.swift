@@ -9,6 +9,12 @@ public struct Palette: Equatable {
         public var red: UInt8       // 0...63
         public var green: UInt8
         public var blue: UInt8
+
+        public init(red: UInt8, green: UInt8, blue: UInt8) {
+            self.red = red
+            self.green = green
+            self.blue = blue
+        }
     }
 
     public enum DecodeError: Error, Equatable {
@@ -18,6 +24,11 @@ public struct Palette: Equatable {
     public static let colorCount = 256
 
     public let colors: [Color]
+
+    /// Build a palette directly from 256 colors (used by palette-animation, which mutates entries).
+    public init(colors: [Color]) {
+        self.colors = colors
+    }
 
     public init(_ data: Data) throws {
         guard data.count >= Palette.colorCount * 3 else { throw DecodeError.wrongSize }

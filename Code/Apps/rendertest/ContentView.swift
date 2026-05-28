@@ -74,6 +74,19 @@ struct ContentView: View {
 }
 
 struct AssetDetailView: View {
+    struct RawFrame {
+        let indices: [UInt8]
+        let width: Int
+        let height: Int
+        let hasLookup: Bool
+    }
+
+    enum RemapKind {
+        case none
+        case sprite
+        case tile
+    }
+
     @Environment(AssetLibrary.self) private var library
 
     let asset: AssetLibrary.Asset
@@ -81,23 +94,35 @@ struct AssetDetailView: View {
     let scale: Int
     let fps: Double
 
-    @State private var frames: [CGImage] = []
-    @State private var sheet: CGImage?
+    @State private var rawFrames: [RawFrame] = []
+    @State private var displayPalette: Palette?
+    @State private var transparentIndex: Int?
+    @State private var remapKind: RemapKind = .none
+    @State private var paletteAnimatable = false
     @State private var sound: Voc.Sound?
     @State private var scriptText: String?
     @State private var info = ""
+
     @State private var startDate = Date()
+    @State private var isPlaying = false
+    @State private var frameIndex = 0
+    @State private var animatePalette = true
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text(info).font(.callout).foregroundStyle(.secondary)
 
-                if !frames.isEmpty {
-                    GroupBox("Animated (\(Int(fps)) fps)") { animatedPreview }
-                    GroupBox("All frames") { framesGrid }
+                if !rawFrames.isEmpty {
+                    GroupBox {
+                        previewSection
+                    } label: {
+                        Text("Preview — \(rawFrames.count) frame\(rawFrames.count == 1 ? "" : "s")")
+                    }
+                    if rawFrames.count > 1 {
+                        GroupBox("All frames") { framesGrid }
+                    }
                 }
-                if let sheet { GroupBox("Image") { scaled(sheet) } }
                 if let sound { GroupBox("Sound") { soundView(sound) } }
                 if let scriptText {
                     GroupBox("Disassembly") {
@@ -111,25 +136,67 @@ struct AssetDetailView: View {
             .padding()
         }
         .task(id: asset.id) { decode() }
-        .onChange(of: house) { _, _ in decode() }
+        .onChange(of: isPlaying) { _, playing in if playing { startDate = Date() } }
     }
 
-    // MARK: - Subviews
+    // MARK: - Preview
 
-    private var animatedPreview: some View {
-        TimelineView(.animation) { context in
-            let elapsed = context.date.timeIntervalSince(startDate)
-            let index = frames.isEmpty ? 0 : Int(elapsed * fps) % frames.count
-            scaled(frames[index])
+    private var previewSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 16) {
+                Toggle(isOn: $isPlaying) {
+                    Label(isPlaying ? "Pause" : "Play", systemImage: isPlaying ? "pause.fill" : "play.fill")
+                }
+                .toggleStyle(.button)
+
+                if !isPlaying, rawFrames.count > 1 {
+                    Stepper("Frame \(currentFrame) / \(rawFrames.count - 1)", value: $frameIndex, in: 0 ... (rawFrames.count - 1))
+                        .fixedSize()
+                }
+                if paletteAnimatable {
+                    Toggle("Palette cycling", isOn: $animatePalette).toggleStyle(.switch)
+                }
+                Spacer()
+            }
+            preview
+        }
+    }
+
+    private var currentFrame: Int { min(max(frameIndex, 0), max(rawFrames.count - 1, 0)) }
+
+    @ViewBuilder
+    private var preview: some View {
+        if isPlaying || (paletteAnimatable && animatePalette) {
+            TimelineView(.animation) { context in
+                let elapsed = context.date.timeIntervalSince(startDate)
+                let tick = max(Int(elapsed * 60), 0)
+                let index = (isPlaying && rawFrames.count > 1) ? Int(elapsed * fps) % rawFrames.count : currentFrame
+                previewImage(frame: index, tick: tick)
+            }
+        } else {
+            previewImage(frame: currentFrame, tick: 0)
+        }
+    }
+
+    @ViewBuilder
+    private func previewImage(frame: Int, tick: Int) -> some View {
+        let raw = rawFrames[min(max(frame, 0), rawFrames.count - 1)]
+        if let image = colorize(raw, palette: previewPalette(tick: tick)) {
+            scaled(image)
+        } else {
+            Color.clear.frame(width: 64, height: 64)
         }
     }
 
     private var framesGrid: some View {
-        LazyVGrid(columns: [ GridItem(.adaptive(minimum: 72), spacing: 12) ], spacing: 12) {
-            ForEach(Array(frames.enumerated()), id: \.offset) { index, image in
+        LazyVGrid(columns: [ GridItem(.adaptive(minimum: 80), spacing: 12) ], spacing: 12) {
+            ForEach(rawFrames.indices, id: \.self) { index in
+                let raw = rawFrames[index]
                 VStack(spacing: 4) {
-                    thumbnail(image)
-                    Text("\(index)").font(.caption2).foregroundStyle(.secondary)
+                    if let image = colorize(raw, palette: displayPalette ?? library.palette) {
+                        thumbnail(image)
+                    }
+                    Text("\(index) · \(raw.width)×\(raw.height)").font(.caption2).foregroundStyle(.secondary)
                 }
             }
         }
@@ -166,13 +233,38 @@ struct AssetDetailView: View {
             .background(Color(white: 0.15))
     }
 
+    // MARK: - Colorizing (house remap + palette cycling apply live here)
+
+    private func previewPalette(tick: Int) -> Palette {
+        let base = displayPalette ?? library.palette
+        return (paletteAnimatable && animatePalette) ? PaletteAnimator.animatedPalette(base: base, tick: tick) : base
+    }
+
+    private func colorize(_ frame: RawFrame, palette: Palette) -> CGImage? {
+        let useSprite = remapKind == .sprite && frame.hasLookup
+        let remap: (UInt8) -> UInt8 = { index in
+            if remapKind == .tile { return HouseRemap.tile(index, house: house) }
+            if useSprite { return HouseRemap.sprite(index, house: house) }
+            return index
+        }
+        return IndexedImage.cgImage(
+            indices: frame.indices, width: frame.width, height: frame.height,
+            palette: palette, transparentIndex: transparentIndex, remap: remap
+        )
+    }
+
     // MARK: - Decode
 
     private func decode() {
-        frames = []
-        sheet = nil
+        rawFrames = []
+        displayPalette = nil
+        transparentIndex = nil
+        remapKind = .none
+        paletteAnimatable = false
         sound = nil
         scriptText = nil
+        isPlaying = false
+        frameIndex = 0
         startDate = Date()
 
         guard let data = library.data(for: asset) else { info = "(asset data missing)"; return }
@@ -180,37 +272,42 @@ struct AssetDetailView: View {
         switch asset.kind {
             case .sprite:
                 guard let set = try? Shp.FrameSet(data) else { info = "(SHP decode failed)"; return }
-                frames = set.frames.compactMap { frame in
-                    guard frame.width > 0, frame.height > 0 else { return nil }
-
-                    let remap: (UInt8) -> UInt8 = frame.hasLookup ? { HouseRemap.sprite($0, house: house) } : { $0 }
-                    return IndexedImage.cgImage(
-                        indices: frame.pixels, width: frame.width, height: frame.height,
-                        palette: library.palette, transparentIndex: 0, remap: remap
-                    )
+                rawFrames = set.frames.compactMap { frame in
+                    frame.width > 0 && frame.height > 0
+                        ? RawFrame(indices: frame.pixels, width: frame.width, height: frame.height, hasLookup: frame.hasLookup)
+                        : nil
                 }
+                transparentIndex = 0
+                remapKind = .sprite
+                paletteAnimatable = true
                 info = "\(set.frames.count) frames"
             case .image:
                 guard let image = try? Cps.decode(data) else { info = "(CPS decode failed)"; return }
-                sheet = IndexedImage.cgImage(
-                    indices: image.pixels, width: image.width, height: image.height,
-                    palette: image.palette ?? library.palette
-                )
+                rawFrames = [ RawFrame(indices: image.pixels, width: image.width, height: image.height, hasLookup: false) ]
+                displayPalette = image.palette
+                paletteAnimatable = true
                 info = "\(image.width)×\(image.height)"
             case .tiles:
                 guard let tiles = try? Icn.TileSet(data) else { info = "(ICN decode failed)"; return }
-                sheet = tileSheet(tiles)
+                let sheet = tileSheet(tiles)
+                rawFrames = [ RawFrame(indices: sheet.indices, width: sheet.width, height: sheet.height, hasLookup: false) ]
+                remapKind = .tile
+                paletteAnimatable = true
                 info = "\(tiles.tileCount) tiles · \(tiles.tileWidth)×\(tiles.tileHeight) (16 per row)"
             case .animation:
                 guard let animation = try? Wsa.Animation(data) else { info = "(WSA decode failed)"; return }
-                let palette = animation.palette ?? library.palette
-                frames = animation.frames.compactMap {
-                    IndexedImage.cgImage(indices: $0, width: animation.width, height: animation.height, palette: palette)
+                rawFrames = animation.frames.map {
+                    RawFrame(indices: $0, width: animation.width, height: animation.height, hasLookup: false)
                 }
+                displayPalette = animation.palette
+                paletteAnimatable = true
                 info = "\(animation.frames.count) frames · \(animation.width)×\(animation.height)"
             case .font:
                 guard let font = try? Fnt.Font(data) else { info = "(FNT decode failed)"; return }
-                sheet = fontSheet(font)
+                let sheet = fontSheet(font)
+                rawFrames = [ RawFrame(indices: sheet.indices, width: sheet.width, height: sheet.height, hasLookup: false) ]
+                displayPalette = AssetDetailView.monochrome
+                transparentIndex = 0
                 info = "\(font.glyphs.count) glyphs · height \(font.height)"
             case .sound:
                 sound = try? Voc.decode(data)
@@ -221,7 +318,7 @@ struct AssetDetailView: View {
         }
     }
 
-    private func tileSheet(_ tiles: Icn.TileSet) -> CGImage? {
+    private func tileSheet(_ tiles: Icn.TileSet) -> (indices: [UInt8], width: Int, height: Int) {
         let perRow = 16
         let rows = max((tiles.tileCount + perRow - 1) / perRow, 1)
         let width = tiles.tileWidth * perRow
@@ -238,13 +335,10 @@ struct AssetDetailView: View {
                 }
             }
         }
-        return IndexedImage.cgImage(
-            indices: indices, width: width, height: height,
-            palette: library.palette, remap: { HouseRemap.tile($0, house: house) }
-        )
+        return (indices, width, height)
     }
 
-    private func fontSheet(_ font: Fnt.Font) -> CGImage? {
+    private func fontSheet(_ font: Fnt.Font) -> (indices: [UInt8], width: Int, height: Int) {
         let perRow = 16
         let cellWidth = max(font.maxWidth, 1)
         let cellHeight = max(font.height, 1)
@@ -266,10 +360,7 @@ struct AssetDetailView: View {
                 }
             }
         }
-        return IndexedImage.cgImage(
-            indices: indices, width: width, height: height,
-            palette: AssetDetailView.monochrome, transparentIndex: 0
-        )
+        return (indices, width, height)
     }
 
     private func emcText(_ program: Emc.Program) -> String {
