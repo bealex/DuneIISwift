@@ -27,9 +27,9 @@ struct ContentView: View {
             } else {
                 List(selection: $selection) {
                     ForEach(library.categories) { category in
-                        Section("\(category.kind.rawValue) — \(category.assets.count)") {
+                        Section("\(category.title) — \(category.assets.count)") {
                             ForEach(category.assets) { asset in
-                                Text(asset.name)
+                                Text(asset.displayName)
                                     .font(.system(.body, design: .monospaced))
                                     .tag(asset)
                             }
@@ -144,13 +144,15 @@ struct AssetDetailView: View {
     private var previewSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 16) {
-                Toggle(isOn: $isPlaying) {
-                    Label(isPlaying ? "Pause" : "Play", systemImage: isPlaying ? "pause.fill" : "play.fill")
+                if canPlay {
+                    Toggle(isOn: $isPlaying) {
+                        Label(isPlaying ? "Pause" : "Play", systemImage: isPlaying ? "pause.fill" : "play.fill")
+                    }
+                    .toggleStyle(.button)
                 }
-                .toggleStyle(.button)
 
-                if !isPlaying, rawFrames.count > 1 {
-                    Stepper("Frame \(currentFrame) / \(rawFrames.count - 1)", value: $frameIndex, in: 0 ... (rawFrames.count - 1))
+                if (!isPlaying || !canPlay), rawFrames.count > 1 {
+                    Stepper("\(stepLabel) \(currentFrame) / \(rawFrames.count - 1)", value: $frameIndex, in: 0 ... (rawFrames.count - 1))
                         .fixedSize()
                 }
                 if paletteAnimatable {
@@ -164,13 +166,17 @@ struct AssetDetailView: View {
 
     private var currentFrame: Int { min(max(frameIndex, 0), max(rawFrames.count - 1, 0)) }
 
+    // Directional groups are facing-selected, not time-animated — no Play, just a facing stepper.
+    private var canPlay: Bool { asset.groupKind != .directional }
+    private var stepLabel: String { asset.groupKind == .directional ? "Facing" : "Frame" }
+
     @ViewBuilder
     private var preview: some View {
-        if isPlaying || (paletteAnimatable && animatePalette) {
+        if (isPlaying && canPlay) || (paletteAnimatable && animatePalette) {
             TimelineView(.animation) { context in
                 let elapsed = context.date.timeIntervalSince(startDate)
                 let tick = max(Int(elapsed * 60), 0)
-                let index = (isPlaying && rawFrames.count > 1) ? Int(elapsed * fps) % rawFrames.count : currentFrame
+                let index = (isPlaying && canPlay && rawFrames.count > 1) ? Int(elapsed * fps) % rawFrames.count : currentFrame
                 previewImage(frame: index, tick: tick)
             }
         } else {
@@ -225,7 +231,7 @@ struct AssetDetailView: View {
     }
 
     private func thumbnail(_ image: CGImage) -> some View {
-        let thumbScale = min(scale, 2)
+        let thumbScale = scale
         return Image(decorative: image, scale: 1)
             .interpolation(.none)
             .resizable()
@@ -272,7 +278,8 @@ struct AssetDetailView: View {
         switch asset.kind {
             case .sprite:
                 guard let set = try? Shp.FrameSet(data) else { info = "(SHP decode failed)"; return }
-                rawFrames = set.frames.compactMap { frame in
+                let selected = asset.frameRange.map { Array(set.frames[$0.clamped(to: set.frames.indices)]) } ?? set.frames
+                rawFrames = selected.compactMap { frame in
                     frame.width > 0 && frame.height > 0
                         ? RawFrame(indices: frame.pixels, width: frame.width, height: frame.height, hasLookup: frame.hasLookup)
                         : nil
@@ -280,7 +287,8 @@ struct AssetDetailView: View {
                 transparentIndex = 0
                 remapKind = .sprite
                 paletteAnimatable = true
-                info = "\(set.frames.count) frames"
+                let kindLabel = asset.groupKind.map { $0 == .animation ? " · animation" : " · directional" } ?? ""
+                info = "\(selected.count) frames\(kindLabel)"
             case .image:
                 guard let image = try? Cps.decode(data) else { info = "(CPS decode failed)"; return }
                 rawFrames = [ RawFrame(indices: image.pixels, width: image.width, height: image.height, hasLookup: false) ]

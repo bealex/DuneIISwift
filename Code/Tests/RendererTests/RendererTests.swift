@@ -56,6 +56,14 @@ struct RendererTests {
         // tick 5: one step toward entry 12 (black) -> (9,9,9).
         #expect(PaletteAnimator.animatedPalette(base: base, tick: 5).colors[223] == Palette.Color(red: 9, green: 9, blue: 9))
     }
+
+    @Test("sprite catalog groups unit SHP frames with valid ranges")
+    func catalog() {
+        let units2 = SpriteCatalog.groups(inShp: "UNITS2.SHP")
+        #expect(!units2.isEmpty)
+        #expect(units2.contains { $0.unit == "Combat Tank" && $0.part == "turret" && $0.firstFrame == 5 && $0.frameCount == 5 })
+        #expect(SpriteCatalog.unitGroups.allSatisfy { $0.firstFrame >= 0 && $0.frameCount > 0 })
+    }
 }
 
 private extension Palette {

@@ -8,7 +8,7 @@
 
 ## Next up (queue)
 
-- **Render inspector — logical sprite grouping** (requested): split SHP frame lists into logical sprites and label directional-vs-animation frames, and animate only the latter. Needs the unit-info sprite layout — `displayMode`, base `groundSpriteID`/`turretSpriteID`/`destroyedSpriteID`, `animationSpeed`; SHP base offsets (UNITS2=111, UNITS1=151, UNITS=238); orientation tables (`values_32A4` 8→5 frames, `values_32C4` infantry, `values_32E4` air, `values_3304` rocket). A focused slice of the Phase-2 stat tables; do alongside `DuneIIWorld`'s unitInfo port. (Frame counts per displayMode: UNIT ground 5 / air 3; INFANTRY_3 9; INFANTRY_4 12; ORNITHOPTER 9; ROCKET 5; SINGLE 1; +5 turret; animate iff displayMode ∈ {infantry, ornithopter} or animationSpeed≠0.)
+- **Render inspector — building grouping** (follow-up): units are now grouped (the "Units" category via `SpriteCatalog`). Buildings remain — on-map structures are ICN tiles grouped via `ICON.MAP` iconGroups + `structureInfo.iconGroup` + the structure animation table (`g_table_animation_structure`), a separate grouping system from unit SHPs. Do when wanted. (`SpriteCatalog` is renderer-side metadata to reconcile with `DuneIIWorld`'s eventual `unitInfo` port — insight `sprite-global-indices`.)
 - **Phase 3 — `DuneIISimulation`.** Loop + clocks → primitives → one unit type end-to-end → economy → structures → houses/teams/AI → projectiles/explosions. State machines = exact EMC transcription, verified by Tier-2a decision traces.
 - **Phases 4–5 — `DuneIIRenderer` + `rendertest` + `DuneIIInput`.**
 - **Phase 6 — hosts + multi-window UI.**
@@ -24,10 +24,11 @@
 - Phase 1 (asset export): `DuneIIExport` (`PngWriter`/`WavWriter`) + `assetgen extract` → PNG/WAV/EMC-listing output; verified on the real install (350 assets, 0 failures; CPS 320×200, valid WAVs). Closes the Phase-1 asset-regeneration deferral. 60 tests green.
 - Renderer + render-test app (Phase 4 pulled forward): `DuneIIRenderer` asset services (`HouseRemap`, `IndexedImage`) + `rendertest` SwiftUI inspector (`swift run rendertest`) — asset hierarchy, animated playback, house recolor, 1×–16× scale, VOC playback. Pixel logic test-verified + OpenDUNE-faithful; on-screen look to be confirmed by running it. 64 tests green.
 - rendertest refinements: frame animation off by default (Play toggle + frame stepper; thumbnails show index + size); `PaletteAnimator` palette cycling (wind-trap index 223 etc.) with a live "Palette cycling" toggle; colorize-on-display so house + palette changes apply live. 65 tests green.
+- rendertest logical sprite grouping: `SpriteCatalog` (DuneIIRenderer) splits the unit SHPs (UNITS/UNITS1/UNITS2) into per-unit groups (directional vs animation), surfaced as a "Units" category; directional groups offer a Facing stepper (no auto-animate), animation groups a Play. Scale picker now also scales the grid thumbnails. 66 tests green.
 
 ## Test status
 
-`cd Code && swift test`: **65 tests, all green** (format/codec/EMC layer + PNG/WAV export + renderer house-remap/image/palette-cycling, synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited).
+`cd Code && swift test`: **66 tests, all green** (format/codec/EMC layer + PNG/WAV export + renderer house-remap/image/palette-cycling/sprite-catalog, synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited).
 
 ## Open decisions (from Plan.v1.md §8)
 

@@ -1,12 +1,14 @@
 import AVFoundation
 import DuneIIExport
 import DuneIIFormats
+import DuneIIRenderer
 import Foundation
 import Observation
 
 /// Loads the original install's PAKs and exposes their contents as a browsable, categorized asset
 /// list. Decoding happens on demand in the views; this model owns the raw archives, the default
-/// palette (IBM.PAL), and a sound player.
+/// palette (IBM.PAL), and a sound player. A synthetic "Units" category splits the unit SHP files into
+/// logical per-unit sprite groups via `SpriteCatalog`.
 @MainActor
 @Observable
 final class AssetLibrary {
@@ -23,13 +25,33 @@ final class AssetLibrary {
 
         let id: String
         let pak: String
-        let name: String
+        let name: String          // the PAK entry filename (what to load)
         let kind: Kind
+        let displayName: String   // sidebar label (a unit name for groups, else the filename)
+        let frameRange: Range<Int>?         // a sub-range of an SHP's frames, for unit groups
+        let groupKind: SpriteCatalog.GroupKind?
+
+        init(
+            pak: String,
+            name: String,
+            kind: Kind,
+            displayName: String? = nil,
+            frameRange: Range<Int>? = nil,
+            groupKind: SpriteCatalog.GroupKind? = nil
+        ) {
+            self.pak = pak
+            self.name = name
+            self.kind = kind
+            self.displayName = displayName ?? name
+            self.frameRange = frameRange
+            self.groupKind = groupKind
+            self.id = frameRange == nil ? "\(pak)/\(name)" : "\(pak)/\(name)#\(self.displayName)"
+        }
     }
 
     struct Category: Identifiable {
         let id: String
-        let kind: Asset.Kind
+        let title: String
         let assets: [Asset]
     }
 
@@ -63,7 +85,8 @@ final class AssetLibrary {
             return
         }
 
-        var buckets: [Asset.Kind: [Asset]] = [:]
+        var fileAssets: [Asset.Kind: [Asset]] = [:]
+        var shpToPak: [String: String] = [:]   // uppercased SHP filename -> containing PAK
         let paks = entries
             .filter { $0.pathExtension.uppercased() == "PAK" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
@@ -75,17 +98,34 @@ final class AssetLibrary {
             for entry in archive.entries {
                 guard let kind = AssetLibrary.kind(for: entry.name) else { continue }
 
-                buckets[kind, default: []].append(
-                    Asset(id: "\(pakName)/\(entry.name)", pak: pakName, name: entry.name, kind: kind)
-                )
+                fileAssets[kind, default: []].append(Asset(pak: pakName, name: entry.name, kind: kind))
+                if kind == .sprite { shpToPak[entry.name.uppercased()] = pakName }
             }
         }
 
-        categories = Asset.Kind.allCases.compactMap { kind in
-            guard let assets = buckets[kind], !assets.isEmpty else { return nil }
+        var categories = Asset.Kind.allCases.compactMap { kind -> Category? in
+            guard let assets = fileAssets[kind], !assets.isEmpty else { return nil }
 
-            return Category(id: kind.rawValue, kind: kind, assets: assets.sorted { $0.id < $1.id })
+            return Category(id: kind.rawValue, title: kind.rawValue, assets: assets.sorted { $0.displayName < $1.displayName })
         }
+
+        let unitAssets: [Asset] = SpriteCatalog.unitGroups.compactMap { group in
+            guard let pak = shpToPak[group.shp.uppercased()] else { return nil }
+
+            return Asset(
+                pak: pak,
+                name: group.shp,
+                kind: .sprite,
+                displayName: group.label,
+                frameRange: group.firstFrame ..< (group.firstFrame + group.frameCount),
+                groupKind: group.kind
+            )
+        }
+        if !unitAssets.isEmpty {
+            categories.insert(Category(id: "Units", title: "Units", assets: unitAssets), at: 0)
+        }
+
+        self.categories = categories
         if categories.isEmpty, loadError == nil { loadError = "No assets found in \(installURL.path)" }
     }
 
