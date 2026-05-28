@@ -21,10 +21,11 @@
 - Phase 1: Format80 (LCW) decode ported from OpenDUNE `src/codec/format80.c` + `Documentation/Formats/Format80.md` + 11 decode tests. See History 2026-05; insight `codec-format80-overlap.md`.
 - Phase 1 (rest): Format40, PAK, Palette, IFF, SHP, CPS, ICN, WSA, FNT, VOC, INI, EMC ports + `emc-disasm`; per-format docs; real-data decodes from install PAKs; insights. Fixed the Phase-0 SwiftPM unhandled-files warnings (per-module CLAUDE.md excluded). See History 2026-05.
 - Phase 1 (asset export): `DuneIIExport` (`PngWriter`/`WavWriter`) + `assetgen extract` → PNG/WAV/EMC-listing output; verified on the real install (350 assets, 0 failures; CPS 320×200, valid WAVs). Closes the Phase-1 asset-regeneration deferral. 60 tests green.
+- Renderer + render-test app (Phase 4 pulled forward): `DuneIIRenderer` asset services (`HouseRemap`, `IndexedImage`) + `rendertest` SwiftUI inspector (`swift run rendertest`) — asset hierarchy, animated playback, house recolor, 1×–16× scale, VOC playback. Pixel logic test-verified + OpenDUNE-faithful; on-screen look to be confirmed by running it. 64 tests green.
 
 ## Test status
 
-`cd Code && swift test`: **60 tests, all green** (format/codec/EMC layer + PNG/WAV export, synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited).
+`cd Code && swift test`: **64 tests, all green** (format/codec/EMC layer + PNG/WAV export + renderer house-remap/image, synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited).
 
 ## Open decisions (from Plan.v1.md §8)
 

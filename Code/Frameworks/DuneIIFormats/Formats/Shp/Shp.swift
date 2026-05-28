@@ -19,6 +19,9 @@ public enum Shp {
         public let height: Int
         /// Row-major 8-bit palette indices. Index 0 is transparent.
         public let pixels: [UInt8]
+        /// True when the frame carried a 16-byte palette-lookup table (flag bit 0). Only such frames
+        /// are house-recolored by the original (the team-color indices come from the lookup table).
+        public let hasLookup: Bool
     }
 
     public struct FrameSet {
@@ -46,7 +49,7 @@ public enum Shp {
                 }
 
                 if offset == 0 {
-                    frames.append(Frame(width: 0, height: 0, pixels: []))
+                    frames.append(Frame(width: 0, height: 0, pixels: [], hasLookup: false))
                     continue
                 }
 
@@ -108,6 +111,6 @@ public enum Shp {
         }
         while pixels.count < pixelCount { pixels.append(0) }
 
-        return Frame(width: width, height: height, pixels: pixels)
+        return Frame(width: width, height: height, pixels: pixels, hasLookup: lookup != nil)
     }
 }

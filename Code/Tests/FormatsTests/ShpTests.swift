@@ -22,7 +22,7 @@ struct ShpTests {
     func frame() throws {
         let set = try Shp.FrameSet(ShpTests.synthetic)
         #expect(set.frames.count == 1)
-        #expect(set.frames[0] == Shp.Frame(width: 2, height: 2, pixels: [ 5, 0, 0, 6 ]))
+        #expect(set.frames[0] == Shp.Frame(width: 2, height: 2, pixels: [ 5, 0, 0, 6 ], hasLookup: false))
     }
 
     @Test("real install SHP decodes; frames are width*height")

@@ -22,12 +22,12 @@ After that: `Documentation/Plan.v1.md` is the authoritative plan (goals, locked 
     - `DuneIIFormats` — pure `Data`→`Data` decoders/codecs + the EMC disassembler dev tool. Foundation-only.
     - `DuneIIWorld` — the data model (`Unit`/`Structure`/`House`/`Team`/`Map`/`Scenario`), object pools, static stat tables, the `GameState` aggregate (owns all mutable state: RNG, the two clocks, tick cursors), scenario `.INI` loading, our save/load, the original-save converter. Depends on Contracts + Formats.
     - `DuneIISimulation` — game logic + loop: native primitives (bit-exact), the per-type state machines (exact EMC transcription), the four-phase `tick()`, the two-clock + speed/pause model. Applies `Command`s, emits `FrameInfo` + `SoundEvent`s. Headless + deterministic. Depends on World + Contracts.
-    - `DuneIIRenderer` — `Renderer` protocol + `NullRenderer` (Foundation) + later `SpriteKitRenderer` + sprite/animation drawing services. Depends on Contracts + Formats.
+    - `DuneIIRenderer` — asset rendering services: `HouseRemap` (house color recolor, ported from OpenDUNE) + `IndexedImage` (indexed pixels + palette → `CGImage`), used by the render-test app. The `FrameInfo`-driven world renderer (SpriteKit) lands with the sim. Depends on Contracts + Formats; imports CoreGraphics.
     - `DuneIIInput` — `InputSource` protocol + `ScriptedInput` (Foundation) + later `CatalystInput`. Depends on Contracts.
     - `DuneIIAudio` — `AudioSink` protocol + `NullAudio` (Foundation) + later Core Audio. Depends on Contracts.
     - `DuneIIExport` — asset writers (`PngWriter` via ImageIO/CoreGraphics, `WavWriter` via RIFF), used by `assetgen` to export decoded assets to PNG/WAV for verification. Depends on Formats. Offline tooling, not a runtime presentation leaf.
   - `Tools/` — command-line developer/build tools: `assetgen` (extract `Resources/` from the install + the `emc-disasm` subcommand).
-  - `Apps/` — runnable end-products: `duneii-headless` (test/oracle driver) now; later `duneii` (Mac Catalyst app) and `rendertest` (sprite/animation viewer).
+  - `Apps/` — runnable end-products: `duneii-headless` (test/oracle driver) and `rendertest` (native macOS SwiftUI asset inspector — `swift run rendertest`); later `duneii` (Mac Catalyst game app).
   - `Tests/` — one `<Subject>Tests` target per tested target (the `DuneII` prefix is dropped): `ContractsTests`, `FormatsTests`, `WorldTests`, `SimulationTests`; fixtures under `<Subject>Tests/Fixtures/`.
 - `Repositories/OpenDUNE/` — the C reference and **oracle**. Source of truth for all game logic, save format, scripting, codecs, tables.
 - `Repositories/dunepak/` — Rust PAK packer (PAK container reference).

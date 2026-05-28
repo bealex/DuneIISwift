@@ -26,6 +26,7 @@ let package = Package(
         .library(name: "DuneIIExport", targets: [ "DuneIIExport" ]),
         .executable(name: "assetgen", targets: [ "assetgen" ]),
         .executable(name: "duneii-headless", targets: [ "duneii-headless" ]),
+        .executable(name: "rendertest", targets: [ "rendertest" ]),
     ],
     targets: [
         // Frameworks (the engine) — dependencies point downward only.
@@ -83,6 +84,12 @@ let package = Package(
             dependencies: [ "DuneIISimulation", "DuneIIRenderer", "DuneIIInput", "DuneIIAudio" ],
             path: "Apps/duneii-headless"
         ),
+        // Native macOS SwiftUI asset inspector (render-test app). Builds via `swift run rendertest`.
+        .executableTarget(
+            name: "rendertest",
+            dependencies: [ "DuneIIFormats", "DuneIIRenderer", "DuneIIExport" ],
+            path: "Apps/rendertest"
+        ),
 
         // Tests (one per tested target; the DuneII prefix is dropped).
         .testTarget(name: "ContractsTests", dependencies: [ "DuneIIContracts" ], path: "Tests/ContractsTests"),
@@ -90,5 +97,6 @@ let package = Package(
         .testTarget(name: "WorldTests", dependencies: [ "DuneIIWorld" ], path: "Tests/WorldTests"),
         .testTarget(name: "SimulationTests", dependencies: [ "DuneIISimulation" ], path: "Tests/SimulationTests"),
         .testTarget(name: "ExportTests", dependencies: [ "DuneIIExport", "DuneIIFormats" ], path: "Tests/ExportTests"),
+        .testTarget(name: "RendererTests", dependencies: [ "DuneIIRenderer", "DuneIIFormats" ], path: "Tests/RendererTests"),
     ]
 )

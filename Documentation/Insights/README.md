@@ -25,3 +25,4 @@ Capture an insight when something surprised you, cost real time to figure out, o
 - [swift-string-split](swift-string-split.md) — split file text with `components(separatedBy: .newlines)`, not `split(separator:)`.
 - [build-swiftpm-unhandled-files](build-swiftpm-unhandled-files.md) — non-source files in a target path warn; `exclude:` them, and audit warnings on a full clean build.
 - [swift-toplevel-mainactor-globals](swift-toplevel-mainactor-globals.md) — top-level `let` globals in an executable's main.swift are @MainActor-isolated; nonisolated helpers can't use them.
+- [swift-spm-macos-gui](swift-spm-macos-gui.md) — native macOS SwiftUI apps run as SPM executables (`swift run`); set `.regular` activation policy so the window shows.
