@@ -16,15 +16,18 @@ After that: `Documentation/Plan.v1.md` is the authoritative plan (goals, locked 
   - `Algorithms/` — Format80 decode, pathfinding, EMC opcode semantics, etc.
   - `History/` — dated changelog, one file per month (`YYYY-MM.md`). Append-only.
   - `Insights/` — distilled non-obvious findings, one file per fact; `README.md` indexes them and holds the template.
-- `Code/Core/` — the SwiftPM package (multi-target). Build/test with `cd Code/Core && swift build` / `swift test`. Each library target has its own `CLAUDE.md`. Dependencies point **downward only**; the simulation depends on none of render/input/audio:
-  - `DuneIIContracts` — shared vocabulary + seam types: `FrameInfo` (sim→render), `Command` (input→sim), `SoundEvent` (sim→audio), shared IDs/enums. Foundation-only.
-  - `DuneIIFormats` — pure `Data`→`Data` decoders/codecs + the EMC disassembler dev tool. Foundation-only.
-  - `DuneIIWorld` — the data model (`Unit`/`Structure`/`House`/`Team`/`Map`/`Scenario`), object pools, static stat tables, the `GameState` aggregate (owns all mutable state: RNG, the two clocks, tick cursors), scenario `.INI` loading, our save/load, the original-save converter. Depends on Contracts + Formats.
-  - `DuneIISimulation` — game logic + loop: native primitives (bit-exact), the per-type state machines (exact EMC transcription), the four-phase `tick()`, the two-clock + speed/pause model. Applies `Command`s, emits `FrameInfo` + `SoundEvent`s. Headless + deterministic. Depends on World + Contracts.
-  - `DuneIIRenderer` — `Renderer` protocol + `NullRenderer` (Foundation) + later `SpriteKitRenderer` + sprite/animation drawing services. Depends on Contracts + Formats.
-  - `DuneIIInput` — `InputSource` protocol + `ScriptedInput` (Foundation) + later `CatalystInput`. Depends on Contracts.
-  - `DuneIIAudio` — `AudioSink` protocol + `NullAudio` (Foundation) + later Core Audio. Depends on Contracts.
-  - Executables: `assetgen` (extract `Resources/` + `emc-disasm`), `duneii-headless` (test/oracle driver), and later `duneii` (Catalyst app) + `rendertest` (sprite/animation viewer).
+- `Code/` — the SwiftPM package. Build/test with `cd Code && swift build` / `swift test`. Source trees are organized by kind; each target's directory is set explicitly in `Package.swift` (SPM's default `Sources/` discovery is not used), so adding a target is a new directory under the right tree plus one manifest entry:
+  - `Frameworks/` — the `DuneII*` engine libraries, each with its own `CLAUDE.md`. Dependencies point **downward only**; the simulation depends on none of render/input/audio:
+    - `DuneIIContracts` — shared vocabulary + seam types: `FrameInfo` (sim→render), `Command` (input→sim), `SoundEvent` (sim→audio), shared IDs/enums. Foundation-only.
+    - `DuneIIFormats` — pure `Data`→`Data` decoders/codecs + the EMC disassembler dev tool. Foundation-only.
+    - `DuneIIWorld` — the data model (`Unit`/`Structure`/`House`/`Team`/`Map`/`Scenario`), object pools, static stat tables, the `GameState` aggregate (owns all mutable state: RNG, the two clocks, tick cursors), scenario `.INI` loading, our save/load, the original-save converter. Depends on Contracts + Formats.
+    - `DuneIISimulation` — game logic + loop: native primitives (bit-exact), the per-type state machines (exact EMC transcription), the four-phase `tick()`, the two-clock + speed/pause model. Applies `Command`s, emits `FrameInfo` + `SoundEvent`s. Headless + deterministic. Depends on World + Contracts.
+    - `DuneIIRenderer` — `Renderer` protocol + `NullRenderer` (Foundation) + later `SpriteKitRenderer` + sprite/animation drawing services. Depends on Contracts + Formats.
+    - `DuneIIInput` — `InputSource` protocol + `ScriptedInput` (Foundation) + later `CatalystInput`. Depends on Contracts.
+    - `DuneIIAudio` — `AudioSink` protocol + `NullAudio` (Foundation) + later Core Audio. Depends on Contracts.
+  - `Tools/` — command-line developer/build tools: `assetgen` (extract `Resources/` from the install + the `emc-disasm` subcommand).
+  - `Apps/` — runnable end-products: `duneii-headless` (test/oracle driver) now; later `duneii` (Mac Catalyst app) and `rendertest` (sprite/animation viewer).
+  - `Tests/` — one `<Subject>Tests` target per tested target (the `DuneII` prefix is dropped): `ContractsTests`, `FormatsTests`, `WorldTests`, `SimulationTests`; fixtures under `<Subject>Tests/Fixtures/`.
 - `Repositories/OpenDUNE/` — the C reference and **oracle**. Source of truth for all game logic, save format, scripting, codecs, tables.
 - `Repositories/dunepak/` — Rust PAK packer (PAK container reference).
 - `Repositories/patched_107_unofficial/` — the original 1.07 install (read-only at runtime).
@@ -57,7 +60,7 @@ Steps 0, 1, 4, 5, 6, 7 are mandatory. Tests are written **after** the feature (s
 1. Design on paper first — write/update the relevant doc under `Documentation/Formats/` (or `Algorithms/`, `Architecture/`) before code. Own-words + pointer to the reference C source.
 2. Implement. No abstractions for hypothetical futures; no speculative generality. (The package seams in the plan are not speculative — they are required.)
 3. Write tests for the new behavior. Synthetic preferred; add a real-data / oracle test when one can exercise the path.
-4. Run the full suite — `cd Code/Core && swift test`. Green before "done." Every previously-green test stays green.
+4. Run the full suite — `cd Code && swift test`. Green before "done." Every previously-green test stays green.
 5. Zero warnings after a clean rebuild — `swift package clean && swift build`. Every `warning:` is a failure; fix the root cause.
 6. Log the change — append a bullet to `Documentation/History/YYYY-MM.md` (create the file for a new month). One sentence, imperative, with file references.
 7. Update `CurrentState.md` — move the finished item to "Recently completed" (with test count + History pointer), set the next "Active task" with its immediate next step, refresh "Test status."
@@ -82,7 +85,7 @@ If something genuinely can't be tested (rare — usually visual correctness), sa
 ## Running things
 
 ```
-cd Code/Core
+cd Code
 swift build                       # libraries + CLI executables
 swift test                        # full suite
 swift run assetgen                # re-extract Resources/ from the install

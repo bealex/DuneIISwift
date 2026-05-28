@@ -1,6 +1,6 @@
 # Testing strategy
 
-Run the full suite with `cd Code/Core && swift test` — it must be green before any feature is "done." Zero warnings after `swift package clean && swift build`. Framework: **Swift Testing** (`import Testing`). Synthetic input is preferred; real-data / oracle tests use the install (`Repositories/patched_107_unofficial/`) and short-circuit when it is absent.
+Run the full suite with `cd Code && swift test` — it must be green before any feature is "done." Zero warnings after `swift package clean && swift build`. Framework: **Swift Testing** (`import Testing`). Synthetic input is preferred; real-data / oracle tests use the install (`Repositories/patched_107_unofficial/`) and short-circuit when it is absent.
 
 ## Per layer
 

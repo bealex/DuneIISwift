@@ -6,4 +6,4 @@
 /tmp
 /Repositories/OpenDUNE/objs
 /Repositories/OpenDUNE/bin/opendune
-/Code/Core/Tests/DuneIICoreTests/Fixtures/ParityGoldens/*.jsonl
+/Code/Tests/*/Fixtures/ParityGoldens/*.jsonl
