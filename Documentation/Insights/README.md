@@ -20,4 +20,4 @@ Capture an insight when something surprised you, cost real time to figure out, o
 
 ## Index
 
-_(none yet)_
+- [codec-format80-overlap](codec-format80-overlap.md) — Format80 back-references must be copied byte-by-byte (never bulk-copy), or overlapping runs corrupt.

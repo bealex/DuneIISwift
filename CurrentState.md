@@ -4,7 +4,7 @@
 
 ## Active task
 
-**Phase 1 — `DuneIIFormats`.** Start with the Format80 codec. Immediate next step: write `Documentation/Formats/Format80.md` (own-words description + pointer to OpenDUNE `src/codec/format80.c`), then implement `Code/Frameworks/DuneIIFormats/Codec/Format80.swift` as a pure `decode`/`encode` on `Data`, with round-trip tests + a real-data test (short-circuiting when the install is absent). Then Format40, then PAK.
+**Phase 1 — `DuneIIFormats` (cont.).** Format80 (LCW) decode is done. Next: the Format40 codec. Immediate next step: write `Documentation/Formats/Format40.md` (pointer to OpenDUNE `src/codec/format40.c`), implement `Code/Frameworks/DuneIIFormats/Codec/Format40.swift`, with per-command synthetic tests. Then PAK (the IFF/ChunkFile container, cross-checked against `Repositories/dunepak/`), which unlocks real-data Format80/40 tests against install PAK entries.
 
 ## Next up (queue)
 
@@ -20,10 +20,11 @@
 - Reset to a core-engine rebuild; wrote `Documentation/Plan.v1.md` (commit `9b8ee1f`). See History 2026-05.
 - Phase 0 docs: CLAUDE.md rewrite + Architecture/{Overview,Testing,ParityHarness}.md + this file + History/Insights (commit `68301f4`).
 - Phase 0 scaffold: `Code` SwiftPM graph — 7 libraries + `assetgen` + `duneii-headless` + per-module CLAUDE.md. Clean build, zero warnings, 4 scaffold tests green.
+- Phase 1: Format80 (LCW) decode ported from OpenDUNE `src/codec/format80.c` + `Documentation/Formats/Format80.md` + 11 decode tests. See History 2026-05; insight `codec-format80-overlap.md`.
 
 ## Test status
 
-`cd Code && swift test`: **4 tests, all green** (Phase 0 scaffold link tests). Clean build (`swift package clean && swift build`): zero warnings.
+`cd Code && swift test`: **14 tests, all green** (11 Format80 + 3 scaffold link-tests for Contracts/World/Simulation). Clean build (`swift package clean && swift build`): zero warnings.
 
 ## Open decisions (from Plan.v1.md §8)
 
