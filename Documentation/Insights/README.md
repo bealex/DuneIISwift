@@ -21,3 +21,6 @@ Capture an insight when something surprised you, cost real time to figure out, o
 ## Index
 
 - [codec-format80-overlap](codec-format80-overlap.md) — Format80 back-references must be copied byte-by-byte (never bulk-copy), or overlapping runs corrupt.
+- [swift-shift-precedence](swift-shift-precedence.md) — Swift `<<`/`>>` bind tighter than `*`/`/` (opposite of C); parenthesize ported bit math.
+- [swift-string-split](swift-string-split.md) — split file text with `components(separatedBy: .newlines)`, not `split(separator:)`.
+- [build-swiftpm-unhandled-files](build-swiftpm-unhandled-files.md) — non-source files in a target path warn; `exclude:` them, and audit warnings on a full clean build.

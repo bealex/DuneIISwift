@@ -61,7 +61,7 @@ Steps 0, 1, 4, 5, 6, 7 are mandatory. Tests are written **after** the feature (s
 2. Implement. No abstractions for hypothetical futures; no speculative generality. (The package seams in the plan are not speculative — they are required.)
 3. Write tests for the new behavior. Synthetic preferred; add a real-data / oracle test when one can exercise the path.
 4. Run the full suite — `cd Code && swift test`. Green before "done." Every previously-green test stays green.
-5. Zero warnings after a clean rebuild — `swift package clean && swift build`. Every `warning:` is a failure; fix the root cause.
+5. Zero warnings after a clean rebuild — `swift package clean && swift build`. Every `warning:` is a failure; fix the root cause. Read the **full** build output (warnings surface early, during target scanning) — never a `tail`ed/grepped subset, or you will miss them.
 6. Log the change — append a bullet to `Documentation/History/YYYY-MM.md` (create the file for a new month). One sentence, imperative, with file references.
 7. Update `CurrentState.md` — move the finished item to "Recently completed" (with test count + History pointer), set the next "Active task" with its immediate next step, refresh "Test status."
 8. If you learned something non-obvious, capture it as an insight under `Documentation/Insights/` and index it in `Insights/README.md`. Cross-link the code `file:line` and the test.

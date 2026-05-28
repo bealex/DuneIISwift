@@ -98,4 +98,69 @@ public enum Format80 {
 
         return Data(dest[0 ..< written])
     }
+
+    /// Decode until the `0x80` end marker, growing the output. For streams whose decoded length is
+    /// not known up front (CPS image bodies, ICN tile data); mirrors a `Format80_Decode` call with an
+    /// effectively unbounded destination (`destLength = 0xFFFF` in OpenDUNE's `Sprites_Decode`).
+    public static func decodeToEnd(_ source: Data) throws -> Data {
+        let bytes = [UInt8](source)
+        var dest: [UInt8] = []
+        var sourceIndex = 0
+
+        func nextByte() throws -> Int {
+            guard sourceIndex < bytes.count else { throw DecodeError.truncatedSource }
+
+            defer { sourceIndex += 1 }
+            return Int(bytes[sourceIndex])
+        }
+
+        func copyAbsolute(size: Int, from offset: Int) throws {
+            var read = offset
+            for _ in 0 ..< size {
+                guard read >= 0, read < dest.count else { throw DecodeError.invalidBackReference }
+
+                dest.append(dest[read])
+                read += 1
+            }
+        }
+
+        while true {
+            let cmd = try nextByte()
+
+            if cmd == 0x80 {
+                break
+            } else if (cmd & 0x80) == 0 {
+                let size = (cmd >> 4) + 3
+                let offset = ((cmd & 0x0F) << 8) + (try nextByte())
+                guard offset >= 1, offset <= dest.count else { throw DecodeError.invalidBackReference }
+
+                for _ in 0 ..< size {
+                    dest.append(dest[dest.count - offset])
+                }
+            } else if cmd == 0xFE {
+                var size = try nextByte()
+                size += (try nextByte()) << 8
+                let value = UInt8(try nextByte())
+                dest.append(contentsOf: repeatElement(value, count: size))
+            } else if cmd == 0xFF {
+                var size = try nextByte()
+                size += (try nextByte()) << 8
+                var offset = try nextByte()
+                offset += (try nextByte()) << 8
+                try copyAbsolute(size: size, from: offset)
+            } else if (cmd & 0x40) != 0 {
+                let size = (cmd & 0x3F) + 3
+                var offset = try nextByte()
+                offset += (try nextByte()) << 8
+                try copyAbsolute(size: size, from: offset)
+            } else {
+                let size = cmd & 0x3F
+                for _ in 0 ..< size {
+                    dest.append(UInt8(try nextByte()))
+                }
+            }
+        }
+
+        return Data(dest)
+    }
 }

@@ -28,25 +28,38 @@ let package = Package(
     ],
     targets: [
         // Frameworks (the engine) — dependencies point downward only.
-        .target(name: "DuneIIContracts", path: "Frameworks/DuneIIContracts"),
-        .target(name: "DuneIIFormats", path: "Frameworks/DuneIIFormats"),
+        .target(name: "DuneIIContracts", path: "Frameworks/DuneIIContracts", exclude: [ "CLAUDE.md" ]),
+        .target(name: "DuneIIFormats", path: "Frameworks/DuneIIFormats", exclude: [ "CLAUDE.md" ]),
         .target(
             name: "DuneIIWorld",
             dependencies: [ "DuneIIContracts", "DuneIIFormats" ],
-            path: "Frameworks/DuneIIWorld"
+            path: "Frameworks/DuneIIWorld",
+            exclude: [ "CLAUDE.md" ]
         ),
         .target(
             name: "DuneIISimulation",
             dependencies: [ "DuneIIWorld", "DuneIIContracts" ],
-            path: "Frameworks/DuneIISimulation"
+            path: "Frameworks/DuneIISimulation",
+            exclude: [ "CLAUDE.md" ]
         ),
         .target(
             name: "DuneIIRenderer",
             dependencies: [ "DuneIIContracts", "DuneIIFormats" ],
-            path: "Frameworks/DuneIIRenderer"
+            path: "Frameworks/DuneIIRenderer",
+            exclude: [ "CLAUDE.md" ]
         ),
-        .target(name: "DuneIIInput", dependencies: [ "DuneIIContracts" ], path: "Frameworks/DuneIIInput"),
-        .target(name: "DuneIIAudio", dependencies: [ "DuneIIContracts" ], path: "Frameworks/DuneIIAudio"),
+        .target(
+            name: "DuneIIInput",
+            dependencies: [ "DuneIIContracts" ],
+            path: "Frameworks/DuneIIInput",
+            exclude: [ "CLAUDE.md" ]
+        ),
+        .target(
+            name: "DuneIIAudio",
+            dependencies: [ "DuneIIContracts" ],
+            path: "Frameworks/DuneIIAudio",
+            exclude: [ "CLAUDE.md" ]
+        ),
 
         // Tools (command-line).
         .executableTarget(name: "assetgen", dependencies: [ "DuneIIFormats" ], path: "Tools/assetgen"),
