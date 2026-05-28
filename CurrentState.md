@@ -8,7 +8,6 @@
 
 ## Next up (queue)
 
-- **Deferred from Phase 1** — full `Resources/` image/audio regeneration (PNG/WAV writers via ImageIO). Not blocking: it is the writer layer, and `Resources/` is committed and not needed for Phases 2–3.
 - **Phase 3 — `DuneIISimulation`.** Loop + clocks → primitives → one unit type end-to-end → economy → structures → houses/teams/AI → projectiles/explosions. State machines = exact EMC transcription, verified by Tier-2a decision traces.
 - **Phases 4–5 — `DuneIIRenderer` + `rendertest` + `DuneIIInput`.**
 - **Phase 6 — hosts + multi-window UI.**
@@ -20,11 +19,12 @@
 - Phase 0 docs: CLAUDE.md rewrite + Architecture/{Overview,Testing,ParityHarness}.md + this file + History/Insights (commit `68301f4`).
 - Phase 0 scaffold: `Code` SwiftPM graph — 7 libraries + `assetgen` + `duneii-headless` + per-module CLAUDE.md. Clean build, zero warnings, 4 scaffold tests green.
 - Phase 1: Format80 (LCW) decode ported from OpenDUNE `src/codec/format80.c` + `Documentation/Formats/Format80.md` + 11 decode tests. See History 2026-05; insight `codec-format80-overlap.md`.
-- Phase 1 (rest): Format40, PAK, Palette, IFF, SHP, CPS, ICN, WSA, FNT, VOC, INI, EMC ports + `emc-disasm`; per-format docs; 57 tests green incl. real-data decodes from install PAKs; 3 insights. Fixed the Phase-0 SwiftPM unhandled-files warnings (per-module CLAUDE.md excluded). See History 2026-05.
+- Phase 1 (rest): Format40, PAK, Palette, IFF, SHP, CPS, ICN, WSA, FNT, VOC, INI, EMC ports + `emc-disasm`; per-format docs; real-data decodes from install PAKs; insights. Fixed the Phase-0 SwiftPM unhandled-files warnings (per-module CLAUDE.md excluded). See History 2026-05.
+- Phase 1 (asset export): `DuneIIExport` (`PngWriter`/`WavWriter`) + `assetgen extract` → PNG/WAV/EMC-listing output; verified on the real install (350 assets, 0 failures; CPS 320×200, valid WAVs). Closes the Phase-1 asset-regeneration deferral. 60 tests green.
 
 ## Test status
 
-`cd Code && swift test`: **57 tests, all green** (the format/codec/EMC layer, synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited).
+`cd Code && swift test`: **60 tests, all green** (format/codec/EMC layer + PNG/WAV export, synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited).
 
 ## Open decisions (from Plan.v1.md §8)
 

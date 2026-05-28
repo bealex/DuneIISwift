@@ -23,6 +23,7 @@ let package = Package(
         .library(name: "DuneIIRenderer", targets: [ "DuneIIRenderer" ]),
         .library(name: "DuneIIInput", targets: [ "DuneIIInput" ]),
         .library(name: "DuneIIAudio", targets: [ "DuneIIAudio" ]),
+        .library(name: "DuneIIExport", targets: [ "DuneIIExport" ]),
         .executable(name: "assetgen", targets: [ "assetgen" ]),
         .executable(name: "duneii-headless", targets: [ "duneii-headless" ]),
     ],
@@ -60,9 +61,21 @@ let package = Package(
             path: "Frameworks/DuneIIAudio",
             exclude: [ "CLAUDE.md" ]
         ),
+        // Asset writers (PNG via ImageIO/CoreGraphics, WAV via RIFF) — used by assetgen to export
+        // decoded assets for visual/audio verification. Imports system frameworks, not a presentation leaf.
+        .target(
+            name: "DuneIIExport",
+            dependencies: [ "DuneIIFormats" ],
+            path: "Frameworks/DuneIIExport",
+            exclude: [ "CLAUDE.md" ]
+        ),
 
         // Tools (command-line).
-        .executableTarget(name: "assetgen", dependencies: [ "DuneIIFormats" ], path: "Tools/assetgen"),
+        .executableTarget(
+            name: "assetgen",
+            dependencies: [ "DuneIIFormats", "DuneIIExport" ],
+            path: "Tools/assetgen"
+        ),
 
         // Apps (runnable end-products).
         .executableTarget(
@@ -76,5 +89,6 @@ let package = Package(
         .testTarget(name: "FormatsTests", dependencies: [ "DuneIIFormats" ], path: "Tests/FormatsTests"),
         .testTarget(name: "WorldTests", dependencies: [ "DuneIIWorld" ], path: "Tests/WorldTests"),
         .testTarget(name: "SimulationTests", dependencies: [ "DuneIISimulation" ], path: "Tests/SimulationTests"),
+        .testTarget(name: "ExportTests", dependencies: [ "DuneIIExport", "DuneIIFormats" ], path: "Tests/ExportTests"),
     ]
 )

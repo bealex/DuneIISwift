@@ -25,6 +25,7 @@ After that: `Documentation/Plan.v1.md` is the authoritative plan (goals, locked 
     - `DuneIIRenderer` — `Renderer` protocol + `NullRenderer` (Foundation) + later `SpriteKitRenderer` + sprite/animation drawing services. Depends on Contracts + Formats.
     - `DuneIIInput` — `InputSource` protocol + `ScriptedInput` (Foundation) + later `CatalystInput`. Depends on Contracts.
     - `DuneIIAudio` — `AudioSink` protocol + `NullAudio` (Foundation) + later Core Audio. Depends on Contracts.
+    - `DuneIIExport` — asset writers (`PngWriter` via ImageIO/CoreGraphics, `WavWriter` via RIFF), used by `assetgen` to export decoded assets to PNG/WAV for verification. Depends on Formats. Offline tooling, not a runtime presentation leaf.
   - `Tools/` — command-line developer/build tools: `assetgen` (extract `Resources/` from the install + the `emc-disasm` subcommand).
   - `Apps/` — runnable end-products: `duneii-headless` (test/oracle driver) now; later `duneii` (Mac Catalyst app) and `rendertest` (sprite/animation viewer).
   - `Tests/` — one `<Subject>Tests` target per tested target (the `DuneII` prefix is dropped): `ContractsTests`, `FormatsTests`, `WorldTests`, `SimulationTests`; fixtures under `<Subject>Tests/Fixtures/`.
