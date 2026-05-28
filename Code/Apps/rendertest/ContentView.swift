@@ -246,6 +246,16 @@ struct AssetDetailView: View {
         return (paletteAnimatable && animatePalette) ? PaletteAnimator.animatedPalette(base: base, tick: tick) : base
     }
 
+    /// Mentat face sprites (MENSHP[H/A/O/M].SHP) are colored by the matching MENTAT<house>.CPS
+    /// palette, not IBM.PAL (OpenDUNE `gui/mentat.c:494`).
+    private func mentatPalette(for name: String) -> Palette? {
+        let upper = name.uppercased()
+        guard upper.hasPrefix("MENSHP"), upper.hasSuffix(".SHP"), upper.count > 6 else { return nil }
+
+        let letter = upper[upper.index(upper.startIndex, offsetBy: 6)]
+        return library.cpsPalette("MENTAT\(letter).CPS")
+    }
+
     private func colorize(_ frame: RawFrame, palette: Palette) -> CGImage? {
         let useSprite = remapKind == .sprite && frame.hasLookup
         let remap: (UInt8) -> UInt8 = { index in
@@ -287,6 +297,7 @@ struct AssetDetailView: View {
                 transparentIndex = 0
                 remapKind = .sprite
                 paletteAnimatable = true
+                displayPalette = mentatPalette(for: asset.name)   // mentat faces use their MENTAT<house>.CPS palette
                 let kindLabel = asset.groupKind.map { $0 == .animation ? " · animation" : " · directional" } ?? ""
                 info = "\(selected.count) frames\(kindLabel)"
             case .image:

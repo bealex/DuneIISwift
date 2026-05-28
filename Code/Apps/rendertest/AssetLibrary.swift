@@ -82,6 +82,14 @@ final class AssetLibrary {
         archives[pak]?.data(named: name)
     }
 
+    /// The embedded palette of a CPS file (searched across all PAKs), or nil if absent.
+    func cpsPalette(_ name: String) -> Palette? {
+        for archive in archives.values {
+            if let data = archive.data(named: name), let image = try? Cps.decode(data) { return image.palette }
+        }
+        return nil
+    }
+
     func playSound(_ sound: Voc.Sound) {
         let wav = WavWriter.encode(samples: sound.samples, sampleRate: max(sound.sampleRate, 1))
         player = try? AVAudioPlayer(data: wav)

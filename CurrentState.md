@@ -26,6 +26,7 @@
 - rendertest refinements: frame animation off by default (Play toggle + frame stepper; thumbnails show index + size); `PaletteAnimator` palette cycling (wind-trap index 223 etc.) with a live "Palette cycling" toggle; colorize-on-display so house + palette changes apply live. 65 tests green.
 - rendertest logical sprite grouping: `SpriteCatalog` (DuneIIRenderer) splits the unit SHPs (UNITS/UNITS1/UNITS2) into per-unit groups (directional vs animation), surfaced as a "Units" category; directional groups offer a Facing stepper (no auto-animate), animation groups a Play. Scale picker now also scales the grid thumbnails. 66 tests green.
 - rendertest building/terrain grouping: `IconMap` decoder (DuneIIFormats) + "Buildings"/"Terrain" categories — each ICON.MAP icon group lists its ICON.ICN tiles (subitems) with house remap + palette cycling. 68 tests green.
+- rendertest MENSHPM palette fix: mentat face sprites colored by their `MENTAT<house>.CPS` palette (not IBM.PAL) via `AssetLibrary.cpsPalette` + `AssetDetailView.mentatPalette` (OpenDUNE `gui/mentat.c:494`). Build clean. Insight `render-contextual-palette`.
 
 ## Test status
 
