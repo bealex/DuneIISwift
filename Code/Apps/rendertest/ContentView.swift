@@ -323,6 +323,21 @@ struct AssetDetailView: View {
             case .script:
                 scriptText = (try? Emc.Program(data)).map { emcText($0) }
                 info = "EMC script"
+            case .iconGroup:
+                guard
+                    let tiles = try? Icn.TileSet(data),
+                    let mapData = library.data(pak: asset.pak, name: "ICON.MAP"),
+                    let iconMap = try? IconMap(mapData),
+                    let index = asset.iconGroup,
+                    let group = iconMap.group(index)
+                else { info = "(icon group decode failed)"; return }
+                rawFrames = group.tileIDs.compactMap { tileID in
+                    let pixels = tiles.tile(tileID)
+                    return pixels.isEmpty ? nil : RawFrame(indices: pixels, width: tiles.tileWidth, height: tiles.tileHeight, hasLookup: false)
+                }
+                remapKind = .tile
+                paletteAnimatable = true
+                info = "\(group.name) · \(rawFrames.count) tiles"
         }
     }
 

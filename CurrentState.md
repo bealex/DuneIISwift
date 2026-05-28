@@ -8,7 +8,7 @@
 
 ## Next up (queue)
 
-- **Render inspector — building grouping** (follow-up): units are now grouped (the "Units" category via `SpriteCatalog`). Buildings remain — on-map structures are ICN tiles grouped via `ICON.MAP` iconGroups + `structureInfo.iconGroup` + the structure animation table (`g_table_animation_structure`), a separate grouping system from unit SHPs. Do when wanted. (`SpriteCatalog` is renderer-side metadata to reconcile with `DuneIIWorld`'s eventual `unitInfo` port — insight `sprite-global-indices`.)
+- **Render inspector — assembled buildings** (optional refinement): units, buildings, and terrain are now grouped (the "Units"/"Buildings"/"Terrain" categories). Buildings are shown as their individual 16×16 ICON.ICN tiles. Assembling a building's tiles into its full multi-tile shape (and the structure tile-cycle animation) needs `structureInfo.layout` + `g_table_animation_structure` — do if wanted. (`SpriteCatalog`/`IconMap` grouping is renderer/format-side metadata to reconcile with `DuneIIWorld`'s eventual `unitInfo`/`structureInfo` port — insight `sprite-global-indices`.)
 - **Phase 3 — `DuneIISimulation`.** Loop + clocks → primitives → one unit type end-to-end → economy → structures → houses/teams/AI → projectiles/explosions. State machines = exact EMC transcription, verified by Tier-2a decision traces.
 - **Phases 4–5 — `DuneIIRenderer` + `rendertest` + `DuneIIInput`.**
 - **Phase 6 — hosts + multi-window UI.**
@@ -25,10 +25,11 @@
 - Renderer + render-test app (Phase 4 pulled forward): `DuneIIRenderer` asset services (`HouseRemap`, `IndexedImage`) + `rendertest` SwiftUI inspector (`swift run rendertest`) — asset hierarchy, animated playback, house recolor, 1×–16× scale, VOC playback. Pixel logic test-verified + OpenDUNE-faithful; on-screen look to be confirmed by running it. 64 tests green.
 - rendertest refinements: frame animation off by default (Play toggle + frame stepper; thumbnails show index + size); `PaletteAnimator` palette cycling (wind-trap index 223 etc.) with a live "Palette cycling" toggle; colorize-on-display so house + palette changes apply live. 65 tests green.
 - rendertest logical sprite grouping: `SpriteCatalog` (DuneIIRenderer) splits the unit SHPs (UNITS/UNITS1/UNITS2) into per-unit groups (directional vs animation), surfaced as a "Units" category; directional groups offer a Facing stepper (no auto-animate), animation groups a Play. Scale picker now also scales the grid thumbnails. 66 tests green.
+- rendertest building/terrain grouping: `IconMap` decoder (DuneIIFormats) + "Buildings"/"Terrain" categories — each ICON.MAP icon group lists its ICON.ICN tiles (subitems) with house remap + palette cycling. 68 tests green.
 
 ## Test status
 
-`cd Code && swift test`: **66 tests, all green** (format/codec/EMC layer + PNG/WAV export + renderer house-remap/image/palette-cycling/sprite-catalog, synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited).
+`cd Code && swift test`: **68 tests, all green** (format/codec/EMC/IconMap layer + PNG/WAV export + renderer house-remap/image/palette-cycling/sprite-catalog, synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited).
 
 ## Open decisions (from Plan.v1.md §8)
 
