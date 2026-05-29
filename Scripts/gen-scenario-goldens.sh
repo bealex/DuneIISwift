@@ -30,7 +30,9 @@ TICKS="${TICKS:-120}"
 [ -d "$INSTALL" ] || { echo "install dir not found: $INSTALL" >&2; exit 1; }
 
 echo "Building the OpenDUNE oracle…"
-( cd "$ORACLE" && PATH="$PWD/.shim:$PATH" make -j4 >/dev/null )
+( cd "$ORACLE" && PATH="$PWD/.shim:$PATH" make -j4 >/dev/null
+  # Re-sign ad-hoc: a relinked binary's stale code signature makes macOS SIGKILL it ("killed").
+  codesign --force --sign - bin/opendune )
 
 echo "Staging data dir ($DATADIR = install + scenario INIs)…"
 rm -rf "$DATADIR"; mkdir -p "$DATADIR"
