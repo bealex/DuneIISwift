@@ -3,11 +3,16 @@
 ///
 /// Deviation: OpenDUNE's `uint16 *script` (a pointer to the current command) is stored here as
 /// `scriptPC` — its offset from `scriptInfo->start`, the same form the save format and the parity
-/// harness use. The `scriptInfo` pointer itself is re-derived at runtime from the owner's type and is
-/// not stored.
+/// harness use. A NULL `script` pointer (no script loaded, or after a fatal scripting error) is the
+/// sentinel `scriptPC == scriptNull` (`0xFFFF`); a C `NULL` pointer can't be confused with offset 0,
+/// but our offsets can, so we reserve the top value. The `scriptInfo` pointer itself is re-derived at
+/// runtime from the owner's type and is not stored.
 public struct ScriptEngine: Sendable, Equatable {
-    public var delay: UInt16 = 0            // ticks the script is suspended (0 = running)
-    public var scriptPC: UInt16 = 0         // offset of the current command from scriptInfo.start
+    /// `scriptPC` value standing in for OpenDUNE's NULL `script` pointer (not loaded / errored).
+    public static let scriptNull: UInt16 = 0xFFFF
+
+    public var delay: UInt16 = 0                    // ticks the script is suspended (0 = running)
+    public var scriptPC: UInt16 = scriptNull        // offset from scriptInfo.start, or scriptNull (NULL)
     public var returnValue: UInt16 = 0      // return value from sub-routines
     public var framePointer: UInt8 = 0
     public var stackPointer: UInt8 = 0
@@ -17,12 +22,11 @@ public struct ScriptEngine: Sendable, Equatable {
 
     public init() {}
 
-    /// `Script_Reset` (`script/script.c`): drop any running script and re-home the frame/stack pointers.
-    /// OpenDUNE also sets `script->script = NULL` (no active command) and `scriptInfo = scriptInfo`; we
-    /// store neither pointer (see the type note — `scriptPC` is an offset and `scriptInfo` is re-derived
-    /// from the owner's type), so this resets only the modeled numeric state. The frame/stack pointers
-    /// take the literal OpenDUNE init values (17 / 15).
+    /// `Script_Reset` (`script/script.c`): drop any running script (`scriptPC = scriptNull`) and re-home
+    /// the frame/stack pointers to the literal OpenDUNE init values (17 / 15). OpenDUNE also re-stores
+    /// the `scriptInfo` pointer, which we don't model (it's supplied per call, re-derived from the type).
     public mutating func reset() {
+        scriptPC = ScriptEngine.scriptNull
         isSubroutine = 0
         framePointer = 17
         stackPointer = 15
