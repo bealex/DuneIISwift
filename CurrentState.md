@@ -1,10 +1,12 @@
 # Current State
 
-**Branch:** `main` (HEAD `a4998f5`; the `rebuild/core-engine` work was merged in). **Plan of record:** `Documentation/Plan.v1.md`. **Architecture:** `Documentation/Architecture/Overview.md`.
+**Branch:** `main`. **Plan of record:** `Documentation/Plan.v1.md`. **Architecture:** `Documentation/Architecture/Overview.md`.
 
 ## Active task
 
-**Phase 2 — `DuneIIWorld` + `DuneIIContracts`.** Phase 1 (the format/codec/EMC layer) is complete and tested on real install data. Immediate next step: define the shared seam value types in `DuneIIContracts` (`HouseID`/`UnitType`/`StructureType` enums, tile/position types) and begin `DuneIIWorld` — the POD model + the static stat-table port from OpenDUNE `src/table/*info.c` (start with `houseInfo`/`landscapeInfo`, then unit/structure info). Then `GameState` (owning both bit-exact RNGs `Tools_Random_256` + Borland LCG, the two clocks, the per-subsystem tick cursors), scenario `.INI` loading via `Ini`, our save/load via `Iff`, and the original-save converter. Use `assetgen emc-disasm` output as the behavioral reference where scripts inform data.
+**Phase 2/3 — port the native functions the EMC scripts call, golden-tested against OpenDUNE, then transcribe the EMC files.** Approach + status in `Documentation/Architecture/FunctionParityHarness.md` (the 3-step plan: port primitives → match-test each vs OpenDUNE → port EMC). The OpenDUNE oracle builds headlessly here and has a `--parity-golden` function-dump mode. **Done so far:** both RNGs (`DuneIIWorld/Rng/Random256`, `RandomLCG`) ported + golden-verified.
+
+**Immediate next step:** continue Tier-0 zero-dependency primitives — add golden fixtures + Swift ports for `Tools_AdjustToGameSpeed` and the `Tile_*` geometry (`Tile_GetDistance`, pack/unpack, `Tile_GetDirection`) and `Tools_Index_Encode/Decode/GetType`. Then start the World model (Phase 2 proper): `DuneIIContracts` seam enums + `DuneIIWorld` PODs (`Unit`/`Structure`/`House`/`Team`/`Map`), object pools, the static stat-table port from `src/table/*info.c` (start `houseInfo`/`landscapeInfo`), and `GameState` (owns both RNGs, the two clocks, tick cursors). World-dependent script functions + the EMC transcription follow, verified by Tier-2a decision traces.
 
 ## Next up (queue)
 
@@ -28,11 +30,12 @@
 - rendertest MENSHPM palette fix: mentat face sprites colored by their `MENTAT<house>.CPS` palette (not IBM.PAL) via `AssetLibrary.cpsPalette` + `AssetDetailView.mentatPalette` (OpenDUNE `gui/mentat.c:494`). Build clean. Insight `render-contextual-palette`.
 - rendertest assembled buildings: `StructureCatalog` (DuneIIRenderer) maps structure icon groups → `(w,h)` tile layout (OpenDUNE `structureinfo.c`); the `.iconGroup` decode assembles a building's tiles (consecutive `w*h`-tile states, row-major per `Structure_UpdateMap`) into whole-building frames. Buildings category now shows whole buildings, not separate tiles. 69 tests green. Insight `render-structure-layout`.
 - rendertest palette-cycling correctness fix: cycling (`GUI_PaletteAnimate`) now applies **only** to IBM.PAL-rendered content — `AssetDetailView.decode` gates `paletteAnimatable = !rawFrames.isEmpty && displayPalette == nil`. Assembled structures default to the built state (2) so the windtrap power light (index 223, present only in built states) actually pulses. Insight `render-palette-animation` (extended).
-- rendertest context palettes: discovered the mentat CPS/SHP and the intro/finale WSAs **embed no palette** (verified on the install) — so they were wrongly drawn with IBM.PAL. Added `AssetLibrary.palette(named:)` + `AssetDetailView.contextPalette(for:)` reproducing the runtime loads: mercenary mentat (`MENSHPM.SHP`/`MENTATM.CPS`) → `BENE.PAL`; cutscene WSAs (`INTRO*`/`?FINAL*`) → `INTRO.PAL`; others → IBM.PAL. Corrected the earlier (non-working) MENSHPM "fix". 69 tests green, clean build zero warnings. Insight `render-contextual-palette` (rewritten). See History 2026-05.
+- rendertest context palettes: discovered the mentat CPS/SHP and the intro/finale WSAs **embed no palette** (verified on the install) — so they were wrongly drawn with IBM.PAL. Added `AssetLibrary.palette(named:)` + `AssetDetailView.contextPalette(for:)` reproducing the runtime loads: mercenary mentat (`MENSHPM.SHP`/`MENTATM.CPS`) → `BENE.PAL`; cutscene WSAs (`INTRO*`/`?FINAL*`) → `INTRO.PAL`; others → IBM.PAL. Corrected the earlier (non-working) MENSHPM "fix". Insight `render-contextual-palette` (rewritten). (Committed `ad67e38`.)
+- **Function-parity harness + RNGs (Phase 2/3 start).** Headless OpenDUNE oracle builds here; added `--parity-golden` function-dump mode. Ported `Random256` + `RandomLCG` to `DuneIIWorld/Rng/`, golden-verified bit-for-bit against `WorldTests/Fixtures/rng-golden.jsonl` (3 tests). Docs: `Architecture/FunctionParityHarness.md`, `Algorithms/Rng.md`. See History 2026-05.
 
 ## Test status
 
-`cd Code && swift test`: **69 tests, all green** (format/codec/EMC/IconMap layer + PNG/WAV export + renderer house-remap/image/palette-cycling/sprite-catalog/structure-catalog, synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited, incl. the `rendertest` product).
+`cd Code && swift test`: **72 tests, all green** (format/codec/EMC/IconMap + PNG/WAV export + renderer services + **RNG golden parity vs OpenDUNE**, synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited, incl. the `rendertest` product). OpenDUNE oracle: `cd Repositories/OpenDUNE && PATH="$PWD/.shim:$PATH" ./configure --with-sdl2="$PWD/.shim/sdl2-config" && PATH="$PWD/.shim:$PATH" make -j4` → `./bin/opendune`.
 
 ## Open decisions (from Plan.v1.md §8)
 
