@@ -14,6 +14,10 @@ enum GoldenFixture {
         let from: IntList?
         let to: IntList?
         let packed: UInt16?
+        let encoded: UInt16?
+        let gameSpeed: UInt16?
+        let inverse: Int?
+        let normal: UInt16?
         let out: IntList
     }
 
