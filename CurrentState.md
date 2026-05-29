@@ -1,6 +1,6 @@
 # Current State
 
-**Branch:** `rebuild/core-engine` (off `main`). **Plan of record:** `Documentation/Plan.v1.md`. **Architecture:** `Documentation/Architecture/Overview.md`.
+**Branch:** `main` (HEAD `a4998f5`; the `rebuild/core-engine` work was merged in). **Plan of record:** `Documentation/Plan.v1.md`. **Architecture:** `Documentation/Architecture/Overview.md`.
 
 ## Active task
 
