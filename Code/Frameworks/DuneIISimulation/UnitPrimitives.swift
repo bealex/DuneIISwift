@@ -18,6 +18,16 @@ public protocol UnitPrimitives: Sendable {
     /// `Unit_SetSpeed` (`unit.c:1902`): set the per-tick movement speed from a 0…255 `speed` request,
     /// scaled by the type's `movingSpeedFactor`, the harvester's spice load, and (non-air) `gameSpeed`.
     func setSpeed(_ unit: inout Unit, speed: UInt16, gameSpeed: UInt16)
+
+    /// `Unit_IsValidMovementIntoStructure` (`unit.c:660`): can `unit` move into `structure`?
+    /// `0` = no, `1` = move onto / close, `2` = actually enter. Read-only.
+    func isValidMovementIntoStructure(_ unit: Unit, _ structure: Structure, in state: GameState) -> UInt16
+
+    /// `Unit_GetTileEnterScore` (`unit.c:2335`): the cost of `unit` entering tile `packed` arriving
+    /// along `orient8`. `256` = inaccessible, `-1`/`-2` = an accessible structure, otherwise an
+    /// inverted-speed estimate (lower = faster). Read-only; composes the map + house primitives.
+    func tileEnterScore(_ unit: Unit, packed: UInt16, orient8: UInt16, in state: GameState,
+                        map: any MapPrimitives, house: any HousePrimitives) -> Int16
 }
 
 /// The OpenDUNE-faithful implementation of `UnitPrimitives`. Stateless; the default the `Simulation`
@@ -102,5 +112,90 @@ public struct DefaultUnitPrimitives: UnitPrimitives {
 
         unit.speed = UInt8(speed & 0xFF)
         unit.speedPerTick = UInt8(speedPerTick & 0xFF)
+    }
+
+    public func isValidMovementIntoStructure(_ unit: Unit, _ s: Structure, in state: GameState) -> UInt16 {
+        guard let st = StructureType(rawValue: Int(s.o.type)),
+              let ut = UnitType(rawValue: Int(unit.o.type)) else { return 0 }
+        let si = StructureInfo[st]
+        let ui = UnitInfo[ut]
+
+        let unitEnc = state.indexEncode(unit.o.index, type: .unit)
+        let structEnc = state.indexEncode(s.o.index, type: .structure)
+
+        // Movement into a structure of another owner.
+        if state.unitHouseID(unit) != s.o.houseID {
+            // Saboteurs can always enter houses.
+            if ut == .saboteur && unit.targetMove == structEnc { return 2 }
+            // Otherwise only foot-units may enter a conquerable structure; everyone else moves close.
+            if ui.movementType == .foot && si.o.flags.contains(.conquerable) {
+                return unit.targetMove == structEnc ? 2 : 1
+            }
+            return 0
+        }
+
+        // Prevent movement if the target structure does not accept the unit type.
+        if (si.enterFilter & (UInt32(1) << UInt32(unit.o.type))) == 0 { return 0 }
+
+        // TODO -- Not sure. (transcribed verbatim from OpenDUNE.)
+        if s.o.script.variables[4] == unitEnc { return 2 }
+
+        // Enter only if the structure is not already linked to another unit.
+        return s.o.linkedID == 0xFF ? 1 : 0
+    }
+
+    public func tileEnterScore(_ unit: Unit, packed: UInt16, orient8: UInt16, in state: GameState,
+                               map: any MapPrimitives, house: any HousePrimitives) -> Int16 {
+        guard let ut = UnitType(rawValue: Int(unit.o.type)) else { return 0 }
+        let ui = UnitInfo[ut]
+
+        if !map.isValidPosition(packed, mapScale: state.mapScale) && ui.movementType != .winger {
+            return 256
+        }
+
+        if let slot = state.unitGetByPackedTile(packed) {
+            let u = state.units[slot]
+            if u.o.index != unit.o.index && ut != .sandworm {
+                if ut == .saboteur && unit.targetMove == state.indexEncode(u.o.index, type: .unit) {
+                    return 0
+                }
+                if house.areAllied(state.unitHouseID(u), state.unitHouseID(unit),
+                                   playerHouseID: state.playerHouseID) {
+                    return 256
+                }
+                let occupantMt = (UnitType(rawValue: Int(u.o.type)).map { UnitInfo[$0].movementType }) ?? .foot
+                if occupantMt != .foot || (ui.movementType != .tracked && ui.movementType != .harvester) {
+                    return 256
+                }
+            }
+        }
+
+        if let sslot = state.structureGetByPackedTile(packed) {
+            let res = isValidMovementIntoStructure(unit, state.structures[sslot], in: state)
+            if res == 0 { return 256 }
+            return Int16(-Int(res))
+        }
+
+        let type = map.landscapeType(state.map[Int(packed)], tileIDs: state.tileIDs)
+        var res = UInt16(LandscapeInfo[type].speed(ui.movementType))
+
+        if ut == .saboteur && type == .wall {
+            if !house.areAllied(state.map[Int(packed)].houseID, state.unitHouseID(unit),
+                                playerHouseID: state.playerHouseID) {
+                res = 255
+            }
+        }
+
+        if res == 0 { return 256 }
+
+        // Diagonal travel is cheaper per tile.
+        if (orient8 & 1) != 0 {
+            res -= res / 4 + res / 8
+        }
+
+        // 'Invert' the speed to get a rough estimate of the time taken.
+        res ^= 0xFF
+
+        return Int16(res)
     }
 }

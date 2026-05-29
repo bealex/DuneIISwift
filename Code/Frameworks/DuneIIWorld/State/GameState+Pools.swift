@@ -98,6 +98,16 @@ public extension GameState {
         return Int(tile.index) - 1
     }
 
+    /// `Structure_Get_ByPackedTile` (`structure.c`): the slot index of the structure occupying
+    /// `packed`, or `nil` if the tile is off-map or carries no structure. (`g_map[packed].index` is
+    /// 1-based, mirroring `unitGetByPackedTile`.)
+    func structureGetByPackedTile(_ packed: UInt16) -> Int? {
+        if Tile32.isOutOfMap(packed) { return nil }
+        let tile = map[Int(packed)]
+        if !tile.hasStructure { return nil }
+        return Int(tile.index) - 1
+    }
+
     /// `Unit_IsTypeOnMap` (`unit.c:474`): is any on-map unit matching `houseID` (or any, when
     /// `Pool.houseInvalid`) and `typeID` (or any, when `UNIT_INVALID` = `0xFF`) present? Units flagged
     /// `isNotOnMap` are skipped unless strict-validation is active.

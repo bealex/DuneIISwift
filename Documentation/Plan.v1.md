@@ -262,11 +262,11 @@ The implementation order for the Phase-3 native primitives. Built bottom-up: a p
 
 **Tier E — combat / scoring.** (`DuneIISimulation`.)
 - `House_AreAllied` (`house.c`) — `g_playerHouseID` (`GameState.playerHouseID`). **done** (golden, `HousePrimitives`). Used by 16/18.
-- 16. `Unit_GetTileEnterScore` (`unit.c:2335`) — `Map_IsValidPosition` ✓, `Map_GetLandscapeType` (11, **blocked** on sprite init), `House_AreAllied` ✓, structure pool ✓.
+- 16. `Unit_GetTileEnterScore` (`unit.c:2335`) — **done** (`UnitPrimitives.tileEnterScore` + `isValidMovementIntoStructure` in `DefaultUnitPrimitives`, composing `Map_IsValidPosition`/`Map_GetLandscapeType`/`House_AreAllied`; + the World pool query `GameState.structureGetByPackedTile` = `Structure_Get_ByPackedTile`). Golden over the landscape path (`tileenterscore-golden.jsonl`, `g_dune2_enhanced` pinned false in `Parity_DumpGolden`), decision-trace over the occupant/structure branches (`UnitMovementDecisionTests`). The pathfinder (#21) prerequisite.
 - 17. `Unit_Deviate` (`unit.c`) — `HouseInfo` ✓, `Random256` ✓; but calls `Unit_SetAction` + `Unit_UntargetMe` (**Tier F**) → blocked.
 - 18. `Unit_Damage` (`unit.c:1530`) — `Unit_RemovePlayer`/`Unit_Remove` (**Tier F**), `Map_FillCircleWithSpice` (Tier D), explosions (15) → blocked.
 
-**Net:** Tiers D and E are gated on the scenario/map/sprite-init layer (deferred Phase-2) and Tier-F lifecycle (`Unit_Remove`/`Unit_SetAction`/`Unit_UntargetMe`). The two dependency-free primitives (`Map_IsValidPosition`, `House_AreAllied`) are done; the remainder unblocks once that init + lifecycle land. **Recommended next: port the scenario/map/sprite init.**
+**Net:** the scenario/map/sprite-init layer is now done, so Tier D (`Map_GetLandscapeType`/fog/spice) and the read-only part of Tier E (`Unit_GetTileEnterScore` #16) are done. What remains in Tier E (#17 `Unit_Deviate`, #18 `Unit_Damage`) is gated on Tier-F lifecycle (`Unit_Remove`/`Unit_SetAction`/`Unit_UntargetMe`), as are the resequenced `Unit_UpdateMap`/`Unit_Move`/`Unit_MovementTick` (D′1–D′3). **Recommended next: Tier F lifecycle — `Unit_SetAction`/`Unit_UntargetMe`/`Unit_Remove` — which unblocks the rest of E and the movement cluster, then the pathfinder (#21, which already has its #16 cost function).**
 
 **Tier F — lifecycle / orchestration / pathfinding (largest).**
 19. `Unit_SetDestination` / `Unit_SetAction` (`unit.c:497`) / `Unit_Hide` — pools ✓, Tiers B–D.
