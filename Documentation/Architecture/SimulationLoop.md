@@ -35,6 +35,10 @@ Each `GameLoop_*` runs every tick, but throttles its sub-activities with "next-d
 
 `Simulation.advanceUnitCadence()` computes which fired this tick (a `UnitTickFlags` set) and advances the cursors, faithfully. The **per-unit work** each flag drives (movement tick, rotation, script step, deviation decay, …) is the per-type state-machine port — landing in the later Phase-3 slices; the cadence is in place and tested now. The Structure/House/Team phases get their own cursors when their logic is ported (they are currently order-preserving stubs).
 
+## Replaceable primitives
+
+The native per-type primitives are **not** static functions — each group is a `protocol` (`UnitPrimitives`, and later `StructurePrimitives`/`MapPrimitives`/…) with an OpenDUNE-faithful default struct (`DefaultUnitPrimitives`). `Simulation` holds an injected `any UnitPrimitives` (defaulting to the faithful port), so an implementation can be swapped — a reference vs. an optimized port, an instrumented decision-tracing variant for Tier-2a, or a test double. Leaf value-type math (`Tile32` geometry, `Tools`, `Orientation`, the stat tables) stays static: it is pure data, not behaviour you'd replace.
+
 ## Determinism
 
 Same scenario + seed + command stream ⇒ byte-identical run (engine principle 5). `tick()` is pure over `GameState` (a value type), so a run is fully reproducible and a `GameState` copy is a snapshot. The RNG draw *order* deliberately differs from OpenDUNE (Plan §7) — parity is behavioural, not draw-order-identical.

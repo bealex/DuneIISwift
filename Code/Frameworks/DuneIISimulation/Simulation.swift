@@ -11,10 +11,21 @@ public struct Simulation: Sendable {
     /// All mutable simulation state. A value type, so a copy is a full snapshot.
     public var state: GameState
 
-    public init(state: GameState) { self.state = state }
+    /// The replaceable native per-unit primitives. Injected so the implementation can be swapped
+    /// (reference / optimized / instrumented / test); defaults to the OpenDUNE-faithful port.
+    public var unitPrimitives: any UnitPrimitives
 
-    public init(random256Seed: UInt32 = 0, randomLCGSeed: UInt16 = 0) {
-        state = GameState(random256Seed: random256Seed, randomLCGSeed: randomLCGSeed)
+    public init(state: GameState, unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives()) {
+        self.state = state
+        self.unitPrimitives = unitPrimitives
+    }
+
+    public init(
+        random256Seed: UInt32 = 0, randomLCGSeed: UInt16 = 0,
+        unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives()
+    ) {
+        self.init(state: GameState(random256Seed: random256Seed, randomLCGSeed: randomLCGSeed),
+                  unitPrimitives: unitPrimitives)
     }
 
     /// One simulation tick: advance the clocks (pause-aware) then run the four game-loop phases.
