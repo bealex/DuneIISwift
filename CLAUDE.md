@@ -67,9 +67,9 @@ Steps 0, 1, 4, 5, 6, 7 are mandatory. Tests are written **after** the feature (s
 7. Update `CurrentState.md` — move the finished item to "Recently completed" (with test count + History pointer), set the next "Active task" with its immediate next step, refresh "Test status."
 8. If you learned something non-obvious, capture it as an insight under `Documentation/Insights/` and index it in `Insights/README.md`. Cross-link the code `file:line` and the test.
 
-**Commit cadence.** Commit after each phase, or after each meaningful step within a phase. End commit messages with the `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` trailer. Work happens on a feature branch off `main`.
+**Commit cadence.** Commit after every **2–3 blocks** are done (a block = one logical work-unit; see below), or after each phase. End commit messages with the `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` trailer. Work happens on a feature branch off `main`.
 
-**Chunking & check cadence (batched porting work).** When doing repetitive porting work in "blocks" (one logical work-unit, e.g. a stat table or primitive batch): work in **bigger chunks — bundle ~3 blocks per commit**, not one tiny increment per commit. Relax the per-step checks of workflow steps 4–5 to match: a block's own new/changed tests must compile and pass every block (run the filtered subset, `swift test --filter <Suite>`); run the **full suite every 4–6 blocks** and a **clean build every 6–10 blocks**; always finish a push with a full suite + clean build before declaring done. These cadences are specific to this project.
+**Chunking & check cadence (batched porting work).** When doing repetitive porting work in "blocks" (one logical work-unit, e.g. a stat table or primitive batch): work in **bigger chunks — bundle 2–3 blocks per commit**, not one tiny increment per commit. Relax the per-step checks of workflow steps 4–5 to match: a block's own new/changed tests must compile and pass every block (run the filtered subset, `swift test --filter <Suite>`); run the **full suite every 4–6 blocks** and a **clean build every 6–10 blocks**; always finish a push with a full suite + clean build before declaring done. These cadences are specific to this project.
 
 ## Periodic self-review
 
