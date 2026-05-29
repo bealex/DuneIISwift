@@ -254,9 +254,9 @@ The implementation order for the Phase-3 native primitives. Built bottom-up: a p
 **Tier D — map state.** (`DuneIISimulation.MapPrimitives`.)
 12. `Map_IsValidPosition` (`map.c`) — `g_mapInfos` (`MapInfo.scales` ✓) + `Scenario.mapScale`. **done** (golden).
 
-> **Prerequisite found (during implementation).** The rest of Tier D needs **runtime tile-id bases** (`g_veiledTileID`/`g_landscapeTileID`/`g_wallTileID`/`g_bloomTileID`/`g_builtSlabTileID`) that `Sprites_Init` (`sprites.c:274`) derives from the decoded `ICON.MAP`, plus the player house and fog state. That is the deferred **scenario/map/sprite-init** layer (a Phase-2 item). It must land first, then:
-> - 11. `Map_GetLandscapeType` (`map.c`) — tile-id bases + `_landscapeSpriteMap` + structure pool ✓.
-> - 13. `Map_IsPositionUnveiled` (`map.c`) — `Tile_IsUnveiled` (needs `g_veiledTileID`). `Map_UnveilTile` — also `g_playerHouseID`, `Unit_HouseUnitCount`, neighbour-unveil, render dirty-marking.
+> **Prerequisite found (during implementation), now satisfied.** The rest of Tier D needs the **runtime tile-id bases** (`TileIDs`: `veiled`/`landscape`/`wall`/`bloom`/`builtSlab`) that `Sprites_Init` (`sprites.c:274`) derives from `ICON.MAP` — **done** (`DuneIIWorld.TileIDs`, `GameState.tileIDs`), as is map-from-seed (`createLandscape`) and scenario `.INI` loading. With those:
+> - 11. `Map_GetLandscapeType` (`map.c`) — **done** (`MapPrimitives.landscapeType` + `_landscapeSpriteMap`; golden vs the oracle over every generated tile, `LandscapeTypeTests`). The structure case is the tile's `hasStructure` flag.
+> - 13. `Map_IsPositionUnveiled` (`map.c`) — now unblocked too (`Tile_IsUnveiled` needs `TileIDs.veiled` ✓). `Map_UnveilTile` — also `g_playerHouseID` ✓, `Unit_HouseUnitCount`, neighbour-unveil, render dirty-marking.
 > - 14. `Map_ChangeSpiceAmount` / `Map_SearchSpice` — `Map_GetLandscapeType` (11).
 > - 15. `Map_UpdateAround` / `Map_MakeExplosion` — larger; explosions/animation tables (also the render seam).
 
