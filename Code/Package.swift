@@ -88,7 +88,7 @@ let package = Package(
         // Native macOS SwiftUI asset inspector (render-test app). Builds via `swift run rendertest`.
         .executableTarget(
             name: "mapview",
-            dependencies: [ "DuneIIWorld", "DuneIIFormats", "DuneIIRenderer", "DuneIIContracts" ],
+            dependencies: [ "DuneIISimulation", "DuneIIWorld", "DuneIIFormats", "DuneIIRenderer", "DuneIIContracts" ],
             path: "Apps/mapview"
         ),
         .executableTarget(

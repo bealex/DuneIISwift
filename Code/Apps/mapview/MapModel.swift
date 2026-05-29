@@ -1,7 +1,8 @@
+import DuneIISimulation
 import DuneIIWorld
 import Foundation
 
-/// View model: owns the asset store + the scene, loads a scenario into a `GameState`, and applies zoom.
+/// View model: owns the asset store + the scene, loads a scenario into a `Simulation`, and applies zoom.
 @MainActor
 @Observable
 final class MapModel {
@@ -19,10 +20,10 @@ final class MapModel {
 
     func load(_ scenarioName: String) {
         guard let ini = assets.scenarioINI(scenarioName), let iconMap = assets.iconMap else { return }
-        var state = GameState()
-        state.loadScenario(ini: ini, iconMap: iconMap)
+        var simulation = Simulation()
+        simulation.state.loadScenario(ini: ini, iconMap: iconMap)
         currentScenario = scenarioName
-        scene.rebuild(state: state, assets: assets)
+        scene.load(simulation: simulation, assets: assets)
         scene.setZoom(CGFloat(scale))
     }
 }

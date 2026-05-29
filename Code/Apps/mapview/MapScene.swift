@@ -1,12 +1,22 @@
+import DuneIIFormats
+import DuneIIRenderer
+import DuneIISimulation
 import DuneIIWorld
 import Foundation
 import SpriteKit
 
-/// SpriteKit scene that draws a `GameState`: one terrain+structures tile node (`ICON.ICN` tiles), and
-/// one node per unit (its SHP sprite). A camera provides the 1×–16× zoom; the scene fits the window.
+/// SpriteKit scene that draws a `GameState` and runs the basic game loop: each frame it advances the
+/// `Simulation` clock (no unit logic yet) and re-colorizes the terrain through the palette animator, so
+/// time-driven palette cycling (the windtrap power light, index 223) animates from real state.
 @MainActor
 final class MapScene: SKScene {
     private let cam = SKCameraNode()
+    private var simulation: Simulation?
+    private var assets: AssetStore?
+    private var basePalette = AssetStore.grayscale
+    private var terrainBuffer: [UInt8] = []
+    private var terrainNode: SKSpriteNode?
+    private var lastTick = -1
 
     func configure() {
         let side = CGFloat(MapImageBuilder.sidePx)
@@ -18,31 +28,52 @@ final class MapScene: SKScene {
         cam.position = CGPoint(x: side / 2, y: side / 2)
     }
 
-    /// Zoom factor: 1 fits the whole map, higher zooms into the centre.
     func setZoom(_ factor: CGFloat) { cam.setScale(1 / max(factor, 1)) }
 
-    func rebuild(state: GameState, assets: AssetStore) {
+    func load(simulation: Simulation, assets: AssetStore) {
+        self.simulation = simulation
+        self.assets = assets
+        basePalette = assets.palette
         for child in children where child !== cam { child.removeFromParent() }
 
         let side = MapImageBuilder.sidePx
+        terrainBuffer = MapImageBuilder.terrainIndices(simulation.state, assets) ?? []
+        let node = SKSpriteNode()
+        node.position = CGPoint(x: side / 2, y: side / 2)
+        node.zPosition = 0
+        terrainNode = node
+        addChild(node)
+        recolorTerrain(tick: 0)
 
-        if let terrain = MapImageBuilder.terrainImage(state, assets) {
-            let texture = SKTexture(cgImage: terrain)
-            texture.filteringMode = .nearest
-            let node = SKSpriteNode(texture: texture)
-            node.position = CGPoint(x: side / 2, y: side / 2)   // image origin top-left → centre
-            node.zPosition = 0
-            addChild(node)
-        }
-
-        for sprite in MapImageBuilder.unitSprites(state, assets) {
+        for sprite in MapImageBuilder.unitSprites(simulation.state, assets) {
             let texture = SKTexture(cgImage: sprite.image)
             texture.filteringMode = .nearest
-            let node = SKSpriteNode(texture: texture)
-            // image space is y-down; SpriteKit is y-up.
-            node.position = CGPoint(x: CGFloat(sprite.centerX), y: CGFloat(side - sprite.centerY))
-            node.zPosition = 1
-            addChild(node)
+            let unitNode = SKSpriteNode(texture: texture)
+            unitNode.position = CGPoint(x: CGFloat(sprite.centerX), y: CGFloat(side - sprite.centerY))
+            unitNode.zPosition = sprite.z
+            addChild(unitNode)
         }
+        lastTick = -1
+    }
+
+    /// The game loop: advance the simulation clock, then refresh the palette-cycled terrain.
+    override func update(_ currentTime: TimeInterval) {
+        guard simulation != nil else { return }
+        simulation!.tick()
+        let tick = Int(simulation!.state.timerGUI)
+        if tick != lastTick {
+            recolorTerrain(tick: tick)
+            lastTick = tick
+        }
+    }
+
+    private func recolorTerrain(tick: Int) {
+        guard let terrainNode, !terrainBuffer.isEmpty else { return }
+        let palette = PaletteAnimator.animatedPalette(base: basePalette, tick: tick)
+        guard let image = MapImageBuilder.colorize(terrainBuffer, palette: palette) else { return }
+        let texture = SKTexture(cgImage: image)
+        texture.filteringMode = .nearest
+        terrainNode.texture = texture
+        terrainNode.size = texture.size()
     }
 }
