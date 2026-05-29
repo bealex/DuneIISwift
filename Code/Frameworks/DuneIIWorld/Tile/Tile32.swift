@@ -64,6 +64,27 @@ public struct Tile32: Equatable, Sendable {
             y: UInt16(truncatingIfNeeded: Int(tile.y) - (diffY * dist + roundY) / 128))
     }
 
+    /// `Tile_MoveByRandom` (`tile.c`): pick a random distance (≤ `distance`, halved down from a random
+    /// byte) and a random 256-step orientation, then offset `tile` by whole tiles in that direction.
+    /// Draws two `Random256` bytes from `rng`; returns the original tile if the result leaves the map.
+    public static func moveByRandom(
+        _ tile: Tile32, distance: UInt16, center: Bool, rng: inout Random256
+    ) -> Tile32 {
+        if distance == 0 { return tile }
+
+        var newDistance = UInt16(rng.next())
+        while newDistance > distance { newDistance /= 2 }
+        let dist = Int(newDistance)
+
+        let orientation = Int(rng.next())
+        let x = UInt16(truncatingIfNeeded: Int(tile.x) + ((Int(stepX[orientation]) * dist) / 128) * 16)
+        let y = UInt16(truncatingIfNeeded: Int(tile.y) - ((Int(stepX[(orientation + 64) & 0xFF]) * dist) / 128) * 16)
+
+        if x > 16384 || y > 16384 { return tile }
+        let result = Tile32(x: x, y: y)
+        return center ? result.centered : result
+    }
+
     /// `_stepX[256]` (`tile.c:230`): the signed cos-like step table. `_stepY[i] = stepX[(i + 64) & 0xFF]`.
     static let stepX: [Int8] = [
            0,    3,    6,    9,   12,   15,   18,   21,   24,   27,   30,   33,   36,   39,   42,   45,

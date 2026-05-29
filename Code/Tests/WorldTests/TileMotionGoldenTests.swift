@@ -13,6 +13,8 @@ struct TileMotionGoldenTests {
         let orientation: Int16?
         let distance: UInt16?
         let packed: UInt16?
+        let seed: UInt32?
+        let center: Int?
         let out: GoldenFixture.IntList
     }
 
@@ -48,6 +50,19 @@ struct TileMotionGoldenTests {
         #expect(!records.isEmpty)
         for r in records {
             #expect(Tile32.isOutOfMap(r.packed!) == (r.out.scalar != 0), "packed \(r.packed!)")
+        }
+    }
+
+    @Test("Tile_MoveByRandom matches the oracle for the same seed")
+    func moveByRandom() {
+        let records = rows("Tile_MoveByRandom")
+        #expect(records.count == 250)
+        for r in records {
+            var rng = Random256(seed: r.seed!)   // bit-exact RNG ⇒ same draws as the oracle
+            let result = Tile32.moveByRandom(
+                Tile32(x: r.in![0], y: r.in![1]), distance: r.distance!, center: r.center! != 0, rng: &rng)
+            #expect(result == Tile32(x: UInt16(r.out.values[0]), y: UInt16(r.out.values[1])),
+                    "seed \(r.seed!) in \(r.in!) dist \(r.distance!) center \(r.center!)")
         }
     }
 }

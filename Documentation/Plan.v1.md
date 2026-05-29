@@ -233,21 +233,23 @@ The implementation order for the Phase-3 native primitives. Built bottom-up: a p
 
 **Tier 0 — pure scalar/geometry (done).** Both RNGs ✓; `Tile_PackTile`/`Tile_UnpackTile`/`PackXY`/`GetPackedX/Y` ✓; `Tile_GetDistance`/`DistancePacked`/`DistanceRoundedUp` ✓; `Tile_GetDirection`/`DirectionPacked` ✓; `Tile_AddTileDiff` ✓; `Orientation_Orientation256ToOrientation8`/`16` ✓; `Tools_AdjustToGameSpeed` ✓; `Tools_Index_GetType`/`Decode`/`Encode`/`IsValid`/`Get*` ✓.
 
-**Tier A — pure tile helpers (no `GameState`; golden-tested).**
-1. `Tile_Center` (`tile.c:70`) — none.
-2. `Tile_IsOutOfMap` (`tile.h:119`) — none.
-3. `_stepX`/`_stepY` step tables + `Tile_MoveByDirection` (`tile.c:230,276`) — step tables.
-4. `Tile_MoveByRandom` (`tile.c`) — step tables + `Random256` ✓ (RNG-coupled: test for determinism + shared `MoveByDirection` core, not byte-vs-oracle).
+**Tier A — pure tile helpers (no `GameState`; golden-tested). ✓ done.**
+1. `Tile_Center` (`tile.c:70`) — none. ✓
+2. `Tile_IsOutOfMap` (`tile.h:119`) — none. ✓
+3. `_stepX`/`_stepY` step tables + `Tile_MoveByDirection` (`tile.c:230,276`) — step tables. ✓
+4. `Tile_MoveByRandom` (`tile.c`) — step tables + `Random256` ✓. Golden-tested per-seed (our RNG is bit-exact, so an isolated call matches the oracle byte-for-byte). ✓
 
-**Tier B — unit orientation / rotation (mutate a `Unit`).**
-5. `Unit_SetOrientation` (`unit.c:1671`) — `UnitInfo.turningSpeed` ✓.
-6. `Unit_UpdateMap` (`unit.c`) — `g_map`, fog/sprite; isolate the gameplay-relevant tile bookkeeping (tile `hasUnit`/`index`, unveil) from render dirty-marking.
-7. `Unit_Rotate` (`unit.c:65`) — `Orientation_256To8/16` ✓, `Unit_UpdateMap` (6). Drives the loop's `tickRotation`.
+**Tier B — unit orientation / rotation (mutate a `Unit`; `DuneIISimulation.UnitLogic`).**
+5. `Unit_SetOrientation` (`unit.c:1671`) — `UnitInfo.turningSpeed` ✓. **done.**
+7. `Unit_Rotate` (`unit.c:65`) — `Orientation_256To8/16` ✓. **done** (orientation state effect; the trailing `Unit_UpdateMap(2,…)` is render dirty-marking + visibility counts that don't change the unit's own state — deferred with 6). Drives the loop's `tickRotation`.
 
-**Tier C — speed / movement.**
-8. `Unit_SetSpeed` (`unit.c:1902`) — `UnitInfo` ✓.
-9. `Unit_Move` (`unit.c:1286`) — `Tile_MoveByDirection` (3), `Unit_UpdateMap` (6), `Map_UnveilTile` (Tier D), `Tile_GetDistance` ✓.
-10. `Unit_MovementTick` (`unit.c:98`) — `AdjustToGameSpeed` ✓, `Tile_GetDistance` ✓, `Unit_Move` (9). Drives the loop's `tickMovement`.
+**Tier C — speed.**
+8. `Unit_SetSpeed` (`unit.c:1902`) — `UnitInfo` ✓. **done.**
+
+> **Dependency correction (found during implementation).** `Unit_UpdateMap` (old 6), `Unit_Move` (old 9), and `Unit_MovementTick` (old 10) are **not** smaller than the map cluster: they need `Map_GetLandscapeType` / `Map_UpdateAround` / fog-unveil (Tier D), `Unit_Remove` (Tier F), and `Unit_Damage` (Tier E). They are **resequenced to after Tier D** (and the lifecycle/combat bits they touch), so the build stays strictly bottom-up:
+> - **D′1.** `Unit_UpdateMap` — needs Tier D map + fog + `Unit_HouseUnitCount`.
+> - **D′2.** `Unit_Move` (`unit.c:1286`) — needs `Tile_MoveByDirection` ✓, `Unit_UpdateMap` (D′1), `Map_GetLandscapeType`/unveil (Tier D), `Unit_Remove` (Tier F), `Unit_Damage` (Tier E).
+> - **D′3.** `Unit_MovementTick` (`unit.c:98`) — needs `Unit_Move` (D′2). Drives the loop's `tickMovement`.
 
 **Tier D — map state.**
 11. `Map_GetLandscapeType` (`map.c`) — `g_map`, `LandscapeInfo` ✓.
