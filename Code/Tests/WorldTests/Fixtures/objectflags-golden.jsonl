@@ -1,0 +1,17 @@
+{"fn":"ObjectFlags","flag":"used","mask":1}
+{"fn":"ObjectFlags","flag":"allocated","mask":2}
+{"fn":"ObjectFlags","flag":"isNotOnMap","mask":4}
+{"fn":"ObjectFlags","flag":"isSmoking","mask":8}
+{"fn":"ObjectFlags","flag":"fireTwiceFlip","mask":16}
+{"fn":"ObjectFlags","flag":"animationFlip","mask":32}
+{"fn":"ObjectFlags","flag":"bulletIsBig","mask":64}
+{"fn":"ObjectFlags","flag":"isWobbling","mask":128}
+{"fn":"ObjectFlags","flag":"inTransport","mask":256}
+{"fn":"ObjectFlags","flag":"byScenario","mask":512}
+{"fn":"ObjectFlags","flag":"degrades","mask":1024}
+{"fn":"ObjectFlags","flag":"isHighlighted","mask":2048}
+{"fn":"ObjectFlags","flag":"isDirty","mask":4096}
+{"fn":"ObjectFlags","flag":"repairing","mask":8192}
+{"fn":"ObjectFlags","flag":"onHold","mask":16384}
+{"fn":"ObjectFlags","flag":"isUnit","mask":65536}
+{"fn":"ObjectFlags","flag":"upgrading","mask":131072}

@@ -1,0 +1,9 @@
+{"fn":"Tile","field":"groundTileID","value":511,"packed":511}
+{"fn":"Tile","field":"overlayTileID","value":127,"packed":65024}
+{"fn":"Tile","field":"houseID","value":7,"packed":458752}
+{"fn":"Tile","field":"isUnveiled","value":1,"packed":524288}
+{"fn":"Tile","field":"hasUnit","value":1,"packed":1048576}
+{"fn":"Tile","field":"hasStructure","value":1,"packed":2097152}
+{"fn":"Tile","field":"hasAnimation","value":1,"packed":4194304}
+{"fn":"Tile","field":"hasExplosion","value":1,"packed":8388608}
+{"fn":"Tile","field":"index","value":255,"packed":4278190080}
