@@ -24,6 +24,7 @@ let package = Package(
         .library(name: "DuneIIInput", targets: [ "DuneIIInput" ]),
         .library(name: "DuneIIAudio", targets: [ "DuneIIAudio" ]),
         .library(name: "DuneIIExport", targets: [ "DuneIIExport" ]),
+        .library(name: "DuneIIScenarios", targets: [ "DuneIIScenarios" ]),
         .executable(name: "assetgen", targets: [ "assetgen" ]),
         .executable(name: "duneii-headless", targets: [ "duneii-headless" ]),
         .executable(name: "rendertest", targets: [ "rendertest" ]),
@@ -72,6 +73,15 @@ let package = Package(
             exclude: [ "CLAUDE.md" ]
         ),
 
+        // Behavioural scenario harness — the shared headless model (terrain + scenarios + runner) used
+        // by the scenariolab app and the OpenDUNE scenario-golden tests. See Architecture/ScenarioHarness.md.
+        .target(
+            name: "DuneIIScenarios",
+            dependencies: [ "DuneIISimulation", "DuneIIWorld", "DuneIIFormats", "DuneIIContracts" ],
+            path: "Frameworks/DuneIIScenarios",
+            exclude: [ "CLAUDE.md" ]
+        ),
+
         // Tools (command-line).
         .executableTarget(
             name: "assetgen",
@@ -104,5 +114,6 @@ let package = Package(
         .testTarget(name: "SimulationTests", dependencies: [ "DuneIISimulation" ], path: "Tests/SimulationTests"),
         .testTarget(name: "ExportTests", dependencies: [ "DuneIIExport", "DuneIIFormats" ], path: "Tests/ExportTests"),
         .testTarget(name: "RendererTests", dependencies: [ "DuneIIRenderer", "DuneIIFormats" ], path: "Tests/RendererTests"),
+        .testTarget(name: "ScenariosTests", dependencies: [ "DuneIIScenarios" ], path: "Tests/ScenariosTests"),
     ]
 )
