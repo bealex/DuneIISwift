@@ -16,11 +16,18 @@ enum MapImageBuilder {
 
     struct UnitSprite { let image: CGImage; let centerX: Int; let centerY: Int; let z: CGFloat; let flipped: Bool }   // image-space (y down)
 
+    private static let unitsS2Base = 111   // UNITS2.SHP global sprite base (Sprites_Init, sprites.c:485)
+
     // Orientation (8-step) → (frame offset, horizontally-flipped). Ports viewport.c's tables.
     private static let dirFrames: [(Int, Bool)] =   // values_32A4 — directional (5 frames N,NE,E,SE,S)
         [(0, false), (1, false), (2, false), (3, false), (4, false), (3, true), (2, true), (1, true)]
     private static let infantryDir: [(Int, Bool)] = // values_32C4 — infantry (3 directions N,E,S)
         [(0, false), (1, false), (1, false), (1, false), (2, false), (1, true), (1, true), (1, true)]
+    // Per-orientation turret pixel offsets (viewport.c): siege tank (values_336E), devastator (values_338E).
+    private static let siegeTurretOffset: [(Int, Int)] =
+        [(0, -5), (0, -5), (2, -3), (2, -1), (-1, -3), (-2, -1), (-2, -3), (-1, -5)]
+    private static let devastatorTurretOffset: [(Int, Int)] =
+        [(0, -4), (-1, -3), (2, -4), (0, -3), (-1, -3), (0, -3), (-2, -4), (1, -3)]
 
     /// The 1024×1024 palette-indexed terrain buffer with structures stamped on top (both are
     /// `ICON.ICN` tiles). Built once per load; the game loop re-colorizes it each tick (so the
@@ -105,11 +112,16 @@ enum MapImageBuilder {
                     result.append(UnitSprite(image: image, centerX: cx, centerY: cy, z: 1, flipped: flip))
                 }
             }
-            if info.o.flags.contains(.hasTurret), let group = turretGroup(forUnitName: info.o.name) {
-                let turretOrient = Orientation.to8(UInt8(bitPattern: u.orientation[1].current))
-                let (offset, flip) = dirFrames[Int(turretOrient)]
-                if let image = sprite(group, frame: min(offset, group.frameCount - 1), assets, house) {
-                    result.append(UnitSprite(image: image, centerX: cx, centerY: cy, z: 2, flipped: flip))
+            // Turret: any unit with a turret sprite (not only `hasTurret`); it lives in UNITS2.SHP.
+            // Its orientation tracks orientation[1] for tank/siege (independent turret), else the body.
+            if info.turretSpriteID != 0xFFFF {
+                let slot = info.o.flags.contains(.hasTurret) ? 1 : 0
+                let turretO8 = Int(Orientation.to8(UInt8(bitPattern: u.orientation[slot].current)))
+                let (offset, flip) = dirFrames[turretO8]
+                let localFrame = Int(info.turretSpriteID) - unitsS2Base + offset
+                let (dx, dy) = turretOffset(turretSpriteID: info.turretSpriteID, orientation: turretO8)
+                if let image = spriteFrame(shp: "UNITS2.SHP", frame: localFrame, assets, house) {
+                    result.append(UnitSprite(image: image, centerX: cx + dx, centerY: cy + dy, z: 2, flipped: flip))
                 }
             }
         }
@@ -131,11 +143,26 @@ enum MapImageBuilder {
         }
     }
 
+    /// Per-orientation turret offset for a `turretSpriteID` (viewport.c's switch on the turret sprite).
+    private static func turretOffset(turretSpriteID: UInt16, orientation: Int) -> (Int, Int) {
+        switch turretSpriteID {
+            case 141: return (0, -2)                      // sonic tank   (0x8D)
+            case 146: return (0, -3)                      // launcher / deviator (0x92)
+            case 126: return siegeTurretOffset[orientation]      // siege tank (0x7E)
+            case 136: return devastatorTurretOffset[orientation] // devastator (0x88)
+            default:  return (0, 0)                       // combat tank, …
+        }
+    }
+
     /// The `frame`-th frame (group-local) of a sprite group, house-recoloured (index 0 transparent).
     private static func sprite(_ group: SpriteCatalog.Group, frame: Int, _ assets: AssetStore, _ house: DuneIIRenderer.House) -> CGImage? {
-        let index = group.firstFrame + frame
-        guard let frames = assets.shp(group.shp), index >= 0, index < frames.frames.count else { return nil }
-        let f = frames.frames[index]
+        spriteFrame(shp: group.shp, frame: group.firstFrame + frame, assets, house)
+    }
+
+    /// A specific (SHP-local) frame, house-recoloured (index 0 transparent).
+    private static func spriteFrame(shp: String, frame: Int, _ assets: AssetStore, _ house: DuneIIRenderer.House) -> CGImage? {
+        guard let frames = assets.shp(shp), frame >= 0, frame < frames.frames.count else { return nil }
+        let f = frames.frames[frame]
         return IndexedImage.cgImage(
             indices: f.pixels, width: f.width, height: f.height,
             palette: assets.palette, transparentIndex: 0,
@@ -144,10 +171,6 @@ enum MapImageBuilder {
 
     private static func bodyGroup(forUnitName name: String) -> SpriteCatalog.Group? {
         group(forUnitName: name, part: "body")
-    }
-
-    private static func turretGroup(forUnitName name: String) -> SpriteCatalog.Group? {
-        group(forUnitName: name, part: "turret")
     }
 
     /// Resolve a unit's sprite group, with aliases for names that differ from `SpriteCatalog`.
