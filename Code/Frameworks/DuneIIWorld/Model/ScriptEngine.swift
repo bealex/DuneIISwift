@@ -31,4 +31,12 @@ public struct ScriptEngine: Sendable, Equatable {
         framePointer = 17
         stackPointer = 15
     }
+
+    /// `STACK_PEEK(position)` (1-based): read a value off the stack without popping it — how the native
+    /// script functions read their arguments. Returns 0 if `position` is out of range (the VM glue only
+    /// peeks arguments a running script has pushed; a defensive read avoids a trap on malformed input).
+    public func peek(_ position: Int) -> UInt16 {
+        let i = Int(stackPointer) + position - 1
+        return (i >= 0 && i < stack.count) ? stack[i] : 0
+    }
 }
