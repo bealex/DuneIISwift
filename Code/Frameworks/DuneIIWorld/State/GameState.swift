@@ -65,6 +65,10 @@ public struct GameState: Sendable {
     /// The local player's house. OpenDUNE's `g_playerHouseID`; set by scenario loading (not yet ported).
     public var playerHouseID: UInt8 = 0
 
+    /// Runtime tile-id bases derived from `ICON.MAP` (`Sprites_Init`); populated at load. Anchors
+    /// `Map_GetLandscapeType` etc.
+    public var tileIDs = TileIDs()
+
     public init(random256Seed: UInt32 = 0, randomLCGSeed: UInt16 = 0) {
         units = Array(repeating: Unit(), count: Pool.unitIndexMax)
         structures = Array(repeating: Structure(), count: Pool.structureIndexMaxHard)

@@ -50,6 +50,18 @@ public struct IconMap {
         return Group(index: index, name: IconMap.name(index), tileIDs: Array(values[start ..< end]))
     }
 
+    /// The flat `g_iconMap[g_iconMap[group] + offset]` lookup OpenDUNE uses for the runtime tile-id
+    /// bases (`Sprites_Init`, `src/sprites.c:274`). Unlike `group(_:).tileIDs`, this indexes the raw
+    /// array and may reach past a group's own tiles into the following data — which is exactly what
+    /// the base computations (e.g. fog-of-war + 16) rely on. Returns nil if out of range.
+    public func tileID(group: Int, offset: Int) -> Int? {
+        guard group >= 1, group < values.count else { return nil }
+        let base = values[group]
+        let index = base + offset
+        guard base > 0, index >= 0, index < values.count else { return nil }
+        return values[index]
+    }
+
     /// All present icon groups, in index order.
     public var groups: [Group] {
         let count = values.first ?? 0
