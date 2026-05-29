@@ -26,6 +26,84 @@ struct UnitScriptFunctionsTests {
         return (s, slot)
     }
 
+    @Test("getInfo returns each unit info field")
+    func getInfo() {
+        var (s, slot) = stateWithUnit(.tank, house: 0, at: 20 * 64 + 20)
+        let ui = UnitInfo[.tank]
+        s.units[slot].o.hitpoints = ui.o.hitpoints / 2
+        s.units[slot].orientation[0].current = 50
+        s.units[slot].orientation[0].target = 60
+        s.units[slot].orientation[1].current = 70
+        s.units[slot].orientation[1].target = 85
+        s.units[slot].targetAttack = 0x4002
+        s.units[slot].movingSpeed = 9
+        s.units[slot].o.seenByHouses = 0b1   // seen by player (house 0)
+
+        #expect(fns.getInfo(slot: slot, field: 0x00, in: &s)
+                == UInt16(UInt32(ui.o.hitpoints / 2) * 256 / UInt32(ui.o.hitpoints)))
+        #expect(fns.getInfo(slot: slot, field: 0x02, in: &s) == ui.fireDistance << 8)
+        #expect(fns.getInfo(slot: slot, field: 0x03, in: &s) == s.units[slot].o.index)
+        #expect(fns.getInfo(slot: slot, field: 0x04, in: &s) == 50)
+        #expect(fns.getInfo(slot: slot, field: 0x05, in: &s) == 0x4002)
+        #expect(fns.getInfo(slot: slot, field: 0x06, in: &s) == s.indexEncode(20 * 64 + 20, type: .tile))
+        #expect(fns.getInfo(slot: slot, field: 0x07, in: &s) == UInt16(ut(.tank)))
+        #expect(fns.getInfo(slot: slot, field: 0x08, in: &s) == s.indexEncode(s.units[slot].o.index, type: .unit))
+        #expect(fns.getInfo(slot: slot, field: 0x09, in: &s) == 9)
+        #expect(fns.getInfo(slot: slot, field: 0x0A, in: &s) == 10)   // |60 - 50|
+        #expect(fns.getInfo(slot: slot, field: 0x0B, in: &s) == 0)    // no destination
+        #expect(fns.getInfo(slot: slot, field: 0x0C, in: &s) == 1)    // fireDelay 0
+        #expect(fns.getInfo(slot: slot, field: 0x0D, in: &s) == (ui.flags.contains(.explodeOnDeath) ? 1 : 0))
+        #expect(fns.getInfo(slot: slot, field: 0x0E, in: &s) == 0)    // house 0
+        #expect(fns.getInfo(slot: slot, field: 0x10, in: &s) == 70)   // turret current (tank has turret)
+        #expect(fns.getInfo(slot: slot, field: 0x11, in: &s) == 15)   // |85 - 70|
+        #expect(fns.getInfo(slot: slot, field: 0x12, in: &s) == 0)    // always 0 in 1.07
+        #expect(fns.getInfo(slot: slot, field: 0x13, in: &s) == 1)    // seen by player
+        #expect(fns.getInfo(slot: slot, field: 0xFF, in: &s) == 0)    // unknown field
+
+        // targetMove validity, destination, byScenario, deviation.
+        #expect(fns.getInfo(slot: slot, field: 0x01, in: &s) == 0)    // targetMove 0 = invalid
+        let tm = s.indexEncode(s.units[slot].o.index, type: .unit)
+        s.units[slot].targetMove = tm
+        #expect(fns.getInfo(slot: slot, field: 0x01, in: &s) == tm)
+        s.units[slot].currentDestination = Tile32.unpack(30 * 64 + 30)
+        #expect(fns.getInfo(slot: slot, field: 0x0B, in: &s) == 1)
+        #expect(fns.getInfo(slot: slot, field: 0x0F, in: &s) == 0)
+        s.units[slot].o.flags.insert(.byScenario)
+        #expect(fns.getInfo(slot: slot, field: 0x0F, in: &s) == 1)
+        s.units[slot].deviated = 1
+        #expect(fns.getInfo(slot: slot, field: 0x0E, in: &s) == 2)    // deviated ⇒ Ordos
+    }
+
+    @Test("findClosestRefinery: harvester prefers nearest busy, else nearest; non-harvester stamps tile")
+    func findClosestRefinery() {
+        var (s, harv) = stateWithUnit(.harvester, house: 0, at: 10 * 64 + 10)
+
+        // Two house-0 refineries: a near busy one, a far idle one.
+        let near = s.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(StructureType.refinery.rawValue))!
+        s.structures[near].o.houseID = 0
+        s.structures[near].o.position = Tile32.unpack(12 * 64 + 12)
+        s.structures[near].state = .busy
+        let far = s.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(StructureType.refinery.rawValue))!
+        s.structures[far].o.houseID = 0
+        s.structures[far].o.position = Tile32.unpack(40 * 64 + 40)
+        s.structures[far].state = .idle
+
+        #expect(s.unitFindClosestRefinery(harv) == 0)   // had no origin
+        #expect(s.units[harv].originEncoded == s.indexEncode(s.structures[near].o.index, type: .structure))
+
+        // No busy refinery ⇒ falls back to the nearest of any state (still `near`).
+        s.structures[near].state = .idle
+        s.units[harv].originEncoded = 0
+        _ = s.unitFindClosestRefinery(harv)
+        #expect(s.units[harv].originEncoded == s.indexEncode(s.structures[near].o.index, type: .structure))
+
+        // A non-harvester just stamps its current tile as the origin.
+        let (s2, tank) = stateWithUnit(.tank, house: 0, at: 5 * 64 + 5)
+        var st2 = s2
+        #expect(st2.unitFindClosestRefinery(tank) == 0)
+        #expect(st2.units[tank].originEncoded == st2.indexEncode(5 * 64 + 5, type: .tile))
+    }
+
     @Test("getAmount: own amount, or the linked unit's")
     func getAmount() {
         var (s, slot) = stateWithUnit(.tank)

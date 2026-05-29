@@ -12,6 +12,45 @@ public struct UnitScriptFunctions: Sendable {
         self.unitPrimitives = unitPrimitives
     }
 
+    /// `Script_Unit_GetInfo`: read one of the running unit's many info `field`s (the big switch in
+    /// `src/script/unit.c`). Mostly pure reads; field `0x06` lazily resolves the harvester's origin
+    /// refinery (mutating `originEncoded`), so this takes `inout` state.
+    public func getInfo(slot: Int, field: UInt16, in state: inout GameState) -> UInt16 {
+        let u = state.units[slot]
+        guard let utype = UnitType(rawValue: Int(u.o.type)) else { return 0 }
+        let ui = UnitInfo[utype]
+
+        switch field {
+            case 0x00: return UInt16(UInt32(u.o.hitpoints) * 256 / UInt32(ui.o.hitpoints))  // %HP × 256
+            case 0x01: return state.indexIsValid(u.targetMove) ? u.targetMove : 0
+            case 0x02: return ui.fireDistance << 8
+            case 0x03: return u.o.index
+            case 0x04: return UInt16(bitPattern: Int16(u.orientation[0].current))
+            case 0x05: return u.targetAttack
+            case 0x06:
+                if u.originEncoded == 0 || utype == .harvester { state.unitFindClosestRefinery(slot) }
+                return state.units[slot].originEncoded
+            case 0x07: return UInt16(u.o.type)
+            case 0x08: return state.indexEncode(u.o.index, type: .unit)
+            case 0x09: return UInt16(u.movingSpeed)
+            case 0x0A: return UInt16(abs(Int(u.orientation[0].target) - Int(u.orientation[0].current)))
+            case 0x0B: return (u.currentDestination.x == 0 && u.currentDestination.y == 0) ? 0 : 1
+            case 0x0C: return u.fireDelay == 0 ? 1 : 0
+            case 0x0D: return ui.flags.contains(.explodeOnDeath) ? 1 : 0
+            case 0x0E: return UInt16(state.unitHouseID(u))
+            case 0x0F: return u.o.flags.contains(.byScenario) ? 1 : 0
+            case 0x10:
+                let idx = ui.o.flags.contains(.hasTurret) ? 1 : 0
+                return UInt16(bitPattern: Int16(u.orientation[idx].current))
+            case 0x11:
+                let idx = ui.o.flags.contains(.hasTurret) ? 1 : 0
+                return UInt16(abs(Int(u.orientation[idx].target) - Int(u.orientation[idx].current)))
+            case 0x12: return (UInt8(ui.movementType.rawValue) & 0x40) == 0 ? 0 : 1  // always 0 in 1.07
+            case 0x13: return (u.o.seenByHouses & (1 << state.playerHouseID)) == 0 ? 0 : 1
+            default:   return 0
+        }
+    }
+
     /// `Script_Unit_GetAmount`: the running unit's `amount`, or its linked unit's amount if linked.
     public func getAmount(_ unit: Unit, in state: GameState) -> UInt16 {
         if unit.o.linkedID == 0xFF { return UInt16(unit.amount) }

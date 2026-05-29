@@ -212,6 +212,44 @@ public extension GameState {
         }
     }
 
+    // MARK: - Unit helpers
+
+    /// `Unit_FindClosestRefinery` (`unit.c`): for a harvester, point `originEncoded` at the nearest
+    /// same-house refinery — preferring a BUSY one, else any — and return 1 if the unit already had an
+    /// origin (0 otherwise). For a non-harvester it just stamps the current tile as the origin. Mutates
+    /// `units[slot].originEncoded`.
+    @discardableResult
+    mutating func unitFindClosestRefinery(_ slot: Int) -> UInt16 {
+        let res: UInt16 = units[slot].originEncoded == 0 ? 0 : 1
+
+        if units[slot].o.type != UInt8(UnitType.harvester.rawValue) {
+            units[slot].originEncoded = indexEncode(units[slot].o.position.packed, type: .tile)
+            return res
+        }
+
+        let houseID = unitHouseID(units[slot])
+        let refinery = UInt16(StructureType.refinery.rawValue)
+        let position = units[slot].o.position
+
+        func nearest(busyOnly: Bool) -> Int? {
+            var best: Int? = nil
+            var mind: UInt16 = 0
+            var find = PoolFind(houseID: houseID, type: refinery)
+            while let s = structureFind(&find) {
+                if busyOnly && structures[s].state != .busy { continue }
+                let d = Tile32.distance(from: position, to: structures[s].o.position)
+                if mind != 0 && d >= mind { continue }
+                mind = d
+                best = s
+            }
+            return best
+        }
+
+        let best = nearest(busyOnly: true) ?? nearest(busyOnly: false)
+        if let best { units[slot].originEncoded = indexEncode(structures[best].o.index, type: .structure) }
+        return res
+    }
+
     // MARK: - Removal
 
     /// `Unit_Remove` (`unit.c`): tear a unit down — scrub references, drop it off the map, clear its
