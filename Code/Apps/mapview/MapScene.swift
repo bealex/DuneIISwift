@@ -51,6 +51,7 @@ final class MapScene: SKScene {
             let unitNode = SKSpriteNode(texture: texture)
             unitNode.position = CGPoint(x: CGFloat(sprite.centerX), y: CGFloat(side - sprite.centerY))
             unitNode.zPosition = sprite.z
+            if sprite.flipped { unitNode.xScale = -1 }   // W-half sprites are the E-half mirrored
             addChild(unitNode)
         }
         lastTick = -1
