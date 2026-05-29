@@ -11,21 +11,33 @@ public struct Simulation: Sendable {
     /// All mutable simulation state. A value type, so a copy is a full snapshot.
     public var state: GameState
 
-    /// The replaceable native per-unit primitives. Injected so the implementation can be swapped
-    /// (reference / optimized / instrumented / test); defaults to the OpenDUNE-faithful port.
+    /// The replaceable native primitives. Each is injected so its implementation can be swapped
+    /// (reference / optimized / instrumented / test); all default to the OpenDUNE-faithful ports.
     public var unitPrimitives: any UnitPrimitives
+    public var mapPrimitives: any MapPrimitives
+    public var housePrimitives: any HousePrimitives
 
-    public init(state: GameState, unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives()) {
+    public init(
+        state: GameState,
+        unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
+        mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
+        housePrimitives: any HousePrimitives = DefaultHousePrimitives()
+    ) {
         self.state = state
         self.unitPrimitives = unitPrimitives
+        self.mapPrimitives = mapPrimitives
+        self.housePrimitives = housePrimitives
     }
 
     public init(
         random256Seed: UInt32 = 0, randomLCGSeed: UInt16 = 0,
-        unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives()
+        unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
+        mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
+        housePrimitives: any HousePrimitives = DefaultHousePrimitives()
     ) {
         self.init(state: GameState(random256Seed: random256Seed, randomLCGSeed: randomLCGSeed),
-                  unitPrimitives: unitPrimitives)
+                  unitPrimitives: unitPrimitives, mapPrimitives: mapPrimitives,
+                  housePrimitives: housePrimitives)
     }
 
     /// One simulation tick: advance the clocks (pause-aware) then run the four game-loop phases.

@@ -53,4 +53,12 @@ public struct MapInfo: Sendable, Equatable {
     public init(minX: UInt16, minY: UInt16, sizeX: UInt16, sizeY: UInt16) {
         self.minX = minX; self.minY = minY; self.sizeX = sizeX; self.sizeY = sizeY
     }
+
+    /// `g_mapInfos[3]` (`map.c:57`): the playable bounds for each map scale (0 = 62×62, 1 = 32×32,
+    /// 2 = 21×21). Indexed by `Scenario.mapScale`.
+    public static let scales: [MapInfo] = [
+        MapInfo(minX: 1, minY: 1, sizeX: 62, sizeY: 62),
+        MapInfo(minX: 16, minY: 16, sizeX: 32, sizeY: 32),
+        MapInfo(minX: 21, minY: 21, sizeX: 21, sizeY: 21),
+    ]
 }

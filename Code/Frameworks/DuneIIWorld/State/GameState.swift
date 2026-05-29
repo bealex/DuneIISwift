@@ -58,6 +58,13 @@ public struct GameState: Sendable {
     /// allocate / placement guards (used while loading a save or scenario).
     public var validateStrictIfZero: UInt16 = 0
 
+    /// Scenario map scale (0 = 62×62, 1 = 32×32, 2 = 21×21). OpenDUNE's `g_scenario.mapScale`; indexes
+    /// `MapInfo.scales`. Set by scenario loading (not yet ported).
+    public var mapScale: UInt8 = 0
+
+    /// The local player's house. OpenDUNE's `g_playerHouseID`; set by scenario loading (not yet ported).
+    public var playerHouseID: UInt8 = 0
+
     public init(random256Seed: UInt32 = 0, randomLCGSeed: UInt16 = 0) {
         units = Array(repeating: Unit(), count: Pool.unitIndexMax)
         structures = Array(repeating: Structure(), count: Pool.structureIndexMaxHard)

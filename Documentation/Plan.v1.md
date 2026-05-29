@@ -251,17 +251,22 @@ The implementation order for the Phase-3 native primitives. Built bottom-up: a p
 > - **D′2.** `Unit_Move` (`unit.c:1286`) — needs `Tile_MoveByDirection` ✓, `Unit_UpdateMap` (D′1), `Map_GetLandscapeType`/unveil (Tier D), `Unit_Remove` (Tier F), `Unit_Damage` (Tier E).
 > - **D′3.** `Unit_MovementTick` (`unit.c:98`) — needs `Unit_Move` (D′2). Drives the loop's `tickMovement`.
 
-**Tier D — map state.**
-11. `Map_GetLandscapeType` (`map.c`) — `g_map`, `LandscapeInfo` ✓.
-12. `Map_IsValidPosition` (`map.c`) — none beyond `Tile_IsValid` ✓.
-13. `Map_IsPositionUnveiled` / `Map_UnveilTile` (`map.c`) — `g_map`.
-14. `Map_ChangeSpiceAmount` / `Map_SearchSpice` (`map.c`) — `g_map`, `LandscapeInfo` ✓.
-15. `Map_UpdateAround` / `Map_MakeExplosion` (`map.c`) — larger; explosions table.
+**Tier D — map state.** (`DuneIISimulation.MapPrimitives`.)
+12. `Map_IsValidPosition` (`map.c`) — `g_mapInfos` (`MapInfo.scales` ✓) + `Scenario.mapScale`. **done** (golden).
 
-**Tier E — combat / scoring.**
-16. `Unit_GetTileEnterScore` (`unit.c:2335`) — `LandscapeInfo` ✓, `Map` (Tier D), `Tile_GetDistance` ✓.
-17. `Unit_Deviate` (`unit.c`) — `HouseInfo` ✓, pools ✓.
-18. `Unit_Damage` (`unit.c:1530`) — `HouseInfo` ✓, `Unit_Remove` (Tier F), explosions (15).
+> **Prerequisite found (during implementation).** The rest of Tier D needs **runtime tile-id bases** (`g_veiledTileID`/`g_landscapeTileID`/`g_wallTileID`/`g_bloomTileID`/`g_builtSlabTileID`) that `Sprites_Init` (`sprites.c:274`) derives from the decoded `ICON.MAP`, plus the player house and fog state. That is the deferred **scenario/map/sprite-init** layer (a Phase-2 item). It must land first, then:
+> - 11. `Map_GetLandscapeType` (`map.c`) — tile-id bases + `_landscapeSpriteMap` + structure pool ✓.
+> - 13. `Map_IsPositionUnveiled` (`map.c`) — `Tile_IsUnveiled` (needs `g_veiledTileID`). `Map_UnveilTile` — also `g_playerHouseID`, `Unit_HouseUnitCount`, neighbour-unveil, render dirty-marking.
+> - 14. `Map_ChangeSpiceAmount` / `Map_SearchSpice` — `Map_GetLandscapeType` (11).
+> - 15. `Map_UpdateAround` / `Map_MakeExplosion` — larger; explosions/animation tables (also the render seam).
+
+**Tier E — combat / scoring.** (`DuneIISimulation`.)
+- `House_AreAllied` (`house.c`) — `g_playerHouseID` (`GameState.playerHouseID`). **done** (golden, `HousePrimitives`). Used by 16/18.
+- 16. `Unit_GetTileEnterScore` (`unit.c:2335`) — `Map_IsValidPosition` ✓, `Map_GetLandscapeType` (11, **blocked** on sprite init), `House_AreAllied` ✓, structure pool ✓.
+- 17. `Unit_Deviate` (`unit.c`) — `HouseInfo` ✓, `Random256` ✓; but calls `Unit_SetAction` + `Unit_UntargetMe` (**Tier F**) → blocked.
+- 18. `Unit_Damage` (`unit.c:1530`) — `Unit_RemovePlayer`/`Unit_Remove` (**Tier F**), `Map_FillCircleWithSpice` (Tier D), explosions (15) → blocked.
+
+**Net:** Tiers D and E are gated on the scenario/map/sprite-init layer (deferred Phase-2) and Tier-F lifecycle (`Unit_Remove`/`Unit_SetAction`/`Unit_UntargetMe`). The two dependency-free primitives (`Map_IsValidPosition`, `House_AreAllied`) are done; the remainder unblocks once that init + lifecycle land. **Recommended next: port the scenario/map/sprite init.**
 
 **Tier F — lifecycle / orchestration / pathfinding (largest).**
 19. `Unit_SetDestination` / `Unit_SetAction` (`unit.c:497`) / `Unit_Hide` — pools ✓, Tiers B–D.
