@@ -95,4 +95,76 @@ struct GameStateLifecycleTests {
         #expect(s.units[victim].team == 0)
         #expect(s.teams[team].members == 0)
     }
+
+    @Test("unitHouseUnitCountAdd counts on first sight, wakes the AI, and doesn't double-count")
+    func houseUnitCountAdd() {
+        var s = GameState()
+        s.playerHouseID = 0
+        _ = s.houseAllocate(index: 0)
+        _ = s.houseAllocate(index: 2)
+        s.houses[0].unitCountMax = 100
+        s.houses[2].unitCountMax = 100
+        let enemy = s.unitAllocate(index: 0, type: u(.tank), houseID: 2)!   // Ordos
+
+        s.unitHouseUnitCountAdd(enemy, houseID: 0)   // player spots it
+        #expect(s.houses[0].unitCountEnemy == 1)
+        #expect(s.houses[0].flags.contains(.isAIActive))   // human saw an enemy ⇒ AI awake
+        #expect(s.houses[2].flags.contains(.isAIActive))
+        #expect(s.units[enemy].o.seenByHouses & 0b1 != 0)
+
+        s.unitHouseUnitCountAdd(enemy, houseID: 0)   // already seen + AI active ⇒ no double count
+        #expect(s.houses[0].unitCountEnemy == 1)
+    }
+
+    @Test("unitHouseUnitCountRemove decrements seen houses and clears seenByHouses")
+    func houseUnitCountRemove() {
+        var s = GameState()
+        s.playerHouseID = 0
+        _ = s.houseAllocate(index: 0)
+        _ = s.houseAllocate(index: 2)
+        s.houses[0].unitCountMax = 100
+        let unit = s.unitAllocate(index: 0, type: u(.tank), houseID: 0)!
+        s.units[unit].o.seenByHouses = 0b101    // houses 0 (allied/self) + 2 (enemy)
+        s.houses[0].unitCountAllied = 1
+        s.houses[2].unitCountEnemy = 1
+
+        s.unitHouseUnitCountRemove(unit)
+        #expect(s.houses[0].unitCountAllied == 0)
+        #expect(s.houses[2].unitCountEnemy == 0)
+        #expect(s.units[unit].o.seenByHouses == 0)
+    }
+
+    @Test("unitRemove scrubs references, clears the tile, drops counts, and frees the slot")
+    func unitRemove() {
+        var s = GameState()
+        s.playerHouseID = 0
+        _ = s.houseAllocate(index: 0)
+        _ = s.houseAllocate(index: 2)
+        s.houses[0].unitCountMax = 100
+        let victim = s.unitAllocate(index: 0, type: u(.tank), houseID: 0)!
+        let other = s.unitAllocate(index: 0, type: u(.tank), houseID: 0)!
+        #expect(s.houses[0].unitCount == 2)
+
+        let packed: UInt16 = 20 * 64 + 20
+        s.units[victim].o.position = Tile32.unpack(packed)
+        s.map[Int(packed)].hasUnit = true
+        s.map[Int(packed)].index = UInt8(victim + 1)
+        s.map[Int(packed)].isUnveiled = true
+        s.units[victim].o.seenByHouses = 0b101
+        s.houses[0].unitCountAllied = 1
+        s.houses[2].unitCountEnemy = 1
+        s.units[other].targetMove = s.indexEncode(s.units[victim].o.index, type: .unit)
+
+        s.unitRemove(victim)
+
+        #expect(!s.units[victim].o.flags.contains(.used))   // slot freed
+        #expect(!s.unitFindArray.contains(UInt16(victim)))
+        #expect(s.houses[0].unitCount == 1)                 // allocation count down
+        #expect(s.units[other].targetMove == 0)             // reference scrubbed
+        #expect(!s.map[Int(packed)].hasUnit)                // tile occupancy cleared
+        #expect(s.map[Int(packed)].index == 0)
+        #expect(s.units[victim].o.seenByHouses == 0)
+        #expect(s.houses[0].unitCountAllied == 0)           // visibility tallies down
+        #expect(s.houses[2].unitCountEnemy == 0)
+    }
 }

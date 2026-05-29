@@ -14,14 +14,6 @@ public struct DefaultHousePrimitives: HousePrimitives {
     public init() {}
 
     public func areAllied(_ houseID1: UInt8, _ houseID2: UInt8, playerHouseID: UInt8) -> Bool {
-        if houseID1 == Pool.houseInvalid || houseID2 == Pool.houseInvalid { return false }
-        if houseID1 == houseID2 { return true }
-
-        let fremen = UInt8(HouseID.fremen.rawValue)
-        let atreides = UInt8(HouseID.atreides.rawValue)
-        if houseID1 == fremen || houseID2 == fremen {
-            return houseID1 == atreides || houseID2 == atreides
-        }
-        return houseID1 != playerHouseID && houseID2 != playerHouseID
+        House.areAllied(houseID1, houseID2, playerHouseID: playerHouseID)
     }
 }

@@ -40,4 +40,19 @@ public struct House: Sendable, Equatable {
     public var aiStructureRebuild: [[UInt16]] = Array(repeating: [0, 0], count: 5)
 
     public init() {}
+
+    /// `House_AreAllied` (`house.c`): are two houses allied? Same house = allied; Fremen ally only with
+    /// Atreides; otherwise any two non-player houses are allied (the AI ganging up on the player).
+    /// `HOUSE_INVALID` (`0xFF`) is never allied. The canonical port — the Simulation's replaceable
+    /// `HousePrimitives.areAllied` and the World-layer lifecycle bookkeeping both delegate here.
+    public static func areAllied(_ houseID1: UInt8, _ houseID2: UInt8, playerHouseID: UInt8) -> Bool {
+        if houseID1 == 0xFF || houseID2 == 0xFF { return false }
+        if houseID1 == houseID2 { return true }
+        let fremen = UInt8(HouseID.fremen.rawValue)
+        let atreides = UInt8(HouseID.atreides.rawValue)
+        if houseID1 == fremen || houseID2 == fremen {
+            return houseID1 == atreides || houseID2 == atreides
+        }
+        return houseID1 != playerHouseID && houseID2 != playerHouseID
+    }
 }
