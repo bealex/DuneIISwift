@@ -57,7 +57,18 @@ renders terrain + units for visual assessment — the same scenario the golden v
   (`ScenarioGoldenTests`, frame-0 parity for the moving scenario).
 - [ ] Per-tick trajectory comparison + the other scenarios, as the movement/combat/guard natives land.
 
-**Oracle env note.** The full `GameLoop_Main` init (GFX/sprites/strings) does not run headless in this
-sandbox, so the scenario mode is dispatched right after `File_Init` and does a minimal self-contained
-init (no GFX) — mirroring the golden dumpers. The custom `.INI` is loaded by placing `bootstrap.ini` as
-`SCENH099.INI` in a data dir that also has the install PAKs.
+**Oracle env note — two scenario modes.** OpenDUNE's full game init (GFX/sprites/strings) and the unit
+movement/placement path (`Game_Prepare`/`Unit_UpdateMap`) do **not** run in the agent's headless sandbox.
+So `parity.c` has two scenario modes:
+
+- `--parity-scenario=<id>` — **self-contained**, dispatched right after `File_Init` (pools + ICON.MAP +
+  `UNIT.EMC`, no GFX). Runs headless, but units don't move (no `Game_Prepare`): it gives the **frame-0 /
+  setup parity** dump, which the in-sandbox golden uses.
+- `--parity-scenario-run=<id>` — the **real** `Game_LoadScenario` + `GameLoop` trajectory (units actually
+  move). Needs the full init, so **run it outside the sandbox** (a display-capable macOS terminal).
+
+Both load the custom `.INI` by placing `bootstrap.ini` as `SCENH<id>.INI` in a data dir that also has the
+install PAKs, and replay the same `--parity-cmd` stream. **Generate the trajectory fixtures with
+`Scripts/gen-scenario-goldens.sh [INSTALL_DIR]`** (outside the sandbox); it builds the oracle, stages the
+data dir, runs each scenario, and writes `*-golden.jsonl` under `Tests/ScenariosTests/Fixtures/`. Then
+re-run the Swift golden and raise its `comparedTicks`.
