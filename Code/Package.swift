@@ -27,6 +27,7 @@ let package = Package(
         .executable(name: "assetgen", targets: [ "assetgen" ]),
         .executable(name: "duneii-headless", targets: [ "duneii-headless" ]),
         .executable(name: "rendertest", targets: [ "rendertest" ]),
+        .executable(name: "mapview", targets: [ "mapview" ]),
     ],
     targets: [
         // Frameworks (the engine) — dependencies point downward only.
@@ -85,6 +86,11 @@ let package = Package(
             path: "Apps/duneii-headless"
         ),
         // Native macOS SwiftUI asset inspector (render-test app). Builds via `swift run rendertest`.
+        .executableTarget(
+            name: "mapview",
+            dependencies: [ "DuneIIWorld", "DuneIIFormats", "DuneIIRenderer", "DuneIIContracts" ],
+            path: "Apps/mapview"
+        ),
         .executableTarget(
             name: "rendertest",
             dependencies: [ "DuneIIFormats", "DuneIIRenderer", "DuneIIExport" ],
