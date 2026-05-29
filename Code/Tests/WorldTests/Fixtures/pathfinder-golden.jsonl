@@ -1,0 +1,10 @@
+{"fn":"Pathfinder","seed":0,"src":1040,"dst":1300,"score":572,"routeSize":5,"route":[3,3,3,3]}
+{"fn":"Pathfinder","seed":0,"src":1040,"dst":2600,"score":3432,"routeSize":25,"route":[3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3]}
+{"fn":"Pathfinder","seed":0,"src":1300,"dst":1040,"score":572,"routeSize":5,"route":[7,7,7,7]}
+{"fn":"Pathfinder","seed":0,"src":2080,"dst":2150,"score":858,"routeSize":7,"route":[2,2,2,2,3,2]}
+{"fn":"Pathfinder","seed":0,"src":1100,"dst":1700,"score":3384,"routeSize":25,"route":[2,2,2,2,2,2,3,2,3,2,3,2,3,2,3,2,3,2,3,2,3,2,3,2]}
+{"fn":"Pathfinder","seed":4660,"src":1040,"dst":1300,"score":476,"routeSize":5,"route":[3,3,3,3]}
+{"fn":"Pathfinder","seed":4660,"src":1040,"dst":2600,"score":3288,"routeSize":25,"route":[3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3]}
+{"fn":"Pathfinder","seed":4660,"src":1300,"dst":1040,"score":476,"routeSize":5,"route":[7,7,7,7]}
+{"fn":"Pathfinder","seed":4660,"src":2080,"dst":2150,"score":858,"routeSize":7,"route":[2,2,2,2,3,2]}
+{"fn":"Pathfinder","seed":4660,"src":1100,"dst":1700,"score":3336,"routeSize":25,"route":[2,2,2,2,2,2,3,2,3,2,3,2,3,2,3,2,3,2,3,2,3,2,3,2]}
