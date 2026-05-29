@@ -22,16 +22,16 @@ PATH="$PWD/.shim:$PATH" make -j4          # -> ./bin/opendune
 
 ## Golden fixtures (Tier 1 — pure functions)
 
-`opendune --parity-golden=<path>` (`src/parity.c:Parity_DumpGolden`, wired in `main()` before any install/PAK init) writes a self-contained JSONL fixture — one JSON object per line — of bit-exact outputs over a fixed input grid, then `exit(0)`. No save, PAK, or install is required.
+`opendune --parity-golden=<dir>` (`src/parity.c:Parity_DumpGolden`, wired in `main()` before any install/PAK init) writes **one JSONL fixture per category** into `<dir>` — `rng-golden.jsonl`, `tile-golden.jsonl`, … — each a list of JSON objects (one per line) of bit-exact outputs over a fixed input grid, then `exit(0)`. No save, PAK, or install is required. Add a category by writing a `Golden_<Category>(FILE *)` and one entry in the `categories[]` table.
 
-Record shape (current):
+Record shape (one example per category):
 
 ```json
-{"fn":"Tools_Random_256","seed":0,"out":[128,192, …256 bytes…]}
 {"fn":"Tools_RandomLCG_Range","seed":0,"min":0,"max":32767,"out":[ …64 values… ]}
+{"fn":"Tile_GetDirection","from":[128,128],"to":[384,640],"out":109}
 ```
 
-Fixtures are **committed** under `Code/Tests/<Subject>Tests/Fixtures/` (e.g. `WorldTests/Fixtures/rng-golden.jsonl`). The Swift golden test locates the file via `#filePath` (same pattern as `FormatsTests/TestInstall`), parses each line, re-seeds the Swift port, and asserts every output matches. Widening coverage = add inputs to `Parity_DumpGolden`, rebuild, re-run the flag, recommit the fixture.
+Fixtures are **committed** under `Code/Tests/<Subject>Tests/Fixtures/`, one file per category. The shared `WorldTests/GoldenFixture` loader locates a file via `#filePath` (same pattern as `FormatsTests/TestInstall`), parses each line into a superset `Record` (all fields but `fn`/`out` optional; `out`/`from`/`to` may be scalar or array), and filters by `fn`; each golden test re-seeds the Swift port and asserts every output matches. `Fixtures/` is `exclude:`d from the test target's build graph (read from the source tree, not bundled). Widening coverage = add inputs to the category's `Golden_*` fn, rebuild, re-run the flag, recommit that fixture.
 
 When a primitive is pure-ish but reads one or two globals (e.g. `Tools_AdjustToGameSpeed` reads `g_gameConfig.gameSpeed`), the dumper sets those globals across their meaningful range and tags each record with them — still self-contained.
 
@@ -50,7 +50,7 @@ Driven by the dependency classification of the script-function tables:
 
 ## Status
 
-- ✅ Headless OpenDUNE oracle builds; `--parity-golden` mode added (one growing fixture `Code/Tests/WorldTests/Fixtures/primitives-golden.jsonl`, loaded by `WorldTests/GoldenFixture`).
+- ✅ Headless OpenDUNE oracle builds; `--parity-golden=<dir>` mode added (one fixture per category under `Code/Tests/WorldTests/Fixtures/`, loaded by `WorldTests/GoldenFixture`).
 - ✅ `Tools_Random_256` and `Tools_RandomLCG`/`_Range` ported (`DuneIIWorld/Rng/`), golden-verified (`WorldTests/RngGoldenTests`).
 - ✅ Tile geometry + orientation: `Tile32` (unpack/pack, `GetDistance`/`Packed`/`RoundedUp`, `GetDirection`/`Packed`) and `Orientation.to8`/`to16` (`DuneIIWorld/Tile/`), golden-verified (`WorldTests/TileGoldenTests`). See `Algorithms/Tile.md`.
 - ⏭ Next: `Tools_AdjustToGameSpeed` (reads `g_gameConfig.gameSpeed` — dumper sets it across its range) and `Tools_Index_Encode/Decode/GetType`, then begin the World model (PODs + stat tables) so the pool-dependent script functions become portable.

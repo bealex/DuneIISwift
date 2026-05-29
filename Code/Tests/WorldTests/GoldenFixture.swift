@@ -1,9 +1,10 @@
 import Foundation
 
-/// Shared loader for the OpenDUNE function-golden fixture (`opendune --parity-golden`), committed as
-/// `Fixtures/primitives-golden.jsonl`. One JSON object per line; fields are a superset across every
-/// dumped primitive, so all but `fn`/`out` are optional. Regenerate by rebuilding the patched OpenDUNE
-/// and re-running the flag — see `Documentation/Architecture/FunctionParityHarness.md`.
+/// Shared loader for the OpenDUNE function-golden fixtures (`opendune --parity-golden=<dir>`), one
+/// per category under `Fixtures/` (`rng-golden.jsonl`, `tile-golden.jsonl`, …). One JSON object per
+/// line; fields are a superset across every dumped primitive, so all but `fn`/`out` are optional.
+/// Regenerate by rebuilding the patched OpenDUNE and re-running the flag — see
+/// `Documentation/Architecture/FunctionParityHarness.md`.
 enum GoldenFixture {
     struct Record: Decodable {
         let fn: String
@@ -32,14 +33,15 @@ enum GoldenFixture {
         }
     }
 
-    static let all: [Record] = {
+    /// All records in the category fixture `file` (e.g. `"rng-golden.jsonl"`), filtered to `fn`.
+    static func records(_ file: String, fn: String) -> [Record] {
         var url = URL(fileURLWithPath: #filePath)
         url.deleteLastPathComponent()
-        url.appendPathComponent("Fixtures/primitives-golden.jsonl")
+        url.appendPathComponent("Fixtures/\(file)")
         let text = try! String(contentsOf: url, encoding: .utf8)
         let decoder = JSONDecoder()
-        return text.split(separator: "\n").map { try! decoder.decode(Record.self, from: Data($0.utf8)) }
-    }()
-
-    static func records(_ fn: String) -> [Record] { all.filter { $0.fn == fn } }
+        return text.split(separator: "\n")
+            .map { try! decoder.decode(Record.self, from: Data($0.utf8)) }
+            .filter { $0.fn == fn }
+    }
 }

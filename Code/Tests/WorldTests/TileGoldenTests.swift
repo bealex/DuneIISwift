@@ -8,7 +8,7 @@ import Testing
 struct TileGoldenTests {
     @Test("Tile_UnpackTile + round-trip pack")
     func unpack() {
-        let records = GoldenFixture.records("Tile_UnpackTile")
+        let records = GoldenFixture.records("tile-golden.jsonl", fn: "Tile_UnpackTile")
         #expect(!records.isEmpty)
         for record in records {
             let packed = record.packed!
@@ -21,7 +21,7 @@ struct TileGoldenTests {
 
     @Test("Tile_GetDistancePacked")
     func distancePacked() {
-        let records = GoldenFixture.records("Tile_GetDistancePacked")
+        let records = GoldenFixture.records("tile-golden.jsonl", fn: "Tile_GetDistancePacked")
         #expect(!records.isEmpty)
         for record in records {
             let actual = Tile32.distancePacked(record.from!.uint16, record.to!.uint16)
@@ -31,7 +31,7 @@ struct TileGoldenTests {
 
     @Test("Tile_GetDirectionPacked")
     func directionPacked() {
-        let records = GoldenFixture.records("Tile_GetDirectionPacked")
+        let records = GoldenFixture.records("tile-golden.jsonl", fn: "Tile_GetDirectionPacked")
         #expect(!records.isEmpty)
         for record in records {
             let actual = Tile32.directionPacked(record.from!.uint16, record.to!.uint16)
@@ -41,7 +41,7 @@ struct TileGoldenTests {
 
     @Test("Tile_GetDistance")
     func distance() {
-        let records = GoldenFixture.records("Tile_GetDistance")
+        let records = GoldenFixture.records("tile-golden.jsonl", fn: "Tile_GetDistance")
         #expect(!records.isEmpty)
         for record in records {
             let actual = Tile32.distance(from: record.from!.tile, to: record.to!.tile)
@@ -51,7 +51,7 @@ struct TileGoldenTests {
 
     @Test("Tile_GetDistanceRoundedUp")
     func distanceRoundedUp() {
-        let records = GoldenFixture.records("Tile_GetDistanceRoundedUp")
+        let records = GoldenFixture.records("tile-golden.jsonl", fn: "Tile_GetDistanceRoundedUp")
         #expect(!records.isEmpty)
         for record in records {
             let actual = Tile32.distanceRoundedUp(from: record.from!.tile, to: record.to!.tile)
@@ -61,7 +61,7 @@ struct TileGoldenTests {
 
     @Test("Tile_GetDirection (signed)")
     func direction() {
-        let records = GoldenFixture.records("Tile_GetDirection")
+        let records = GoldenFixture.records("tile-golden.jsonl", fn: "Tile_GetDirection")
         #expect(!records.isEmpty)
         for record in records {
             let actual = Tile32.direction(from: record.from!.tile, to: record.to!.tile)
@@ -71,8 +71,8 @@ struct TileGoldenTests {
 
     @Test("Orientation_Orientation256ToOrientation8 / 16 over all 256 inputs")
     func orientation() throws {
-        let to8 = try #require(GoldenFixture.records("Orientation_Orientation256ToOrientation8").first)
-        let to16 = try #require(GoldenFixture.records("Orientation_Orientation256ToOrientation16").first)
+        let to8 = try #require(GoldenFixture.records("tile-golden.jsonl", fn: "Orientation_Orientation256ToOrientation8").first)
+        let to16 = try #require(GoldenFixture.records("tile-golden.jsonl", fn: "Orientation_Orientation256ToOrientation16").first)
         #expect(to8.out.values.count == 256)
         for input in 0 ..< 256 {
             #expect(Int(Orientation.to8(UInt8(input))) == to8.out.values[input], "to8(\(input))")

@@ -9,7 +9,7 @@ import Testing
 struct RngGoldenTests {
     @Test("Tools_Random_256 reproduces every golden byte stream")
     func random256() {
-        let records = GoldenFixture.records("Tools_Random_256")
+        let records = GoldenFixture.records("rng-golden.jsonl", fn: "Tools_Random_256")
         #expect(!records.isEmpty)
         for record in records {
             var rng = Random256(seed: record.seed!)
@@ -22,7 +22,7 @@ struct RngGoldenTests {
 
     @Test("Tools_RandomLCG_Range reproduces every golden value (incl. swapped/degenerate ranges)")
     func lcgRange() {
-        let records = GoldenFixture.records("Tools_RandomLCG_Range")
+        let records = GoldenFixture.records("rng-golden.jsonl", fn: "Tools_RandomLCG_Range")
         #expect(!records.isEmpty)
         for record in records {
             var rng = RandomLCG(seed: UInt16(record.seed!))
@@ -37,7 +37,7 @@ struct RngGoldenTests {
     /// sequence — this pins the bare generator independently of the range scaling/rejection.
     @Test("RandomLCG.next matches the identity-range golden stream")
     func lcgRaw() throws {
-        let record = try #require(GoldenFixture.records("Tools_RandomLCG_Range").first { $0.min == 0 && $0.max == 32767 })
+        let record = try #require(GoldenFixture.records("rng-golden.jsonl", fn: "Tools_RandomLCG_Range").first { $0.min == 0 && $0.max == 32767 })
         var rng = RandomLCG(seed: UInt16(record.seed!))
         for expected in record.out.values {
             #expect(Int(rng.next()) == expected)

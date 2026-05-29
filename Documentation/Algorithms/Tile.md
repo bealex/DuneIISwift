@@ -32,4 +32,4 @@ Two precisions, both "from → to":
 
 ## Golden fixture
 
-Records in `Code/Tests/WorldTests/Fixtures/primitives-golden.jsonl` (from `opendune --parity-golden`): `Tile_UnpackTile` (9 packed values), `Tile_GetDistancePacked` / `Tile_GetDirectionPacked` (9×9 packed grid), `Tile_GetDistance` / `Tile_GetDistanceRoundedUp` / `Tile_GetDirection` (8×8 `tile32` point grid incl. sub-tile offsets), and both orientation conversions over all 256 inputs. Asserted by `WorldTests/TileGoldenTests`.
+Records in `Code/Tests/WorldTests/Fixtures/tile-golden.jsonl` (from `opendune --parity-golden=<dir>`): `Tile_UnpackTile` (9 packed values), `Tile_GetDistancePacked` / `Tile_GetDirectionPacked` (9×9 packed grid), `Tile_GetDistance` / `Tile_GetDistanceRoundedUp` / `Tile_GetDirection` (8×8 `tile32` point grid incl. sub-tile offsets), and both orientation conversions over all 256 inputs. Asserted by `WorldTests/TileGoldenTests`.
