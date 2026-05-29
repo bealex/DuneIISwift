@@ -49,9 +49,15 @@ renders terrain + units for visual assessment — the same scenario the golden v
 
 ## Status
 
-- [x] (interim) synthetic terrain/builder + app + foundation `DuneIIScenarios` + `scenariolab` (being
-  migrated to the `.INI` + command approach below).
-- [ ] Bootstrap `.INI` + our `loadScenario`.
-- [ ] Command pipeline (sim + oracle replay).
-- [ ] Oracle scenario parity mode + golden test.
-- [ ] Per-scenario behaviour as the movement/combat/guard natives land.
+- [x] (interim) synthetic terrain/builder + app + foundation `DuneIIScenarios` + `scenariolab`.
+- [x] Bootstrap `.INI` + our `loadScenario` (`BootstrapScenarioTests`).
+- [x] Command pipeline — `Command` (Contracts) + `UnitOrders` (sim) + the oracle's `Scen_Order` replay.
+- [x] Oracle scenario parity mode (`--parity-scenario` in `parity.c`, self-contained: pools + ICON.MAP +
+  `UNIT.EMC` + `Map_CreateLandscape` + `[UNITS]` + command replay + per-tick dump) + golden test
+  (`ScenarioGoldenTests`, frame-0 parity for the moving scenario).
+- [ ] Per-tick trajectory comparison + the other scenarios, as the movement/combat/guard natives land.
+
+**Oracle env note.** The full `GameLoop_Main` init (GFX/sprites/strings) does not run headless in this
+sandbox, so the scenario mode is dispatched right after `File_Init` and does a minimal self-contained
+init (no GFX) — mirroring the golden dumpers. The custom `.INI` is loaded by placing `bootstrap.ini` as
+`SCENH099.INI` in a data dir that also has the install PAKs.
