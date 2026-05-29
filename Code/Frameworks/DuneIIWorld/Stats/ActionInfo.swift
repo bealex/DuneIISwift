@@ -40,6 +40,10 @@ public struct ActionInfo: Sendable, Equatable {
     public let selectionType: SelectionType
     public let soundID: UInt16              // played for a Foot unit (0xFFFF = none)
 
+    /// The four AI default-action choices, a port of OpenDUNE's `g_table_actionsAI[4]`
+    /// (`src/table/unitinfo.c:12`): the actions an AI unit cycles through.
+    public static let actionsAI: [ActionType] = [.hunt, .areaGuard, .ambush, .guard_]
+
     /// Stats for `action`.
     public static subscript(_ action: ActionType) -> ActionInfo { table[action.rawValue] }
 

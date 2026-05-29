@@ -1,0 +1,210 @@
+import DuneIIContracts
+
+/// The footprint of a structure, in OpenDUNE's `StructureLayout` order (`src/structure.h:65`).
+/// Drives the per-tile layout geometry (ported separately) and the renderer's assembled-building view.
+public enum StructureLayout: Int, Sendable {
+    case layout1x1 = 0
+    case layout2x1 = 1
+    case layout1x2 = 2
+    case layout2x2 = 3
+    case layout2x3 = 4
+    case layout3x2 = 5
+    case layout3x3 = 6
+}
+
+/// Per-structure-type static stats. A literal port of OpenDUNE's `StructureInfo` struct
+/// (`src/structure.h`) and `g_table_structureInfo[]` (`src/table/structureinfo.c`, `STRUCTURE_MAX`
+/// = 19). Embeds an `ObjectInfo`; keyed by `StructureType`.
+///
+/// Verified field-for-field against an OpenDUNE golden dump — see `Documentation/Algorithms/StatTables.md`.
+/// The `table` literal below is generated from that dump (`Tests/WorldTests/Fixtures/.gen_tables.py`)
+/// and re-checked by `UnitStructureInfoGoldenTests`.
+public struct StructureInfo: Sendable, Equatable {
+    public let o: ObjectInfo
+    public let enterFilter: UInt32          // FLAG_UNIT_* bitmask of units allowed to enter
+    public let creditsStorage: UInt16       // credits this structure can store
+    public let powerUsage: Int16            // power used (positive) or produced (negative)
+    public let layout: StructureLayout
+    public let iconGroup: UInt16            // ICM_ICONGROUP_* the sprites belong to
+    public let animationIndex: [UInt8]      // 3 indices into g_table_animation_structure (0xFF = none)
+    public let buildableUnits: [UInt8]      // 8 UnitType slots this can produce (UNIT_INVALID = 0xFF)
+    public let upgradeCampaign: [UInt16]    // 3 minimum campaigns for upgrades
+
+    /// Stats for `structure`.
+    public static subscript(_ structure: StructureType) -> StructureInfo { table[structure.rawValue] }
+
+    /// `g_table_structureInfo[]`, indexed by `StructureType.rawValue`.
+    public static let table: [StructureInfo] = [
+    /* 0 Concrete */ StructureInfo(
+        o: makeObjectInfo(232, "Concrete", 233, "slab.wsa", [.notOnConcrete],
+            spawnChance: 0, hitpoints: 20, fogUncoverRadius: 1, spriteID: 65,
+            buildCredits: 5, buildTime: 16, availableCampaign: 1,
+            structuresRequired: 0, sortPriority: 2, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 341,
+            priorityBuild: 0, priorityTarget: 5, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 0, layout: .layout1x1,
+        iconGroup: 8, animationIndex: [2, 2, 2], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [0, 0, 0]),
+    /* 1 Concrete4 */ StructureInfo(
+        o: makeObjectInfo(234, "Concrete4", 235, "4slab.wsa", [.notOnConcrete],
+            spawnChance: 0, hitpoints: 20, fogUncoverRadius: 1, spriteID: 83,
+            buildCredits: 20, buildTime: 16, availableCampaign: 4,
+            structuresRequired: 0, sortPriority: 4, upgradeLevelRequired: 1,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 341,
+            priorityBuild: 0, priorityTarget: 10, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 0, layout: .layout2x2,
+        iconGroup: 8, animationIndex: [2, 2, 2], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [0, 0, 0]),
+    /* 2 Palace */ StructureInfo(
+        o: makeObjectInfo(236, "Palace", 237, "palace.wsa", [],
+            spawnChance: 128, hitpoints: 1000, fogUncoverRadius: 5, spriteID: 66,
+            buildCredits: 999, buildTime: 130, availableCampaign: 8,
+            structuresRequired: 2048, sortPriority: 5, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 342,
+            priorityBuild: 0, priorityTarget: 400, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 80, layout: .layout3x3,
+        iconGroup: 11, animationIndex: [4, 4, 4], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [0, 0, 0]),
+    /* 3 Light Fctry */ StructureInfo(
+        o: makeObjectInfo(238, "Light Fctry", 239, "liteftry.wsa", [.factory, .conquerable],
+            spawnChance: 64, hitpoints: 350, fogUncoverRadius: 3, spriteID: 67,
+            buildCredits: 400, buildTime: 96, availableCampaign: 3,
+            structuresRequired: 4608, sortPriority: 14, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 343,
+            priorityBuild: 0, priorityTarget: 200, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 20, layout: .layout2x2,
+        iconGroup: 12, animationIndex: [14, 15, 16], buildableUnits: [13, 15, 255, 255, 255, 255, 255, 255], upgradeCampaign: [3, 0, 0]),
+    /* 4 Heavy Fctry */ StructureInfo(
+        o: makeObjectInfo(240, "Heavy Fctry", 241, "hvyftry.wsa", [.factory, .conquerable],
+            spawnChance: 64, hitpoints: 200, fogUncoverRadius: 3, spriteID: 68,
+            buildCredits: 600, buildTime: 144, availableCampaign: 4,
+            structuresRequired: 262664, sortPriority: 28, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 344,
+            priorityBuild: 0, priorityTarget: 600, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 35, layout: .layout3x2,
+        iconGroup: 13, animationIndex: [11, 12, 13], buildableUnits: [10, 7, 16, 9, 11, 8, 17, 12], upgradeCampaign: [4, 5, 6]),
+    /* 5 Hi-Tech */ StructureInfo(
+        o: makeObjectInfo(242, "Hi-Tech", 243, "hitcftry.wsa", [.factory, .conquerable],
+            spawnChance: 64, hitpoints: 400, fogUncoverRadius: 3, spriteID: 69,
+            buildCredits: 500, buildTime: 120, availableCampaign: 5,
+            structuresRequired: 262664, sortPriority: 30, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 345,
+            priorityBuild: 0, priorityTarget: 200, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 35, layout: .layout3x2,
+        iconGroup: 14, animationIndex: [8, 9, 10], buildableUnits: [0, 1, 255, 255, 255, 255, 255, 255], upgradeCampaign: [7, 0, 0]),
+    /* 6 IX */ StructureInfo(
+        o: makeObjectInfo(244, "IX", 245, "ix.wsa", [],
+            spawnChance: 192, hitpoints: 400, fogUncoverRadius: 3, spriteID: 70,
+            buildCredits: 500, buildTime: 120, availableCampaign: 7,
+            structuresRequired: 6656, sortPriority: 34, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 346,
+            priorityBuild: 0, priorityTarget: 100, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 40, layout: .layout2x2,
+        iconGroup: 15, animationIndex: [20, 20, 20], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [0, 0, 0]),
+    /* 7 WOR */ StructureInfo(
+        o: makeObjectInfo(246, "WOR", 247, "wor.wsa", [.factory],
+            spawnChance: 128, hitpoints: 400, fogUncoverRadius: 3, spriteID: 71,
+            buildCredits: 400, buildTime: 104, availableCampaign: 5,
+            structuresRequired: 263680, sortPriority: 20, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 347,
+            priorityBuild: 0, priorityTarget: 175, availableHouse: 61),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 20, layout: .layout2x2,
+        iconGroup: 16, animationIndex: [21, 21, 21], buildableUnits: [5, 3, 255, 255, 255, 255, 255, 255], upgradeCampaign: [6, 0, 0]),
+    /* 8 Const Yard */ StructureInfo(
+        o: makeObjectInfo(248, "Const Yard", 249, "construc.wsa", [.factory, .notOnConcrete, .conquerable],
+            spawnChance: 64, hitpoints: 400, fogUncoverRadius: 3, spriteID: 72,
+            buildCredits: 400, buildTime: 80, availableCampaign: 99,
+            structuresRequired: 4294967295, sortPriority: 0, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 348,
+            priorityBuild: 0, priorityTarget: 300, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 0, layout: .layout2x2,
+        iconGroup: 17, animationIndex: [22, 22, 22], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [4, 6, 0]),
+    /* 9 Windtrap */ StructureInfo(
+        o: makeObjectInfo(250, "Windtrap", 251, "windtrap.wsa", [.conquerable],
+            spawnChance: 64, hitpoints: 200, fogUncoverRadius: 2, spriteID: 73,
+            buildCredits: 300, buildTime: 48, availableCampaign: 1,
+            structuresRequired: 0, sortPriority: 6, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 349,
+            priorityBuild: 0, priorityTarget: 300, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: -100, layout: .layout2x2,
+        iconGroup: 19, animationIndex: [26, 26, 26], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [0, 0, 0]),
+    /* 10 Barracks */ StructureInfo(
+        o: makeObjectInfo(252, "Barracks", 253, "barrac.wsa", [.factory],
+            spawnChance: 128, hitpoints: 300, fogUncoverRadius: 2, spriteID: 74,
+            buildCredits: 300, buildTime: 72, availableCampaign: 2,
+            structuresRequired: 262656, sortPriority: 18, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 350,
+            priorityBuild: 0, priorityTarget: 100, availableHouse: 62),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 10, layout: .layout2x2,
+        iconGroup: 18, animationIndex: [28, 28, 28], buildableUnits: [4, 2, 255, 255, 255, 255, 255, 255], upgradeCampaign: [2, 0, 0]),
+    /* 11 Starport */ StructureInfo(
+        o: makeObjectInfo(254, "Starport", 255, "starport.wsa", [.factory, .busyStateIsIncoming, .conquerable],
+            spawnChance: 128, hitpoints: 500, fogUncoverRadius: 6, spriteID: 75,
+            buildCredits: 500, buildTime: 120, availableCampaign: 6,
+            structuresRequired: 4608, sortPriority: 32, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 351,
+            priorityBuild: 0, priorityTarget: 250, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 50, layout: .layout3x3,
+        iconGroup: 20, animationIndex: [5, 6, 7], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [0, 0, 0]),
+    /* 12 Refinery */ StructureInfo(
+        o: makeObjectInfo(256, "Refinery", 257, "refinery.wsa", [.busyStateIsIncoming, .conquerable],
+            spawnChance: 128, hitpoints: 450, fogUncoverRadius: 4, spriteID: 76,
+            buildCredits: 400, buildTime: 80, availableCampaign: 1,
+            structuresRequired: 512, sortPriority: 8, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 352,
+            priorityBuild: 0, priorityTarget: 300, availableHouse: 63),
+        enterFilter: 65536, creditsStorage: 1005, powerUsage: 30, layout: .layout3x2,
+        iconGroup: 21, animationIndex: [17, 18, 19], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [0, 0, 0]),
+    /* 13 Repair */ StructureInfo(
+        o: makeObjectInfo(258, "Repair", 259, "repair.wsa", [.conquerable],
+            spawnChance: 128, hitpoints: 200, fogUncoverRadius: 3, spriteID: 77,
+            buildCredits: 700, buildTime: 80, availableCampaign: 5,
+            structuresRequired: 262664, sortPriority: 24, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 353,
+            priorityBuild: 0, priorityTarget: 600, availableHouse: 63),
+        enterFilter: 130944, creditsStorage: 0, powerUsage: 20, layout: .layout3x2,
+        iconGroup: 22, animationIndex: [23, 24, 25], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [0, 0, 0]),
+    /* 14 Wall */ StructureInfo(
+        o: makeObjectInfo(260, "Wall", 261, "wall.wsa", [],
+            spawnChance: 0, hitpoints: 50, fogUncoverRadius: 1, spriteID: 78,
+            buildCredits: 50, buildTime: 40, availableCampaign: 4,
+            structuresRequired: 262656, sortPriority: 16, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 354,
+            priorityBuild: 0, priorityTarget: 30, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 0, layout: .layout1x1,
+        iconGroup: 6, animationIndex: [255, 255, 255], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [0, 0, 0]),
+    /* 15 Turret */ StructureInfo(
+        o: makeObjectInfo(262, "Turret", 263, "turret.wsa", [.conquerable],
+            spawnChance: 64, hitpoints: 200, fogUncoverRadius: 2, spriteID: 79,
+            buildCredits: 125, buildTime: 64, availableCampaign: 5,
+            structuresRequired: 262656, sortPriority: 22, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 355,
+            priorityBuild: 75, priorityTarget: 150, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 10, layout: .layout1x1,
+        iconGroup: 23, animationIndex: [255, 255, 255], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [0, 0, 0]),
+    /* 16 R-Turret */ StructureInfo(
+        o: makeObjectInfo(264, "R-Turret", 265, "rturret.wsa", [.conquerable],
+            spawnChance: 64, hitpoints: 200, fogUncoverRadius: 5, spriteID: 80,
+            buildCredits: 250, buildTime: 96, availableCampaign: 0,
+            structuresRequired: 262656, sortPriority: 26, upgradeLevelRequired: 2,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 356,
+            priorityBuild: 100, priorityTarget: 75, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 25, layout: .layout1x1,
+        iconGroup: 24, animationIndex: [255, 255, 255], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [0, 0, 0]),
+    /* 17 Spice Silo */ StructureInfo(
+        o: makeObjectInfo(266, "Spice Silo", 267, "storage.wsa", [.conquerable],
+            spawnChance: 0, hitpoints: 150, fogUncoverRadius: 2, spriteID: 81,
+            buildCredits: 150, buildTime: 48, availableCampaign: 2,
+            structuresRequired: 4608, sortPriority: 12, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 357,
+            priorityBuild: 0, priorityTarget: 150, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 1000, powerUsage: 5, layout: .layout2x2,
+        iconGroup: 25, animationIndex: [27, 27, 27], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [0, 0, 0]),
+    /* 18 Outpost */ StructureInfo(
+        o: makeObjectInfo(268, "Outpost", 269, "headqrts.wsa", [],
+            spawnChance: 128, hitpoints: 500, fogUncoverRadius: 10, spriteID: 82,
+            buildCredits: 400, buildTime: 80, availableCampaign: 2,
+            structuresRequired: 512, sortPriority: 10, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 358,
+            priorityBuild: 0, priorityTarget: 275, availableHouse: 63),
+        enterFilter: 0, creditsStorage: 0, powerUsage: 30, layout: .layout2x2,
+        iconGroup: 26, animationIndex: [3, 3, 3], buildableUnits: [255, 255, 255, 255, 255, 255, 255, 255], upgradeCampaign: [0, 0, 0])
+    ]
+}

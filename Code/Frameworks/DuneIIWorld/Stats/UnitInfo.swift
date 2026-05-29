@@ -1,0 +1,393 @@
+import DuneIIContracts
+
+/// How a unit's sprite is drawn, in OpenDUNE's `DisplayMode` order (`src/unit.h:122`). Indexes the
+/// directional/animation sprite layout used by the renderer.
+public enum DisplayMode: Int, Sendable {
+    case singleFrame = 0       // a single fixed frame (bullets, sonic blast)
+    case unit = 1              // ground: N,NE,E,SE,S; air: N,NE,E
+    case rocket = 2            // N,NNE,NE,ENE,E
+    case infantry3Frames = 3   // N,E,S; 3 frames per direction
+    case infantry4Frames = 4   // N,E,S; 4 frames per direction
+    case ornithopter = 5       // N,NE,E; 3 frames per direction
+}
+
+/// Per-unit-type static stats. A literal port of OpenDUNE's `UnitInfo` struct (`src/unit.h`) and
+/// `g_table_unitInfo[]` (`src/table/unitinfo.c`, `UNIT_MAX` = 27). Embeds an `ObjectInfo`; keyed by
+/// `UnitType`.
+///
+/// Verified field-for-field against an OpenDUNE golden dump — see `Documentation/Algorithms/StatTables.md`.
+/// The `table` literal below is generated from that dump (`Tests/WorldTests/Fixtures/.gen_tables.py`)
+/// and re-checked by `UnitStructureInfoGoldenTests`.
+public struct UnitInfo: Sendable, Equatable {
+    /// The 13-bit `UnitInfo.flags` bitfield (`src/unit.h`), bit positions in C declaration order.
+    public struct Flags: OptionSet, Sendable, Equatable {
+        public let rawValue: UInt16
+        public init(rawValue: UInt16) { self.rawValue = rawValue }
+
+        public static let isBullet         = Flags(rawValue: 1 << 0)  // a bullet / missile
+        public static let explodeOnDeath   = Flags(rawValue: 1 << 1)  // explodes when dying
+        public static let sonicProtection  = Flags(rawValue: 1 << 2)  // takes no sonic-blast damage
+        public static let canWobble        = Flags(rawValue: 1 << 3)  // wobbles on certain tiles
+        public static let isTracked        = Flags(rawValue: 1 << 4)  // tracked (leaves sand marks)
+        public static let isGroundUnit     = Flags(rawValue: 1 << 5)  // ground-based
+        public static let mustStayInMap    = Flags(rawValue: 1 << 6)  // bounces off the map border (air)
+        public static let firesTwice       = Flags(rawValue: 1 << 7)  // fires twice
+        public static let impactOnSand     = Flags(rawValue: 1 << 8)  // makes a crater hitting sand
+        public static let isNotDeviatable  = Flags(rawValue: 1 << 9)  // can't be deviated
+        public static let hasAnimationSet  = Flags(rawValue: 1 << 10) // two sprite sets for animation
+        public static let notAccurate      = Flags(rawValue: 1 << 11) // bullet, inaccurate (rockets)
+        public static let isNormalUnit     = Flags(rawValue: 1 << 12) // not a bullet/sandworm/frigate
+    }
+
+    public let o: ObjectInfo
+    public let indexStart: UInt16           // create picks a free pool index in [indexStart, indexEnd]
+    public let indexEnd: UInt16
+    public let flags: Flags
+    public let dimension: UInt16            // sprite dimension
+    public let movementType: MovementType
+    public let animationSpeed: UInt16
+    public let movingSpeedFactor: UInt16    // movement speed factor; 256 = full speed
+    public let turningSpeed: UInt8          // orientation change speed
+    public let groundSpriteID: UInt16       // sprite for north direction
+    public let turretSpriteID: UInt16       // turret sprite for north (0xFFFF = none)
+    public let actionAI: UInt16             // default AI action (can be ACTION_INVALID = 0xFF)
+    public let displayMode: DisplayMode
+    public let destroyedSpriteID: UInt16    // burning-unit sprite (0 = none)
+    public let fireDelay: UInt16            // time between firing at normal speed
+    public let fireDistance: UInt16         // maximal firing distance
+    public let damage: UInt16
+    public let explosionType: UInt16        // EXPLOSION_* (0xFFFF = none)
+    public let bulletType: UInt8            // bullet UnitType (UNIT_INVALID = 0xFF = none)
+    public let bulletSound: UInt16          // bullet sound (0xFFFF = none)
+
+    /// Stats for `unit`.
+    public static subscript(_ unit: UnitType) -> UnitInfo { table[unit.rawValue] }
+
+    /// `g_table_unitInfo[]`, indexed by `UnitType.rawValue`.
+    public static let table: [UnitInfo] = [
+    /* 0 Carryall */ UnitInfo(
+        o: makeObjectInfo(194, "Carryall", 195, "carryall.wsa", [.hasShadow, .scriptNoSlowdown, .priority],
+            spawnChance: 0, hitpoints: 100, fogUncoverRadius: 0, spriteID: 89,
+            buildCredits: 800, buildTime: 64, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 16, upgradeLevelRequired: 0,
+            actionsPlayer: [.stop, .stop, .stop, .stop], available: 0, hintStringID: 0,
+            priorityBuild: 20, priorityTarget: 16, availableHouse: 63),
+        indexStart: 0, indexEnd: 10, flags: [.mustStayInMap, .isNotDeviatable, .isNormalUnit],
+        dimension: 32, movementType: .winger, animationSpeed: 0, movingSpeedFactor: 200,
+        turningSpeed: 3, groundSpriteID: 283, turretSpriteID: 65535, actionAI: 7, displayMode: .unit,
+        destroyedSpriteID: 0, fireDelay: 0, fireDistance: 0, damage: 0, explosionType: 65535,
+        bulletType: 255, bulletSound: 42),
+    /* 1 'Thopter */ UnitInfo(
+        o: makeObjectInfo(196, "'Thopter", 197, "orni.wsa", [.hasShadow, .scriptNoSlowdown, .priority],
+            spawnChance: 0, hitpoints: 25, fogUncoverRadius: 5, spriteID: 97,
+            buildCredits: 600, buildTime: 96, availableCampaign: 0,
+            structuresRequired: 64, sortPriority: 28, upgradeLevelRequired: 1,
+            actionsPlayer: [.stop, .stop, .stop, .stop], available: 0, hintStringID: 0,
+            priorityBuild: 75, priorityTarget: 30, availableHouse: 62),
+        indexStart: 0, indexEnd: 10, flags: [.explodeOnDeath, .mustStayInMap, .firesTwice, .isNormalUnit],
+        dimension: 24, movementType: .winger, animationSpeed: 7, movingSpeedFactor: 150,
+        turningSpeed: 2, groundSpriteID: 289, turretSpriteID: 65535, actionAI: 7, displayMode: .ornithopter,
+        destroyedSpriteID: 0, fireDelay: 50, fireDistance: 50, damage: 50, explosionType: 0,
+        bulletType: 22, bulletSound: 42),
+    /* 2 Infantry */ UnitInfo(
+        o: makeObjectInfo(198, "Infantry", 199, "infantry.wsa", [.tabSelectable, .priority],
+            spawnChance: 0, hitpoints: 50, fogUncoverRadius: 1, spriteID: 93,
+            buildCredits: 100, buildTime: 32, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 4, upgradeLevelRequired: 1,
+            actionsPlayer: [.attack, .move, .retreat, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 20, priorityTarget: 20, availableHouse: 62),
+        indexStart: 22, indexEnd: 101, flags: [.isGroundUnit, .firesTwice, .isNormalUnit],
+        dimension: 16, movementType: .foot, animationSpeed: 15, movingSpeedFactor: 5,
+        turningSpeed: 3, groundSpriteID: 329, turretSpriteID: 65535, actionAI: 11, displayMode: .infantry4Frames,
+        destroyedSpriteID: 0, fireDelay: 45, fireDistance: 2, damage: 3, explosionType: 0,
+        bulletType: 23, bulletSound: 58),
+    /* 3 Troopers */ UnitInfo(
+        o: makeObjectInfo(200, "Troopers", 201, "hyinfy.wsa", [.tabSelectable, .targetAir, .priority],
+            spawnChance: 0, hitpoints: 110, fogUncoverRadius: 1, spriteID: 103,
+            buildCredits: 200, buildTime: 56, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 8, upgradeLevelRequired: 1,
+            actionsPlayer: [.attack, .move, .retreat, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 50, priorityTarget: 50, availableHouse: 61),
+        indexStart: 22, indexEnd: 101, flags: [.isGroundUnit, .firesTwice, .isNormalUnit],
+        dimension: 16, movementType: .foot, animationSpeed: 15, movingSpeedFactor: 10,
+        turningSpeed: 3, groundSpriteID: 341, turretSpriteID: 65535, actionAI: 11, displayMode: .infantry4Frames,
+        destroyedSpriteID: 0, fireDelay: 50, fireDistance: 5, damage: 5, explosionType: 0,
+        bulletType: 23, bulletSound: 59),
+    /* 4 Soldier */ UnitInfo(
+        o: makeObjectInfo(202, "Soldier", 203, "infantry.wsa", [.tabSelectable, .priority],
+            spawnChance: 0, hitpoints: 20, fogUncoverRadius: 1, spriteID: 102,
+            buildCredits: 60, buildTime: 32, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 2, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .move, .retreat, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 10, priorityTarget: 10, availableHouse: 62),
+        indexStart: 22, indexEnd: 101, flags: [.canWobble, .isGroundUnit, .isNormalUnit],
+        dimension: 16, movementType: .foot, animationSpeed: 12, movingSpeedFactor: 8,
+        turningSpeed: 3, groundSpriteID: 311, turretSpriteID: 65535, actionAI: 11, displayMode: .infantry3Frames,
+        destroyedSpriteID: 0, fireDelay: 45, fireDistance: 2, damage: 3, explosionType: 0,
+        bulletType: 23, bulletSound: 58),
+    /* 5 Trooper */ UnitInfo(
+        o: makeObjectInfo(204, "Trooper", 205, "hyinfy.wsa", [.tabSelectable, .targetAir, .priority],
+            spawnChance: 0, hitpoints: 45, fogUncoverRadius: 1, spriteID: 88,
+            buildCredits: 100, buildTime: 56, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 6, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .move, .retreat, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 20, priorityTarget: 30, availableHouse: 61),
+        indexStart: 22, indexEnd: 101, flags: [.canWobble, .isGroundUnit, .isNormalUnit],
+        dimension: 16, movementType: .foot, animationSpeed: 12, movingSpeedFactor: 15,
+        turningSpeed: 3, groundSpriteID: 320, turretSpriteID: 65535, actionAI: 11, displayMode: .infantry3Frames,
+        destroyedSpriteID: 0, fireDelay: 50, fireDistance: 5, damage: 5, explosionType: 0,
+        bulletType: 23, bulletSound: 59),
+    /* 6 Saboteur */ UnitInfo(
+        o: makeObjectInfo(44, "Saboteur", 44, "saboture.wsa", [.tabSelectable, .scriptNoSlowdown, .priority],
+            spawnChance: 0, hitpoints: 10, fogUncoverRadius: 1, spriteID: 96,
+            buildCredits: 120, buildTime: 48, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 0, upgradeLevelRequired: 0,
+            actionsPlayer: [.sabotage, .move, .retreat, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 0, priorityTarget: 700, availableHouse: 4),
+        indexStart: 20, indexEnd: 21, flags: [.isGroundUnit, .isNormalUnit],
+        dimension: 8, movementType: .foot, animationSpeed: 7, movingSpeedFactor: 40,
+        turningSpeed: 3, groundSpriteID: 301, turretSpriteID: 65535, actionAI: 9, displayMode: .infantry3Frames,
+        destroyedSpriteID: 0, fireDelay: 45, fireDistance: 2, damage: 2, explosionType: 0,
+        bulletType: 23, bulletSound: 58),
+    /* 7 Launcher */ UnitInfo(
+        o: makeObjectInfo(208, "Launcher", 209, "rtank.wsa", [.canBePickedUp, .tabSelectable, .targetAir, .priority],
+            spawnChance: 64, hitpoints: 100, fogUncoverRadius: 5, spriteID: 85,
+            buildCredits: 450, buildTime: 72, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 26, upgradeLevelRequired: 2,
+            actionsPlayer: [.attack, .move, .retreat, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 100, priorityTarget: 150, availableHouse: 59),
+        indexStart: 22, indexEnd: 101, flags: [.explodeOnDeath, .isTracked, .isGroundUnit, .firesTwice, .isNormalUnit],
+        dimension: 16, movementType: .tracked, animationSpeed: 0, movingSpeedFactor: 30,
+        turningSpeed: 1, groundSpriteID: 111, turretSpriteID: 146, actionAI: 11, displayMode: .unit,
+        destroyedSpriteID: 162, fireDelay: 120, fireDistance: 9, damage: 75, explosionType: 3,
+        bulletType: 19, bulletSound: 65535),
+    /* 8 Deviator */ UnitInfo(
+        o: makeObjectInfo(210, "Deviator", 211, "ordrtank.wsa", [.canBePickedUp, .tabSelectable, .priority],
+            spawnChance: 64, hitpoints: 120, fogUncoverRadius: 5, spriteID: 98,
+            buildCredits: 750, buildTime: 80, availableCampaign: 0,
+            structuresRequired: 64, sortPriority: 30, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .move, .retreat, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 50, priorityTarget: 175, availableHouse: 4),
+        indexStart: 22, indexEnd: 101, flags: [.explodeOnDeath, .isTracked, .isGroundUnit, .isNormalUnit],
+        dimension: 16, movementType: .tracked, animationSpeed: 0, movingSpeedFactor: 30,
+        turningSpeed: 1, groundSpriteID: 111, turretSpriteID: 146, actionAI: 11, displayMode: .unit,
+        destroyedSpriteID: 162, fireDelay: 180, fireDistance: 7, damage: 0, explosionType: 3,
+        bulletType: 21, bulletSound: 65535),
+    /* 9 Tank */ UnitInfo(
+        o: makeObjectInfo(212, "Tank", 213, "ltank.wsa", [.hasTurret, .canBePickedUp, .tabSelectable, .priority],
+            spawnChance: 64, hitpoints: 200, fogUncoverRadius: 3, spriteID: 90,
+            buildCredits: 300, buildTime: 64, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 22, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .move, .retreat, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 80, priorityTarget: 100, availableHouse: 63),
+        indexStart: 22, indexEnd: 101, flags: [.explodeOnDeath, .isTracked, .isGroundUnit, .isNormalUnit],
+        dimension: 16, movementType: .tracked, animationSpeed: 0, movingSpeedFactor: 25,
+        turningSpeed: 1, groundSpriteID: 111, turretSpriteID: 116, actionAI: 11, displayMode: .unit,
+        destroyedSpriteID: 162, fireDelay: 80, fireDistance: 4, damage: 25, explosionType: 1,
+        bulletType: 23, bulletSound: 57),
+    /* 10 Siege Tank */ UnitInfo(
+        o: makeObjectInfo(214, "Siege Tank", 215, "htank.wsa", [.hasTurret, .canBePickedUp, .tabSelectable, .priority],
+            spawnChance: 64, hitpoints: 300, fogUncoverRadius: 4, spriteID: 84,
+            buildCredits: 600, buildTime: 96, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 24, upgradeLevelRequired: 3,
+            actionsPlayer: [.attack, .move, .retreat, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 130, priorityTarget: 150, availableHouse: 63),
+        indexStart: 22, indexEnd: 101, flags: [.explodeOnDeath, .isTracked, .isGroundUnit, .firesTwice, .isNormalUnit],
+        dimension: 24, movementType: .tracked, animationSpeed: 0, movingSpeedFactor: 20,
+        turningSpeed: 1, groundSpriteID: 121, turretSpriteID: 126, actionAI: 11, displayMode: .unit,
+        destroyedSpriteID: 162, fireDelay: 90, fireDistance: 5, damage: 30, explosionType: 1,
+        bulletType: 23, bulletSound: 57),
+    /* 11 Devastator */ UnitInfo(
+        o: makeObjectInfo(216, "Devastator", 217, "harktank.wsa", [.canBePickedUp, .tabSelectable, .priority],
+            spawnChance: 64, hitpoints: 400, fogUncoverRadius: 4, spriteID: 87,
+            buildCredits: 800, buildTime: 104, availableCampaign: 0,
+            structuresRequired: 64, sortPriority: 32, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .move, .destruct, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 175, priorityTarget: 180, availableHouse: 57),
+        indexStart: 22, indexEnd: 101, flags: [.explodeOnDeath, .isTracked, .isGroundUnit, .firesTwice, .isNormalUnit],
+        dimension: 24, movementType: .tracked, animationSpeed: 0, movingSpeedFactor: 10,
+        turningSpeed: 1, groundSpriteID: 131, turretSpriteID: 136, actionAI: 11, displayMode: .unit,
+        destroyedSpriteID: 165, fireDelay: 100, fireDistance: 5, damage: 40, explosionType: 1,
+        bulletType: 23, bulletSound: 57),
+    /* 12 Sonic Tank */ UnitInfo(
+        o: makeObjectInfo(218, "Sonic Tank", 219, "stank.wsa", [.canBePickedUp, .tabSelectable, .priority],
+            spawnChance: 64, hitpoints: 110, fogUncoverRadius: 4, spriteID: 91,
+            buildCredits: 600, buildTime: 104, availableCampaign: 0,
+            structuresRequired: 64, sortPriority: 34, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .move, .retreat, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 80, priorityTarget: 110, availableHouse: 58),
+        indexStart: 22, indexEnd: 101, flags: [.explodeOnDeath, .sonicProtection, .isTracked, .isGroundUnit, .isNormalUnit],
+        dimension: 16, movementType: .tracked, animationSpeed: 0, movingSpeedFactor: 30,
+        turningSpeed: 1, groundSpriteID: 111, turretSpriteID: 141, actionAI: 11, displayMode: .unit,
+        destroyedSpriteID: 162, fireDelay: 80, fireDistance: 8, damage: 60, explosionType: 65535,
+        bulletType: 24, bulletSound: 43),
+    /* 13 Trike */ UnitInfo(
+        o: makeObjectInfo(220, "Trike", 221, "trike.wsa", [.canBePickedUp, .tabSelectable, .priority],
+            spawnChance: 64, hitpoints: 100, fogUncoverRadius: 2, spriteID: 92,
+            buildCredits: 150, buildTime: 40, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 10, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .move, .retreat, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 50, priorityTarget: 50, availableHouse: 58),
+        indexStart: 22, indexEnd: 101, flags: [.explodeOnDeath, .canWobble, .isTracked, .isGroundUnit, .firesTwice, .isNormalUnit],
+        dimension: 16, movementType: .wheeled, animationSpeed: 0, movingSpeedFactor: 45,
+        turningSpeed: 2, groundSpriteID: 243, turretSpriteID: 65535, actionAI: 11, displayMode: .unit,
+        destroyedSpriteID: 0, fireDelay: 50, fireDistance: 3, damage: 5, explosionType: 0,
+        bulletType: 23, bulletSound: 59),
+    /* 14 Raider Trike */ UnitInfo(
+        o: makeObjectInfo(222, "Raider Trike", 223, "otrike.wsa", [.canBePickedUp, .tabSelectable, .priority],
+            spawnChance: 64, hitpoints: 80, fogUncoverRadius: 2, spriteID: 99,
+            buildCredits: 150, buildTime: 40, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 12, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .move, .retreat, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 55, priorityTarget: 60, availableHouse: 60),
+        indexStart: 22, indexEnd: 101, flags: [.explodeOnDeath, .canWobble, .isTracked, .isGroundUnit, .firesTwice, .isNormalUnit],
+        dimension: 16, movementType: .wheeled, animationSpeed: 0, movingSpeedFactor: 60,
+        turningSpeed: 2, groundSpriteID: 243, turretSpriteID: 65535, actionAI: 11, displayMode: .unit,
+        destroyedSpriteID: 0, fireDelay: 50, fireDistance: 3, damage: 5, explosionType: 0,
+        bulletType: 23, bulletSound: 59),
+    /* 15 Quad */ UnitInfo(
+        o: makeObjectInfo(224, "Quad", 225, "quad.wsa", [.canBePickedUp, .tabSelectable, .priority],
+            spawnChance: 64, hitpoints: 130, fogUncoverRadius: 2, spriteID: 86,
+            buildCredits: 200, buildTime: 48, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 14, upgradeLevelRequired: 1,
+            actionsPlayer: [.attack, .move, .retreat, .guard_], available: 0, hintStringID: 0,
+            priorityBuild: 60, priorityTarget: 60, availableHouse: 63),
+        indexStart: 22, indexEnd: 101, flags: [.explodeOnDeath, .canWobble, .isTracked, .isGroundUnit, .firesTwice, .isNormalUnit],
+        dimension: 16, movementType: .wheeled, animationSpeed: 0, movingSpeedFactor: 40,
+        turningSpeed: 2, groundSpriteID: 238, turretSpriteID: 65535, actionAI: 11, displayMode: .unit,
+        destroyedSpriteID: 0, fireDelay: 50, fireDistance: 3, damage: 7, explosionType: 0,
+        bulletType: 23, bulletSound: 59),
+    /* 16 Harvester */ UnitInfo(
+        o: makeObjectInfo(226, "Harvester", 227, "harvest.wsa", [.canBePickedUp, .tabSelectable, .scriptNoSlowdown, .priority],
+            spawnChance: 128, hitpoints: 150, fogUncoverRadius: 2, spriteID: 100,
+            buildCredits: 300, buildTime: 64, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 18, upgradeLevelRequired: 0,
+            actionsPlayer: [.harvest, .move, .`return`, .stop], available: 0, hintStringID: 0,
+            priorityBuild: 10, priorityTarget: 150, availableHouse: 63),
+        indexStart: 22, indexEnd: 101, flags: [.explodeOnDeath, .isTracked, .isGroundUnit, .isNormalUnit],
+        dimension: 24, movementType: .harvester, animationSpeed: 0, movingSpeedFactor: 20,
+        turningSpeed: 1, groundSpriteID: 248, turretSpriteID: 65535, actionAI: 5, displayMode: .unit,
+        destroyedSpriteID: 165, fireDelay: 0, fireDistance: 0, damage: 0, explosionType: 65535,
+        bulletType: 255, bulletSound: 0),
+    /* 17 MCV */ UnitInfo(
+        o: makeObjectInfo(228, "MCV", 229, "mcv.wsa", [.canBePickedUp, .tabSelectable, .priority],
+            spawnChance: 64, hitpoints: 150, fogUncoverRadius: 2, spriteID: 101,
+            buildCredits: 900, buildTime: 80, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 20, upgradeLevelRequired: 1,
+            actionsPlayer: [.deploy, .move, .retreat, .stop], available: 0, hintStringID: 0,
+            priorityBuild: 10, priorityTarget: 150, availableHouse: 63),
+        indexStart: 22, indexEnd: 101, flags: [.explodeOnDeath, .isTracked, .isGroundUnit, .isNormalUnit],
+        dimension: 24, movementType: .tracked, animationSpeed: 0, movingSpeedFactor: 20,
+        turningSpeed: 1, groundSpriteID: 253, turretSpriteID: 65535, actionAI: 11, displayMode: .unit,
+        destroyedSpriteID: 0, fireDelay: 0, fireDistance: 0, damage: 0, explosionType: 65535,
+        bulletType: 255, bulletSound: 0),
+    /* 18 Death Hand */ UnitInfo(
+        o: makeObjectInfo(0, "Death Hand", 0, "gold-bb.wsa", [.noMessageOnDeath, .scriptNoSlowdown],
+            spawnChance: 0, hitpoints: 70, fogUncoverRadius: 0, spriteID: 0,
+            buildCredits: 0, buildTime: 0, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 0, upgradeLevelRequired: 0,
+            actionsPlayer: [.stop, .stop, .stop, .stop], available: 0, hintStringID: 0,
+            priorityBuild: 0, priorityTarget: 0, availableHouse: 1),
+        indexStart: 12, indexEnd: 15, flags: [.isBullet, .isNotDeviatable],
+        dimension: 32, movementType: .winger, animationSpeed: 0, movingSpeedFactor: 250,
+        turningSpeed: 2, groundSpriteID: 278, turretSpriteID: 65535, actionAI: 255, displayMode: .rocket,
+        destroyedSpriteID: 0, fireDelay: 0, fireDistance: 15, damage: 100, explosionType: 11,
+        bulletType: 255, bulletSound: 42),
+    /* 19 Rocket */ UnitInfo(
+        o: makeObjectInfo(0, "Rocket", 0, nil, [.noMessageOnDeath, .scriptNoSlowdown],
+            spawnChance: 0, hitpoints: 70, fogUncoverRadius: 0, spriteID: 0,
+            buildCredits: 0, buildTime: 0, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 0, upgradeLevelRequired: 0,
+            actionsPlayer: [.stop, .stop, .stop, .stop], available: 0, hintStringID: 0,
+            priorityBuild: 0, priorityTarget: 0, availableHouse: 63),
+        indexStart: 12, indexEnd: 15, flags: [.isBullet, .impactOnSand, .isNotDeviatable, .hasAnimationSet, .notAccurate],
+        dimension: 16, movementType: .winger, animationSpeed: 7, movingSpeedFactor: 200,
+        turningSpeed: 2, groundSpriteID: 258, turretSpriteID: 65535, actionAI: 255, displayMode: .rocket,
+        destroyedSpriteID: 0, fireDelay: 0, fireDistance: 8, damage: 75, explosionType: 3,
+        bulletType: 255, bulletSound: 42),
+    /* 20 ARocket */ UnitInfo(
+        o: makeObjectInfo(0, "ARocket", 0, nil, [.noMessageOnDeath, .scriptNoSlowdown],
+            spawnChance: 0, hitpoints: 70, fogUncoverRadius: 0, spriteID: 0,
+            buildCredits: 0, buildTime: 0, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 0, upgradeLevelRequired: 0,
+            actionsPlayer: [.stop, .stop, .stop, .stop], available: 0, hintStringID: 0,
+            priorityBuild: 0, priorityTarget: 0, availableHouse: 63),
+        indexStart: 12, indexEnd: 15, flags: [.isBullet, .impactOnSand, .isNotDeviatable, .hasAnimationSet],
+        dimension: 16, movementType: .winger, animationSpeed: 7, movingSpeedFactor: 160,
+        turningSpeed: 8, groundSpriteID: 258, turretSpriteID: 65535, actionAI: 255, displayMode: .rocket,
+        destroyedSpriteID: 0, fireDelay: 0, fireDistance: 60, damage: 75, explosionType: 3,
+        bulletType: 255, bulletSound: 42),
+    /* 21 GRocket */ UnitInfo(
+        o: makeObjectInfo(0, "GRocket", 0, nil, [.noMessageOnDeath, .scriptNoSlowdown],
+            spawnChance: 0, hitpoints: 70, fogUncoverRadius: 0, spriteID: 0,
+            buildCredits: 0, buildTime: 0, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 0, upgradeLevelRequired: 0,
+            actionsPlayer: [.stop, .stop, .stop, .stop], available: 0, hintStringID: 0,
+            priorityBuild: 0, priorityTarget: 0, availableHouse: 63),
+        indexStart: 12, indexEnd: 15, flags: [.isBullet, .isNotDeviatable, .hasAnimationSet, .notAccurate],
+        dimension: 16, movementType: .winger, animationSpeed: 7, movingSpeedFactor: 200,
+        turningSpeed: 2, groundSpriteID: 258, turretSpriteID: 65535, actionAI: 255, displayMode: .rocket,
+        destroyedSpriteID: 0, fireDelay: 0, fireDistance: 7, damage: 75, explosionType: 7,
+        bulletType: 255, bulletSound: 42),
+    /* 22 MiniRocket */ UnitInfo(
+        o: makeObjectInfo(0, "MiniRocket", 0, nil, [.noMessageOnDeath, .scriptNoSlowdown],
+            spawnChance: 0, hitpoints: 70, fogUncoverRadius: 0, spriteID: 0,
+            buildCredits: 0, buildTime: 0, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 0, upgradeLevelRequired: 0,
+            actionsPlayer: [.stop, .stop, .stop, .stop], available: 0, hintStringID: 0,
+            priorityBuild: 0, priorityTarget: 0, availableHouse: 63),
+        indexStart: 12, indexEnd: 15, flags: [.isBullet, .isNotDeviatable, .hasAnimationSet],
+        dimension: 8, movementType: .winger, animationSpeed: 7, movingSpeedFactor: 180,
+        turningSpeed: 5, groundSpriteID: 268, turretSpriteID: 65535, actionAI: 255, displayMode: .rocket,
+        destroyedSpriteID: 0, fireDelay: 0, fireDistance: 3, damage: 0, explosionType: 18,
+        bulletType: 255, bulletSound: 64),
+    /* 23 Bullet */ UnitInfo(
+        o: makeObjectInfo(0, "Bullet", 0, nil, [.noMessageOnDeath, .scriptNoSlowdown],
+            spawnChance: 0, hitpoints: 1, fogUncoverRadius: 0, spriteID: 0,
+            buildCredits: 0, buildTime: 0, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 0, upgradeLevelRequired: 0,
+            actionsPlayer: [.stop, .stop, .stop, .stop], available: 0, hintStringID: 0,
+            priorityBuild: 0, priorityTarget: 0, availableHouse: 63),
+        indexStart: 12, indexEnd: 15, flags: [.isBullet, .explodeOnDeath, .isNotDeviatable],
+        dimension: 8, movementType: .winger, animationSpeed: 0, movingSpeedFactor: 250,
+        turningSpeed: 0, groundSpriteID: 174, turretSpriteID: 65535, actionAI: 255, displayMode: .singleFrame,
+        destroyedSpriteID: 0, fireDelay: 0, fireDistance: 0, damage: 0, explosionType: 0,
+        bulletType: 255, bulletSound: 65535),
+    /* 24 Sonic Blast */ UnitInfo(
+        o: makeObjectInfo(0, "Sonic Blast", 0, nil, [.blurTile, .noMessageOnDeath, .scriptNoSlowdown],
+            spawnChance: 0, hitpoints: 1, fogUncoverRadius: 0, spriteID: 0,
+            buildCredits: 0, buildTime: 0, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 0, upgradeLevelRequired: 0,
+            actionsPlayer: [.stop, .stop, .stop, .stop], available: 0, hintStringID: 0,
+            priorityBuild: 0, priorityTarget: 0, availableHouse: 63),
+        indexStart: 12, indexEnd: 15, flags: [.isNotDeviatable],
+        dimension: 32, movementType: .winger, animationSpeed: 7, movingSpeedFactor: 200,
+        turningSpeed: 0, groundSpriteID: 160, turretSpriteID: 65535, actionAI: 255, displayMode: .singleFrame,
+        destroyedSpriteID: 0, fireDelay: 0, fireDistance: 10, damage: 25, explosionType: 65535,
+        bulletType: 255, bulletSound: 65535),
+    /* 25 Sandworm */ UnitInfo(
+        o: makeObjectInfo(230, "Sandworm", 231, nil, [.blurTile, .noMessageOnDeath, .tabSelectable, .scriptNoSlowdown, .priority],
+            spawnChance: 0, hitpoints: 1000, fogUncoverRadius: 0, spriteID: 105,
+            buildCredits: 0, buildTime: 0, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 0, upgradeLevelRequired: 0,
+            actionsPlayer: [.attack, .attack, .attack, .attack], available: 0, hintStringID: 0,
+            priorityBuild: 0, priorityTarget: 0, availableHouse: 8),
+        indexStart: 16, indexEnd: 17, flags: [.isGroundUnit, .isNotDeviatable],
+        dimension: 24, movementType: .slither, animationSpeed: 0, movingSpeedFactor: 35,
+        turningSpeed: 3, groundSpriteID: 161, turretSpriteID: 65535, actionAI: 255, displayMode: .unit,
+        destroyedSpriteID: 0, fireDelay: 20, fireDistance: 0, damage: 300, explosionType: 13,
+        bulletType: 25, bulletSound: 63),
+    /* 26 Frigate */ UnitInfo(
+        o: makeObjectInfo(0, "Frigate", 0, nil, [.hasShadow, .noMessageOnDeath, .scriptNoSlowdown, .priority],
+            spawnChance: 0, hitpoints: 100, fogUncoverRadius: 0, spriteID: 0,
+            buildCredits: 0, buildTime: 0, availableCampaign: 0,
+            structuresRequired: 0, sortPriority: 0, upgradeLevelRequired: 0,
+            actionsPlayer: [.stop, .stop, .stop, .stop], available: 0, hintStringID: 0,
+            priorityBuild: 0, priorityTarget: 0, availableHouse: 63),
+        indexStart: 11, indexEnd: 11, flags: [.isNotDeviatable],
+        dimension: 32, movementType: .winger, animationSpeed: 0, movingSpeedFactor: 130,
+        turningSpeed: 2, groundSpriteID: 298, turretSpriteID: 65535, actionAI: 255, displayMode: .unit,
+        destroyedSpriteID: 0, fireDelay: 0, fireDistance: 0, damage: 0, explosionType: 65535,
+        bulletType: 255, bulletSound: 65535),
+    ]
+}

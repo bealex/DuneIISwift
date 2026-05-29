@@ -28,6 +28,18 @@ struct StatTableGoldenTests {
         let soundID: UInt16
     }
 
+    struct LayoutRow: Decodable {
+        let index: Int
+        let tiles: [UInt16]
+        let edgeTiles: [UInt16]
+        let tileCount: UInt16
+        let tileDiffX: UInt16
+        let tileDiffY: UInt16
+        let sizeWidth: UInt16
+        let sizeHeight: UInt16
+        let tilesAround: [Int16]
+    }
+
     @Test("g_table_landscapeInfo matches for every landscape type")
     func landscape() throws {
         let rows = GoldenFixture.decode("landscapeinfo-golden.jsonl", as: LandscapeRow.self)
@@ -60,5 +72,27 @@ struct StatTableGoldenTests {
             #expect(info.selectionType.rawValue == row.selectionType)
             #expect(info.soundID == row.soundID)
         }
+    }
+
+    @Test("g_table_structure_layout matches for every layout")
+    func structureLayout() throws {
+        let rows = GoldenFixture.decode("structurelayout-golden.jsonl", as: LayoutRow.self)
+        #expect(rows.count == 7)
+        for row in rows {
+            let layout = try #require(StructureLayout(rawValue: row.index))
+            let info = StructureLayoutInfo[layout]
+            #expect(info.tiles == row.tiles)
+            #expect(info.edgeTiles == row.edgeTiles)
+            #expect(info.tileCount == row.tileCount)
+            #expect(info.tileDiff == Tile32(x: row.tileDiffX, y: row.tileDiffY))
+            #expect(info.size == XYSize(width: row.sizeWidth, height: row.sizeHeight))
+            #expect(info.tilesAround == row.tilesAround)
+        }
+    }
+
+    @Test("g_table_actionsAI matches")
+    func actionsAI() {
+        let out = GoldenFixture.records("actionsai-golden.jsonl", fn: "g_table_actionsAI")[0].out.values
+        #expect(ActionInfo.actionsAI.map { $0.rawValue } == out)
     }
 }
