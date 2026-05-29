@@ -8,7 +8,9 @@
 
 **Done so far (Tier-0 primitives, all golden-verified):** both RNGs (`DuneIIWorld/Rng/`); tile geometry + orientation (`DuneIIWorld/Tile/` — `Tile32` pack/unpack/distance/direction, `Orientation`); `Tools_AdjustToGameSpeed` + `Tools_Index_GetType`/`Decode` (`DuneIIWorld/Tools/`). Per-category fixtures under `WorldTests/Fixtures/` (`rng-`, `tile-`, `gamespeed-`, `index-golden.jsonl`) via `opendune --parity-golden=<dir>` + the shared `GoldenFixture` loader. Tier-0 pure primitives are essentially complete.
 
-**Immediate next step:** start the World model (Phase 2 proper): `DuneIIContracts` seam enums (`HouseID`/`UnitType`/`StructureType`) + `DuneIIWorld` PODs (`Unit`/`Structure`/`House`/`Team`/`Map`), object pools (fixed arrays + find-index), the static stat-table port from `src/table/*info.c` (start `houseInfo`/`landscapeInfo`, then unit/structure info), and `GameState` (owns both RNGs, the two clocks, tick cursors). That unlocks the deferred pool-dependent primitives (`Tools_Index_Encode`/`IsValid`/`Get*`) and the World-dependent script functions; the EMC transcription follows, verified by Tier-2a decision traces.
+**World model started — stat tables (golden-verified):** `HouseID` (Contracts) + `HouseInfo`; `LandscapeType`/`MovementType` + `LandscapeInfo`; `ActionType`/`SelectionType` + `ActionInfo`, all in `DuneIIWorld/Stats/`.
+
+**Immediate next step:** the big stat tables — `ObjectInfo` + `UnitInfo` (`unitinfo.c`, ~27 units, incl. the 13-bit `ObjectInfo.flags` bitfield) and `StructureInfo` (`structureinfo.c`), with the `UnitType`/`StructureType` seam enums. Then the `Unit`/`Structure`/`House`/`Team`/`Map` PODs, object pools (fixed arrays + find-index), and `GameState` (owns both RNGs, the two clocks, tick cursors). That unlocks the deferred pool-dependent primitives (`Tools_Index_Encode`/`IsValid`/`Get*`) and the World-dependent script functions; the EMC transcription follows, verified by Tier-2a decision traces. (Reconcile `DuneIIRenderer.StructureCatalog`/`SpriteCatalog` against the real `unitInfo`/`structureInfo` once ported.)
 
 ## Next up (queue)
 
@@ -36,10 +38,11 @@
 - **Function-parity harness + RNGs (Phase 2/3 start).** Headless OpenDUNE oracle builds here; added `--parity-golden` function-dump mode. Ported `Random256` + `RandomLCG` to `DuneIIWorld/Rng/`, golden-verified bit-for-bit (3 tests). Docs: `Architecture/FunctionParityHarness.md`, `Algorithms/Rng.md`. (Committed `2addd51`.)
 - **Tile geometry + orientation.** `Tile32` (pack/unpack, distance/direction) + `Orientation` in `DuneIIWorld/Tile/`, golden-verified (`TileGoldenTests`, 7 tests). Per-category golden fixtures (`--parity-golden=<dir>`) + shared `GoldenFixture` loader. Doc `Algorithms/Tile.md`. See History 2026-05.
 - **`Tools_AdjustToGameSpeed` + index helpers.** `Tools.adjustToGameSpeed` + `Tools.indexType`/`indexDecode` (`IndexType`) in `DuneIIWorld/Tools/`, golden-verified (`ToolsGoldenTests`, 3 tests; `gamespeed-`/`index-golden.jsonl`). `Tools_Index_Encode`/`IsValid`/`Get*` deferred to the World model. Doc `Algorithms/Tools.md`. See History 2026-05.
+- **Stat tables (World model start).** `HouseInfo` + `HouseID` (Contracts); `LandscapeInfo` + `LandscapeType`/`MovementType`; `ActionInfo` + `ActionType`/`SelectionType` — all in `DuneIIWorld/Stats/`, golden-verified field-for-field (`HouseInfoGoldenTests` 1 + `StatTableGoldenTests` 2; `houseinfo-`/`landscapeinfo-`/`actioninfo-golden.jsonl`). Doc `Algorithms/StatTables.md`. See History 2026-05.
 
 ## Test status
 
-`cd Code && swift test`: **82 tests, all green** (format/codec/EMC/IconMap + PNG/WAV export + renderer services + **golden parity vs OpenDUNE** (RNG, tile geometry, game-speed, index), synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited, incl. the `rendertest` product). OpenDUNE oracle: `cd Repositories/OpenDUNE && PATH="$PWD/.shim:$PATH" ./configure --with-sdl2="$PWD/.shim/sdl2-config" && PATH="$PWD/.shim:$PATH" make -j4` → `./bin/opendune`.
+`cd Code && swift test`: **85 tests, all green** (format/codec/EMC/IconMap + PNG/WAV export + renderer services + **golden parity vs OpenDUNE** (RNG, tile geometry, game-speed, index, stat tables), synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited, incl. the `rendertest` product). OpenDUNE oracle: `cd Repositories/OpenDUNE && PATH="$PWD/.shim:$PATH" ./configure --with-sdl2="$PWD/.shim/sdl2-config" && PATH="$PWD/.shim:$PATH" make -j4` → `./bin/opendune`.
 
 ## Open decisions (from Plan.v1.md §8)
 

@@ -37,15 +37,18 @@ enum GoldenFixture {
         }
     }
 
-    /// All records in the category fixture `file` (e.g. `"rng-golden.jsonl"`), filtered to `fn`.
-    static func records(_ file: String, fn: String) -> [Record] {
+    /// Decode every line of the category fixture `file` (e.g. `"houseinfo-golden.jsonl"`) as `T`.
+    static func decode<T: Decodable>(_ file: String, as type: T.Type = T.self) -> [T] {
         var url = URL(fileURLWithPath: #filePath)
         url.deleteLastPathComponent()
         url.appendPathComponent("Fixtures/\(file)")
         let text = try! String(contentsOf: url, encoding: .utf8)
         let decoder = JSONDecoder()
-        return text.split(separator: "\n")
-            .map { try! decoder.decode(Record.self, from: Data($0.utf8)) }
-            .filter { $0.fn == fn }
+        return text.split(separator: "\n").map { try! decoder.decode(T.self, from: Data($0.utf8)) }
+    }
+
+    /// Records in the category fixture `file` (e.g. `"rng-golden.jsonl"`), filtered to `fn`.
+    static func records(_ file: String, fn: String) -> [Record] {
+        decode(file, as: Record.self).filter { $0.fn == fn }
     }
 }

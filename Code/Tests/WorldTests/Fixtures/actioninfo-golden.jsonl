@@ -1,0 +1,14 @@
+{"fn":"g_table_actionInfo","index":0,"stringID":1,"name":"Attack","switchType":0,"selectionType":1,"soundID":21}
+{"fn":"g_table_actionInfo","index":1,"stringID":2,"name":"Move","switchType":0,"selectionType":1,"soundID":22}
+{"fn":"g_table_actionInfo","index":2,"stringID":3,"name":"Retreat","switchType":0,"selectionType":3,"soundID":21}
+{"fn":"g_table_actionInfo","index":3,"stringID":4,"name":"Guard","switchType":0,"selectionType":3,"soundID":21}
+{"fn":"g_table_actionInfo","index":4,"stringID":5,"name":"Area Guard","switchType":0,"selectionType":3,"soundID":20}
+{"fn":"g_table_actionInfo","index":5,"stringID":6,"name":"Harvest","switchType":0,"selectionType":1,"soundID":20}
+{"fn":"g_table_actionInfo","index":6,"stringID":7,"name":"Return","switchType":0,"selectionType":3,"soundID":21}
+{"fn":"g_table_actionInfo","index":7,"stringID":37,"name":"Stop","switchType":0,"selectionType":3,"soundID":21}
+{"fn":"g_table_actionInfo","index":8,"stringID":9,"name":"Ambush","switchType":0,"selectionType":3,"soundID":20}
+{"fn":"g_table_actionInfo","index":9,"stringID":10,"name":"Sabotage","switchType":0,"selectionType":3,"soundID":20}
+{"fn":"g_table_actionInfo","index":10,"stringID":11,"name":"Die","switchType":1,"selectionType":3,"soundID":65535}
+{"fn":"g_table_actionInfo","index":11,"stringID":12,"name":"Hunt","switchType":0,"selectionType":3,"soundID":20}
+{"fn":"g_table_actionInfo","index":12,"stringID":31,"name":"Deploy","switchType":0,"selectionType":3,"soundID":20}
+{"fn":"g_table_actionInfo","index":13,"stringID":153,"name":"Destruct","switchType":1,"selectionType":3,"soundID":20}
