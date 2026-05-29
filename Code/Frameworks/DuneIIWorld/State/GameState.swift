@@ -1,5 +1,18 @@
 import DuneIIContracts
 
+/// "Next-due" tick timestamps for each `GameLoop_Unit` sub-activity (OpenDUNE's `s_tickUnit*`).
+/// An activity fires when its cursor is `<= timerGame`, then advances by its interval.
+public struct UnitTickCursors: Sendable, Equatable {
+    public var movement: UInt32 = 0
+    public var rotation: UInt32 = 0
+    public var blinking: UInt32 = 0
+    public var unknown4: UInt32 = 0
+    public var script: UInt32 = 0
+    public var unknown5: UInt32 = 0
+    public var deviation: UInt32 = 0
+    public init() {}
+}
+
 /// The single owned aggregate of all mutable simulation state (engine principle 4). A port of the
 /// OpenDUNE globals: the object pools (`g_unitArray`/`g_structureArray`/`g_houseArray`/`g_teamArray`
 /// + their find arrays), the `g_map[64*64]` grid, both RNGs, and the two tick clocks.
@@ -29,6 +42,17 @@ public struct GameState: Sendable {
     /// The two clocks: `g_timerGame` (simulation) and `g_timerGUI`.
     public var timerGame: UInt32 = 0
     public var timerGUI: UInt32 = 0
+
+    /// Game speed (0 slowest … 4 fastest; 2 = normal). Scales durations via `Tools_AdjustToGameSpeed`,
+    /// not the tick counters. OpenDUNE's `g_gameConfig.gameSpeed`.
+    public var gameSpeed: UInt16 = 2
+
+    /// When set, `timerGame` freezes and the game-loop phases don't run (`timerGUI` still advances).
+    /// OpenDUNE's `TIMER_GAME` disable.
+    public var paused = false
+
+    /// Per-subsystem "next-due" tick cursors for `GameLoop_Unit` (OpenDUNE's `s_tickUnit*` statics).
+    public var unitTick = UnitTickCursors()
 
     /// OpenDUNE's `g_validateStrictIfZero`: 0 = strict validation (normal play); non-zero bypasses the
     /// allocate / placement guards (used while loading a save or scenario).
