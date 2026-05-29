@@ -241,6 +241,39 @@ public extension GameState {
         return idx
     }
 
+    // MARK: - Free
+
+    /// `Unit_Free` (`pool/unit.c`): mark the unit slot unused, reset its script, drop it from the find
+    /// array (closing the gap), and decrement its house's unit count. The slot's fields are not cleared
+    /// here (OpenDUNE doesn't either) — the next `unitAllocate` fully resets a reused slot.
+    mutating func unitFree(_ slot: Int) {
+        units[slot].o.flags = []
+        units[slot].o.script.reset()
+        if let i = unitFindArray.firstIndex(of: UInt16(slot)) { unitFindArray.remove(at: i) }
+        // Wrapping to match OpenDUNE's uint16 (it never underflows for a properly-allocated unit).
+        houses[Int(units[slot].o.houseID)].unitCount &-= 1
+    }
+
+    /// `Structure_Free` (`pool/structure.c`): mark the structure slot unused and reset its script. The
+    /// three special slab/wall slots are never in the find array, so they return early; all others are
+    /// removed from it (closing the gap).
+    mutating func structureFree(_ slot: Int) {
+        structures[slot].o.flags = []
+        structures[slot].o.script.reset()
+        let type = Int(structures[slot].o.type)
+        if type == StructureType.slab1x1.rawValue
+            || type == StructureType.slab2x2.rawValue
+            || type == StructureType.wall.rawValue { return }
+        if let i = structureFindArray.firstIndex(of: UInt16(slot)) { structureFindArray.remove(at: i) }
+    }
+
+    /// `Team_Free` (`pool/team.c`): mark the team slot unused and drop it from the find array (closing
+    /// the gap). Teams own a script but `Team_Free` does not reset it.
+    mutating func teamFree(_ slot: Int) {
+        teams[slot].flags = []
+        if let i = teamFindArray.firstIndex(of: UInt16(slot)) { teamFindArray.remove(at: i) }
+    }
+
     // MARK: - Recount
 
     /// `Unit_Recount`: rebuild the unit find array + per-house unit counts from the slot array.

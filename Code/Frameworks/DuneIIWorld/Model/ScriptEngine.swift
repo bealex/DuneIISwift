@@ -16,4 +16,15 @@ public struct ScriptEngine: Sendable, Equatable {
     public var isSubroutine: UInt8 = 0      // the executing script is a sub-routine
 
     public init() {}
+
+    /// `Script_Reset` (`script/script.c`): drop any running script and re-home the frame/stack pointers.
+    /// OpenDUNE also sets `script->script = NULL` (no active command) and `scriptInfo = scriptInfo`; we
+    /// store neither pointer (see the type note — `scriptPC` is an offset and `scriptInfo` is re-derived
+    /// from the owner's type), so this resets only the modeled numeric state. The frame/stack pointers
+    /// take the literal OpenDUNE init values (17 / 15).
+    public mutating func reset() {
+        isSubroutine = 0
+        framePointer = 17
+        stackPointer = 15
+    }
 }

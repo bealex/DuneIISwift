@@ -160,4 +160,56 @@ struct GameStateTests {
         #expect(s.teams[0].flags.contains(.used))
         #expect(s.teamFindArray == [0])
     }
+
+    @Test("unitFree clears the slot, compacts the find array, and decrements the house count")
+    func unitFree() {
+        var s = GameState()
+        s.houses[0].unitCountMax = 100
+        let a = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)!   // 22
+        let b = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)!   // 23
+        let c = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)!   // 24
+        #expect(s.houses[0].unitCount == 3)
+
+        s.unitFree(b)   // free the middle one → the gap closes around it
+        #expect(!s.units[b].o.flags.contains(.used))
+        #expect(!s.units[b].o.flags.contains(.allocated))
+        #expect(s.units[b].o.script.framePointer == 17)   // Script_Reset applied
+        #expect(s.units[b].o.script.stackPointer == 15)
+        #expect(s.unitFindArray == [UInt16(a), UInt16(c)])
+        #expect(s.houses[0].unitCount == 2)
+
+        s.unitFree(c)   // free the last → no gap to close
+        #expect(s.unitFindArray == [UInt16(a)])
+        #expect(s.houses[0].unitCount == 1)
+    }
+
+    @Test("structureFree compacts normals; specials reset without touching the find array")
+    func structureFree() {
+        var s = GameState()
+        let r0 = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.refinery))!  // 0
+        let r1 = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.refinery))!  // 1
+        let wall = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.wall))!
+        #expect(s.structureFindArray == [UInt16(r0), UInt16(r1)])
+
+        s.structureFree(r0)
+        #expect(!s.structures[r0].o.flags.contains(.used))
+        #expect(s.structures[r0].o.script.framePointer == 17)
+        #expect(s.structureFindArray == [UInt16(r1)])   // gap closed
+
+        s.structureFree(wall)   // a special slot: cleared but never in the find array
+        #expect(!s.structures[wall].o.flags.contains(.used))
+        #expect(s.structureFindArray == [UInt16(r1)])   // unchanged
+    }
+
+    @Test("teamFree clears the slot and compacts the find array")
+    func teamFree() {
+        var s = GameState()
+        let t0 = s.teamAllocate(index: Pool.teamIndexInvalid)!
+        let t1 = s.teamAllocate(index: Pool.teamIndexInvalid)!
+        #expect(s.teamFindArray == [UInt16(t0), UInt16(t1)])
+
+        s.teamFree(t0)
+        #expect(!s.teams[t0].flags.contains(.used))
+        #expect(s.teamFindArray == [UInt16(t1)])
+    }
 }

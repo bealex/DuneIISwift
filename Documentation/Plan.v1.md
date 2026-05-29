@@ -269,9 +269,11 @@ The implementation order for the Phase-3 native primitives. Built bottom-up: a p
 **Net:** the scenario/map/sprite-init layer is now done, so Tier D (`Map_GetLandscapeType`/fog/spice) and the read-only part of Tier E (`Unit_GetTileEnterScore` #16) are done. What remains in Tier E (#17 `Unit_Deviate`, #18 `Unit_Damage`) is gated on Tier-F lifecycle (`Unit_Remove`/`Unit_SetAction`/`Unit_UntargetMe`), as are the resequenced `Unit_UpdateMap`/`Unit_Move`/`Unit_MovementTick` (D′1–D′3). **Recommended next: Tier F lifecycle — `Unit_SetAction`/`Unit_UntargetMe`/`Unit_Remove` — which unblocks the rest of E and the movement cluster, then the pathfinder (#21, which already has its #16 cost function).**
 
 **Tier F — lifecycle / orchestration / pathfinding (largest).**
-19. `Unit_SetDestination` / `Unit_SetAction` (`unit.c:497`) / `Unit_Hide` — pools ✓, Tiers B–D.
-20. `Unit_Remove` / `Unit_Free` (+ find-array compaction) — pools ✓, `Unit_UpdateMap` (6).
-21. pathfinder: `Script_Unit_Pathfinder` + `_Connect` + `_Smoothen` (`script/unit.c:1183,1117,1012`) — `Unit_GetTileEnterScore` (16), `Tile_*` ✓.
+- **Pool `_Free` (done).** `GameState.unitFree`/`structureFree`/`teamFree` (`pool/*.c`) + `ScriptEngine.reset` (`Script_Reset`) — flags-clear, find-array compaction, house-count decrement; `GameStateTests`.
+- **Reference-clearing cluster (done).** `GameState.unitUntargetMe` (`unit.c`) + its helpers `objectScriptVariable4Set`/`Clear` (`object.c`), `structureSetState`/`structureGetLinkedUnit` (`structure.c`), `unitRemoveFromTeam` (`unit.c`) — all World-layer pool/object bookkeeping; `GameStateLifecycleTests`.
+19. `Unit_SetDestination` / `Unit_SetAction` (`unit.c:497`) / `Unit_Hide` — pools ✓, Tiers B–D; **`Unit_SetAction` is gated on the EMC script VM** (`Script_Reset` ✓ but `Script_Load`/`Script_LoadAsSubroutine` not yet ported).
+20. `Unit_Remove` (`unit.c`) — `Unit_UntargetMe` ✓, `Unit_Free` ✓, `Script_Reset` ✓; **still gated on `Unit_UpdateMap` (D′1) + `Unit_HouseUnitCount_Remove`** (`Unit_Select` is a render seam). Assemble once those land.
+21. pathfinder: `Script_Unit_Pathfinder` + `_Connect` + `_Smoothen` (`script/unit.c:1183,1117,1012`) — `Unit_GetTileEnterScore` (16) ✓, `Tile_*` ✓.
 
 Structure/House/Team primitives follow the same bottom-up discipline once the unit cluster is in; they are sequenced when their game-loop slices are ported.
 
