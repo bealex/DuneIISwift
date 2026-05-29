@@ -121,6 +121,6 @@ let package = Package(
         .testTarget(name: "SimulationTests", dependencies: [ "DuneIISimulation" ], path: "Tests/SimulationTests"),
         .testTarget(name: "ExportTests", dependencies: [ "DuneIIExport", "DuneIIFormats" ], path: "Tests/ExportTests"),
         .testTarget(name: "RendererTests", dependencies: [ "DuneIIRenderer", "DuneIIFormats" ], path: "Tests/RendererTests"),
-        .testTarget(name: "ScenariosTests", dependencies: [ "DuneIIScenarios" ], path: "Tests/ScenariosTests"),
+        .testTarget(name: "ScenariosTests", dependencies: [ "DuneIIScenarios" ], path: "Tests/ScenariosTests", exclude: [ "Fixtures" ]),
     ]
 )

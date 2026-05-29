@@ -1,60 +1,57 @@
 # Behavioural scenario harness
 
 A test harness for the per-unit behaviours (movement, attack, guard, …) as they're ported from the EMC
-scripts: a small **8×8 terrain** with **two units**, run through one of a few **predefined scenarios**,
-assessed **visually** in a macOS app **and** verified **headlessly against OpenDUNE**. The terrain is
-deterministic so a scenario is reproducible and comparable bit-for-bit.
+scripts: a **real scenario `.INI`** loaded by **both** our engine and the OpenDUNE oracle, with the
+specific behaviour driven by **simulated user input** (select a unit, order a move/attack), then run and
+**verified per-tick against the oracle**. Built on the real machinery (scenario loading, `createLandscape`
+terrain, the command/input pipeline) so the harness doubles as the integration-test bed we need anyway.
 
-## Layout (dependency-ordered build)
+## Approach (decided)
 
-1. **`DuneIIScenarios`** (Frameworks) — the shared headless model. Terrain generation, the scenario
-   definitions, building a `GameState`, and running it while capturing per-tick snapshots. No rendering,
-   no app, no oracle — just the deterministic core both the app and the golden tests use.
-2. **`scenariolab`** (Apps) — the macOS app. Generate/regenerate terrain, pick two unit types and a
-   scenario, Run, and watch the result with a 1×–16× zoom. Renders terrain + units like `mapview`.
-3. **OpenDUNE scenario golden** — an oracle mode that builds the *same* terrain + units + actions, ticks
-   N frames, and dumps per-tick unit state; a Swift test reproduces it and asserts equality.
+- **Shared scenario file.** One committed `.INI` per scenario (standard Dune II format). Our engine loads
+  it via `GameState.loadScenario`; the oracle loads it via `Scenario_Load` (a new parity mode that does
+  the game's file/sprite/pool init). Same file → comparable.
+- **Terrain = `[MAP] Seed → Map_CreateLandscape`.** The real generator, so the terrain has natural
+  partial sand/rock transition tiles (not a tile-by-tile pick). We already reproduce it bit-exactly.
+- **Actions via simulated user input.** The `.INI` places the units (+ an initial state like Guard); the
+  scenario's behaviour (move-to-tile, attack-target) is issued as **`Command`s** — select unit, order —
+  through a command/input-application path in the sim, mirrored by input replay in the oracle. This is a
+  new subsystem (built now; needed for interactive testing generally).
+- **Per-tick golden.** Both engines run N ticks from the same scenario + command stream and dump each
+  unit's `{ position, orientation, hitpoints, alive }` per tick; a test asserts equality (raised
+  tick-by-tick as the movement/combat/guard natives land).
 
-## Terrain
+## Scenarios
 
-An 8×8 region of **sand** and **rock** (both passable; no dunes, mountains, or spice), placed at a valid
-interior offset of the engine's 64×64 map (local `0:0…7:7` → map `(origin+lx, origin+ly)`; `origin ≥ 1`
-so every tile is inside the scale-0 playable rectangle). The rest of the map is filled with sand.
+Bootstrap with **one** scenario end-to-end (moving), then add: close/far attack, guarding,
+move-around-building. Each = a `.INI` (terrain seed + unit placements) + a `Command` sequence:
 
-A tile's landscape type comes from its `groundTileID`'s offset into the LANDSCAPE icon group
-(`landscapeSpriteMap`): offset 0 → `normalSand`, offset 16 → `entirelyRock`. So
-`sandTileID = tileIDs.landscape + 0`, `rockTileID = tileIDs.landscape + 16`. Both engines set the same
-ids, so the classification (and movement cost) matches.
+| kind | placements (.INI) | commands |
+|------|-------------------|----------|
+| moving | unit 1 near a corner | select unit 1, move to the far tile |
+| closeAttack | units 1 & 2 adjacent (enemy houses) | select unit 2, attack unit 1 |
+| farAttack | as close but apart | select unit 2, attack unit 1 |
+| guarding | unit 1 (Guard) + unit 2 | select unit 2, move toward unit 1 |
+| moveAroundBuilding | a building + unit 1 | select unit 1, move past the building |
 
-**Generation** is seeded: each "regenerate" makes a new sand/rock layout from an incrementing seed (a
-small LCG over the 64 tiles). The saved golden scenarios pin one fixed seed, so the terrain is constant
-and reproducible across our engine and the oracle.
+## Pieces (dependency order)
 
-## Scenarios (local 8×8 coords)
+1. **Bootstrap `.INI`** + our `loadScenario` of it (terrain via `createLandscape`, units placed). ← first.
+2. **Command pipeline** — `Command` application in `DuneIISimulation` (select, order move/attack), the
+   port of OpenDUNE's click→order path; matching input replay on the oracle side.
+3. **Oracle parity mode** — `Scenario_Load` of the custom `.INI` + replay the command stream + tick + dump.
+4. **Golden test** — our run vs the oracle's per-tick dump; the `scenariolab` app renders the same.
 
-| kind | setup |
-|------|-------|
-| **moving** | unit 1 at `0:0`, moves diagonally to `7:7` |
-| **closeAttack** | units 1 & 2 adjacent at centre; unit 2 attacks unit 1 until it dies |
-| **farAttack** | as closeAttack but several tiles apart |
-| **guarding** | unit 1 sits at `2:2` in Guard; unit 2 starts at `7:7` and moves to `2:2`; unit 1 should react |
-| **moveAroundBuilding** | a 2×2 building at centre; unit 1 moves `0:0` → `7:7` around it |
+## App
 
-Each scenario picks the unit type(s), the initial positions, and the initial action (`Move` with a
-destination, `Attack` with a target, `Guard`). Until the relevant natives are ported the units won't
-actually move/fire — the harness still builds and renders the setup, and the golden simply pins the
-(currently static) per-tick state. As each native lands, the scenario's motion appears and the golden
-captures the real trajectory.
-
-## Snapshots
-
-Per tick we capture each unit's `{ position (packed), orientation, hitpoints, alive }`. The golden test
-asserts our per-tick sequence equals the oracle's. Visually, the app renders the latest snapshot (or
-steps through them).
+`scenariolab` (macOS, 1×–16× zoom) loads the scenario, lets you pick the scenario/units, runs it, and
+renders terrain + units for visual assessment — the same scenario the golden verifies.
 
 ## Status
 
-- [x] `DuneIIScenarios` foundation (terrain, definitions, builder, runner, snapshots). `ScenariosTests`.
-- [ ] `scenariolab` macOS app.
-- [ ] OpenDUNE scenario-golden oracle mode + Swift golden tests.
+- [x] (interim) synthetic terrain/builder + app + foundation `DuneIIScenarios` + `scenariolab` (being
+  migrated to the `.INI` + command approach below).
+- [ ] Bootstrap `.INI` + our `loadScenario`.
+- [ ] Command pipeline (sim + oracle replay).
+- [ ] Oracle scenario parity mode + golden test.
 - [ ] Per-scenario behaviour as the movement/combat/guard natives land.
