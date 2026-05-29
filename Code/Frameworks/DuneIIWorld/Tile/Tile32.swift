@@ -38,6 +38,11 @@ public struct Tile32: Equatable, Sendable {
         )
     }
 
+    /// `Tile_AddTileDiff`: component-wise add of a tile diff. Wrapping `uint16`, as in the original.
+    public static func addDiff(_ from: Tile32, _ diff: Tile32) -> Tile32 {
+        Tile32(x: from.x &+ diff.x, y: from.y &+ diff.y)
+    }
+
     /// `Tile_GetDistance`: the longest axis distance plus half the shortest (Chebyshev-ish). Wrapping
     /// `uint16` arithmetic, as in the original.
     public static func distance(from: Tile32, to: Tile32) -> UInt16 {
