@@ -50,6 +50,7 @@ Driven by the dependency classification of the script-function tables:
 
 ## Status
 
-- ✅ Headless OpenDUNE oracle builds; `--parity-golden` mode added.
-- ✅ `Tools_Random_256` and `Tools_RandomLCG`/`_Range` ported (`DuneIIWorld/Rng/`) and golden-verified (`WorldTests/RngGoldenTests`, fixture `rng-golden.jsonl`).
-- ⏭ Next: `Tools_AdjustToGameSpeed` + `Tile_*` geometry golden fixtures, then begin the World model.
+- ✅ Headless OpenDUNE oracle builds; `--parity-golden` mode added (one growing fixture `Code/Tests/WorldTests/Fixtures/primitives-golden.jsonl`, loaded by `WorldTests/GoldenFixture`).
+- ✅ `Tools_Random_256` and `Tools_RandomLCG`/`_Range` ported (`DuneIIWorld/Rng/`), golden-verified (`WorldTests/RngGoldenTests`).
+- ✅ Tile geometry + orientation: `Tile32` (unpack/pack, `GetDistance`/`Packed`/`RoundedUp`, `GetDirection`/`Packed`) and `Orientation.to8`/`to16` (`DuneIIWorld/Tile/`), golden-verified (`WorldTests/TileGoldenTests`). See `Algorithms/Tile.md`.
+- ⏭ Next: `Tools_AdjustToGameSpeed` (reads `g_gameConfig.gameSpeed` — dumper sets it across its range) and `Tools_Index_Encode/Decode/GetType`, then begin the World model (PODs + stat tables) so the pool-dependent script functions become portable.

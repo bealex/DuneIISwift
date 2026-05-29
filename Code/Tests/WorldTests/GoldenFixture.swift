@@ -1,0 +1,45 @@
+import Foundation
+
+/// Shared loader for the OpenDUNE function-golden fixture (`opendune --parity-golden`), committed as
+/// `Fixtures/primitives-golden.jsonl`. One JSON object per line; fields are a superset across every
+/// dumped primitive, so all but `fn`/`out` are optional. Regenerate by rebuilding the patched OpenDUNE
+/// and re-running the flag — see `Documentation/Architecture/FunctionParityHarness.md`.
+enum GoldenFixture {
+    struct Record: Decodable {
+        let fn: String
+        let seed: UInt32?
+        let min: UInt16?
+        let max: UInt16?
+        let from: IntList?
+        let to: IntList?
+        let packed: UInt16?
+        let out: IntList
+    }
+
+    /// A JSON field that is either a scalar integer or an array of integers (e.g. `out` is a count for
+    /// distances but a `[x, y]` pair for `Tile_UnpackTile`).
+    struct IntList: Decodable {
+        let values: [Int]
+        var scalar: Int { values[0] }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let scalar = try? container.decode(Int.self) {
+                values = [scalar]
+            } else {
+                values = try container.decode([Int].self)
+            }
+        }
+    }
+
+    static let all: [Record] = {
+        var url = URL(fileURLWithPath: #filePath)
+        url.deleteLastPathComponent()
+        url.appendPathComponent("Fixtures/primitives-golden.jsonl")
+        let text = try! String(contentsOf: url, encoding: .utf8)
+        let decoder = JSONDecoder()
+        return text.split(separator: "\n").map { try! decoder.decode(Record.self, from: Data($0.utf8)) }
+    }()
+
+    static func records(_ fn: String) -> [Record] { all.filter { $0.fn == fn } }
+}
