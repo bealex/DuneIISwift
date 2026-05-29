@@ -82,10 +82,12 @@ final class AssetLibrary {
         archives[pak]?.data(named: name)
     }
 
-    /// The embedded palette of a CPS file (searched across all PAKs), or nil if absent.
-    func cpsPalette(_ name: String) -> Palette? {
+    /// A raw 256-color `.PAL` file (768 bytes) loaded by name from any PAK, or nil if absent. Used for
+    /// the context palettes of assets that carry none of their own — `BENE.PAL` (mercenary mentat),
+    /// `INTRO.PAL` (intro / finale cutscene animations).
+    func palette(named name: String) -> Palette? {
         for archive in archives.values {
-            if let data = archive.data(named: name), let image = try? Cps.decode(data) { return image.palette }
+            if let data = archive.data(named: name), let palette = try? Palette(data) { return palette }
         }
         return nil
     }

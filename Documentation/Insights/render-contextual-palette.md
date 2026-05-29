@@ -1,9 +1,15 @@
-# SHP sprites carry no palette — some need a context palette (mentat faces)
+# Many CPS/WSA/SHP assets carry no palette — the correct one is loaded separately at runtime
 
-**Finding:** SHP frames are 8-bit palette indices with **no embedded palette**; the correct palette is contextual. Most sprites use IBM.PAL, but the **mentat face sprites** (`MENSHP[H/A/O/M].SHP`) are drawn over the `MENTAT<house>.CPS` background and use **its** embedded palette (OpenDUNE `gui/mentat.c:494`: filename built as `MENTAT%c.CPS` from the house initial). Rendering them with IBM.PAL scrambles the colors (the reported MENSHPM bug). `MENTATM.CPS` etc. live in DUNE.PAK.
+**Finding:** Several presentation assets have **no embedded palette**; the engine loads a separate `.PAL` (or relies on the ambient game palette) for them. Confirmed by inspecting the real install:
 
-**Why it matters:** "colorize every SHP with IBM.PAL" is wrong for context-dependent sprites (mentat, and likely some menu/UI sprites). The palette must follow the screen the sprite is drawn over.
+- **`MENTAT[H/A/O/M].CPS`** — `paletteSize == 0`, no embedded palette. The mentat portrait is drawn under whatever palette is already active. Only the **mercenary** mentat overrides it: `GUI_Mentat_Display` does `File_ReadBlockFile("BENE.PAL", g_palette1, ...)` for `HOUSE_MERCENARY` (`gui/mentat.c:500`). The other three houses use the ambient **IBM.PAL**.
+- **`MENSHP[H/A/O/M].SHP`** — SHP frames are bare 8-bit indices (no palette). The mercenary face (`MENSHPM.SHP`) therefore needs **BENE.PAL**; the others use IBM.PAL.
+- **Intro / finale WSAs** (`INTRO*`, `AFINAL*`/`EFINAL*`/`HFINAL*`/`OFINAL*`) — all have `hasPalette == 0`. They are played under **INTRO.PAL**, loaded once by `GameLoop_PrepareAnimation` (`cutscene.c:82`) for both the intro and the end-game animation. Continuation WSAs (the `B`/`C` parts) have `firstFrameOffset == 0` and naturally embed nothing.
 
-**Evidence:** `mentatPalette(for:)` in `Code/Apps/rendertest/ContentView.swift`; `AssetLibrary.cpsPalette`; OpenDUNE `gui/mentat.c:494-495` (note it also overlays `BENE.PAL` in one branch — not yet reproduced).
+**Correction:** A previous version of this note claimed the mentat faces used the *embedded* palette of their `MENTAT<house>.CPS`. That is false — those CPS files embed no palette. `Sprites_LoadCPSFile` only copies a palette when `paletteSize != 0` (`sprites.c:323`); for these it leaves the active palette untouched.
 
-**How to apply:** When rendering a sprite, use the palette of the screen/CPS it belongs to, not a global default. In the eventual game, mentat/menu screens set the palette from their CPS before drawing sprites.
+**Why it matters:** "colorize with IBM.PAL" and "use the file's embedded palette" are both wrong for context-dependent assets. Rendering them with the wrong palette scrambles the colors (the reported MENTATM.CPS / MENSHPM.SHP / INTRO*/?FINAL* WSA bugs). `BENE.PAL`, `INTRO.PAL`, `IBM.PAL` all live inside the PAKs (DUNE.PAK / INTRO.PAK).
+
+**Evidence:** `contextPalette(for:)` + `AssetLibrary.palette(named:)` in `Code/Apps/rendertest/`; OpenDUNE `gui/mentat.c:488-500`, `cutscene.c:58-82`, `sprites.c:299-331`. See [[render-palette-animation]] (these palettes must NOT be palette-cycled — the cycle is for IBM.PAL gameplay only).
+
+**How to apply:** When rendering an asset that embeds no palette, resolve its context palette by name/role (mercenary mentat → BENE.PAL, cutscene WSA → INTRO.PAL), falling back to IBM.PAL. In the eventual game, the screen/cutscene flow sets `g_palette1` before drawing — replicate that, don't guess from the file alone.

@@ -246,14 +246,24 @@ struct AssetDetailView: View {
         return (paletteAnimatable && animatePalette) ? PaletteAnimator.animatedPalette(base: base, tick: tick) : base
     }
 
-    /// Mentat face sprites (MENSHP[H/A/O/M].SHP) are colored by the matching MENTAT<house>.CPS
-    /// palette, not IBM.PAL (OpenDUNE `gui/mentat.c:494`).
-    private func mentatPalette(for name: String) -> Palette? {
+    /// The palette for assets that carry none of their own (CPS/WSA with no embedded palette, SHP
+    /// sprites). Most use the ambient game palette (IBM.PAL, the fallback); a few load a specific
+    /// `.PAL` at runtime, which we reproduce here. Returns nil to mean "use the default IBM.PAL".
+    ///
+    /// - Mercenary mentat — `MENSHPM.SHP` (face) and `MENTATM.CPS` (portrait) draw under `BENE.PAL`
+    ///   (OpenDUNE `gui/mentat.c:500`); the other houses' mentats use the ambient IBM.PAL. None of the
+    ///   `MENTAT*.CPS` files embed a palette.
+    /// - Cutscene animations — the intro (`INTRO*`) and per-house finale (`?FINAL*`) WSAs are played
+    ///   under `INTRO.PAL`, loaded by `GameLoop_PrepareAnimation` (`cutscene.c:82`). They embed none.
+    private func contextPalette(for name: String) -> Palette? {
         let upper = name.uppercased()
-        guard upper.hasPrefix("MENSHP"), upper.hasSuffix(".SHP"), upper.count > 6 else { return nil }
+        if upper == "MENSHPM.SHP" || upper == "MENTATM.CPS" { return library.palette(named: "BENE.PAL") }
 
-        let letter = upper[upper.index(upper.startIndex, offsetBy: 6)]
-        return library.cpsPalette("MENTAT\(letter).CPS")
+        let cutscenePrefixes = [ "INTRO", "AFINAL", "EFINAL", "HFINAL", "OFINAL" ]
+        if upper.hasSuffix(".WSA"), cutscenePrefixes.contains(where: { upper.hasPrefix($0) }) {
+            return library.palette(named: "INTRO.PAL")
+        }
+        return nil
     }
 
     private func colorize(_ frame: RawFrame, palette: Palette) -> CGImage? {
@@ -296,30 +306,26 @@ struct AssetDetailView: View {
                 }
                 transparentIndex = 0
                 remapKind = .sprite
-                paletteAnimatable = true
-                displayPalette = mentatPalette(for: asset.name)   // mentat faces use their MENTAT<house>.CPS palette
+                displayPalette = contextPalette(for: asset.name)   // e.g. mercenary mentat face → BENE.PAL
                 let kindLabel = asset.groupKind.map { $0 == .animation ? " · animation" : " · directional" } ?? ""
                 info = "\(selected.count) frames\(kindLabel)"
             case .image:
                 guard let image = try? Cps.decode(data) else { info = "(CPS decode failed)"; return }
                 rawFrames = [ RawFrame(indices: image.pixels, width: image.width, height: image.height, hasLookup: false) ]
-                displayPalette = image.palette
-                paletteAnimatable = true
+                displayPalette = image.palette ?? contextPalette(for: asset.name)   // e.g. MENTATM.CPS → BENE.PAL
                 info = "\(image.width)×\(image.height)"
             case .tiles:
                 guard let tiles = try? Icn.TileSet(data) else { info = "(ICN decode failed)"; return }
                 let sheet = tileSheet(tiles)
                 rawFrames = [ RawFrame(indices: sheet.indices, width: sheet.width, height: sheet.height, hasLookup: false) ]
                 remapKind = .tile
-                paletteAnimatable = true
                 info = "\(tiles.tileCount) tiles · \(tiles.tileWidth)×\(tiles.tileHeight) (16 per row)"
             case .animation:
                 guard let animation = try? Wsa.Animation(data) else { info = "(WSA decode failed)"; return }
                 rawFrames = animation.frames.map {
                     RawFrame(indices: $0, width: animation.width, height: animation.height, hasLookup: false)
                 }
-                displayPalette = animation.palette
-                paletteAnimatable = true
+                displayPalette = animation.palette ?? contextPalette(for: asset.name)   // intro/finale WSAs → INTRO.PAL
                 info = "\(animation.frames.count) frames · \(animation.width)×\(animation.height)"
             case .font:
                 guard let font = try? Fnt.Font(data) else { info = "(FNT decode failed)"; return }
@@ -343,12 +349,14 @@ struct AssetDetailView: View {
                     let group = iconMap.group(index)
                 else { info = "(icon group decode failed)"; return }
                 remapKind = .tile
-                paletteAnimatable = true
                 // A multi-tile structure: assemble each build/animation state into a whole building.
                 if let layout = StructureCatalog.layout(iconGroup: index),
                    layout.width * layout.height > 1,
                    group.tileIDs.count % (layout.width * layout.height) == 0 {
                     rawFrames = assembleStructure(tiles, tileIDs: group.tileIDs, width: layout.width, height: layout.height)
+                    // Default to the completed building (state 2, per Structure_UpdateMap, structure.c:1779)
+                    // rather than the foundation: its animated power light (palette index 223) lives here.
+                    frameIndex = min(2, max(rawFrames.count - 1, 0))
                     info = "\(group.name) · \(layout.width)×\(layout.height) tiles · \(rawFrames.count) states"
                 } else {
                     rawFrames = group.tileIDs.compactMap { tileID in
@@ -358,6 +366,13 @@ struct AssetDetailView: View {
                     info = "\(group.name) · \(rawFrames.count) tiles"
                 }
         }
+
+        // Palette cycling (GUI_PaletteAnimate, gui/gui.c:643) operates on the active game palette
+        // (IBM.PAL), where indices 223/239/255 are magenta placeholders meant to be cycled. Content
+        // that carries its own palette — CPS images, WSA animations, mentat-face SHPs — uses those
+        // indices for real colors, so cycling there corrupts them. Only animate IBM.PAL-rendered
+        // content, i.e. when no embedded/contextual palette was selected.
+        paletteAnimatable = !rawFrames.isEmpty && displayPalette == nil
     }
 
     /// Assemble a structure icon group's tiles into whole-building frames: the group's tiles are
