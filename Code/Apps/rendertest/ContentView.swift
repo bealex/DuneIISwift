@@ -342,14 +342,54 @@ struct AssetDetailView: View {
                     let index = asset.iconGroup,
                     let group = iconMap.group(index)
                 else { info = "(icon group decode failed)"; return }
-                rawFrames = group.tileIDs.compactMap { tileID in
-                    let pixels = tiles.tile(tileID)
-                    return pixels.isEmpty ? nil : RawFrame(indices: pixels, width: tiles.tileWidth, height: tiles.tileHeight, hasLookup: false)
-                }
                 remapKind = .tile
                 paletteAnimatable = true
-                info = "\(group.name) · \(rawFrames.count) tiles"
+                // A multi-tile structure: assemble each build/animation state into a whole building.
+                if let layout = StructureCatalog.layout(iconGroup: index),
+                   layout.width * layout.height > 1,
+                   group.tileIDs.count % (layout.width * layout.height) == 0 {
+                    rawFrames = assembleStructure(tiles, tileIDs: group.tileIDs, width: layout.width, height: layout.height)
+                    info = "\(group.name) · \(layout.width)×\(layout.height) tiles · \(rawFrames.count) states"
+                } else {
+                    rawFrames = group.tileIDs.compactMap { tileID in
+                        let pixels = tiles.tile(tileID)
+                        return pixels.isEmpty ? nil : RawFrame(indices: pixels, width: tiles.tileWidth, height: tiles.tileHeight, hasLookup: false)
+                    }
+                    info = "\(group.name) · \(rawFrames.count) tiles"
+                }
         }
+    }
+
+    /// Assemble a structure icon group's tiles into whole-building frames: the group's tiles are
+    /// consecutive build/animation states of `width * height` tiles each (row-major), so each state
+    /// becomes one `(width*16)×(height*16)` image. See `StructureCatalog`.
+    private func assembleStructure(_ tiles: Icn.TileSet, tileIDs: [Int], width: Int, height: Int) -> [RawFrame] {
+        let tileW = tiles.tileWidth
+        let tileH = tiles.tileHeight
+        let perState = width * height
+        guard perState > 1, tileIDs.count >= perState else { return [] }
+
+        let frameW = width * tileW
+        let frameH = height * tileH
+        var frames: [RawFrame] = []
+        for state in 0 ..< (tileIDs.count / perState) {
+            var indices = [UInt8](repeating: 0, count: frameW * frameH)
+            for i in 0 ..< perState {
+                let pixels = tiles.tile(tileIDs[state * perState + i])
+                guard !pixels.isEmpty else { continue }
+
+                let originX = (i % width) * tileW
+                let originY = (i / width) * tileH
+                for y in 0 ..< tileH {
+                    for x in 0 ..< tileW {
+                        let source = y * tileW + x
+                        if source < pixels.count { indices[(originY + y) * frameW + originX + x] = pixels[source] }
+                    }
+                }
+            }
+            frames.append(RawFrame(indices: indices, width: frameW, height: frameH, hasLookup: false))
+        }
+        return frames
     }
 
     private func tileSheet(_ tiles: Icn.TileSet) -> (indices: [UInt8], width: Int, height: Int) {

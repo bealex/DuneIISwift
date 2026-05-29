@@ -1,0 +1,9 @@
+# A structure's on-map sprite is assembled from ICON.MAP tiles in W×H state blocks
+
+**Finding:** A building is not one sprite — it is a `width × height` grid of 16×16 `ICON.ICN` tiles. Its `ICON.MAP` icon group lists those tiles as **consecutive build/animation states**, each exactly `width*height` tiles in **row-major** order. So state `s`'s tiles are `tileIDs[s*w*h ..< (s+1)*w*h]`, and tile `i` of a state sits at grid `(i % w, i / w)`. The dimensions come from `g_table_structureInfo[].layout` → `g_table_structure_layoutSize` (OpenDUNE `src/table/structureinfo.c`), **not** from any asset file. `Structure_UpdateMap` (`src/structure.c:1779`) draws the *built* look from state index 2 (`iconMap = base + 2*w*h`); earlier states are construction phases.
+
+**Why it matters:** Rendering icon-group tiles individually shows tile soup, not a building. Every building group's tile count is a clean multiple of its `w*h` (verified: Windtrap 2×2=16→4 states, Palace 3×3=36→4, Refinery 3×2=60→10, Starport 90→10, turrets 1×1). The row-major mapping is implied by `g_table_structure_layoutTiles` (`structureinfo.c:1250`), where map offset `64*r + c` ⇒ grid `(c, r)`.
+
+**Evidence:** `StructureCatalog.layout(iconGroup:)` (`Code/Frameworks/DuneIIRenderer/StructureCatalog.swift`); `assembleStructure` in `Code/Apps/rendertest/ContentView.swift`; test `structure catalog maps icon groups to their tile layouts` (RendererTests). OpenDUNE `src/structure.c:1779`, `src/table/structureinfo.c:1250/1294`.
+
+**How to apply:** To draw a structure, look up its `(w,h)` by icon group, slice the group's tiles into `w*h` state blocks, and lay each block out row-major. The canonical built frame is state index 2. The 1×1 turrets are the exception — their group tiles are facings, not a multi-tile shape, so don't assemble (`w*h == 1`). This is the renderer-side precursor to the `DuneIIWorld` `structureInfo` port — reconcile then.

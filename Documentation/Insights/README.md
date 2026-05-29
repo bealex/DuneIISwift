@@ -29,3 +29,4 @@ Capture an insight when something surprised you, cost real time to figure out, o
 - [render-palette-animation](render-palette-animation.md) — indices 223/239/255 are magenta placeholders meant to be palette-cycled; render with the time-cycled palette or animated tiles look wrong.
 - [sprite-global-indices](sprite-global-indices.md) — unit sprite IDs are global indices into a concatenated array (per-file local = global − base offset); frame grouping + directional/animation labels live only in unitInfo, not the SHP.
 - [render-contextual-palette](render-contextual-palette.md) — SHP sprites carry no palette; mentat faces (MENSHP*) use their MENTAT<house>.CPS palette, not IBM.PAL. Palette follows the screen the sprite is drawn over.
+- [render-structure-layout](render-structure-layout.md) — a building is a W×H grid of ICON.ICN tiles; its ICON.MAP group lists consecutive W·H-tile states (row-major), dimensions from structureInfo.layout. Built look = state index 2.

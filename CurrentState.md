@@ -8,7 +8,6 @@
 
 ## Next up (queue)
 
-- **Render inspector — assembled buildings** (optional refinement): units, buildings, and terrain are now grouped (the "Units"/"Buildings"/"Terrain" categories). Buildings are shown as their individual 16×16 ICON.ICN tiles. Assembling a building's tiles into its full multi-tile shape (and the structure tile-cycle animation) needs `structureInfo.layout` + `g_table_animation_structure` — do if wanted. (`SpriteCatalog`/`IconMap` grouping is renderer/format-side metadata to reconcile with `DuneIIWorld`'s eventual `unitInfo`/`structureInfo` port — insight `sprite-global-indices`.)
 - **Phase 3 — `DuneIISimulation`.** Loop + clocks → primitives → one unit type end-to-end → economy → structures → houses/teams/AI → projectiles/explosions. State machines = exact EMC transcription, verified by Tier-2a decision traces.
 - **Phases 4–5 — `DuneIIRenderer` + `rendertest` + `DuneIIInput`.**
 - **Phase 6 — hosts + multi-window UI.**
@@ -27,10 +26,11 @@
 - rendertest logical sprite grouping: `SpriteCatalog` (DuneIIRenderer) splits the unit SHPs (UNITS/UNITS1/UNITS2) into per-unit groups (directional vs animation), surfaced as a "Units" category; directional groups offer a Facing stepper (no auto-animate), animation groups a Play. Scale picker now also scales the grid thumbnails. 66 tests green.
 - rendertest building/terrain grouping: `IconMap` decoder (DuneIIFormats) + "Buildings"/"Terrain" categories — each ICON.MAP icon group lists its ICON.ICN tiles (subitems) with house remap + palette cycling. 68 tests green.
 - rendertest MENSHPM palette fix: mentat face sprites colored by their `MENTAT<house>.CPS` palette (not IBM.PAL) via `AssetLibrary.cpsPalette` + `AssetDetailView.mentatPalette` (OpenDUNE `gui/mentat.c:494`). Build clean. Insight `render-contextual-palette`.
+- rendertest assembled buildings: `StructureCatalog` (DuneIIRenderer) maps structure icon groups → `(w,h)` tile layout (OpenDUNE `structureinfo.c`); the `.iconGroup` decode assembles a building's tiles (consecutive `w*h`-tile states, row-major per `Structure_UpdateMap`) into whole-building frames. Buildings category now shows whole buildings, not separate tiles. 69 tests green. Insight `render-structure-layout`.
 
 ## Test status
 
-`cd Code && swift test`: **68 tests, all green** (format/codec/EMC/IconMap layer + PNG/WAV export + renderer house-remap/image/palette-cycling/sprite-catalog, synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited).
+`cd Code && swift test`: **69 tests, all green** (format/codec/EMC/IconMap layer + PNG/WAV export + renderer house-remap/image/palette-cycling/sprite-catalog/structure-catalog, synthetic + real-data). Clean build (`swift package clean && swift build`): zero warnings (full output audited, incl. the `rendertest` product).
 
 ## Open decisions (from Plan.v1.md §8)
 

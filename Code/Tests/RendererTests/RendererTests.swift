@@ -64,6 +64,17 @@ struct RendererTests {
         #expect(units2.contains { $0.unit == "Combat Tank" && $0.part == "turret" && $0.firstFrame == 5 && $0.frameCount == 5 })
         #expect(SpriteCatalog.unitGroups.allSatisfy { $0.firstFrame >= 0 && $0.frameCount > 0 })
     }
+
+    @Test("structure catalog maps icon groups to their tile layouts")
+    func structureLayout() {
+        func layout(_ group: Int) -> (Int, Int)? { StructureCatalog.layout(iconGroup: group).map { ($0.width, $0.height) } }
+        #expect(layout(19).map { $0 == (2, 2) } == true)   // Windtrap
+        #expect(layout(11).map { $0 == (3, 3) } == true)   // Palace
+        #expect(layout(21).map { $0 == (3, 2) } == true)   // Refinery
+        #expect(layout(23).map { $0 == (1, 1) } == true)   // Gun Turret
+        #expect(layout(9) == nil)                          // Landscape (not a structure)
+        #expect(layout(8) == nil)                          // Concrete Slab (ambiguous)
+    }
 }
 
 private extension Palette {
