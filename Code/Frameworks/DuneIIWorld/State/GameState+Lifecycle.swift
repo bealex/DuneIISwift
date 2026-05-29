@@ -45,6 +45,20 @@ public extension GameState {
         if let other { objectScriptVariable4Set(other, 0) }
     }
 
+    /// `Object_Script_Variable4_Link` (`object.c`): form the two-way script-variable-4 link between two
+    /// encoded objects (clearing any mismatched prior links first), but only if `from`'s slot is free.
+    mutating func objectScriptVariable4Link(_ encodedFrom: UInt16, _ encodedTo: UInt16) {
+        guard indexIsValid(encodedFrom), indexIsValid(encodedTo),
+              let from = indexGetObject(encodedFrom), let to = indexGetObject(encodedTo) else { return }
+        if object(from).script.variables[4] != object(to).script.variables[4] {
+            objectScriptVariable4Clear(from)
+            objectScriptVariable4Clear(to)
+        }
+        if object(from).script.variables[4] != 0 { return }
+        objectScriptVariable4Set(from, encodedTo)
+        objectScriptVariable4Set(to, encodedFrom)
+    }
+
     /// `Unit_RemoveFromTeam` (`unit.c`): drop a unit from its team, returning the team's resulting free
     /// slots (`maxMembers - members`); a unit with no team is a no-op returning 0.
     @discardableResult
