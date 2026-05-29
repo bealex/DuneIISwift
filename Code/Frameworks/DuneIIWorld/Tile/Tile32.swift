@@ -43,6 +43,47 @@ public struct Tile32: Equatable, Sendable {
         Tile32(x: from.x &+ diff.x, y: from.y &+ diff.y)
     }
 
+    /// `Tile_Center`: snap both axes' sub-tile offset to the tile centre (`0x80`).
+    public var centered: Tile32 { Tile32(x: (x & 0xFF00) | 0x80, y: (y & 0xFF00) | 0x80) }
+
+    /// `Tile_IsOutOfMap`: a packed tile outside the 64×64 map (any of bits 12-15 set).
+    public static func isOutOfMap(_ packed: UInt16) -> Bool { (packed & 0xF000) != 0 }
+
+    /// `Tile_MoveByDirection` (`tile.c:276`): move `tile` by `distance` (clamped to 255) sub-tile units
+    /// along the 256-step `orientation`, rounding each axis away from zero. `_stepY[i] == _stepX[i+64]`.
+    public static func moveByDirection(_ tile: Tile32, orientation: Int16, distance: UInt16) -> Tile32 {
+        let dist = Int(Swift.min(distance, 0xFF))
+        if dist == 0 { return tile }
+        let idx = Int(UInt8(truncatingIfNeeded: orientation))          // orientation & 0xFF
+        let diffX = Int(stepX[idx])
+        let diffY = Int(stepX[(idx + 64) & 0xFF])                      // _stepY
+        let roundX = diffX < 0 ? -64 : 64
+        let roundY = diffY < 0 ? -64 : 64
+        return Tile32(
+            x: UInt16(truncatingIfNeeded: Int(tile.x) + (diffX * dist + roundX) / 128),
+            y: UInt16(truncatingIfNeeded: Int(tile.y) - (diffY * dist + roundY) / 128))
+    }
+
+    /// `_stepX[256]` (`tile.c:230`): the signed cos-like step table. `_stepY[i] = stepX[(i + 64) & 0xFF]`.
+    static let stepX: [Int8] = [
+           0,    3,    6,    9,   12,   15,   18,   21,   24,   27,   30,   33,   36,   39,   42,   45,
+          48,   51,   54,   57,   59,   62,   65,   67,   70,   73,   75,   78,   80,   82,   85,   87,
+          89,   91,   94,   96,   98,  100,  101,  103,  105,  107,  108,  110,  111,  113,  114,  116,
+         117,  118,  119,  120,  121,  122,  123,  123,  124,  125,  125,  126,  126,  126,  126,  126,
+         127,  126,  126,  126,  126,  126,  125,  125,  124,  123,  123,  122,  121,  120,  119,  118,
+         117,  116,  114,  113,  112,  110,  108,  107,  105,  103,  102,  100,   98,   96,   94,   91,
+          89,   87,   85,   82,   80,   78,   75,   73,   70,   67,   65,   62,   59,   57,   54,   51,
+          48,   45,   42,   39,   36,   33,   30,   27,   24,   21,   18,   15,   12,    9,    6,    3,
+           0,   -3,   -6,   -9,  -12,  -15,  -18,  -21,  -24,  -27,  -30,  -33,  -36,  -39,  -42,  -45,
+         -48,  -51,  -54,  -57,  -59,  -62,  -65,  -67,  -70,  -73,  -75,  -78,  -80,  -82,  -85,  -87,
+         -89,  -91,  -94,  -96,  -98, -100, -102, -103, -105, -107, -108, -110, -111, -113, -114, -116,
+        -117, -118, -119, -120, -121, -122, -123, -123, -124, -125, -125, -126, -126, -126, -126, -126,
+        -126, -126, -126, -126, -126, -126, -125, -125, -124, -123, -123, -122, -121, -120, -119, -118,
+        -117, -116, -114, -113, -112, -110, -108, -107, -105, -103, -102, -100,  -98,  -96,  -94,  -91,
+         -89,  -87,  -85,  -82,  -80,  -78,  -75,  -73,  -70,  -67,  -65,  -62,  -59,  -57,  -54,  -51,
+         -48,  -45,  -42,  -39,  -36,  -33,  -30,  -27,  -24,  -21,  -18,  -15,  -12,   -9,   -6,   -3,
+    ]
+
     /// `Tile_GetDistance`: the longest axis distance plus half the shortest (Chebyshev-ish). Wrapping
     /// `uint16` arithmetic, as in the original.
     public static func distance(from: Tile32, to: Tile32) -> UInt16 {

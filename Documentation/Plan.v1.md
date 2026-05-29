@@ -227,6 +227,49 @@ Documented so they are never mistaken for bugs:
 
 ---
 
+## 9. Phase 3 native-primitive order (smallest → largest, dependency-aware)
+
+The implementation order for the Phase-3 native primitives. Built bottom-up: a primitive is only started once everything it depends on is done. **Every primitive must match its OpenDUNE function by result/effect** — golden-tested against the oracle where it is a pure function of its inputs, and verified by `GameState` state-diff / Tier-2a decision trace where it mutates state. `✓` = done; paths under `src/`.
+
+**Tier 0 — pure scalar/geometry (done).** Both RNGs ✓; `Tile_PackTile`/`Tile_UnpackTile`/`PackXY`/`GetPackedX/Y` ✓; `Tile_GetDistance`/`DistancePacked`/`DistanceRoundedUp` ✓; `Tile_GetDirection`/`DirectionPacked` ✓; `Tile_AddTileDiff` ✓; `Orientation_Orientation256ToOrientation8`/`16` ✓; `Tools_AdjustToGameSpeed` ✓; `Tools_Index_GetType`/`Decode`/`Encode`/`IsValid`/`Get*` ✓.
+
+**Tier A — pure tile helpers (no `GameState`; golden-tested).**
+1. `Tile_Center` (`tile.c:70`) — none.
+2. `Tile_IsOutOfMap` (`tile.h:119`) — none.
+3. `_stepX`/`_stepY` step tables + `Tile_MoveByDirection` (`tile.c:230,276`) — step tables.
+4. `Tile_MoveByRandom` (`tile.c`) — step tables + `Random256` ✓ (RNG-coupled: test for determinism + shared `MoveByDirection` core, not byte-vs-oracle).
+
+**Tier B — unit orientation / rotation (mutate a `Unit`).**
+5. `Unit_SetOrientation` (`unit.c:1671`) — `UnitInfo.turningSpeed` ✓.
+6. `Unit_UpdateMap` (`unit.c`) — `g_map`, fog/sprite; isolate the gameplay-relevant tile bookkeeping (tile `hasUnit`/`index`, unveil) from render dirty-marking.
+7. `Unit_Rotate` (`unit.c:65`) — `Orientation_256To8/16` ✓, `Unit_UpdateMap` (6). Drives the loop's `tickRotation`.
+
+**Tier C — speed / movement.**
+8. `Unit_SetSpeed` (`unit.c:1902`) — `UnitInfo` ✓.
+9. `Unit_Move` (`unit.c:1286`) — `Tile_MoveByDirection` (3), `Unit_UpdateMap` (6), `Map_UnveilTile` (Tier D), `Tile_GetDistance` ✓.
+10. `Unit_MovementTick` (`unit.c:98`) — `AdjustToGameSpeed` ✓, `Tile_GetDistance` ✓, `Unit_Move` (9). Drives the loop's `tickMovement`.
+
+**Tier D — map state.**
+11. `Map_GetLandscapeType` (`map.c`) — `g_map`, `LandscapeInfo` ✓.
+12. `Map_IsValidPosition` (`map.c`) — none beyond `Tile_IsValid` ✓.
+13. `Map_IsPositionUnveiled` / `Map_UnveilTile` (`map.c`) — `g_map`.
+14. `Map_ChangeSpiceAmount` / `Map_SearchSpice` (`map.c`) — `g_map`, `LandscapeInfo` ✓.
+15. `Map_UpdateAround` / `Map_MakeExplosion` (`map.c`) — larger; explosions table.
+
+**Tier E — combat / scoring.**
+16. `Unit_GetTileEnterScore` (`unit.c:2335`) — `LandscapeInfo` ✓, `Map` (Tier D), `Tile_GetDistance` ✓.
+17. `Unit_Deviate` (`unit.c`) — `HouseInfo` ✓, pools ✓.
+18. `Unit_Damage` (`unit.c:1530`) — `HouseInfo` ✓, `Unit_Remove` (Tier F), explosions (15).
+
+**Tier F — lifecycle / orchestration / pathfinding (largest).**
+19. `Unit_SetDestination` / `Unit_SetAction` (`unit.c:497`) / `Unit_Hide` — pools ✓, Tiers B–D.
+20. `Unit_Remove` / `Unit_Free` (+ find-array compaction) — pools ✓, `Unit_UpdateMap` (6).
+21. pathfinder: `Script_Unit_Pathfinder` + `_Connect` + `_Smoothen` (`script/unit.c:1183,1117,1012`) — `Unit_GetTileEnterScore` (16), `Tile_*` ✓.
+
+Structure/House/Team primitives follow the same bottom-up discipline once the unit cluster is in; they are sequenced when their game-loop slices are ported.
+
+---
+
 ## Appendix — OpenDUNE porting reference (file:line)
 
 Compact map for implementers. Paths under `Repositories/OpenDUNE/src/`.
