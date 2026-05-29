@@ -127,6 +127,26 @@ struct GameStateTests {
         #expect(s.houses[0].unitCount == 2)
     }
 
+    @Test("unitGetByPackedTile + unitIsTypeOnMap query the map/find array")
+    func mapQueries() {
+        var s = GameState()
+        s.houses[0].unitCountMax = 100
+        let slot = s.unitAllocate(index: 0, type: u(.tank), houseID: 0)!
+
+        #expect(s.unitGetByPackedTile(100) == nil)   // tile not flagged → nothing there
+        s.map[100].hasUnit = true                    // hasUnit + 1-based index resolves to the slot
+        s.map[100].index = UInt8(slot + 1)
+        #expect(s.unitGetByPackedTile(100) == slot)
+        #expect(s.unitGetByPackedTile(0xF000) == nil)   // off-map short-circuit
+
+        #expect(s.unitIsTypeOnMap(houseID: 0, typeID: u(.tank)))
+        #expect(!s.unitIsTypeOnMap(houseID: 0, typeID: u(.trike)))
+        #expect(!s.unitIsTypeOnMap(houseID: 1, typeID: u(.tank)))
+        #expect(s.unitIsTypeOnMap(houseID: Pool.houseInvalid, typeID: 0xFF))   // wildcards
+        s.units[slot].o.flags.insert(.isNotOnMap)
+        #expect(!s.unitIsTypeOnMap(houseID: 0, typeID: u(.tank)))   // off-map units skipped
+    }
+
     @Test("house + team allocate")
     func houseTeamAllocate() {
         var s = GameState()

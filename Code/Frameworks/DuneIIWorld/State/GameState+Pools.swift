@@ -87,6 +87,31 @@ public extension GameState {
         return nil
     }
 
+    // MARK: - Map / type queries
+
+    /// `Unit_Get_ByPackedTile` (`unit.c`): the slot index of the unit occupying `packed`, or `nil` if
+    /// the tile is off-map or carries no unit. (`g_map[packed].index` is 1-based: 1 means unit slot 0.)
+    func unitGetByPackedTile(_ packed: UInt16) -> Int? {
+        if Tile32.isOutOfMap(packed) { return nil }
+        let tile = map[Int(packed)]
+        if !tile.hasUnit { return nil }
+        return Int(tile.index) - 1
+    }
+
+    /// `Unit_IsTypeOnMap` (`unit.c:474`): is any on-map unit matching `houseID` (or any, when
+    /// `Pool.houseInvalid`) and `typeID` (or any, when `UNIT_INVALID` = `0xFF`) present? Units flagged
+    /// `isNotOnMap` are skipped unless strict-validation is active.
+    func unitIsTypeOnMap(houseID: UInt8, typeID: UInt8) -> Bool {
+        for slot in unitFindArray {
+            let u = units[Int(slot)]
+            if houseID != Pool.houseInvalid && unitHouseID(u) != houseID { continue }
+            if typeID != 0xFF && u.o.type != typeID { continue }
+            if validateStrictIfZero == 0 && u.o.flags.contains(.isNotOnMap) { continue }
+            return true
+        }
+        return false
+    }
+
     // MARK: - Allocate
 
     /// `Unit_Allocate`. Picks a free slot inside the type's `[indexStart, indexEnd]` band when

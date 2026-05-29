@@ -257,7 +257,7 @@ The implementation order for the Phase-3 native primitives. Built bottom-up: a p
 > **Prerequisite found (during implementation), now satisfied.** The rest of Tier D needs the **runtime tile-id bases** (`TileIDs`: `veiled`/`landscape`/`wall`/`bloom`/`builtSlab`) that `Sprites_Init` (`sprites.c:274`) derives from `ICON.MAP` — **done** (`DuneIIWorld.TileIDs`, `GameState.tileIDs`), as is map-from-seed (`createLandscape`) and scenario `.INI` loading. With those:
 > - 11. `Map_GetLandscapeType` (`map.c`) — **done** (`MapPrimitives.landscapeType` + `_landscapeSpriteMap`; golden vs the oracle over every generated tile, `LandscapeTypeTests`). The structure case is the tile's `hasStructure` flag.
 > - 13. `Map_IsPositionUnveiled` (`map.c`) — **done** (`MapPrimitives.isPositionUnveiled` + `tileIsUnveiled` = `Tile_IsUnveiled`; `UnveilTests`). `Map_UnveilTile` — still pending: needs `Unit_HouseUnitCount`, neighbour-unveil, render dirty-marking.
-> - 14. `Map_ChangeSpiceAmount` — **done** (`MapPrimitives.changeSpiceAmount` + the private `fixupSpiceEdges` = `Map_FixupSpiceEdges`; golden vs the oracle over a whole-map ±1 pass, `SpiceTests`). `Map_SearchSpice` — still pending (needs `Unit_Get_ByPackedTile`).
+> - 14. `Map_ChangeSpiceAmount` — **done** (`MapPrimitives.changeSpiceAmount` + the private `fixupSpiceEdges` = `Map_FixupSpiceEdges`; golden, `SpiceTests`). `Map_SearchSpice` — **done** (`MapPrimitives.searchSpice`; golden, `SearchSpiceTests`), unblocked by the new `GameState.unitGetByPackedTile` (`Unit_Get_ByPackedTile`) + `unitIsTypeOnMap` pool queries.
 > - 15. `Map_UpdateAround` / `Map_MakeExplosion` — larger; explosions/animation tables (also the render seam).
 
 **Tier E — combat / scoring.** (`DuneIISimulation`.)

@@ -27,6 +27,11 @@ public protocol MapPrimitives: Sendable {
     /// Mutates `state.map`/`state.mapBaseTileID`; the render dirty-marking (`Map_Update`) is a seam we
     /// skip here.
     func changeSpiceAmount(_ packed: UInt16, _ dir: Int16, in state: inout GameState)
+
+    /// `Map_SearchSpice` (`map.c:1117`): the nearest harvestable spice tile within `radius` of `packed`
+    /// (preferring thick spice closer than 4, else any spice), skipping tiles with a structure or a
+    /// unit. Returns the packed position, or `0` if none was found. Read-only.
+    func searchSpice(_ packed: UInt16, radius: UInt16, in state: GameState) -> UInt16
 }
 
 public struct DefaultMapPrimitives: MapPrimitives {
@@ -125,6 +130,50 @@ public struct DefaultMapPrimitives: MapPrimitives {
             state.mapBaseTileID[Int(packed)] = 0x8000 | spriteID
             state.map[Int(packed)].groundTileID = spriteID
         }
+    }
+
+    public func searchSpice(_ packed: UInt16, radius: UInt16, in state: GameState) -> UInt16 {
+        var radius1 = radius &+ 1   // best plain-spice distance seen
+        var radius2 = radius &+ 1   // best thick-spice distance seen
+        var packed1 = packed
+        var packed2 = packed
+        var found = false
+
+        let info = MapInfo.scales[Int(state.mapScale)]
+        // Bounds are computed signed (C promotes the uint16 subtraction to int before max/min).
+        let px = Int(Tile32.packedX(packed)), py = Int(Tile32.packedY(packed))
+        let xmin = max(px - Int(radius), Int(info.minX))
+        let xmax = min(px + Int(radius), Int(info.minX) + Int(info.sizeX) - 1)
+        let ymin = max(py - Int(radius), Int(info.minY))
+        let ymax = min(py + Int(radius), Int(info.minY) + Int(info.sizeY) - 1)
+
+        var y = ymin
+        while y <= ymax {
+            var x = xmin
+            while x <= xmax {
+                defer { x += 1 }
+                let curPacked = Tile32.packXY(x: UInt16(x), y: UInt16(y))
+                if !isValidPosition(curPacked, mapScale: state.mapScale) { continue }
+                if state.map[Int(curPacked)].hasStructure { continue }
+                if state.unitGetByPackedTile(curPacked) != nil { continue }
+
+                let type = landscapeType(state.map[Int(curPacked)], tileIDs: state.tileIDs)
+                let distance = Tile32.distancePacked(curPacked, packed)
+
+                if type == .thickSpice && distance < 4 {
+                    found = true
+                    if distance <= radius2 { radius2 = distance; packed2 = curPacked }
+                }
+                if type == .spice {
+                    found = true
+                    if distance <= radius1 { radius1 = distance; packed1 = curPacked }
+                }
+            }
+            y += 1
+        }
+
+        if !found { return 0 }
+        return (radius2 <= radius) ? packed2 : packed1
     }
 
     /// `g_table_mapDiff[4]` (`table/tilediff.c`): packed-offset deltas for the four orthogonal
