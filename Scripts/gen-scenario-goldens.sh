@@ -2,15 +2,13 @@
 #
 # Generate the behavioural-scenario golden fixtures from the OpenDUNE oracle.
 #
-# RUN THIS OUTSIDE THE SANDBOX (a normal macOS terminal). The oracle's real scenario run
-# (Game_LoadScenario + GameLoop) needs the full game init — GFX/sprites — which does not run in the
-# agent's headless sandbox. Each scenario:
-#   1. loads the shared SCEN<H><id>.INI via the real scenario path (so terrain comes from [MAP] Seed ->
-#      Map_CreateLandscape, and units are placed + put on the map by Game_Prepare),
-#   2. replays the simulated player command stream (--parity-cmd=<move|attack>,<unitIndex>,<tile>),
-#   3. ticks GameLoop for --parity-ticks=N, dumping one JSON line of per-unit state per tick.
-# The Swift ScenariosTests/ScenarioGoldenTests reproduces the same and compares per tick (raise its
-# `comparedTicks` as our movement/combat natives land).
+# Self-contained + headless (no display needed): the oracle's --parity-scenario mode does a minimal init
+# (pools + ICON.MAP + UNIT.EMC, no GFX), loads the shared SCEN<H><id>.INI (terrain from [MAP] Seed ->
+# Map_CreateLandscape), places units on the map, points the viewport at the region (so scripts run
+# full-speed), replays the simulated player command stream (--parity-cmd=<move|attack>,<unitIndex>,<tile>),
+# ticks GameLoop for --parity-ticks=N, and dumps one JSON line of per-unit state per tick — units
+# actually move. The Swift ScenariosTests/ScenarioGoldenTests reproduces the same and compares per tick
+# (raise its `comparedTicks` as our movement/combat natives land).
 #
 # Usage:   Scripts/gen-scenario-goldens.sh [INSTALL_DIR]
 #   INSTALL_DIR defaults to Repositories/patched_107_unofficial. TICKS env var overrides the tick count.
@@ -25,7 +23,7 @@ INSTALL="${1:-$REPO/Repositories/patched_107_unofficial}"
 ORACLE="$REPO/Repositories/OpenDUNE"
 FIX="$REPO/Code/Tests/ScenariosTests/Fixtures"
 DATADIR="$REPO/Code/.build/scengen"
-TICKS="${TICKS:-120}"
+TICKS="${TICKS:-400}"
 
 [ -d "$INSTALL" ] || { echo "install dir not found: $INSTALL" >&2; exit 1; }
 
@@ -42,7 +40,7 @@ for f in "$INSTALL"/*; do ln -sf "$f" "$DATADIR/"; done
 run() {
   local name="$1" id="$2" ini="$3" ticks="$4"; shift 4
   cp "$FIX/$ini" "$DATADIR/$(printf 'SCENH%03d.INI' "$id")"
-  local args=(--parity-scenario-run="$id" --parity-ticks="$ticks"
+  local args=(--parity-scenario="$id" --parity-ticks="$ticks"
               --parity-data-dir="$DATADIR" --parity-dump="$FIX/$name-golden.jsonl")
   local c; for c in "$@"; do args+=(--parity-cmd="$c"); done
   echo "  $name  (scenario $id, $ticks ticks, cmds: $*)"

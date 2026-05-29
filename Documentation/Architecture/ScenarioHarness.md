@@ -57,18 +57,21 @@ renders terrain + units for visual assessment — the same scenario the golden v
   (`ScenarioGoldenTests`, frame-0 parity for the moving scenario).
 - [ ] Per-tick trajectory comparison + the other scenarios, as the movement/combat/guard natives land.
 
-**Oracle env note — two scenario modes.** OpenDUNE's full game init (GFX/sprites/strings) and the unit
-movement/placement path (`Game_Prepare`/`Unit_UpdateMap`) do **not** run in the agent's headless sandbox.
-So `parity.c` has two scenario modes:
+**Oracle mode (`--parity-scenario=<id>`) — self-contained + headless, with real movement.** OpenDUNE's
+full game init (GFX/sprites/strings) and `Game_Prepare` don't run headless, so the mode is dispatched
+right after `File_Init` and does a **minimal init** instead: pools + the `ICON.MAP` tile-id bases +
+`UNIT.EMC`, then loads the custom `SCEN<H><id>.INI` (terrain from `[MAP] Seed → Map_CreateLandscape`),
+places each unit on the map (`Unit_UpdateMap`, the bit of `Game_Prepare` movement needs), pins
+`gameSpeed`, **points `g_viewportPosition` at the region** (else `GameLoop_Unit` throttles an
+off-viewport unit's script to 3 opcodes/tick and it never sets up a move), replays the `--parity-cmd`
+stream (the same `gui/viewport.c` order our `UnitOrders` mirrors), ticks `GameLoop_*`, and dumps per-tick
+unit state. **Units actually move** — e.g. a tank ordered `(16,16)→(40,40)` rotates then steps
+diagonally. So the committed `*-golden.jsonl` carry the real trajectory.
 
-- `--parity-scenario=<id>` — **self-contained**, dispatched right after `File_Init` (pools + ICON.MAP +
-  `UNIT.EMC`, no GFX). Runs headless, but units don't move (no `Game_Prepare`): it gives the **frame-0 /
-  setup parity** dump, which the in-sandbox golden uses.
-- `--parity-scenario-run=<id>` — the **real** `Game_LoadScenario` + `GameLoop` trajectory (units actually
-  move). Needs the full init, so **run it outside the sandbox** (a display-capable macOS terminal).
+**macOS gotcha:** a relinked binary's stale code signature makes the kernel SIGKILL it ("killed", no
+output); `codesign --force --sign - bin/opendune` after building fixes it (the script does this).
 
-Both load the custom `.INI` by placing `bootstrap.ini` as `SCENH<id>.INI` in a data dir that also has the
-install PAKs, and replay the same `--parity-cmd` stream. **Generate the trajectory fixtures with
-`Scripts/gen-scenario-goldens.sh [INSTALL_DIR]`** (outside the sandbox); it builds the oracle, stages the
-data dir, runs each scenario, and writes `*-golden.jsonl` under `Tests/ScenariosTests/Fixtures/`. Then
-re-run the Swift golden and raise its `comparedTicks`.
+**Generate fixtures with `Scripts/gen-scenario-goldens.sh [INSTALL_DIR]`** (runs anywhere — no display
+needed): builds + re-signs the oracle, stages the data dir (install PAKs + each `.INI` as `SCENH<id>.INI`),
+runs every scenario, writes `*-golden.jsonl` under `Tests/ScenariosTests/Fixtures/`. Then re-run the
+Swift golden and raise its `comparedTicks` as our `GameLoop_Unit` learns to run scripts + move.
