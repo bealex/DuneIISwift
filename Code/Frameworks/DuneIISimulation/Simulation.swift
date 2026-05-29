@@ -51,6 +51,7 @@ public struct Simulation: Sendable {
         gameLoopUnit()
         gameLoopStructure()
         gameLoopHouse()
+        state.animationTick()   // structure animations (mutates the map ground tiles over time)
     }
 
     /// `Tools_AdjustToGameSpeed` with this run's `gameSpeed`.

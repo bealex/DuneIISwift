@@ -1,4 +1,5 @@
 import DuneIIContracts
+import DuneIIFormats
 
 /// "Next-due" tick timestamps for each `GameLoop_Unit` sub-activity (OpenDUNE's `s_tickUnit*`).
 /// An activity fires when its cursor is `<= timerGame`, then advances by its interval.
@@ -68,6 +69,22 @@ public struct GameState: Sendable {
     /// Runtime tile-id bases derived from `ICON.MAP` (`Sprites_Init`); populated at load. Anchors
     /// `Map_GetLandscapeType` etc.
     public var tileIDs = TileIDs()
+
+    /// The decoded `ICON.MAP`, kept for the animation engine's icon-group tile lookups. Set at load.
+    public var iconMap: IconMap?
+
+    /// Active structure animations (`g_animations`, 112 slots).
+    public var animations = [Animation](repeating: Animation(), count: 112)
+
+    /// `s_animationTimer`: the next tick the animation pass needs to run.
+    public var animationTimer: UInt32 = 0
+
+    /// The seed-generated base ground tile of each cell (`g_mapTileID`), so an animation `STOP` can
+    /// restore it. Snapshotted by `createLandscape`.
+    public var mapBaseTileID = [UInt16](repeating: 0, count: 64 * 64)
+
+    /// Set whenever an animation changes a map ground tile, so a renderer knows to re-blit.
+    public var mapDirty = false
 
     public init(random256Seed: UInt32 = 0, randomLCGSeed: UInt16 = 0) {
         units = Array(repeating: Unit(), count: Pool.unitIndexMax)

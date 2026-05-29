@@ -57,10 +57,15 @@ final class MapScene: SKScene {
         lastTick = -1
     }
 
-    /// The game loop: advance the simulation clock, then refresh the palette-cycled terrain.
+    /// The game loop: advance the simulation (clocks + structure animations), re-blit the terrain when
+    /// an animation changed a tile, and refresh the palette-cycled colours each tick.
     override func update(_ currentTime: TimeInterval) {
-        guard simulation != nil else { return }
+        guard simulation != nil, let assets else { return }
         simulation!.tick()
+        if simulation!.state.mapDirty {
+            terrainBuffer = MapImageBuilder.terrainIndices(simulation!.state, assets) ?? terrainBuffer
+            simulation!.state.mapDirty = false
+        }
         let tick = Int(simulation!.state.timerGUI)
         if tick != lastTick {
             recolorTerrain(tick: tick)

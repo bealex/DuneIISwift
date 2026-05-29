@@ -40,6 +40,11 @@ public extension GameState {
         for key in ini.keys(section: "STRUCTURES") {
             loadStructure(key: key, value: ini.string(section: "STRUCTURES", key: key))
         }
+
+        // Stamp each structure's tiles onto the map + start its idle animation.
+        for index in structures.indices where structures[index].o.flags.contains(.used) {
+            structureUpdateMap(index)
+        }
     }
 
     /// `House,UnitType,HP%,packedPosition,orientation,actionState`.

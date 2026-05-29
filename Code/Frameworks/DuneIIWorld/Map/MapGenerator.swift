@@ -22,6 +22,7 @@ public extension GameState {
         let rock = UInt16(LandscapeType.entirelyRock.rawValue)      // 4
         let mountain = UInt16(LandscapeType.entirelyMountain.rawValue) // 6
 
+        self.iconMap = iconMap
         random256.reseed(seed)
 
         // Place random data on a 4×4 grid.
@@ -173,10 +174,12 @@ public extension GameState {
             }
         }
 
-        // Finalise with the real sprite IDs from the landscape icon group (ICM_ICONGROUP_LANDSCAPE = 9).
+        // Finalise with the real sprite IDs from the landscape icon group (ICM_ICONGROUP_LANDSCAPE = 9),
+        // and snapshot the base ground tile of each cell (g_mapTileID) for animation STOP to restore.
         for i in 0 ..< 4096 {
             let spriteIndex = Int(map[i].groundTileID)
             map[i].groundTileID = UInt16(iconMap.tileID(group: 9, offset: spriteIndex) ?? 0)
+            mapBaseTileID[i] = map[i].groundTileID
             map[i].overlayTileID = UInt8(truncatingIfNeeded: tileIDs.veiled)
             map[i].houseID = UInt8(HouseID.harkonnen.rawValue)
             map[i].isUnveiled = false

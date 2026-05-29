@@ -41,27 +41,11 @@ enum MapImageBuilder {
             }
         }
 
+        // Structures are stamped into the map's ground tiles by the engine (Structure_UpdateMap +
+        // the animation system), so a single pass over g_map draws terrain and (animating) buildings.
         for ty in 0 ..< mapTiles {
             for tx in 0 ..< mapTiles {
                 stamp(tileID: Int(state.map[ty * mapTiles + tx].groundTileID), tileX: tx, tileY: ty)
-            }
-        }
-
-        if let iconMap = assets.iconMap {
-            for s in state.structures where s.o.flags.contains(.used) {
-                guard let type = StructureType(rawValue: Int(s.o.type)) else { continue }
-                let group = Int(StructureInfo[type].iconGroup)
-                guard let tileIDs = iconMap.group(group)?.tileIDs, !tileIDs.isEmpty else { continue }
-                let (w, h) = StructureCatalog.layout(iconGroup: group) ?? (1, 1)
-                let states = max(1, tileIDs.count / (w * h))
-                let base = min(2, states - 1) * w * h    // built state ≈ index 2
-                let originX = Int(s.o.position.posX), originY = Int(s.o.position.posY)
-                for r in 0 ..< h {
-                    for c in 0 ..< w {
-                        let idx = base + r * w + c
-                        if idx < tileIDs.count { stamp(tileID: tileIDs[idx], tileX: originX + c, tileY: originY + r) }
-                    }
-                }
             }
         }
 
