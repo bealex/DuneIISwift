@@ -69,6 +69,8 @@ Steps 0, 1, 4, 5, 6, 7 are mandatory. Tests are written **after** the feature (s
 
 **Commit cadence.** Commit after each phase, or after each meaningful step within a phase. End commit messages with the `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` trailer. Work happens on a feature branch off `main`.
 
+**Chunking & check cadence (batched porting work).** When doing repetitive porting work in "blocks" (one logical work-unit, e.g. a stat table or primitive batch): work in **bigger chunks — bundle ~3 blocks per commit**, not one tiny increment per commit. Relax the per-step checks of workflow steps 4–5 to match: a block's own new/changed tests must compile and pass every block (run the filtered subset, `swift test --filter <Suite>`); run the **full suite every 4–6 blocks** and a **clean build every 6–10 blocks**; always finish a push with a full suite + clean build before declaring done. These cadences are specific to this project.
+
 ## Periodic self-review
 
 After each completed phase, **or** after every 32 commits (whichever comes first), reread `Documentation/History/` (at least the current and previous month) and `Documentation/Insights/`. Extract any **recurring problems** or **important lessons** into new standing instructions (add them to this file under the relevant section) or new insights. **If nothing recurrent or important emerges, add nothing — do not manufacture instructions.** Track the last review point in `CurrentState.md` (record the commit hash); commits since = `git rev-list --count <hash>..HEAD`.
