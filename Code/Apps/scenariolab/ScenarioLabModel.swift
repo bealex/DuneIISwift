@@ -14,8 +14,10 @@ final class ScenarioLabModel {
     var unit1: UnitType = .tank { didSet { rebuild() } }
     var unit2: UnitType = .trike { didSet { rebuild() } }
     private(set) var seed: UInt32 = 1
-    var scale: Int = 8 { didSet { scene.setZoom(CGFloat(scale)) } }
-    var running = true { didSet { scene.setRunning(running) } }
+    /// Display zoom: game-pixel → `scale` screen points (1× = point-to-pixel). Drives the view's square
+    /// size in `ContentView`; the scene renders 1:1, so it's purely the on-screen size (no resim).
+    var scale: Int = 4
+    var running = false { didSet { scene.setRunning(running) } }
 
     /// The selectable (real, non-bullet) unit types.
     let selectableUnits: [UnitType] = [
@@ -27,7 +29,6 @@ final class ScenarioLabModel {
     init(assets: ScenarioAssets) {
         self.assets = assets
         scene.configure()
-        scene.setZoom(CGFloat(scale))
         rebuild()
     }
 
@@ -38,9 +39,12 @@ final class ScenarioLabModel {
 
     func name(_ u: UnitType) -> String { String(describing: u) }
 
+    /// Rebuild the scenario from the current selection and **pause** — any change starts paused so the
+    /// initial setup can be assessed before running.
     private func rebuild() {
         guard let builder = assets.builder else { return }
+        running = false
         let scenario = TestScenario(kind: kind, unit1: unit1, unit2: unit2, terrainSeed: seed)
-        scene.load(world: builder.build(scenario), assets: assets, running: running)
+        scene.load(world: builder.build(scenario), assets: assets, running: false)
     }
 }

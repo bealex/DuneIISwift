@@ -7,31 +7,28 @@ import SpriteKit
 /// (a handful of small sprites).
 @MainActor
 final class ScenarioScene: SKScene {
-    private let cam = SKCameraNode()
     private var world: ScenarioWorld?
     private var assets: ScenarioAssets?
     private var terrainNode: SKSpriteNode?
     private var unitNodes: [SKSpriteNode] = []
     private var running = false
 
+    /// The scene is exactly the 8×8 region in game pixels and maps square→square into a fixed-size view
+    /// (the zoom is the view's point size — see `ContentView`), so it's never squished and stays
+    /// point-to-pixel. No camera: `.aspectFit` maps the whole 128×128 scene into the (square) view.
     func configure() {
         let side = CGFloat(ScenarioImageBuilder.sidePx)
         size = CGSize(width: side, height: side)
         scaleMode = .aspectFit
         backgroundColor = .black
-        addChild(cam)
-        camera = cam
-        cam.position = CGPoint(x: side / 2, y: side / 2)
     }
-
-    func setZoom(_ factor: CGFloat) { cam.setScale(1 / max(factor, 1)) }
 
     /// Load a freshly-built world and draw its initial frame. `running` controls whether `update` ticks.
     func load(world: ScenarioWorld, assets: ScenarioAssets, running: Bool) {
         self.world = world
         self.assets = assets
         self.running = running
-        for child in children where child !== cam { child.removeFromParent() }
+        removeAllChildren()
         terrainNode = nil
         unitNodes = []
         blitTerrain()
