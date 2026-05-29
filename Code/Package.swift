@@ -29,6 +29,7 @@ let package = Package(
         .executable(name: "duneii-headless", targets: [ "duneii-headless" ]),
         .executable(name: "rendertest", targets: [ "rendertest" ]),
         .executable(name: "mapview", targets: [ "mapview" ]),
+        .executable(name: "scenariolab", targets: [ "scenariolab" ]),
     ],
     targets: [
         // Frameworks (the engine) — dependencies point downward only.
@@ -105,6 +106,12 @@ let package = Package(
             name: "rendertest",
             dependencies: [ "DuneIIFormats", "DuneIIRenderer", "DuneIIExport" ],
             path: "Apps/rendertest"
+        ),
+        // Behavioural scenario lab — pick a terrain/units/scenario, run it, assess visually (1×–16×).
+        .executableTarget(
+            name: "scenariolab",
+            dependencies: [ "DuneIIScenarios", "DuneIISimulation", "DuneIIWorld", "DuneIIFormats", "DuneIIRenderer", "DuneIIContracts" ],
+            path: "Apps/scenariolab"
         ),
 
         // Tests (one per tested target; the DuneII prefix is dropped).
