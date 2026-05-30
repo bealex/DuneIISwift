@@ -36,6 +36,15 @@ move-around-building. Each = a `.INI` (terrain seed + unit placements) + a `Comm
 
 Beyond these golden-parity kinds, the harness (`DuneIIScenarios.ScenarioKind`) also carries **demo / visual** scenarios that exercise later subsystems without an oracle pin: `deviate`, `attackStructure` (golden-pinned), `turretDefense`, and the `tickStructure` economy trio `factoryProduce` / `repairBuilding` / `upgradeBuilding` (a factory builds → READY, a building self-repairs, a building upgrades). The economy ones set the player's no-silo credit allowance and suspend the structure's placement-animation script (`settle`) so the production state isn't clobbered — see `DuneIIScenarios/CLAUDE.md`.
 
+### Lab visual affordances (`scenariolab`)
+
+The `scenariolab` app adds two cues (a dead unit/structure otherwise just stops being drawn):
+
+- **Real damage/death/destruction visuals.** The **Explosion subsystem** (`DuneIIWorld` `Explosion.swift` + `GameState+Explosion.swift`, a faithful port of OpenDUNE `src/explosion.c`) drives the actual impact/death/building-destruction sprite animations, plus a smoke cloud over damaged-but-alive vehicles (the `.isSmoking` flag), and the **infantry walk cycle** (the `tickUnknown5` `spriteOffset` animation in `gameLoopUnit`). Unit death runs the real DIE branch (`ExplosionSingle`/`StartAnimation` → `Die` → `Unit_Remove`). `Map_MakeExplosion` starts explosions (RNG-free, golden-neutral); the per-tick `explosionTick` (which draws RNG) is **gated** — off for the goldens (matching the oracle harness, which never ticks explosions), on for the lab via `Simulation(tickExplosions:)`. The renderer reuses the already-loaded UNITS SHPs. See `Documentation/Algorithms/Explosion.md`.
+- **Finished marker + grace.** `ScenarioWorld.outcome()` (`ScenarioOutcome.swift`) declares each kind's natural endpoint (a unit arrives, a building is destroyed/built/repaired/upgraded, a combatant dies, a unit is deviated). When it first reports `.finished(label)` the scene shows a "✓ <label>" banner, then keeps ticking a **5-second grace period** (`ScenarioScene.finishGraceSeconds`) so death/destruction explosions + animations play out, then auto-pauses. A lab affordance, **not** a simulation victory/game-over model.
+
+The walk animation is golden-verified: the **`trooper`** scenario (a foot trooper walking 400 ticks) is a full per-tick match vs the oracle, and the unit dump now includes **`spriteOffset`** (so every scenario verifies the animation frame; 0 for non-foot units).
+
 ## Pieces (dependency order)
 
 1. **Bootstrap `.INI`** + our `loadScenario` of it (terrain via `createLandscape`, units placed). ← first.

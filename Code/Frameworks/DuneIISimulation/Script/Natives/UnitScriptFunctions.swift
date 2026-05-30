@@ -292,6 +292,19 @@ public struct UnitScriptFunctions: Sendable {
         return 0
     }
 
+    /// `Script_Unit_StartAnimation` (op 0x04, `script/unit.c:1475`): start the unit's death/corpse
+    /// animation at its tile. We perform the deterministic state effects (stop any animation on the tile +
+    /// claim the tile's `houseID`) and return 1 so the DIE branch proceeds to `Unit_Die` — but the corpse
+    /// itself (`Animation_Start(g_table_animation_unitScript1/2[…])`) is a SEAM: it is an **overlay**
+    /// animation, which the headless viewer doesn't render (overlay tiles are a render seam), and ticking
+    /// it would draw RNG the oracle's scenario harness never ticks. The unit is removed by the next op.
+    public func startAnimation(slot: Int, in state: inout GameState) -> UInt16 {
+        let packed = state.units[slot].o.position.centered.packed
+        state.animationStopByTile(packed)
+        state.map[Int(packed)].houseID = state.unitHouseID(state.units[slot])
+        return 1
+    }
+
     /// `Script_Unit_Unknown2552` (`script/unit.c:1545`): if the unit is linked (via `variables[4]`) to a
     /// carryall, unlink it and clear that carryall's move target. Returns 0.
     public func unknown2552(slot: Int, in state: inout GameState) -> UInt16 {

@@ -10,8 +10,13 @@ public struct ScenarioWorld {
     public let runner: UnitScriptRunner
     public let actions: UnitActions
     public let unitSlots: [Int]      // [unit1] for moving / moveAroundBuilding, else [unit1, unit2]
+    public let structureSlots: [Int] // the scenario's placed structure pool slots (the completion target, if any)
+    public let kind: ScenarioKind    // so the lab can decide when the scenario is "done" (see `outcome()`)
     public let terrain: ScenarioTerrain
     public let structureScript: ScriptInfo   // BUILD.EMC — so structures run their scripts in the runner
+    /// Advance the explosion animations each tick (impacts/deaths/destruction). Off by default so the
+    /// golden runner matches the oracle (which doesn't tick explosions); `scenariolab` turns it on.
+    public var tickExplosions = false
 }
 
 /// Lays out a `GameState` for a `TestScenario`: terrain + two houses + the units (positions + initial
@@ -57,6 +62,7 @@ public struct ScenarioBuilder {
         let actions = UnitActions()
         let runner = UnitScriptRunner(scriptInfo: unitScript)
         var slots: [Int] = []
+        var structSlots: [Int] = []
 
         switch scenario.kind {
             case .moving:
@@ -84,7 +90,7 @@ public struct ScenarioBuilder {
                 slots = [u1, u2]
 
             case .moveAroundBuilding:
-                placeStructure(&state, .windtrap, player, terrain, lx: 3, ly: 3)
+                structSlots = [placeStructure(&state, .windtrap, player, terrain, lx: 3, ly: 3)]
                 let u1 = place(&state, scenario.unit1, player, terrain, lx: 0, ly: 0)
                 move(&state, u1, toLocal: (7, 7), terrain, actions)
                 slots = [u1]
@@ -104,6 +110,7 @@ public struct ScenarioBuilder {
                 // it to 0 HP (a tank only fires once at a structure), so the demo actually shows the BUILD.EMC
                 // death branch (Explode → Delay → Destroy → Structure_Remove) run in GameLoop_Structure.
                 let s = placeStructure(&state, .windtrap, enemy, terrain, lx: 4, ly: 3)
+                structSlots = [s]
                 state.structures[s].o.hitpoints = 20
                 let u1 = place(&state, scenario.unit1, player, terrain, lx: 2, ly: 3)
                 actions.setAction(slot: u1, action: UInt8(ActionType.attack.rawValue), scriptInfo: unitScript, in: &state)
@@ -113,7 +120,7 @@ public struct ScenarioBuilder {
             case .turretDefense:
                 // A player gun-turret defends on its own: its BUILD.EMC script runs FindTargetUnit → aim →
                 // Fire at the approaching (seen) enemy unit, which it damages.
-                placeStructure(&state, .turret, player, terrain, lx: 3, ly: 3)
+                structSlots = [placeStructure(&state, .turret, player, terrain, lx: 3, ly: 3)]
                 let u2 = place(&state, scenario.unit2, enemy, terrain, lx: 7, ly: 3)
                 state.units[u2].o.seenByHouses |= UInt8(1 << player.rawValue)   // the turret can see it
                 move(&state, u2, toLocal: (4, 3), terrain, actions)             // it advances toward the base
@@ -124,6 +131,7 @@ public struct ScenarioBuilder {
                 // the build countdown each structure-tick, completing to READY. A queued (hidden) trike is
                 // linked so the build is faithful.
                 let f = placeStructure(&state, .lightVehicle, player, terrain, lx: 3, ly: 3)
+                structSlots = [f]
                 settle(&state, f)
                 state.houses[Int(player.rawValue)].credits = 4000
                 let built = state.unitAllocate(index: 0, type: UInt8(UnitType.trike.rawValue),
@@ -140,6 +148,7 @@ public struct ScenarioBuilder {
                 // A damaged windtrap self-repairs: `tickStructure`'s repair branch heals +5 HP each
                 // structure-tick (billing the 1.07 repair cost) until it reaches full HP.
                 let w = placeStructure(&state, .windtrap, player, terrain, lx: 3, ly: 3)
+                structSlots = [w]
                 settle(&state, w)
                 state.structures[w].o.hitpoints = StructureInfo[.windtrap].o.hitpoints / 2
                 state.structures[w].o.flags.insert(.repairing)
@@ -150,6 +159,7 @@ public struct ScenarioBuilder {
                 // A barracks upgrades: `tickStructure`'s upgrade branch pays `buildCredits/40` per
                 // structure-tick and steps `upgradeTimeLeft` to 0, then bumps `upgradeLevel`.
                 let b = placeStructure(&state, .barracks, player, terrain, lx: 3, ly: 3)
+                structSlots = [b]
                 settle(&state, b)
                 state.structures[b].o.flags.insert(.upgrading)
                 state.structures[b].upgradeTimeLeft = 30                        // ~6 structure-ticks → level up
@@ -158,6 +168,7 @@ public struct ScenarioBuilder {
         }
 
         return ScenarioWorld(state: state, runner: runner, actions: actions, unitSlots: slots,
+                             structureSlots: structSlots, kind: scenario.kind,
                              terrain: terrain, structureScript: structureScript)
     }
 

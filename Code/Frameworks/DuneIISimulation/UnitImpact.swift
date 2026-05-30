@@ -163,6 +163,37 @@ extension UnitMovement {
             state.structureDamage(sSlot, damage: hitpoints, range: 0)
         }
         // SEAM: wall destruction (Map_UpdateWall) when the impact tile is a wall.
-        // SEAM: Explosion_Start(type, position) — the explosion animation (render).
+
+        // The explosion animation (`Explosion_Start`, map.c:512). RNG-free, so this stays golden-neutral
+        // and matches the oracle (which also starts — but, like us, doesn't tick — explosions in the
+        // scenario harness). The per-tick animation is gated to the lab (`Simulation.tickExplosions`).
+        state.explosionStart(type: Int(type), position: position)
+    }
+
+    /// `Script_Unit_ExplosionSingle` (op 0x0E, `script/unit.c:533`): one explosion at the unit's position,
+    /// of the script-supplied `type`, carrying the unit's full HP as blast damage, attributed to the unit.
+    /// The first half of a ground unit's DIE branch (`ExplosionSingle(type)` → `Die`).
+    public func explosionSingle(slot: Int, type: UInt16, in state: inout GameState) -> UInt16 {
+        guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
+        mapMakeExplosion(type: type, position: state.units[slot].o.position,
+                         hitpoints: UnitInfo[ut].o.hitpoints,
+                         origin: state.indexEncode(state.units[slot].o.index, type: .unit), in: &state)
+        return 0
+    }
+
+    /// `Script_Unit_Die` (op 0x0F, `script/unit.c:490`): remove the unit; a saboteur leaves a big blast.
+    /// `Unit_Remove` resets the running script in OpenDUNE (so `Script_Run` then stops), which we mirror by
+    /// resetting the passed-in `engine` — otherwise the runner keeps executing the freed unit's script this
+    /// tick. The `g_scenario` kill/score bookkeeping is a SEAM (not modelled headlessly).
+    public func die(slot: Int, engine: inout ScriptEngine, in state: inout GameState) -> UInt16 {
+        let position = state.units[slot].o.position
+        let isSaboteur = state.units[slot].o.type == UInt8(UnitType.saboteur.rawValue)
+        state.unitRemove(slot)   // includes Unit_UntargetMe + Unit_HouseUnitCount_Remove + Script_Reset
+        engine.reset()
+        if isSaboteur {
+            mapMakeExplosion(type: UInt16(ExplosionType.saboteurDeath.rawValue), position: position,
+                             hitpoints: 300, origin: 0, in: &state)
+        }
+        return 0
     }
 }

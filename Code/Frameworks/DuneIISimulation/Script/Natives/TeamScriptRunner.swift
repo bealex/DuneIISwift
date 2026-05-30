@@ -6,9 +6,10 @@ import DuneIIWorld
 /// native table + program (the bridged `TEAM.EMC`). `GameLoop_Team` runs exactly one `Script_Run` per team
 /// per loop fire (no 3-opcode batch), so `runOne` runs a single opcode and writes the engine back.
 ///
-/// Not-yet-ported "brain" natives (recruit / target / order) return `nil` from `dispatch`, halting the
-/// script cleanly (the VM nulls the PC) — and, per the 1.07 loop quirk, that also aborts the remaining
-/// teams this fire. A team runs as far as the natives it reaches are implemented, then freezes.
+/// The full `g_scriptFunctionsTeam` table is now live (getters + recruit/target + the order-issuing
+/// natives + the `Load`/`Load2` script switch). The order natives (`0x05`/`0x07`) need the unit-action
+/// layer, so they clean-halt (return `nil`) when the runner has no `unit` — and per the 1.07 loop quirk a
+/// clean-halt aborts the remaining teams this fire.
 public struct TeamScriptRunner: Sendable {
     public let interpreter: any ScriptInterpreter
     public let scriptInfo: ScriptInfo
@@ -38,11 +39,22 @@ public struct TeamScriptRunner: Sendable {
             case 0x06:
                 guard let targets = unit?.targets else { return nil }
                 return team.findBestTarget(slot: slot, targets: targets, in: &state)
+            case 0x05:
+                guard let u = unit else { return nil }   // needs the unit-action layer
+                return team.moveOrGuardMembers(slot: slot, distance: engine.peek(1), unitScript: u.scriptInfo,
+                                               actions: u.actions, unitFuncs: u.unit, in: &state)
+            case 0x07:
+                guard let u = unit else { return nil }
+                return team.issueAttackOrders(slot: slot, unitScript: u.scriptInfo, actions: u.actions,
+                                              unitFuncs: u.unit, in: &state)
+            case 0x08: return team.load(slot: slot, type: engine.peek(1), interpreter: interpreter,
+                                        scriptInfo: scriptInfo, engine: &engine, in: &state)
+            case 0x09: return team.load2(slot: slot, interpreter: interpreter, scriptInfo: scriptInfo,
+                                         engine: &engine, in: &state)
             case 0x0A: return general.delayRandom(maxTicks: engine.peek(1), in: &state)
             case 0x0C: return team.getVariable6(slot: slot, in: state)
             case 0x0D: return team.getTarget(slot: slot, in: state)
             case 0x0E: return general.noOperation()
-            // 0x05 Unknown0543, 0x07 Unknown0788 (issue orders), 0x08 Load, 0x09 Load2 — follow-up slice (SEAM).
             default:   return nil
         }
     }

@@ -59,7 +59,9 @@ struct ScenarioGoldenTests {
     }
     struct UnitState: Decodable, Equatable {
         let index: UInt16; let type: UInt8; let houseID: UInt8; let packed: UInt16; let orient: Int16
-        let hp: UInt16; let actionID: UInt8; let targetMove: UInt16; let targetAttack: UInt16; let alive: Int
+        let hp: UInt16; let actionID: UInt8; let targetMove: UInt16; let targetAttack: UInt16
+        let spriteOffset: Int16   // the walk/animation frame (tickUnknown5) — verifies infantry animation
+        let alive: Int
     }
     /// The dynamic structure fields (identity + the ones combat/scripts change). The oracle dumps more
     /// (position/upgrades); `Decodable` ignores those.
@@ -88,6 +90,7 @@ struct ScenarioGoldenTests {
         Spec(name: "attack-close", ini: "attack-close.ini", attack: true,  cmdUnit: 22, tile: 1041, compared: 0),  // FULL 400-tick combat match: fire→bullet→impact damage→retaliation, bit-identical to the oracle
         Spec(name: "attack-rocket", ini: "attack-rocket.ini", attack: true, cmdUnit: 22, tile: 1045, compared: 69),  // Launcher duel → notAccurate rocket: spawn + homing match; gates on a 1-unit sub-tile scatter residual (see note)
         Spec(name: "attack-structure", ini: "attack-structure.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0),  // tank attacks an Ordos windtrap: full 400-tick match (structures + units), inc. the bullet-impact Structure_Damage (200→175). Found the structure-corner-position bug (see note).
+        Spec(name: "trooper",     ini: "trooper.ini",     attack: false, cmdUnit: 22, tile: 1040, compared: 0),  // a foot trooper walks: verifies the walk animation (spriteOffset, tickUnknown5) + movement, full match
         Spec(name: "economy", ini: "economy.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false),  // HOUSE golden: an Ordos windtrap+silo base — full 60-tick match of the house aggregate (credits 2000→clamp 1000→power-maint 999, power 100/5, storage 1000) + structures. Validates House_CalculatePowerAndCredit + the credit clamp + power maintenance.
     ]
 
@@ -100,7 +103,8 @@ struct ScenarioGoldenTests {
             return UnitState(index: u.o.index, type: u.o.type, houseID: u.o.houseID,
                              packed: u.o.position.packed, orient: Int16(u.orientation[0].current),
                              hp: u.o.hitpoints, actionID: u.actionID, targetMove: u.targetMove,
-                             targetAttack: u.targetAttack, alive: u.o.flags.contains(.used) ? 1 : 0)
+                             targetAttack: u.targetAttack, spriteOffset: Int16(u.spriteOffset),
+                             alive: u.o.flags.contains(.used) ? 1 : 0)
         }
         .sorted { $0.index < $1.index }
     }

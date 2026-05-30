@@ -131,6 +131,14 @@ public struct GameState: Sendable {
     /// `s_animationTimer`: the next tick the animation pass needs to run.
     public var animationTimer: UInt32 = 0
 
+    /// Active explosions (`g_explosions`, `EXPLOSION_MAX` = 32 slots) — the short visual sprite
+    /// animations for impacts/deaths/destruction. Started by `Map_MakeExplosion`; ticked (gated) by
+    /// `explosionTick()`. See `Documentation/Algorithms/Explosion.md`.
+    public var explosions = [Explosion](repeating: Explosion(), count: 32)
+
+    /// `s_explosionTimer`: the next tick the explosion pass needs to run.
+    public var explosionTimer: UInt32 = 0
+
     /// The seed-generated base ground tile of each cell (`g_mapTileID`), so an animation `STOP` can
     /// restore it. Snapshotted by `createLandscape`.
     public var mapBaseTileID = [UInt16](repeating: 0, count: 64 * 64)

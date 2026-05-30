@@ -34,17 +34,25 @@ public struct Simulation: Sendable {
     /// need no unit layer; the brain natives that will reach into units take `&state` directly.
     public var teamScript: TeamScriptRunner?
 
+    /// Whether to advance the explosion animations each tick (`Explosion_Tick`). Default `false`: the
+    /// deterministic golden/oracle-matched path does **not** tick explosions (the oracle scenario harness
+    /// doesn't either, and ticking draws RNG — see `Documentation/Algorithms/Explosion.md`). The lab
+    /// (`scenariolab`) sets it `true` so impacts/deaths/destruction animate.
+    public let tickExplosions: Bool
+
     public init(
         state: GameState,
         scriptInfo: ScriptInfo? = nil,
         structureScriptInfo: ScriptInfo? = nil,
         teamScriptInfo: ScriptInfo? = nil,
         structureTracer: StructureScriptTracer? = nil,
+        tickExplosions: Bool = false,
         unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
         mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
         housePrimitives: any HousePrimitives = DefaultHousePrimitives()
     ) {
         self.state = state
+        self.tickExplosions = tickExplosions
         self.unitPrimitives = unitPrimitives
         self.mapPrimitives = mapPrimitives
         self.housePrimitives = housePrimitives
@@ -70,13 +78,14 @@ public struct Simulation: Sendable {
         scriptInfo: ScriptInfo? = nil,
         structureScriptInfo: ScriptInfo? = nil,
         teamScriptInfo: ScriptInfo? = nil,
+        tickExplosions: Bool = false,
         unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
         mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
         housePrimitives: any HousePrimitives = DefaultHousePrimitives()
     ) {
         self.init(state: GameState(random256Seed: random256Seed, randomLCGSeed: randomLCGSeed),
                   scriptInfo: scriptInfo, structureScriptInfo: structureScriptInfo,
-                  teamScriptInfo: teamScriptInfo,
+                  teamScriptInfo: teamScriptInfo, tickExplosions: tickExplosions,
                   unitPrimitives: unitPrimitives, mapPrimitives: mapPrimitives,
                   housePrimitives: housePrimitives)
     }
@@ -93,6 +102,7 @@ public struct Simulation: Sendable {
         gameLoopStructure()
         gameLoopHouse()
         state.animationTick()   // structure animations (mutates the map ground tiles over time)
+        if tickExplosions { state.explosionTick() }   // explosion sprite animations (lab only — draws RNG)
     }
 
     /// `Tools_AdjustToGameSpeed` with this run's `gameSpeed`.
@@ -190,7 +200,43 @@ extension Simulation {
                 }
             }
 
-            // Sprite animation timers (tickUnknown5) — render-only. (SEAM)
+            // Sprite animation (tickUnknown5, unit.c:239): advance `spriteOffset` for a moving foot unit
+            // (the walk cycle), a smoking unit (smoke puff, cleared past frame 32), the ornithopter rotor,
+            // and a harvesting harvester — throttled by `timer` (`animationSpeed/5`). RNG-free; the
+            // `Unit_UpdateMap(2)` render redraw is a SEAM.
+            if flags.contains(.unknown5) {
+                if state.units[slot].timer == 0 {
+                    let isSmoking = state.units[slot].o.flags.contains(.isSmoking)
+                    if (ui.movementType == .foot && state.units[slot].speed != 0) || isSmoking {
+                        if state.units[slot].spriteOffset >= 0 {
+                            state.units[slot].spriteOffset = (state.units[slot].spriteOffset & 0x3F) &+ 1
+                            state.units[slot].timer = ui.animationSpeed / 5
+                            if isSmoking {
+                                state.units[slot].timer = 3
+                                if state.units[slot].spriteOffset > 32 {
+                                    state.units[slot].o.flags.remove(.isSmoking)
+                                    state.units[slot].spriteOffset = 0
+                                }
+                            }
+                        }
+                    }
+                    if ut == .ornithopter && state.units[slot].o.flags.contains(.allocated)
+                        && state.units[slot].spriteOffset >= 0 {
+                        state.units[slot].spriteOffset = (state.units[slot].spriteOffset & 0x3F) &+ 1
+                        state.units[slot].timer = 1
+                    }
+                    if ut == .harvester {
+                        if state.units[slot].actionID == UInt8(ActionType.harvest.rawValue) || isSmoking {
+                            state.units[slot].spriteOffset = (state.units[slot].spriteOffset & 0x3F) &+ 1
+                            state.units[slot].timer = 4
+                        } else if state.units[slot].spriteOffset != 0 {
+                            state.units[slot].spriteOffset = 0
+                        }
+                    }
+                } else {
+                    state.units[slot].timer &-= 1
+                }
+            }
 
             // Script (tickScript): run up to SCRIPT_UNIT_OPCODES_PER_TICK + 2 opcodes.
             if flags.contains(.script), let runner {

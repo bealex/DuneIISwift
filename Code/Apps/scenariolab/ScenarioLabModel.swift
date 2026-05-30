@@ -32,6 +32,8 @@ final class ScenarioLabModel {
     init(assets: ScenarioAssets) {
         self.assets = assets
         scene.configure()
+        // The scene auto-pauses at the scenario's endpoint — reflect that in the toolbar's play/pause state.
+        scene.onComplete = { [weak self] in self?.running = false }
         rebuild()
     }
 
@@ -48,6 +50,8 @@ final class ScenarioLabModel {
         guard let builder = assets.builder else { return }
         running = false
         let scenario = TestScenario(kind: kind, unit1: unit1, unit2: unit2, terrainSeed: seed)
-        scene.load(world: builder.build(scenario), assets: assets, running: false)
+        var world = builder.build(scenario)
+        world.tickExplosions = true   // the lab animates impacts/deaths/destruction (not golden-pinned)
+        scene.load(world: world, assets: assets, running: false)
     }
 }

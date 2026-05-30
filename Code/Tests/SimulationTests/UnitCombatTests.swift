@@ -53,6 +53,37 @@ struct UnitCombatTests {
         #expect(s.units[slot].o.flags.contains(.allocated))    // not the player's → left allocated
     }
 
+    // MARK: - The DIE-branch natives (ExplosionSingle 0x0E → Die 0x0F)
+
+    @Test("Script_Unit_Die removes the unit and stops its running script")
+    func dieRemoves() {
+        var (s, slot, combat) = setup(.tank, hp: 1)
+        var engine = s.units[slot].o.script
+        engine.scriptPC = 5                                        // a running script
+        _ = combat.movement.die(slot: slot, engine: &engine, in: &s)
+        #expect(!s.units[slot].o.flags.contains(.used))           // Unit_Remove freed the slot
+        #expect(engine.scriptPC == ScriptEngine.scriptNull)       // and the running script stopped
+    }
+
+    @Test("Script_Unit_Die: a saboteur leaves a death explosion at its position")
+    func saboteurDieExplodes() {
+        var (s, slot, combat) = setup(.saboteur, hp: 1)
+        let pos = s.units[slot].o.position
+        var engine = s.units[slot].o.script
+        _ = combat.movement.die(slot: slot, engine: &engine, in: &s)
+        #expect(!s.units[slot].o.flags.contains(.used))
+        #expect(s.map[Int(pos.packed)].hasExplosion)              // EXPLOSION_SABOTEUR_DEATH started
+    }
+
+    @Test("Script_Unit_ExplosionSingle starts an explosion at the unit")
+    func explosionSingleStarts() {
+        var (s, slot, combat) = setup(.tank, hp: 200)
+        let pos = s.units[slot].o.position
+        _ = combat.movement.explosionSingle(slot: slot, type: UInt16(ExplosionType.tankExplode.rawValue), in: &s)
+        #expect(s.map[Int(pos.packed)].hasExplosion)
+        #expect(s.explosions.contains { $0.active })
+    }
+
     @Test("dropping a tracked hull below half HP starts it smoking")
     func smokeBelowHalf() {
         let full = UnitInfo[.tank].o.hitpoints

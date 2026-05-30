@@ -26,7 +26,8 @@ public extension ScenarioWorld {
     /// fires, a destroyed building runs its death branch then is removed). Combat is fully ported now, so an
     /// attack scenario fires + impacts here rather than halting.
     mutating func tick() {
-        var sim = Simulation(state: state, scriptInfo: runner.scriptInfo, structureScriptInfo: structureScript)
+        var sim = Simulation(state: state, scriptInfo: runner.scriptInfo, structureScriptInfo: structureScript,
+                             tickExplosions: tickExplosions)
         sim.tick()
         state = sim.state
     }

@@ -69,6 +69,47 @@ enum ScenarioImageBuilder {
         return result
     }
 
+    /// Transient effect sprites layered over the units: active explosion frames (the sim drives the
+    /// `spriteID` via `explosionTick`, so we just draw the current frame) + a cycling smoke cloud over
+    /// each damaged-but-alive (`.isSmoking`) unit. All sprite ids fall in the already-loaded UNITS SHPs
+    /// (`globalSprite`). Smoke cycling is a lab approximation of the runtime draw.
+    static func effectSprites(_ world: ScenarioWorld, _ assets: ScenarioAssets) -> [UnitSprite] {
+        let originPxX = world.terrain.originX * tilePx
+        let originPxY = world.terrain.originY * tilePx
+        var result: [UnitSprite] = []
+
+        // Smoke over damaged vehicles, drawn 14px above the unit centre (OpenDUNE viewport.c:615): the
+        // frame is `180 + (spriteOffset & 3)`, with 183 folded back to 181 (frames 180/181/182/181).
+        for u in world.state.units where u.o.flags.contains(.used) && u.o.flags.contains(.isSmoking) {
+            var frame = 180 + (Int(u.spriteOffset) & 3)
+            if frame == 183 { frame = 181 }
+            let cx = Int(u.o.position.x) * tilePx / 256 - originPxX
+            let cy = Int(u.o.position.y) * tilePx / 256 - originPxY
+            if let image = spriteImage(frame, assets) {
+                result.append(UnitSprite(image: image, centerX: cx, centerY: cy - 14, z: 3, flipped: false))
+            }
+        }
+
+        // Active explosions (impacts / unit deaths / building destruction).
+        for explosion in world.state.explosions where explosion.active {
+            let cx = Int(explosion.position.x) * tilePx / 256 - originPxX
+            let cy = Int(explosion.position.y) * tilePx / 256 - originPxY
+            if let image = spriteImage(Int(explosion.spriteID), assets) {
+                result.append(UnitSprite(image: image, centerX: cx, centerY: cy, z: 4, flipped: false))
+            }
+        }
+        return result
+    }
+
+    /// Render one global sprite index (via `globalSprite`) as a house-neutral indexed image.
+    private static func spriteImage(_ index: Int, _ assets: ScenarioAssets) -> CGImage? {
+        guard let (shp, frame) = globalSprite(index),
+              let frames = assets.shp(shp), frame >= 0, frame < frames.frames.count else { return nil }
+        let f = frames.frames[frame]
+        return IndexedImage.cgImage(indices: f.pixels, width: f.width, height: f.height,
+                                    palette: assets.palette, transparentIndex: 0)
+    }
+
     private static func layerImage(_ layer: UnitSpriteLayer, _ assets: ScenarioAssets,
                                    _ house: DuneIIRenderer.House) -> CGImage? {
         guard let (shp, frame) = globalSprite(layer.spriteIndex),

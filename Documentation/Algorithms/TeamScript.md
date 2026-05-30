@@ -45,18 +45,18 @@ The cursor `teamLoopTick` is mutable sim state → it lives in `GameState` (the 
 | 0x02 | `Team_GetMembers` → `members` | **live** |
 | 0x03 | `Team_AddClosestUnit` | **live** (recruit nearest eligible unit) |
 | 0x04 | `Team_GetAverageDistance` | **live** (centroid + mean distance) |
-| 0x05 | `Team_Unknown0543` | SEAM (move/guard members by distance) |
+| 0x05 | `Team_Unknown0543` | **live** (move strayed members back / Guard) |
 | 0x06 | `Team_FindBestTarget` | **live** (member's best target → team target) |
-| 0x07 | `Team_Unknown0788` | SEAM (issue attack orders to members) |
-| 0x08 | `Team_Load` | SEAM (switch script) |
-| 0x09 | `Team_Load2` | SEAM (restore `actionStart` script) |
+| 0x07 | `Team_Unknown0788` | **live** (order members to attack the team target) |
+| 0x08 | `Team_Load` | **live** (switch action script) |
+| 0x09 | `Team_Load2` | **live** (restore `actionStart` script) |
 | 0x0A | `General_DelayRandom` | **live** (shared) |
 | 0x0B | `General_DisplayModalMessage` | no-op (GUI SEAM) |
 | 0x0C | `Team_GetVariable6` → `minMembers` | **live** |
 | 0x0D | `Team_GetTarget` → `target` | **live** |
 | 0x0E | `General_NoOperation` | **live** (shared) |
 
-The getters (`GetMembers`/`GetVariable6`/`GetTarget`) read the running team's fields (`g_scriptCurrentTeam` → `state.teams[slot]`); the **recruit + target** natives (`AddClosestUnit`/`GetAverageDistance`/`FindBestTarget`) act on the team's membership + target. All are plain explicit-param functions in `TeamScriptFunctions`. `FindBestTarget` reuses the unit runner's `TargetFinder` (so `TeamScriptRunner` carries the optional `UnitScriptRunner`); the new World primitives it leans on are `Unit_AddToTeam` and `Tile_GetTileInDirectionOf` (a random valid tile toward the target). The **order-issuing** natives (`Unknown0543`/`Unknown0788` — `Unit_SetAction`/`SetDestination`/`SetTarget` on members) and `Load`/`Load2` arrive in the next slice; until then a team script clean-halts the first time it reaches one.
+The getters (`GetMembers`/`GetVariable6`/`GetTarget`) read the running team's fields (`g_scriptCurrentTeam` → `state.teams[slot]`); the **recruit + target** natives (`AddClosestUnit`/`GetAverageDistance`/`FindBestTarget`) act on the team's membership + target. All are plain explicit-param functions in `TeamScriptFunctions`. `FindBestTarget` reuses the unit runner's `TargetFinder` (so `TeamScriptRunner` carries the optional `UnitScriptRunner`); the new World primitives it leans on are `Unit_AddToTeam` and `Tile_GetTileInDirectionOf` (a random valid tile toward the target). The **order-issuing** natives `Unknown0543` (move strayed members back to a random tile near the centroid, else Guard) and `Unknown0788` (set members to Attack the team target at a random firing position around it) take the unit-action layer — `UnitActions.setAction` + `UnitScriptFunctions.unitSetDestination`/`unitSetTarget` — explicitly (so they clean-halt only when `TeamScriptRunner` has no `UnitScriptRunner`). `Load`/`Load2` switch the team's action script by `interpreter.load`-ing the **passed-in `engine`** (the live VM copy the runner writes back), not `state.teams[slot].script` — otherwise the runner's post-run write-back clobbers the reload. The full `g_scriptFunctionsTeam` table is now live; **team *creation*** (the scenario `[TEAMS]` section + `Team_Create`/`Team_Add`) is the next slice so real teams exist to run these.
 
 ## Testing
 

@@ -113,4 +113,88 @@ struct TeamScriptFunctionsTests {
         let team = makeTeam(&s, at: Tile32.packXY(x: 10, y: 10))
         #expect(fns.findBestTarget(slot: team, targets: TargetFinder(), in: &s) == 0)
     }
+
+    // MARK: - Order-issuing natives (need the unit-action layer)
+
+    private let actions = UnitActions()
+    private let unitFuncs = UnitScriptFunctions(unitPrimitives: DefaultUnitPrimitives())
+    /// A synthetic unit script: every unit type's entry points at a trivial program (we only assert the
+    /// action/target changes, not the loaded member scripts).
+    private let unitScript = ScriptInfo(program: [0], offsets: [UInt16](repeating: 0, count: 64))
+
+    @Test("moveOrGuardMembers: a strayed member is sent to Move, an in-place one Guards")
+    func moveOrGuard() {
+        var s = newState()
+        let team = makeTeam(&s, at: Tile32.packXY(x: 10, y: 10))
+        let strayed = addUnit(&s, .trike, at: Tile32.packXY(x: 20, y: 10)); s.units[strayed].team = UInt8(team) + 1
+        let inPlace = addUnit(&s, .trike, at: Tile32.packXY(x: 11, y: 10)); s.units[inPlace].team = UInt8(team) + 1
+        s.teams[team].members = 2
+
+        let moved = fns.moveOrGuardMembers(slot: team, distance: 2, unitScript: unitScript,
+                                           actions: actions, unitFuncs: unitFuncs, in: &s)
+        #expect(moved == 1)
+        #expect(s.units[strayed].actionID == UInt8(ActionType.move.rawValue))
+        #expect(s.units[strayed].targetMove != 0)                                   // a destination was set
+        #expect(s.units[inPlace].actionID == UInt8(ActionType.guard_.rawValue))
+    }
+
+    @Test("issueAttackOrders: each member is set to Attack the team target with a destination")
+    func issueAttack() {
+        var s = newState()
+        let team = makeTeam(&s, house: 0, at: Tile32.packXY(x: 10, y: 10))
+        let member = addUnit(&s, .trike, house: 0, at: Tile32.packXY(x: 10, y: 10))
+        s.units[member].team = UInt8(team) + 1; s.teams[team].members = 1
+        let enemy = addUnit(&s, .tank, house: 2, at: Tile32.packXY(x: 20, y: 10))
+        let target = s.indexEncode(s.units[enemy].o.index, type: .unit)
+        s.teams[team].target = target
+
+        let r = fns.issueAttackOrders(slot: team, unitScript: unitScript, actions: actions,
+                                      unitFuncs: unitFuncs, in: &s)
+        #expect(r == 0)
+        #expect(s.units[member].actionID == UInt8(ActionType.attack.rawValue))
+        #expect(s.units[member].targetAttack == target)
+        #expect(s.units[member].targetMove != 0)                                    // a firing position was set
+    }
+
+    @Test("issueAttackOrders is a no-op without a target")
+    func issueAttackNoTarget() {
+        var s = newState()
+        let team = makeTeam(&s, house: 0, at: Tile32.packXY(x: 10, y: 10))
+        let member = addUnit(&s, .trike, house: 0, at: Tile32.packXY(x: 10, y: 10))
+        s.units[member].team = UInt8(team) + 1; s.teams[team].members = 1
+
+        #expect(fns.issueAttackOrders(slot: team, unitScript: unitScript, actions: actions,
+                                      unitFuncs: unitFuncs, in: &s) == 0)
+        #expect(s.units[member].targetAttack == 0)                                  // untouched
+    }
+
+    @Test("load switches the team's action + reloads the script engine; same action is a no-op")
+    func loadSwitches() {
+        var s = newState()
+        let team = makeTeam(&s, at: Tile32.packXY(x: 10, y: 10))
+        let teamScript = ScriptInfo(program: [UInt16](repeating: 0, count: 40), offsets: [10, 20, 30])
+        let interp = DefaultScriptInterpreter()
+        var engine = s.teams[team].script
+
+        _ = fns.load(slot: team, type: 1, interpreter: interp, scriptInfo: teamScript, engine: &engine, in: &s)
+        #expect(s.teams[team].action == 1)
+        #expect(engine.scriptPC == 20)                                              // offsets[1]
+
+        engine.scriptPC = 99
+        _ = fns.load(slot: team, type: 1, interpreter: interp, scriptInfo: teamScript, engine: &engine, in: &s)
+        #expect(engine.scriptPC == 99)                                              // already action 1 → no reload
+    }
+
+    @Test("load2 reloads the team's starting action script")
+    func load2Reloads() {
+        var s = newState()
+        let team = makeTeam(&s, at: Tile32.packXY(x: 10, y: 10))
+        s.teams[team].actionStart = 2
+        let teamScript = ScriptInfo(program: [UInt16](repeating: 0, count: 40), offsets: [10, 20, 30])
+        var engine = s.teams[team].script
+
+        _ = fns.load2(slot: team, interpreter: DefaultScriptInterpreter(), scriptInfo: teamScript, engine: &engine, in: &s)
+        #expect(s.teams[team].action == 2)
+        #expect(engine.scriptPC == 30)                                              // offsets[2]
+    }
 }
