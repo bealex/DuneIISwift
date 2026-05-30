@@ -81,4 +81,44 @@ struct UnitCombatTests {
         #expect(!died)                                            // still has HP
         #expect(s.units[slot].actionID == UInt8(ActionType.die.rawValue))
     }
+
+    // MARK: - Unit_Deviate
+
+    @Test("deviate at full probability mind-controls the unit and clears its targets")
+    func deviateSucceeds() {
+        var (s, slot, combat) = setup(.tank, hp: 200, house: 0, player: 0)
+        s.units[slot].targetAttack = 1234
+        s.units[slot].targetMove = 5678
+        let ok = combat.deviate(slot: slot, probability: 256, houseID: 1, in: &s)   // 256 ⇒ draw always < it
+        #expect(ok)
+        #expect(s.units[slot].deviated == 120)
+        #expect(s.units[slot].deviatedHouse == 1)
+        #expect(s.units[slot].targetAttack == 0)
+        #expect(s.units[slot].targetMove == 0)
+    }
+
+    @Test("an already-deviated unit cannot be deviated again")
+    func deviateAlready() {
+        var (s, slot, combat) = setup(.tank, hp: 200)
+        s.units[slot].deviated = 50
+        let ok = combat.deviate(slot: slot, probability: 256, houseID: 1, in: &s)
+        #expect(!ok)
+        #expect(s.units[slot].deviated == 50)   // unchanged
+    }
+
+    @Test("an isNotDeviatable unit is immune")
+    func deviateImmune() {
+        var (s, slot, combat) = setup(.carryall, hp: 200)   // carryall: isNormalUnit + isNotDeviatable
+        let ok = combat.deviate(slot: slot, probability: 256, houseID: 1, in: &s)
+        #expect(!ok)
+        #expect(s.units[slot].deviated == 0)
+    }
+
+    @Test("a probability the RNG draw exceeds leaves the unit undeviated")
+    func deviateFails() {
+        var (s, slot, combat) = setup(.tank, hp: 200)   // seed 0x12345: first draw > 1
+        let ok = combat.deviate(slot: slot, probability: 1, houseID: 1, in: &s)
+        #expect(!ok)
+        #expect(s.units[slot].deviated == 0)
+    }
 }
