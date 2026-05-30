@@ -149,17 +149,48 @@ public struct UnitMovement: Sendable {
             }
         } else {
             if ut == .bullet {
-                // SEAM: bullet wall/structure impact → Map_MakeExplosion (#15) + Unit_Remove. Bullets do
-                // not appear in the ground-move tests; the explosion dep is Tier E/map.
+                // Mid-flight impact: a bullet that flies into a wall / building / mountain detonates there.
+                // (A bullet fired *from* a structure passes over its owner's own walls/buildings.)
+                var ltype = map.landscapeType(state.map[Int(newPosition.packed)], tileIDs: state.tileIDs)
+                if (ltype == .wall || ltype == .structure)
+                    && Tools.indexType(state.units[slot].originEncoded) == .structure
+                    && state.map[Int(newPosition.packed)].houseID == state.units[slot].o.houseID {
+                    ltype = .normalSand
+                }
+                if ltype == .wall || ltype == .structure || ltype == .entirelyMountain {
+                    state.units[slot].o.position = newPosition
+                    mapMakeExplosion(type: (ui.explosionType &+ UInt16(state.units[slot].o.hitpoints) / 10) & 3,
+                                     position: state.units[slot].o.position,
+                                     hitpoints: state.units[slot].o.hitpoints,
+                                     origin: state.units[slot].originEncoded, in: &state)
+                    state.unitRemove(slot)
+                    return true
+                }
             }
 
             ret = (state.units[slot].distanceToDestination < distance) || (distance < 16)
 
             if ret {
                 if ui.flags.contains(.isBullet) {
-                    // SEAM: bullet detonation variants (Map_MakeExplosion #15 / Map_DeviateArea) → Unit_Remove.
-                    state.unitRemove(slot)
-                    return true
+                    // Arrival detonation. A bullet/sonic always has fireDelay 0 here, so it explodes; a
+                    // still-armed missile (fireDelay != 0, not a turret missile) keeps flying (falls through).
+                    if state.units[slot].fireDelay == 0 || ut == .missileTurret {
+                        if ut == .missileHouse {
+                            // SEAM: death-hand 17-point blast (Tile_IsValid + the offset tables → mapMakeExplosion).
+                        } else if ui.explosionType != 0xFFFF {
+                            if ui.flags.contains(.impactOnSand) {
+                                // SEAM: EXPLOSION_SAND_BURST on empty sand (needs the EXPLOSION_* type enum).
+                            } else if ut == .missileDeviator {
+                                // SEAM: Map_DeviateArea (deviator gas) — Tier-E, not yet ported.
+                            } else {
+                                mapMakeExplosion(type: (ui.explosionType &+ UInt16(state.units[slot].o.hitpoints) / 20) & 3,
+                                                 position: newPosition, hitpoints: state.units[slot].o.hitpoints,
+                                                 origin: state.units[slot].originEncoded, in: &state)
+                            }
+                        }
+                        state.unitRemove(slot)
+                        return true
+                    }
                 } else if ui.flags.contains(.isGroundUnit) {
                     if currentDestination.x != 0 || currentDestination.y != 0 { newPosition = currentDestination }
                     state.units[slot].targetPreLast = state.units[slot].targetLast
@@ -167,10 +198,7 @@ public struct UnitMovement: Sendable {
                     state.units[slot].currentDestination = Tile32(x: 0, y: 0)
 
                     if state.units[slot].o.flags.contains(.degrades) && (state.random256.next() & 3) == 0 {
-                        // Unit_Damage(unit, 1, 0) — now ported (`UnitCombat.damage`); wiring it in here is
-                        // deferred to the combat-integration slice (with Fire/explosions) to avoid a
-                        // Move↔Combat cycle. `degrades` is set on no ground unit by default, and the RNG
-                        // draw above is faithful to OpenDUNE regardless.
+                        damage(slot: slot, damage: 1, range: 0, in: &state)   // Unit_Damage(unit, 1, 0)
                     }
 
                     if ut == .saboteur {

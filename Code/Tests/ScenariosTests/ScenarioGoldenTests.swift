@@ -17,10 +17,10 @@ import DuneIISimulation
 ///
 /// **`compared`** gates how many leading ticks are asserted (`0` = the whole trajectory). Movement
 /// scenarios match end-to-end (the movement cluster + the real `UNIT.EMC` MOVE script run under
-/// `GameLoop_Unit`); a combat scenario gates at its deterministic horizon — `attack-close` now matches
-/// the whole setup→aim→target-acquire prefix and diverges only at the first *shot* (the oracle spawns a
-/// projectile our `Script_Unit_Fire` SEAM doesn't yet create) — raise `compared` further as the projectile
-/// path lands. New scenarios slot in by adding an `.INI` + a line in the generator + a `Spec` below.
+/// `GameLoop_Unit`); `attack-close` now matches the **whole 400-tick combat exchange** end-to-end —
+/// setup → aim → acquire → fire → bullet spawn + flight → impact damage (`Map_MakeExplosion` → `Unit_Damage`)
+/// → retaliation — bit-identical to the oracle, with no RNG-spread divergence. New scenarios slot in by
+/// adding an `.INI` + a line in the generator + a `Spec` below.
 ///
 /// **`guard` gates at its deterministic prefix (6).** Once `Script_Unit_IdleAction` (native `0x31`) is
 /// ported, a sitting GUARD unit performs a *stochastic* idle twitch — a `Tools_RandomLCG_Range(0,10)` roll
@@ -54,7 +54,7 @@ struct ScenarioGoldenTests {
         Spec(name: "moving",       ini: "bootstrap.ini",    attack: false, cmdUnit: 22, tile: 2600, compared: 0),  // tank, full match
         Spec(name: "move-trike",   ini: "move-trike.ini",   attack: false, cmdUnit: 22, tile: 1040, compared: 0),  // trike off-viewport, full match
         Spec(name: "guard",        ini: "guard.ini",        attack: false, cmdUnit: 23, tile: 1100, compared: 6),  // guard sits + trike approaches; deterministic prefix (idle twitch is RNG ⇒ see note)
-        Spec(name: "attack-close", ini: "attack-close.ini", attack: true,  cmdUnit: 22, tile: 1041, compared: 67),  // setup→aim→fire→bullet-spawn→bullet-flight match; diverges at impact damage (tick 67 = Unit_Move bullet-impact SEAM)
+        Spec(name: "attack-close", ini: "attack-close.ini", attack: true,  cmdUnit: 22, tile: 1041, compared: 0),  // FULL 400-tick combat match: fire→bullet→impact damage→retaliation, bit-identical to the oracle
     ]
 
     /// Sorted by `index` so the comparison is independent of pool/find-array enumeration order: our engine

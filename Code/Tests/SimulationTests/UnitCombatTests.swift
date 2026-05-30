@@ -176,4 +176,36 @@ struct UnitCombatTests {
         s.units[slot].targetAttack = 0xABCD                      // invalid index
         #expect(combat.fire(slot: slot, in: &s) == 0)
     }
+
+    @Test("mapMakeExplosion: damages units in radius (scaled by distance), spares the far + provokes the enemy")
+    func mapMakeExplosion() {
+        var (s, origin, combat) = setup(.tank, hp: 200, house: 0, player: 0)   // the firer (house 0)
+        _ = s.houseAllocate(index: 2)
+        s.houses[2].unitCountMax = 100
+        let pos = Tile32.unpack(20 * 64 + 20)
+
+        // An enemy tank on the blast tile (distance 0 ⇒ full hitpoints), GUARD + byScenario.
+        let near = s.unitAllocate(index: 0, type: UInt8(UnitType.tank.rawValue), houseID: 2)!
+        s.units[near].o.position = pos
+        s.units[near].o.hitpoints = 200
+        s.units[near].actionID = UInt8(ActionType.guard_.rawValue)
+        s.units[near].o.flags.insert(.byScenario)
+        // A far enemy tank well outside the 16-tile reaction radius ⇒ untouched.
+        let far = s.unitAllocate(index: 0, type: UInt8(UnitType.tank.rawValue), houseID: 2)!
+        s.units[far].o.position = Tile32.unpack(50 * 64 + 50)
+        s.units[far].o.hitpoints = 200
+
+        let originEnc = s.indexEncode(s.units[origin].o.index, type: .unit)
+        combat.movement.mapMakeExplosion(type: 0, position: pos, hitpoints: 30, origin: originEnc, in: &s)
+
+        #expect(s.units[near].o.hitpoints == 170)                                  // 30 >> 0 at distance 0
+        #expect(s.units[far].o.hitpoints == 200)                                   // out of range
+        #expect(s.units[near].actionID == UInt8(ActionType.hunt.rawValue))         // GUARD+byScenario ⇒ HUNT
+        #expect(s.units[near].targetAttack == originEnc)                           // retaliates at the firer
+
+        // hitpoints 0 ⇒ a pure visual blast: no damage, no reaction.
+        s.units[far].actionID = UInt8(ActionType.guard_.rawValue)
+        combat.movement.mapMakeExplosion(type: 0, position: Tile32.unpack(50 * 64 + 50), hitpoints: 0, origin: originEnc, in: &s)
+        #expect(s.units[far].o.hitpoints == 200)
+    }
 }

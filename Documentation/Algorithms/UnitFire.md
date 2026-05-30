@@ -35,12 +35,17 @@ Both: if the bullet isn't already player-visible, `Tile_RemoveFogInRadius(pos, 2
 
 `Unit_Allocate` → set orientation (both levels, instant) + speed 0 → position/hitpoints/route/destination init → `Unit_FindClosestRefinery` (whose return *overwrites* `originEncoded`, a faithful OpenDUNE quirk) → reset the script, set `allocated`. Tracked units roll `degradingChance` for the `degrades` flag (one `Random256` draw). Wingers get speed 255; ground units bail (free + nil) if `Unit_IsTileOccupied`. An off-map (`0xFFFF:0xFFFF`) position yields an `isNotOnMap` unit; otherwise `Unit_UpdateMap(1)` + `Unit_SetAction(default)`.
 
+## Impact (`Unit_Move` → `Map_MakeExplosion`)
+
+When the bullet arrives (or flies into a wall/building/mountain), `Unit_Move` detonates it: `Map_MakeExplosion((explosionType + hitpoints/20) & 3, position, hitpoints, originEncoded)` then `Unit_Remove`. `Map_MakeExplosion` (`map.c:403`, ours `UnitImpact.swift`) damages every unit within the 16-tile reaction radius via `Unit_Damage(hitpoints >> (distance>>2), 0)`, then provokes non-allied, non-player survivors to retaliate toward the firer (team-staging → HUNT, harvester flees a foot attacker, guard-by-scenario → HUNT, else `Unit_SetTarget`). `Unit_Damage` lives on `UnitMovement` too (the Move↔Combat cycle), so the chain closes without a construction cycle.
+
 ## Verification
 
-- **Golden:** `ScenarioGoldenTests` `attack-close` — the attacker fires at tick 61 and the spawned bullet (unit 12, type 23, hp 25, orient 64 @ packed 1040) matches the oracle bit-for-bit, then flies identically through tick 66. (Diverges at tick 67 = the bullet's impact damage — see the `Unit_Move` bullet branch SEAM, step 2c.)
-- **Unit:** `UnitCombatTests` — `unitCreate` (winger placed / off-map), `unitCreateBullet` (facing/damage/big), `fire` early-outs.
+- **Golden:** `ScenarioGoldenTests` `attack-close` — the **whole 400-tick exchange** matches the oracle bit-for-bit: the attacker fires at tick 61, the bullet (unit 12, type 23, hp 25, orient 64 @ packed 1040) flies and impacts the defender at tick 67 (200→188, GUARD→HUNT), which retaliates and hits the attacker back (200→188).
+- **Unit:** `UnitCombatTests` — `unitCreate` (winger placed / off-map), `unitCreateBullet` (facing/damage/big), `fire` early-outs, `mapMakeExplosion` (radius/scaling/retaliation).
 
 ## Seams (open)
 
-- `Map_MakeExplosion` (#15) — the bullet's arrival explosion (→ `Unit_Damage`/`Structure_Damage`) and the sandworm/saboteur blasts. **This is step 2c** and is what extends `attack-close` past tick 66.
-- `Voice_PlayAtTile` (bullet/fire sounds) — audio.
+- `Structure_Damage` / `Structure_HouseUnderAttack` — a bullet hitting a *building* (the `Map_MakeExplosion` structure branch). Unreachable in the unit-vs-unit goldens; needs an attack-a-structure scenario.
+- `Map_DeviateArea` (deviator gas), the MISSILE_HOUSE death-hand 17-blast, `EXPLOSION_SAND_BURST` (impact-on-sand) — exotic projectile variants, not on the bullet path.
+- `Map_UpdateWall` (wall destruction), `Explosion_Start` (animation), `Voice_PlayAtTile` (audio) — render/audio.
