@@ -8,6 +8,7 @@ struct ContentView: View {
     @State var model: ScenarioLabModel
 
     private let scales = [1, 2, 4, 8, 16]
+    private let speeds = Array(1 ... 10)
 
     var body: some View {
         // The 8×8 region is `sidePx` game pixels; at zoom `scale` it occupies `sidePx × scale` screen
@@ -44,6 +45,12 @@ struct ContentView: View {
                     Image(systemName: model.running ? "pause.fill" : "play.fill")
                 }
                 .help(model.running ? "Pause" : "Run")
+            }
+            ToolbarItem(placement: .automatic) {
+                Picker("Speed", selection: $model.speed) {
+                    ForEach(speeds, id: \.self) { Text("\($0)×").tag($0) }
+                }
+                .help("Simulation speed (ticks per frame)")
             }
             ToolbarItem(placement: .automatic) {
                 Picker("Scale", selection: $model.scale) {

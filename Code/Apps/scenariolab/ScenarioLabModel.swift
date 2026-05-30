@@ -18,6 +18,9 @@ final class ScenarioLabModel {
     /// size in `ContentView`; the scene renders 1:1, so it's purely the on-screen size (no resim).
     var scale: Int = 4
     var running = false { didSet { scene.setRunning(running) } }
+    /// Simulation speed: ticks run per rendered frame (1…10×). Higher fast-forwards the sim; the render
+    /// still updates once per frame. Does not rebuild the scenario.
+    var speed: Int = 1 { didSet { scene.setTicksPerFrame(speed) } }
 
     /// The selectable (real, non-bullet) unit types.
     let selectableUnits: [UnitType] = [

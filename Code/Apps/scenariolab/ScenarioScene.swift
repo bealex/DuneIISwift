@@ -12,6 +12,9 @@ final class ScenarioScene: SKScene {
     private var terrainNode: SKSpriteNode?
     private var unitNodes: [SKSpriteNode] = []
     private var running = false
+    /// Simulation speed: how many `tick()`s to run per rendered frame (1…10). The render only updates
+    /// once per frame regardless, so higher values fast-forward the simulation without redrawing each tick.
+    private var ticksPerFrame = 1
 
     /// The scene is exactly the 8×8 region in game pixels and maps square→square into a fixed-size view
     /// (the zoom is the view's point size — see `ContentView`), so it's never squished and stays
@@ -37,12 +40,16 @@ final class ScenarioScene: SKScene {
 
     func setRunning(_ value: Bool) { running = value }
 
+    /// Set the simulation speed (ticks run per rendered frame), clamped to 1…10.
+    func setTicksPerFrame(_ value: Int) { ticksPerFrame = min(10, max(1, value)) }
+
     override func update(_ currentTime: TimeInterval) {
         guard running, var w = world else { return }
-        let dirtyBefore = w.state.mapDirty
-        w.tick()
+        // Advance the simulation `ticksPerFrame` times, then render once. `mapDirty` is only ever set by
+        // `tick()` (cleared here), so after the loop it reflects whether any of those ticks dirtied terrain.
+        for _ in 0 ..< ticksPerFrame { w.tick() }
         world = w
-        if dirtyBefore || w.state.mapDirty {
+        if w.state.mapDirty {
             blitTerrain()
             world?.state.mapDirty = false
         }
