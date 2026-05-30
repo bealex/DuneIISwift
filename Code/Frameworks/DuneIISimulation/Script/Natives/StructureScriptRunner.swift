@@ -14,12 +14,16 @@ public struct StructureScriptRunner: Sendable {
     public let scriptInfo: ScriptInfo
     let general: GeneralScriptFunctions
     let structure: StructureScriptFunctions
+    /// Optional Tier-2a decision-trace sink (one structure by `o.index`); nil in normal operation.
+    let tracer: StructureScriptTracer?
 
-    init(scriptInfo: ScriptInfo, combat: UnitCombat, interpreter: any ScriptInterpreter) {
+    init(scriptInfo: ScriptInfo, combat: UnitCombat, interpreter: any ScriptInterpreter,
+         tracer: StructureScriptTracer? = nil) {
         self.interpreter = interpreter
         self.scriptInfo = scriptInfo
         self.general = GeneralScriptFunctions()
         self.structure = StructureScriptFunctions(combat: combat)
+        self.tracer = tracer
     }
 
     /// op-14 dispatch for a structure script — route the function `index` to its native, peeking arguments
@@ -64,6 +68,12 @@ public struct StructureScriptRunner: Sendable {
         var engine = state.structures[slot].o.script
         var executed = 0
         while executed < budget && interpreter.isLoaded(engine) {
+            // Tier-2a: emit the pre-execution decision-trace line for the watched structure (matches the
+            // oracle's per-`Script_Run` `--parity-script-trace` point).
+            if let tracer, state.structures[slot].o.index == tracer.structureIndex,
+               let line = ScriptTraceLine.decode(engine, info: scriptInfo) {
+                tracer.record(line.oracleFormat)
+            }
             let ok = interpreter.run(&engine, info: scriptInfo) { index, eng in
                 dispatch(index, engine: &eng, state: &state, slot: slot)
             }

@@ -73,6 +73,16 @@ run  economy      93   economy.ini       60
 # economy uses the [HOUSES] section to activate an Ordos base (windtrap+silo) — a per-tick HOUSE golden
 # (credits/power/storage) validating House_CalculatePowerAndCredit + the credit clamp; 60 ticks (static).
 
+# Tier-2a: the windtrap's (structure index 0) per-opcode decision trace for attack-structure (the
+# SCENH094.INI staged by its `run` above). Diffed line-by-line by ScenariosTests/StructureTraceTests.
+if [ -z "$ONLY" ] || [ "$ONLY" = "attack-structure" ]; then
+  echo "  attack-structure-struct0-trace  (structure decision-trace)"
+  "$ORACLE/bin/opendune" --parity-scenario=94 --parity-ticks="$TICKS" \
+    --parity-data-dir="$DATADIR" --parity-dump="$DATADIR/_trace-dump.jsonl" \
+    --parity-cmd=attack,22,1042 \
+    --parity-script-trace="$FIX/attack-structure-struct0-trace.txt" --parity-script-structure=0
+fi
+
 echo
 echo "Done — fixtures written under $FIX/."
 echo "Now run the Swift golden:  cd Code && swift test --filter ScenarioGoldenTests"

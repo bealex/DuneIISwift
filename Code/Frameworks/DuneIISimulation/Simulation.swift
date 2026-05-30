@@ -39,6 +39,7 @@ public struct Simulation: Sendable {
         scriptInfo: ScriptInfo? = nil,
         structureScriptInfo: ScriptInfo? = nil,
         teamScriptInfo: ScriptInfo? = nil,
+        structureTracer: StructureScriptTracer? = nil,
         unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
         mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
         housePrimitives: any HousePrimitives = DefaultHousePrimitives()
@@ -56,7 +57,7 @@ public struct Simulation: Sendable {
         // path), so it's built only when both EMCs are present.
         self.structureScript = (structureScriptInfo != nil && unitRunner != nil)
             ? StructureScriptRunner(scriptInfo: structureScriptInfo!, combat: unitRunner!.combat,
-                                    interpreter: unitRunner!.interpreter)
+                                    interpreter: unitRunner!.interpreter, tracer: structureTracer)
             : nil
         self.teamScript = teamScriptInfo.map {
             TeamScriptRunner(scriptInfo: $0, interpreter: unitRunner?.interpreter ?? DefaultScriptInterpreter(),
