@@ -122,6 +122,38 @@ struct GameStateLifecycleTests {
         #expect(s.teams[team].target == 0)
     }
 
+    @Test("structureRemove clears tile occupancy, scrubs references, and frees the slot")
+    func structureRemove() {
+        var s = GameState()
+        s.houses[0].unitCountMax = 100
+        let victim = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.refinery))!
+        let packed = 20 * 64 + 20
+        s.structures[victim].o.position = Tile32.unpack(UInt16(packed))
+        let encV = s.indexEncode(s.structures[victim].o.index, type: .structure)
+
+        // Occupy the layout tiles, as placement (Structure_UpdateMap) would.
+        let layout = StructureLayoutInfo[StructureInfo[.refinery].layout]
+        for i in 0 ..< Int(layout.tileCount) { s.map[packed + Int(layout.tiles[i])].hasStructure = true }
+
+        let unit = s.unitAllocate(index: 0, type: u(.tank), houseID: 0)!
+        s.units[unit].targetMove = encV
+        s.units[unit].targetAttack = encV
+
+        s.structureRemove(victim)
+
+        for i in 0 ..< Int(layout.tileCount) {
+            #expect(!s.map[packed + Int(layout.tiles[i])].hasStructure)   // occupancy cleared
+        }
+        #expect(s.units[unit].targetMove == 0)                            // references scrubbed
+        #expect(s.units[unit].targetAttack == 0)
+        #expect(!s.structures[victim].o.flags.contains(.used))            // slot freed
+
+        var iter = PoolFind()
+        var stillFound = false
+        while let f = s.structureFind(&iter) { if f == victim { stillFound = true } }
+        #expect(!stillFound)                                              // gone from the find array
+    }
+
     @Test("unitHouseUnitCountAdd counts on first sight, wakes the AI, and doesn't double-count")
     func houseUnitCountAdd() {
         var s = GameState()

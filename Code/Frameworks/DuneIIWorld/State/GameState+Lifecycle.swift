@@ -139,6 +139,28 @@ public extension GameState {
         }
     }
 
+    /// `Structure_Remove` (`structure.c:1305`): tear a structure off the map and free its slot — clear the
+    /// `hasStructure` occupancy on each of its layout tiles, free the slot (`Structure_Free`), and scrub
+    /// references (`Structure_UntargetMe`). The destruction animation (`Animation_Start` /
+    /// `Animation_Stop_ByTile`) and the House AI rebuild queue (`ai_structureRebuild`) are seams —
+    /// render / AI bookkeeping with no headless consumer yet.
+    mutating func structureRemove(_ slot: Int) {
+        guard let st = StructureType(rawValue: Int(structures[slot].o.type)) else { return }
+        let layout = StructureLayoutInfo[StructureInfo[st].layout]
+        let packed = Int(structures[slot].o.position.packed)
+
+        for i in 0 ..< Int(layout.tileCount) {
+            let curPacked = packed + Int(layout.tiles[i])
+            // SEAM: Animation_Stop_ByTile(curPacked) — the per-tile structure animation.
+            if curPacked >= 0 && curPacked < map.count { map[curPacked].hasStructure = false }
+        }
+        // SEAM: Animation_Start(death) — the destruction animation (render).
+        // SEAM: House.ai_structureRebuild[] — AI rebuild queue (no headless AI consumer yet).
+
+        structureFree(slot)
+        structureUntargetMe(slot)
+    }
+
     // MARK: - Map occupancy + visibility counts
 
     /// `Unit_RemoveFromTile` (`unit.c`): clear a map tile's unit occupancy, but only if the tile
