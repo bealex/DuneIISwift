@@ -85,4 +85,49 @@ struct UnitNativesTests {
         #expect(engine.scriptPC == 4)
         #expect(s.units[slot].speedPerTick > 0 || s.units[slot].speed > 0)   // a move speed was set
     }
+
+    @Test("ExplosionMultiple starts the death-hand blast at the unit")
+    func explosionMultiple() {
+        var (s, slot, m, _) = setup()
+        let pos = s.units[slot].o.position
+        _ = m.explosionMultiple(slot: slot, radius: 256, in: &s)
+        #expect(s.map[Int(pos.packed)].hasExplosion)             // the central blast
+        #expect(s.explosions.contains { $0.active })
+    }
+
+    @Test("findIdle returns an idle structure of the type/house, 0 when it's busy")
+    func findIdle() {
+        var (s, slot, _, f) = setup()                            // carryall, house 0
+        let r = s.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(StructureType.refinery.rawValue))!
+        s.structures[r].o.houseID = 0
+        s.structures[r].state = .idle
+        #expect(f.findIdle(slot: slot, index: UInt16(StructureType.refinery.rawValue), in: s) != 0)
+        s.structures[r].state = .busy
+        #expect(f.findIdle(slot: slot, index: UInt16(StructureType.refinery.rawValue), in: s) == 0)
+    }
+
+    @Test("targetPriority scores a seen enemy and returns 0 for an unresolvable target")
+    func targetPriority() {
+        var (s, slot, _, _) = setup(.tank)                       // house 0
+        _ = s.houseAllocate(index: 2); s.houses[2].unitCountMax = 100
+        let enemy = s.unitAllocate(index: 0, type: UInt8(UnitType.tank.rawValue), houseID: 2)!
+        s.units[enemy].o.position = Tile32.unpack(Tile32.packXY(x: 22, y: 20))
+        s.units[enemy].o.seenByHouses |= UInt8(1 << 0)
+        let targets = TargetFinder()
+        let encoded = s.indexEncode(s.units[enemy].o.index, type: .unit)
+        #expect(targets.targetPriority(unitSlot: slot, encoded: encoded, in: s) > 0)
+        #expect(targets.targetPriority(unitSlot: slot, encoded: 0, in: s) == 0)
+    }
+
+    @Test("isValidDestination: own-house structure → 0; a tile with no passenger → 1")
+    func isValidDestination() {
+        var (s, slot, m, _) = setup(.carryall)                   // house 0, no passenger (linkedID 0xFF)
+        let combat = UnitCombat(movement: m)
+        let r = s.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(StructureType.refinery.rawValue))!
+        s.structures[r].o.houseID = 0
+        let structEnc = s.indexEncode(s.structures[r].o.index, type: .structure)
+        #expect(combat.isValidDestination(slot: slot, encoded: structEnc, in: &s) == 0)   // own house
+        let tileEnc = s.indexEncode(Tile32.packXY(x: 22, y: 20), type: .tile)
+        #expect(combat.isValidDestination(slot: slot, encoded: tileEnc, in: &s) == 1)     // no passenger
+    }
 }

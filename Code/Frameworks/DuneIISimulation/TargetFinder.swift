@@ -74,6 +74,19 @@ public struct TargetFinder: Sendable {
         return bestPriority == 0 ? nil : best
     }
 
+    /// `Script_Unit_GetTargetPriority` (op 0x1D, `script/unit.c:96`): the priority `unitSlot` assigns to
+    /// the `encoded` target — a unit (`targetUnitPriority`) or structure (`targetStructurePriority`), 0 if
+    /// the target no longer resolves.
+    func targetPriority(unitSlot: Int, encoded: UInt16, in state: GameState) -> UInt16 {
+        if let target = state.indexGetUnit(encoded) {
+            return targetUnitPriority(unitSlot: unitSlot, targetSlot: target, in: state)
+        }
+        if let s = state.indexGetStructure(encoded) {
+            return targetStructurePriority(unitSlot: unitSlot, structSlot: s, in: state)
+        }
+        return 0
+    }
+
     /// `Unit_GetTargetUnitPriority` (`unit.c:743`): the score for `unit` targeting `target` — 0 if it's
     /// self / unallocated / unseen / allied / non-priority / an unreachable air unit / off-map; else the
     /// target's `priorityTarget + priorityBuild` over distance, capped at `0x7D00`.

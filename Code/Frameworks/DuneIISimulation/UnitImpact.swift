@@ -262,4 +262,21 @@ extension UnitMovement {
         engine.scriptPC &-= 1
         return 0
     }
+
+    /// `Script_Unit_ExplosionMultiple` (op 0x12, `script/unit.c:553`): the death-hand's 8 blasts — one
+    /// `EXPLOSION_DEATH_HAND` at the unit (25…50 dmg) + 7 at random offsets within `radius` (75…150 dmg).
+    /// Each iteration draws `Tile_MoveByRandom` (2× `Random256`) then `RandomLCG_Range` (the source
+    /// argument order; C's arg-eval order is compiler-defined and this path isn't golden-pinned).
+    public func explosionMultiple(slot: Int, radius: UInt16, in state: inout GameState) -> UInt16 {
+        let pos = state.units[slot].o.position
+        mapMakeExplosion(type: UInt16(ExplosionType.deathHand.rawValue), position: pos,
+                         hitpoints: state.randomLCG.range(25, 50), origin: 0, in: &state)
+        for _ in 0 ..< 7 {
+            let p = Tile32.moveByRandom(pos, distance: radius, center: false, rng: &state.random256)
+            let hp = state.randomLCG.range(75, 150)
+            mapMakeExplosion(type: UInt16(ExplosionType.deathHand.rawValue), position: p,
+                             hitpoints: hp, origin: 0, in: &state)
+        }
+        return 0
+    }
 }

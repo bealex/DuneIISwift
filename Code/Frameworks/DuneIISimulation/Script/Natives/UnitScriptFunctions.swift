@@ -305,6 +305,28 @@ public struct UnitScriptFunctions: Sendable {
         return 1
     }
 
+    /// `Script_General_FindIdle` (op 0x18, `script/general.c:400`): if `index` is an encoded structure of
+    /// the unit's house, 1 when it's idle else 0; if `index` is a raw structure *type*, the encoded index
+    /// of the first idle structure of that type for the house (0 if none); a unit/tile index → 0.
+    public func findIdle(slot: Int, index: UInt16, in state: GameState) -> UInt16 {
+        let houseID = state.units[slot].o.houseID
+        switch Tools.indexType(index) {
+            case .unit, .tile:
+                return 0
+            case .structure:
+                guard let s = state.indexGetStructure(index) else { return 0 }
+                if state.structures[s].o.houseID != houseID { return 0 }
+                return state.structures[s].state == .idle ? 1 : 0
+            case .none:
+                var find = PoolFind(houseID: houseID, type: index)
+                while let s = state.structureFind(&find) {
+                    if state.structures[s].state != .idle { continue }
+                    return state.indexEncode(state.structures[s].o.index, type: .structure)
+                }
+                return 0
+        }
+    }
+
     /// `Script_Unit_SetActionDefault` (op 0x0A, `script/unit.c:896`): switch the unit to its type's default
     /// player action (`actionsPlayer[3]`). Takes the action layer explicitly (this struct holds no runner).
     public func setActionDefault(slot: Int, scriptInfo: ScriptInfo, actions: UnitActions,

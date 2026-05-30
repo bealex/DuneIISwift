@@ -64,6 +64,34 @@ public struct UnitCombat: Sendable {
         movement.damage(slot: slot, damage: damage, range: range, in: &state)
     }
 
+    /// `Script_Unit_IsValidDestination` (op 0x2F, `script/unit.c:1694`): can the unit (carrying a linked
+    /// passenger) head for the `encoded` destination? For a **tile**: 1 if off-map-invalid or carrying
+    /// nothing, else 0 when the passenger could sit there unoccupied (1 otherwise). For a **structure**: 0
+    /// if it's the unit's own house, 1 if carrying nothing, else whether the passenger may move into it.
+    /// Temporarily relocates the linked passenger to test occupancy (the original leaves it parked off-map,
+    /// matching the C — the passenger is in transport, so its position is otherwise unused).
+    public func isValidDestination(slot: Int, encoded: UInt16, in state: inout GameState) -> UInt16 {
+        switch Tools.indexType(encoded) {
+            case .tile:
+                let tile = state.indexGetTile(encoded)
+                if !state.mapIsValidPosition(tile.packed) { return 1 }
+                let linked = state.units[slot].o.linkedID
+                if linked == 0xFF { return 1 }
+                state.units[Int(linked)].o.position = tile
+                if !unitIsTileOccupied(slot: Int(linked), in: state) { return 0 }
+                state.units[Int(linked)].o.position = Tile32(x: 0xFFFF, y: 0xFFFF)
+                return 1
+            case .structure:
+                guard let s = state.indexGetStructure(encoded) else { return 0 }
+                if state.structures[s].o.houseID == state.unitHouseID(state.units[slot]) { return 0 }
+                let linked = state.units[slot].o.linkedID
+                if linked == 0xFF { return 1 }
+                return movement.unit.isValidMovementIntoStructure(state.units[Int(linked)], state.structures[s], in: state) != 0 ? 1 : 0
+            default:
+                return 1
+        }
+    }
+
     // MARK: - Spawning (Unit_Create / Unit_CreateBullet)
 
     /// `Unit_IsTileOccupied` (`unit.c:1789`): is the unit's current tile blocked for it? True if the
