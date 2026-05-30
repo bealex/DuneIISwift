@@ -17,8 +17,14 @@ public struct Simulation: Sendable {
     public var mapPrimitives: any MapPrimitives
     public var housePrimitives: any HousePrimitives
 
+    /// The unit-script runner (VM + op-14 dispatch + the movement cluster), present when a `scriptInfo`
+    /// (the bridged `UNIT.EMC`) was supplied. `GameLoop_Unit` runs unit scripts + movement only when it
+    /// exists; without it the unit phase still runs the cadence + the orientation/idle work.
+    public var unitScript: UnitScriptRunner?
+
     public init(
         state: GameState,
+        scriptInfo: ScriptInfo? = nil,
         unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
         mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
         housePrimitives: any HousePrimitives = DefaultHousePrimitives()
@@ -27,16 +33,21 @@ public struct Simulation: Sendable {
         self.unitPrimitives = unitPrimitives
         self.mapPrimitives = mapPrimitives
         self.housePrimitives = housePrimitives
+        self.unitScript = scriptInfo.map {
+            UnitScriptRunner(scriptInfo: $0, unitPrimitives: unitPrimitives,
+                             mapPrimitives: mapPrimitives, housePrimitives: housePrimitives)
+        }
     }
 
     public init(
         random256Seed: UInt32 = 0, randomLCGSeed: UInt16 = 0,
+        scriptInfo: ScriptInfo? = nil,
         unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
         mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
         housePrimitives: any HousePrimitives = DefaultHousePrimitives()
     ) {
         self.init(state: GameState(random256Seed: random256Seed, randomLCGSeed: randomLCGSeed),
-                  unitPrimitives: unitPrimitives, mapPrimitives: mapPrimitives,
+                  scriptInfo: scriptInfo, unitPrimitives: unitPrimitives, mapPrimitives: mapPrimitives,
                   housePrimitives: housePrimitives)
     }
 
@@ -82,8 +93,93 @@ extension Simulation {
     /// the later Phase-3 slices.
     mutating func gameLoopUnit() {
         let flags = advanceUnitCadence()
-        // TODO(Phase 3): iterate `state.unitFind` and apply the per-unit work gated by `flags`.
-        _ = flags
+        let runner = unitScript
+
+        var find = PoolFind()
+        while let slot = state.unitFind(&find) {
+            guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { continue }
+            let ui = UnitInfo[ut]
+
+            if state.units[slot].o.flags.contains(.isNotOnMap) { continue }
+
+            // Turret aim (tickUnknown4): point the turret at the attack target.
+            if flags.contains(.unknown4) && state.units[slot].targetAttack != 0 && ui.o.flags.contains(.hasTurret) {
+                let tile = state.indexGetTile(state.units[slot].targetAttack)
+                var u = state.units[slot]
+                let dir = Tile32.direction(from: u.o.position, to: tile)
+                unitPrimitives.setOrientation(&u, orientation: dir, rotateInstantly: false, level: 1)
+                state.units[slot] = u
+            }
+
+            // Movement (tickMovement): sub-tile step + fire-delay bookkeeping.
+            if flags.contains(.movement) {
+                runner?.movement.movementTick(slot: slot, in: &state)
+
+                if state.units[slot].fireDelay != 0 {
+                    if ui.movementType == .winger && !ui.flags.contains(.isNormalUnit) {
+                        var tile = state.units[slot].currentDestination
+                        if Tools.indexType(state.units[slot].targetAttack) == .unit {
+                            tile = state.indexGetTile(state.units[slot].targetAttack)
+                        }
+                        var u = state.units[slot]
+                        let dir = Tile32.direction(from: u.o.position, to: tile)
+                        unitPrimitives.setOrientation(&u, orientation: dir, rotateInstantly: false, level: 0)
+                        state.units[slot] = u
+                    }
+                    state.units[slot].fireDelay &-= 1
+                }
+            }
+
+            // Rotation (tickRotation): step the base + turret orientation toward their targets.
+            if flags.contains(.rotation) {
+                var u = state.units[slot]
+                unitPrimitives.rotate(&u, level: 0)
+                if ui.o.flags.contains(.hasTurret) { unitPrimitives.rotate(&u, level: 1) }
+                state.units[slot] = u
+            }
+
+            // Blinking (tickBlinking) — highlight pulse is a render concern. (SEAM)
+
+            // Deviation (tickDeviation): wear down a deviated unit.
+            if flags.contains(.deviation), let runner {
+                var engine = state.units[slot].o.script
+                runner.movement.deviationDecrease(slot: slot, amount: 1, engine: &engine, in: &state)
+                state.units[slot].o.script = engine
+            }
+
+            // Re-claim the unit's tile if nothing holds it (ground units only).
+            if ui.movementType != .winger {
+                let p = state.units[slot].o.position.packed
+                if state.unitGetByPackedTile(p) == nil && state.structureGetByPackedTile(p) == nil {
+                    state.unitUpdateMap(1, slot)
+                }
+            }
+
+            // Sprite animation timers (tickUnknown5) — render-only. (SEAM)
+
+            // Script (tickScript): run up to SCRIPT_UNIT_OPCODES_PER_TICK + 2 opcodes.
+            if flags.contains(.script), let runner {
+                if state.units[slot].o.script.delay == 0 {
+                    if runner.interpreter.isLoaded(state.units[slot].o.script) {
+                        // SEAM: Map_IsPositionInViewport throttles an off-viewport unit to 3 opcodes; we
+                        // pin in-viewport (52), matching the oracle's pinned-viewport scenario harness.
+                        state.units[slot].o.script.variables[3] = UInt16(state.playerHouseID)
+                        runner.run(slot: slot, in: &state, budget: 52)
+                    }
+                } else {
+                    state.units[slot].o.script.delay &-= 1
+                }
+            }
+
+            // Promote a queued action once the unit has finished moving.
+            if state.units[slot].nextActionID == 0xFF { continue }
+            if state.units[slot].currentDestination.x != 0 || state.units[slot].currentDestination.y != 0 { continue }
+            if let runner {
+                let next = state.units[slot].nextActionID
+                runner.actions.setAction(slot: slot, action: next, scriptInfo: runner.scriptInfo, in: &state)
+                state.units[slot].nextActionID = 0xFF
+            }
+        }
     }
 
     /// Advance the seven `GameLoop_Unit` tick cursors against `timerGame` and return which fired.

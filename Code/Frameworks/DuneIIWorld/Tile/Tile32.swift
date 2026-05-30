@@ -64,6 +64,19 @@ public struct Tile32: Equatable, Sendable {
             y: UInt16(truncatingIfNeeded: Int(tile.y) - (diffY * dist + roundY) / 128))
     }
 
+    /// `Tile_MoveByOrientation` (`tile.c:405`): step `position` one whole tile (256 sub-units) along the
+    /// 8-step facing of `orientation`. Returns the input position unchanged if the step leaves the map.
+    public static func moveByOrientation(_ position: Tile32, orientation: UInt8) -> Tile32 {
+        let xOffsets: [Int] = [0, 256, 256, 256, 0, -256, -256, -256]
+        let yOffsets: [Int] = [-256, -256, 0, 256, 256, 256, 0, -256]
+        let o8 = Int(Orientation.to8(orientation))
+        // uint16 arithmetic (the original adds wrapped uint16 offsets), then the out-of-map check.
+        let x = UInt16(truncatingIfNeeded: Int(position.x) + xOffsets[o8])
+        let y = UInt16(truncatingIfNeeded: Int(position.y) + yOffsets[o8])
+        if x > 16384 || y > 16384 { return position }
+        return Tile32(x: x, y: y)
+    }
+
     /// `Tile_MoveByRandom` (`tile.c`): pick a random distance (≤ `distance`, halved down from a random
     /// byte) and a random 256-step orientation, then offset `tile` by whole tiles in that direction.
     /// Draws two `Random256` bytes from `rng`; returns the original tile if the result leaves the map.

@@ -14,12 +14,11 @@ import DuneIISimulation
 /// ScenarioHarness.md`), e.g.:
 ///   opendune --parity-scenario=99 --parity-cmd=move,22,2600 --parity-ticks=N --parity-data-dir=<dir> --parity-dump=moving-golden.jsonl
 ///
-/// **`comparedTicks`** gates how many leading ticks are asserted (1 = frame 0 only). It's 1 today
-/// because: (a) our `GameLoop_Unit` doesn't run unit scripts/movement yet (that's the next phase), and
-/// (b) the OpenDUNE oracle's movement/placement path (`Unit_UpdateMap`/`Game_Prepare`) doesn't run in
-/// this headless sandbox, so the committed fixtures only carry frame 0. Raise `comparedTicks` and
-/// regenerate the fixture with `--parity-ticks=N` (in a display-capable env) as the natives land — the
-/// run + comparison loop below already handles the full trajectory.
+/// The `moving` scenario now asserts the **whole** committed 400-tick trajectory: with the movement
+/// cluster ported (`Unit_Move` / `Unit_MovementTick` / `Unit_StartMovement` / `Script_Unit_CalculateRoute`)
+/// and `GameLoop_Unit` running the real `UNIT.EMC` MOVE script, our per-tick unit state is bit-identical
+/// to the oracle's (packed position, orientation, hp, action, targets). Other scenarios (attack/guard)
+/// still gate at fewer ticks until the combat/guard natives land.
 @Suite("Scenario golden vs OpenDUNE")
 struct ScenarioGoldenTests {
     struct Frame: Decodable { let tick: Int; let units: [UnitState] }
@@ -38,7 +37,7 @@ struct ScenarioGoldenTests {
         }
     }
 
-    @Test("moving: per-tick run matches the oracle (frame 0 today; the loop handles the full trajectory)")
+    @Test("moving: per-tick run matches the oracle over the whole 400-tick trajectory")
     func moving() throws {
         var repo = URL(fileURLWithPath: #filePath)
         for _ in 0 ..< 4 { repo.deleteLastPathComponent() }
@@ -53,24 +52,31 @@ struct ScenarioGoldenTests {
         let oracle = golden.split(separator: "\n").map { try! JSONDecoder().decode(Frame.self, from: Data($0.utf8)) }
         #expect(!oracle.isEmpty)
 
+        let scriptInfo = ScriptInfo(try Emc.Program(emc))
         var state = GameState()
         state.loadScenario(ini: Ini(ini), iconMap: try IconMap(icon))
         let tank = state.units.first { $0.o.flags.contains(.used) }!
-        UnitOrders(scriptInfo: ScriptInfo(try Emc.Program(emc))).apply(.move(unit: tank.o.index, tile: 2600), in: &state)
+        UnitOrders(scriptInfo: scriptInfo).apply(.move(unit: tank.o.index, tile: 2600), in: &state)
 
         // Run our engine for the whole trajectory, capturing a frame per tick (frame 0 = post-command).
-        var sim = Simulation(state: state)
+        var sim = Simulation(state: state, scriptInfo: scriptInfo)
         var ours: [[UnitState]] = [snapshot(sim.state)]
         for _ in 1 ..< max(oracle.count, 1) {
             sim.tick()
             ours.append(snapshot(sim.state))
         }
 
-        // Assert the leading `comparedTicks` frames match the oracle, tick by tick.
-        let comparedTicks = 1
-        for t in 0 ..< min(comparedTicks, oracle.count, ours.count) {
-            #expect(oracle[t].tick == t)
-            #expect(ours[t] == oracle[t].units, "tick \(t) mismatch")
+        // Assert the whole trajectory matches the oracle, tick by tick. The movement cluster
+        // (Unit_Move / MovementTick / StartMovement / CalculateRoute) now drives the unit end-to-end.
+        let comparedTicks = oracle.count
+        var firstMismatch: Int? = nil
+        for t in 0 ..< min(comparedTicks, oracle.count, ours.count) where ours[t] != oracle[t].units {
+            firstMismatch = t
+            break
         }
+        let msg: String = firstMismatch.map { t in
+            "first divergence at tick \(t): ours=\(ours[t]) oracle=\(oracle[t].units)"
+        } ?? "no divergence"
+        #expect(firstMismatch == nil, "\(msg)")
     }
 }

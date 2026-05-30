@@ -247,9 +247,10 @@ The implementation order for the Phase-3 native primitives. Built bottom-up: a p
 8. `Unit_SetSpeed` (`unit.c:1902`) — `UnitInfo` ✓. **done.**
 
 > **Dependency correction (found during implementation).** `Unit_UpdateMap` (old 6), `Unit_Move` (old 9), and `Unit_MovementTick` (old 10) are **not** smaller than the map cluster: they need `Map_GetLandscapeType` / `Map_UpdateAround` / fog-unveil (Tier D), `Unit_Remove` (Tier F), and `Unit_Damage` (Tier E). They are **resequenced to after Tier D** (and the lifecycle/combat bits they touch), so the build stays strictly bottom-up:
-> - **D′1.** `Unit_UpdateMap` — needs Tier D map + fog + `Unit_HouseUnitCount`.
-> - **D′2.** `Unit_Move` (`unit.c:1286`) — needs `Tile_MoveByDirection` ✓, `Unit_UpdateMap` (D′1), `Map_GetLandscapeType`/unveil (Tier D), `Unit_Remove` (Tier F), `Unit_Damage` (Tier E).
-> - **D′3.** `Unit_MovementTick` (`unit.c:98`) — needs `Unit_Move` (D′2). Drives the loop's `tickMovement`.
+> - **D′1.** `Unit_UpdateMap` — ✓ headless state subset (`GameState.unitUpdateMap`, type 0/1/visibility; air-redraw/fog-radius are render seams).
+> - **D′2.** `Unit_Move` (`unit.c:1286`) — ✓ (`DuneIISimulation/UnitMovement.swift`). Ground path complete; bullet/sonic/saboteur/bloom branches transcribed with SEAMs for Tier-E deps (`Unit_Damage` #18, explosions #15, `Unit_EnterStructure`, bloom).
+> - **D′3.** `Unit_MovementTick` (`unit.c:98`) — ✓ (`UnitMovement.swift`). Drives `GameLoop_Unit`'s `tickMovement`.
+> - **Movement driver.** `Unit_StartMovement` (`unit.c:1059`) + leaf `Tile_MoveByOrientation` + the native `Script_Unit_CalculateRoute` (`script/unit.c:1308`, op-`0x0C`, wraps the `Pathfinder`) — ✓ (`UnitMovement.swift`). `GameLoop_Unit` per-unit body wired into `Simulation`. **A ground unit now crosses the map bit-identical to OpenDUNE** (full `moving` trajectory golden, `ScenarioGoldenTests`). Doc `Algorithms/UnitMovement.md`.
 
 **Tier D — map state.** (`DuneIISimulation.MapPrimitives`.)
 12. `Map_IsValidPosition` (`map.c`) — `g_mapInfos` (`MapInfo.scales` ✓) + `Scenario.mapScale`. **done** (golden).

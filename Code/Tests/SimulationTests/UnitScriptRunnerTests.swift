@@ -52,7 +52,7 @@ struct UnitScriptRunnerTests {
         var e3 = engine(peeking: [])       // NoOperation
         #expect(runner.dispatch(0x15, engine: &e3, state: &s, slot: slot) == 0)
 
-        #expect(runner.dispatch(0x08, engine: &e3, state: &s, slot: slot) == nil)   // Fire: not yet ported
+        #expect(runner.dispatch(0x04, engine: &e3, state: &s, slot: slot) == nil)   // StartAnimation: not yet ported
     }
 
     @Test("dispatch op-01 SetAction (re)loads the script into the passed engine")
@@ -81,8 +81,8 @@ struct UnitScriptRunnerTests {
 
     @Test("run halts on an unported native and writes the engine back")
     func runHaltsOnUnported() {
-        // Program: FUNCTION 0x08 (Fire) — not yet ported ⇒ dispatch returns nil ⇒ run stops.
-        let prog = [inlineOp(14, 0x08)]
+        // Program: FUNCTION 0x04 (StartAnimation) — not yet ported ⇒ dispatch returns nil ⇒ run stops.
+        let prog = [inlineOp(14, 0x04)]
         let info = ScriptInfo(program: prog, offsets: [0])
         var (s, slot, runner) = setup(.tank, scriptInfo: info)
         runner.interpreter.load(&s.units[slot].o.script, info: info, typeID: 0)

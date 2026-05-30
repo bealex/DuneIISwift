@@ -13,15 +13,21 @@ public struct UnitScriptRunner: Sendable {
     let general: GeneralScriptFunctions
     let unit: UnitScriptFunctions
     let actions: UnitActions
+    public let movement: UnitMovement
 
     public init(scriptInfo: ScriptInfo,
                 interpreter: any ScriptInterpreter = DefaultScriptInterpreter(),
-                unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives()) {
+                unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
+                mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
+                housePrimitives: any HousePrimitives = DefaultHousePrimitives()) {
         self.interpreter = interpreter
         self.scriptInfo = scriptInfo
         self.general = GeneralScriptFunctions()
         self.unit = UnitScriptFunctions(unitPrimitives: unitPrimitives)
         self.actions = UnitActions(interpreter: interpreter)
+        self.movement = UnitMovement(scriptInfo: scriptInfo, interpreter: interpreter,
+                                     unitPrimitives: unitPrimitives, mapPrimitives: mapPrimitives,
+                                     housePrimitives: housePrimitives)
     }
 
     /// op-14 dispatch for a unit script — route the function `index` to its native, peeking arguments
@@ -42,6 +48,8 @@ public struct UnitScriptRunner: Sendable {
             case 0x03: return general.getDistanceToTile(from: u.o.position, encoded: engine.peek(1), in: state)
             case 0x06: return unit.getOrientation(u, encoded: engine.peek(1), in: state)
             case 0x07: return unit.setOrientation(slot: slot, orientation: Int8(truncatingIfNeeded: engine.peek(1)), in: &state)
+            case 0x08: return unit.fire(slot: slot, in: &state)
+            case 0x0C: return movement.calculateRoute(slot: slot, encoded: engine.peek(1), engine: &engine, in: &state)
             case 0x0D: return general.isEnemy(currentHouseID: state.unitHouseID(u), encoded: engine.peek(1), in: state)
             case 0x10: let d = general.delay(ticks: engine.peek(1)); engine.delay = d; return d
             case 0x11: return general.isFriendly(currentHouseID: state.unitHouseID(u), encoded: engine.peek(1), in: state)
@@ -52,6 +60,8 @@ public struct UnitScriptRunner: Sendable {
             case 0x1B: return unit.setSpeed(slot: slot, requestedSpeed: engine.peek(1), in: &state)
             case 0x1F: return unit.isInTransport(u)
             case 0x20: return unit.getAmount(u, in: state)
+            case 0x24: return unit.unknown2552(slot: slot, in: &state)
+            case 0x28: return unit.removeFog()
             case 0x2C: return general.getLinkedUnitType(linkedID: u.o.linkedID, in: state)
             case 0x2D: return general.getIndexType(encoded: engine.peek(1), in: state)
             case 0x2E: return general.decodeIndex(encoded: engine.peek(1), in: state)

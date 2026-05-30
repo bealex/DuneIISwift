@@ -151,4 +151,31 @@ public struct UnitScriptFunctions: Sendable {
         unitPrimitives.setOrientation(&state.units[slot], orientation: dir, rotateInstantly: false, level: 0)
         return 0
     }
+
+    /// `Script_Unit_RemoveFog`: clear fog around the unit. Fog is not modelled headlessly (a render/fog
+    /// seam), so this is a no-op returning 0 — `Unit_RemoveFog` has no other effect. (SEAM)
+    public func removeFog() -> UInt16 { 0 }
+
+    /// `Script_Unit_Unknown2552` (`script/unit.c:1545`): if the unit is linked (via `variables[4]`) to a
+    /// carryall, unlink it and clear that carryall's move target. Returns 0.
+    public func unknown2552(slot: Int, in state: inout GameState) -> UInt16 {
+        let link = state.units[slot].o.script.variables[4]
+        if link == 0 { return 0 }
+        guard let u2 = state.indexGetUnit(link),
+              state.units[u2].o.type == UInt8(UnitType.carryall.rawValue) else { return 0 }
+        state.objectScriptVariable4Clear(.unit(slot))
+        state.units[u2].targetMove = 0
+        return 0
+    }
+
+    /// `Script_Unit_Fire` (`script/unit.c:577`): fire the unit's weapon at `targetAttack`. The early-out
+    /// paths (no/invalid target, self-target, still turning, out of range, off-aim) are ported faithfully;
+    /// the actual projectile spawn (`Unit_CreateBullet` / damage) is Tier-E combat and marked SEAM. A
+    /// targetless unit (the move case) returns 0 here.
+    public func fire(slot: Int, in state: inout GameState) -> UInt16 {
+        let target = state.units[slot].targetAttack
+        if target == 0 || !state.indexIsValid(target) { return 0 }
+        // SEAM: the firing path (range/aim checks + projectile creation) is Tier-E combat, not yet ported.
+        return 0
+    }
 }
