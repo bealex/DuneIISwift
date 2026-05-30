@@ -83,6 +83,38 @@ struct CarryallTests {
         #expect(!s.units[cargo].o.flags.contains(.isNotOnMap))  // cargo placed on the map
     }
 
+    @Test("a winger flies toward its currentDestination each movement tick (winger flight motion)")
+    func wingerFlight() {
+        var (s, _) = base()
+        let move = UnitMovement(scriptInfo: info)
+        let carry = addUnit(&s, .carryall, at: Tile32.packXY(x: 10, y: 20))
+        s.units[carry].currentDestination = Tile32.unpack(Tile32.packXY(x: 40, y: 20))   // far east
+
+        // Aim east + full winger cruise speed (Unit_CreateBullet/carryall script set 255).
+        let dir = Tile32.direction(from: s.units[carry].o.position, to: s.units[carry].currentDestination)
+        move.unit.setOrientation(&s.units[carry], orientation: dir, rotateInstantly: true, level: 0)
+        move.unit.setSpeed(&s.units[carry], speed: 255, gameSpeed: s.gameSpeed)
+        #expect(s.units[carry].speed != 0)
+
+        let before = s.units[carry].o.position
+        let flipBefore = s.units[carry].o.flags.contains(.animationFlip)
+        var flips = 0
+        for _ in 0 ..< 24 {
+            let prev = s.units[carry].o.flags.contains(.animationFlip)
+            move.movementTick(slot: carry, in: &s)
+            if s.units[carry].o.flags.contains(.animationFlip) != prev { flips += 1 }
+        }
+        let after = s.units[carry].o.position
+
+        // It actually flew (a winger steps along its orientation toward the destination, ignoring gameSpeed).
+        #expect(after.x > before.x)
+        #expect(Tile32.distance(from: after, to: s.units[carry].currentDestination)
+              < Tile32.distance(from: before, to: s.units[carry].currentDestination))
+        // Each Unit_Move on a winger toggles animationFlip (the rotor/wing-beat render flag).
+        #expect(flips > 0)
+        _ = flipBefore
+    }
+
     @Test("transportDeliver into an idle refinery hands the cargo over (Unit_EnterStructure)")
     func deliverToRefinery() {
         var (s, combat) = base()

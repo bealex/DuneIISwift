@@ -18,6 +18,11 @@ public struct UnitMovement: Sendable {
     public let pathfinder: Pathfinder
     public let scriptInfo: ScriptInfo
 
+    /// The death-hand (house missile) 17-point blast offsets (`unit.c:1394`): the impact tile plus a
+    /// fixed inner/outer cross pattern of 16 sub-tile offsets.
+    static let deathHandOffsetX: [Int16] = [0, 0, 200, 256, 200, 0, -200, -256, -200, 0, 400, 512, 400, 0, -400, -512, -400]
+    static let deathHandOffsetY: [Int16] = [0, -256, -200, 0, 200, 256, 200, 0, -200, -512, -400, 0, 400, 512, 400, 0, -400]
+
     public init(scriptInfo: ScriptInfo,
                 interpreter: any ScriptInterpreter = DefaultScriptInterpreter(),
                 unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
@@ -62,10 +67,10 @@ public struct UnitMovement: Sendable {
 
     /// `Unit_Move` (`unit.c:1286`): step the unit by `distance` sub-tile units along its current
     /// orientation, reconciling the map and handling arrival at the current waypoint. Returns true when
-    /// the step completes a waypoint (or the unit was removed). The bullet / sonic-blast / saboteur /
-    /// spice-bloom branches are transcribed with `SEAM` markers for their not-yet-ported dependencies
-    /// (`Unit_Damage` #18, `Map_MakeExplosion` #15, `Map_Bloom_Explode*`); they do
-    /// not fire for a ground unit crossing open terrain. See `UnitMovement.md`.
+    /// the step completes a waypoint (or the unit was removed). The sonic-blast area damage, the
+    /// death-hand 17-point blast, the saboteur arrival detonation, and the sand-burst impact are wired;
+    /// the deviator-gas area (`Map_DeviateArea`) and spice-bloom detonation (`Map_Bloom_Explode*`) remain
+    /// SEAMs (slice 4). None fire for a ground unit crossing open terrain. See `UnitMovement.md`.
     @discardableResult
     public func move(slot: Int, distance distance0: UInt16, in state: inout GameState) -> Bool {
         var distance = distance0
@@ -138,8 +143,20 @@ public struct UnitMovement: Sendable {
         var ret = false
 
         if ut == .sonicBlast {
-            // SEAM: sonic-blast area damage — Unit_Damage (#18) / Structure_Damage / Map_MakeExplosion (#15).
-            // The hp drain + self-removal are portable; the damage to others is deferred to Tier E.
+            // Sonic-blast area damage: the unit/structure on the wave's tile takes `hp/4 + 1`. A
+            // sonic-protected unit (most tracked vehicles) is immune; a wall costs one RNG draw.
+            let blastDamage = (state.units[slot].o.hitpoints / 4) &+ 1
+            if let u2 = state.unitGetByPackedTile(packed) {
+                if let ut2 = UnitType(rawValue: Int(state.units[u2].o.type)),
+                   !UnitInfo[ut2].flags.contains(.sonicProtection) {
+                    damage(slot: u2, damage: blastDamage, range: 0, in: &state)
+                }
+            } else if let s2 = state.structureGetByPackedTile(packed) {
+                _ = state.structureDamage(s2, damage: blastDamage, range: 0)
+            } else if map.landscapeType(state.map[Int(packed)], tileIDs: state.tileIDs) == .wall
+                      && StructureInfo[.wall].o.hitpoints > blastDamage {
+                _ = state.random256.next()
+            }
             if state.units[slot].o.hitpoints < (ui.damage / 2) {
                 state.units[slot].o.flags.insert(.bulletIsBig)
             }
@@ -176,10 +193,21 @@ public struct UnitMovement: Sendable {
                     // still-armed missile (fireDelay != 0, not a turret missile) keeps flying (falls through).
                     if state.units[slot].fireDelay == 0 || ut == .missileTurret {
                         if ut == .missileHouse {
-                            // SEAM: death-hand 17-point blast (Tile_IsValid + the offset tables → mapMakeExplosion).
+                            // Death-hand 17-point blast: explode `ui.explosionType` (200 hp) at the impact
+                            // tile and 16 fixed offsets around it (skipping off-map points).
+                            for i in 0 ..< 17 {
+                                let p = Tile32(x: newPosition.x &+ UInt16(bitPattern: Self.deathHandOffsetX[i]),
+                                               y: newPosition.y &+ UInt16(bitPattern: Self.deathHandOffsetY[i]))
+                                if p.isValid {
+                                    mapMakeExplosion(type: ui.explosionType, position: p, hitpoints: 200, origin: 0, in: &state)
+                                }
+                            }
                         } else if ui.explosionType != 0xFFFF {
-                            if ui.flags.contains(.impactOnSand) {
-                                // SEAM: EXPLOSION_SAND_BURST on empty sand (needs the EXPLOSION_* type enum).
+                            if ui.flags.contains(.impactOnSand)
+                                && state.map[Int(state.units[slot].o.position.packed)].index == 0
+                                && map.landscapeType(state.map[Int(state.units[slot].o.position.packed)], tileIDs: state.tileIDs) == .normalSand {
+                                mapMakeExplosion(type: UInt16(ExplosionType.sandBurst.rawValue), position: newPosition,
+                                                 hitpoints: state.units[slot].o.hitpoints, origin: state.units[slot].originEncoded, in: &state)
                             } else if ut == .missileDeviator {
                                 // SEAM: Map_DeviateArea (deviator gas) — Tier-E, not yet ported.
                             } else {
@@ -202,7 +230,20 @@ public struct UnitMovement: Sendable {
                     }
 
                     if ut == .saboteur {
-                        // SEAM: saboteur arrival detonation — Map_MakeExplosion (#15) + Unit_Remove.
+                        // Saboteur detonates on reaching a wall, or within 32 sub-units of its move target
+                        // (1.07 non-enhanced: measured from the pre-step `o.position`). 500-hp blast.
+                        var detonate = map.landscapeType(state.map[Int(newPosition.packed)], tileIDs: state.tileIDs) == .wall
+                        if !detonate {
+                            detonate = state.units[slot].targetMove != 0
+                                && Tile32.distance(from: state.units[slot].o.position,
+                                                   to: state.indexGetTile(state.units[slot].targetMove)) < 32
+                        }
+                        if detonate {
+                            mapMakeExplosion(type: UInt16(ExplosionType.saboteurDeath.rawValue), position: newPosition,
+                                             hitpoints: 500, origin: 0, in: &state)
+                            state.unitRemove(slot)
+                            return true
+                        }
                     }
 
                     var u = state.units[slot]

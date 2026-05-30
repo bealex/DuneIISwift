@@ -20,7 +20,7 @@ extension UnitMovement {
     /// hitpoints, wears down deviation, and on death removes the player unit + switches it to `ACTION_DIE`.
     /// Survivors: a small-arms hit on an ambushing enemy provokes `ACTION_ATTACK`; dropping below half HP
     /// turns a sandworm to `ACTION_DIE`, upgrades infantry→trooper-pair (a random chance to `RETREAT`), and
-    /// starts smoke on tracked/harvester/wheeled hulls. `range != 0` would spawn an impact explosion (SEAM).
+    /// starts smoke on tracked/harvester/wheeled hulls. `range != 0` leaves a visual impact crater.
     @discardableResult
     public func damage(slot: Int, damage: UInt16, range: UInt16, in state: inout GameState) -> Bool {
         guard state.units[slot].o.flags.contains(.allocated) else { return false }
@@ -45,8 +45,12 @@ extension UnitMovement {
             return true
         }
 
-        // SEAM: range != 0 → Map_MakeExplosion(IMPACT_SMALL/MEDIUM) at the unit (mapMakeExplosion exists,
-        // but the IMPACT_* explosion types + the recursion guard aren't needed by the unit-vs-unit goldens).
+        // A ranged hit leaves a visual impact crater at the unit (hitpoints 0 ⇒ no further damage/reactions,
+        // so no recursion). IMPACT_SMALL for light hits, IMPACT_MEDIUM otherwise.
+        if range != 0 {
+            mapMakeExplosion(type: UInt16(damage < 25 ? ExplosionType.impactSmall.rawValue : ExplosionType.impactMedium.rawValue),
+                             position: state.units[slot].o.position, hitpoints: 0, origin: 0, in: &state)
+        }
 
         if houseID != state.playerHouseID
             && state.units[slot].actionID == UInt8(ActionType.ambush.rawValue)
