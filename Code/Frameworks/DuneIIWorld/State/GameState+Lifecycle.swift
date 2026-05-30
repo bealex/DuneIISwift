@@ -343,10 +343,42 @@ public extension GameState {
         }
     }
 
+    /// `Structure_IsUpgradable` (`structure.c:1102`): can structure `slot` still be upgraded at its current
+    /// `upgradeLevel` in the active `campaignID`? Gates the upgrade chain — the upgrade-finish path sets
+    /// `upgradeTimeLeft` to 100 when a further upgrade remains, else 0. Per-house/-type exclusions (Harkonnen
+    /// Hi-Tech, the Ordos Heavy-Vehicle level-2 campaign gate, the Harkonnen WOR late-campaign unlock), then
+    /// the generic `upgradeCampaign[level]` test; the construction yard's 2nd upgrade also needs the rocket
+    /// turret's prerequisite structures. A level past the 3-entry `upgradeCampaign` table is not upgradable
+    /// (Swift-guards the OOB read OpenDUNE leaves implicit for the Ordos Heavy-Vehicle level-3 case).
+    func structureIsUpgradable(_ slot: Int) -> Bool {
+        guard let st = StructureType(rawValue: Int(structures[slot].o.type)) else { return false }
+        let si = StructureInfo[st]
+        let houseID = structures[slot].o.houseID
+        let level = Int(structures[slot].upgradeLevel)
+
+        if houseID == UInt8(HouseID.harkonnen.rawValue), st == .highTech { return false }
+        if houseID == UInt8(HouseID.ordos.rawValue), st == .heavyVehicle, level == 1,
+           si.upgradeCampaign[2] > UInt16(campaignID) { return false }
+
+        if level < si.upgradeCampaign.count, si.upgradeCampaign[level] != 0,
+           si.upgradeCampaign[level] <= UInt16(campaignID) + 1 {
+            if st != .constructionYard { return true }
+            if level != 1 { return true }
+            let required = StructureInfo[.rocketTurret].o.structuresRequired
+            return houses[Int(houseID)].structuresBuilt & required == required
+        }
+
+        if houseID == UInt8(HouseID.harkonnen.rawValue), st == .worTrooper, level == 0, campaignID > 3 {
+            return true
+        }
+        return false
+    }
+
     /// The `tickStructure` body of `GameLoop_Structure` (`structure.c:53`, the `if (tickStructure)` block):
     /// one structure's per-tick build/repair economy, run every `AdjustToGameSpeed(30,15,60)` ticks. Three
     /// mutually-exclusive branches on the structure's flags:
-    ///   - **upgrading** — `Structure_IsUpgradable`-gated upgrade progress. SEAM (a follow-up slice).
+    ///   - **upgrading** — pay 1/40 build cost per tick, advance `upgradeTimeLeft` by 5, finish → bump
+    ///     `upgradeLevel` and re-arm via `Structure_IsUpgradable`. Out of money cancels.
     ///   - **repairing** — structure self-repair: bill the 1.07 repair cost, heal HP (+5 for the player /
     ///     campaign ≥ 3, else +3), finish at full HP. Out of money cancels the repair.
     ///   - **else (factory production)** — a BUSY factory with a queued object (`countDown != 0`,
@@ -363,7 +395,26 @@ public extension GameState {
         let hID = Int(structures[slot].o.houseID)
 
         if structures[slot].o.flags.contains(.upgrading) {
-            // SEAM: the upgrade branch (Structure_IsUpgradable + upgradeLevel/upgradeTimeLeft progress).
+            // Pay 1/40 of the build cost per tick; advance `upgradeTimeLeft` in steps of 5; on completion
+            // bump `upgradeLevel` (Ordos Heavy-Vehicle gets its last upgrade free → jump to 3) and re-arm
+            // `upgradeTimeLeft` only if another upgrade remains. Out of money cancels the upgrade.
+            let upgradeCost = si.o.buildCredits / 40
+            if upgradeCost <= houses[hID].credits {
+                houses[hID].credits &-= upgradeCost
+                if structures[slot].upgradeTimeLeft > 5 {
+                    structures[slot].upgradeTimeLeft &-= 5
+                } else {
+                    structures[slot].upgradeLevel &+= 1
+                    structures[slot].o.flags.remove(.upgrading)
+                    if structures[slot].o.houseID == UInt8(HouseID.ordos.rawValue), st == .heavyVehicle,
+                       structures[slot].upgradeLevel == 2 {
+                        structures[slot].upgradeLevel = 3
+                    }
+                    structures[slot].upgradeTimeLeft = structureIsUpgradable(slot) ? 100 : 0
+                }
+            } else {
+                structures[slot].o.flags.remove(.upgrading)
+            }
         } else if structures[slot].o.flags.contains(.repairing) {
             // 1.07 repair cost (the float-resolution-256 rounding OpenDUNE flags as "a bit unfair").
             let repairCost = UInt16((2 * 256 / UInt32(si.o.hitpoints) * UInt32(si.o.buildCredits) + 128) / 256)

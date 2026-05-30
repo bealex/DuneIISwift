@@ -173,4 +173,106 @@ struct StructureProductionTests {
         s.structureTickStructure(slot)
         #expect(!s.structures[slot].o.flags.contains(.onHold))
     }
+
+    // MARK: - Upgrade branch (the `.upgrading` flag)
+
+    @Test("an upgrading structure pays 1/40 build cost per tick and steps upgradeTimeLeft by 5")
+    func upgradeProgresses() {
+        var s = GameState(); _ = s.houseAllocate(index: 0)
+        let slot = place(&s, .barracks)
+        s.structures[slot].o.flags.insert(.upgrading)
+        s.structures[slot].upgradeTimeLeft = 100
+        s.houses[0].credits = 1000
+
+        let cost = StructureInfo[.barracks].o.buildCredits / 40
+        s.structureTickStructure(slot)
+        #expect(s.structures[slot].upgradeTimeLeft == 95)
+        #expect(s.houses[0].credits == 1000 - cost)
+        #expect(s.structures[slot].o.flags.contains(.upgrading))
+    }
+
+    @Test("a finished upgrade bumps the level, clears upgrading, and re-arms when another upgrade remains")
+    func upgradeCompletesAndRearms() {
+        var s = GameState(); _ = s.houseAllocate(index: 1)
+        s.campaignID = 5                                   // Heavy Vehicle: upgradeCampaign [4,5,6]
+        let slot = place(&s, .heavyVehicle, house: 1)
+        s.structures[slot].o.flags.insert(.upgrading)
+        s.structures[slot].upgradeTimeLeft = 5             // ≤ 5 → finishes this tick
+        s.houses[1].credits = 1000
+
+        s.structureTickStructure(slot)
+        #expect(s.structures[slot].upgradeLevel == 1)
+        #expect(!s.structures[slot].o.flags.contains(.upgrading))
+        #expect(s.structures[slot].upgradeTimeLeft == 100) // level-1 upgrade (campaign 5 ≥ 5) still available
+    }
+
+    @Test("a finished final upgrade re-arms to 0 (nothing more to upgrade)")
+    func upgradeCompletesTerminal() {
+        var s = GameState(); _ = s.houseAllocate(index: 0)  // Barracks: upgradeCampaign [2,0,0]
+        let slot = place(&s, .barracks)
+        s.structures[slot].o.flags.insert(.upgrading)
+        s.structures[slot].upgradeTimeLeft = 3
+        s.houses[0].credits = 1000
+
+        s.structureTickStructure(slot)
+        #expect(s.structures[slot].upgradeLevel == 1)
+        #expect(s.structures[slot].upgradeTimeLeft == 0)   // upgradeCampaign[1] == 0 → not upgradable
+    }
+
+    @Test("the Ordos Heavy Vehicle gets its last upgrade free (level jumps 1 → 3)")
+    func upgradeOrdosHeavyVehicleFree() {
+        var s = GameState(); _ = s.houseAllocate(index: 2)  // Ordos
+        s.campaignID = 9
+        let slot = place(&s, .heavyVehicle, house: 2)
+        s.structures[slot].upgradeLevel = 1
+        s.structures[slot].o.flags.insert(.upgrading)
+        s.structures[slot].upgradeTimeLeft = 5
+        s.houses[2].credits = 1000
+
+        s.structureTickStructure(slot)
+        #expect(s.structures[slot].upgradeLevel == 3)       // 2 → 3 (free last upgrade)
+    }
+
+    @Test("an upgrade with no money is cancelled")
+    func upgradeBroke() {
+        var s = GameState(); _ = s.houseAllocate(index: 0)
+        let slot = place(&s, .barracks)
+        s.structures[slot].o.flags.insert(.upgrading)
+        s.structures[slot].upgradeTimeLeft = 100
+        s.houses[0].credits = 0
+
+        s.structureTickStructure(slot)
+        #expect(!s.structures[slot].o.flags.contains(.upgrading))
+        #expect(s.structures[slot].upgradeTimeLeft == 100)  // unchanged
+    }
+
+    // MARK: - Structure_IsUpgradable
+
+    @Test("upgradability tracks the per-house/type rules and the campaign gate")
+    func isUpgradable() {
+        var s = GameState(); _ = s.houseAllocate(index: 0); _ = s.houseAllocate(index: 2)
+
+        // Barracks (upgradeCampaign[0] == 2) is upgradable from campaign 1; Light Factory (3) is not yet.
+        let barracks = place(&s, .barracks)
+        #expect(s.structureIsUpgradable(barracks))
+        let light = place(&s, .lightVehicle)
+        #expect(!s.structureIsUpgradable(light))            // 3 > campaignID(1)+1
+
+        // Harkonnen Hi-Tech is never upgradable.
+        s.campaignID = 9
+        let hitech = place(&s, .highTech, house: 0)
+        #expect(!s.structureIsUpgradable(hitech))
+    }
+
+    @Test("the construction yard's 2nd upgrade requires the rocket turret's prerequisites")
+    func isUpgradableConstructionYard() {
+        var s = GameState(); _ = s.houseAllocate(index: 0)
+        s.campaignID = 5                                    // CY upgradeCampaign [4,6,0]; level-1 needs 6 ≤ 6
+        let cy = place(&s, .constructionYard)
+        s.structures[cy].upgradeLevel = 1
+
+        #expect(!s.structureIsUpgradable(cy))               // no prerequisite structures built
+        s.houses[0].structuresBuilt = StructureInfo[.rocketTurret].o.structuresRequired
+        #expect(s.structureIsUpgradable(cy))
+    }
 }

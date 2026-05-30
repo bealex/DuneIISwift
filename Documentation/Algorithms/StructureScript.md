@@ -41,7 +41,7 @@ OpenDUNE quirk (1.07, not enhanced): if one structure's script errors before run
 When the **structure** cursor fires, each non-slab structure runs `structureTickStructure` (`GameState+Lifecycle`, the `if (tickStructure)` block of `structure.c:53`). Three mutually-exclusive branches on the object flags:
 
 ```
-if upgrading:    (SEAM — Structure_IsUpgradable-gated upgrade progress; a follow-up slice)
+if upgrading:    pay buildCredits/40/tick; step upgradeTimeLeft by 5; finish ⇒ upgradeLevel++ (Ordos Heavy-Vehicle 1→3 free) + re-arm via Structure_IsUpgradable. Broke ⇒ cancel.
 elif repairing:  bill the 1.07 repair cost; heal +5 (player / campaign≥3) or +3; finish at full HP. Broke ⇒ cancel.
 else:            factory production + (for the repair pad) the unit-repair countdown.
 ```
@@ -64,7 +64,7 @@ The completion-to-`READY` path is where a finished unit/structure becomes availa
 
 **The repair pad** (`STRUCTURE_REPAIR`) additionally drives a linked unit's repair countdown — `repairCost = 2*unit.buildCredits/256`, `countDown -= repairSpeed` until 0 → `READY`; with nothing linked but money available it auto-clears `onHold`. (The pad lacks the `factory` flag, so it never enters the production block above — only this one.)
 
-**SEAMs in this body:** the upgrade branch; the AI-maintenance block (`isAIActive`: auto-repair below 50% HP + `Structure_AI_PickNextToBuild`/`Structure_BuildObject`); the AI construction-yard auto-place; and all GUI/sound. `campaignID` (new `GameState` field, default 1 = first campaign) feeds the repair heal amount + the AI build-speed cap faithfully.
+**SEAMs in this body:** the AI-maintenance block (`isAIActive`: auto-repair below 50% HP + `Structure_AI_PickNextToBuild`/`Structure_BuildObject`); the AI construction-yard auto-place; and all GUI/sound. `campaignID` (`GameState` field, default 1 = first campaign) feeds the repair heal amount, the AI build-speed cap, and `Structure_IsUpgradable` (`structure.c:1102`) — which gates the upgrade chain's re-arm.
 
 ## The death path
 
