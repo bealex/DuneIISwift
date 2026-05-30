@@ -5,22 +5,20 @@ import DuneIIWorld
 import Foundation
 import SpriteKit
 
-/// SpriteKit scene that draws a `GameState` and runs the basic game loop: each frame it advances the
-/// `Simulation` clock (no unit logic yet) and re-colorizes the terrain through the palette animator, so
-/// time-driven palette cycling (the windtrap power light, index 223) animates from real state.
+/// SpriteKit scene that draws a live `Simulation` through the engine's `FrameInfo` seam: each frame it
+/// advances the sim one tick, snapshots a `FrameInfo`, and hands it to the library `SpriteKitRenderer`
+/// (terrain + units + effects, palette-cycled, house-recoloured). The app no longer reaches into
+/// `GameState` to draw — it consumes the same seam the Catalyst host will, proving it on real scenarios.
 @MainActor
 final class MapScene: SKScene {
+    private static let worldSidePx = 16 * 64   // base scale: 16px tiles over the 64×64 map
+
     private let cam = SKCameraNode()
     private var simulation: Simulation?
-    private var assets: AssetStore?
-    private var basePalette = AssetStore.grayscale
-    private var terrainBuffer: [UInt8] = []
-    private var terrainNode: SKSpriteNode?
-    private let unitsLayer = SKNode()
-    private var lastTick = -1
+    private var renderer: SpriteKitRenderer?
 
     func configure() {
-        let side = CGFloat(MapImageBuilder.sidePx)
+        let side = CGFloat(Self.worldSidePx)
         size = CGSize(width: side, height: side)
         scaleMode = .aspectFit
         backgroundColor = SKColor.black
@@ -29,69 +27,24 @@ final class MapScene: SKScene {
         cam.position = CGPoint(x: side / 2, y: side / 2)
     }
 
-    /// Rebuild the unit sprites from current sim state — units move/fire/die, and bullets + spawned
-    /// soldiers appear, as the live simulation ticks.
-    private func renderUnits() {
-        guard let simulation, let assets else { return }
-        unitsLayer.removeAllChildren()
-        let side = MapImageBuilder.sidePx
-        for sprite in MapImageBuilder.unitSprites(simulation.state, assets) {
-            let texture = SKTexture(cgImage: sprite.image)
-            texture.filteringMode = .nearest
-            let unitNode = SKSpriteNode(texture: texture)
-            unitNode.position = CGPoint(x: CGFloat(sprite.centerX), y: CGFloat(side - sprite.centerY))
-            unitNode.zPosition = sprite.z
-            if sprite.flipped { unitNode.xScale = -1 }   // W-half sprites are the E-half mirrored
-            unitsLayer.addChild(unitNode)
-        }
-    }
-
     func setZoom(_ factor: CGFloat) { cam.setScale(1 / max(factor, 1)) }
 
     func load(simulation: Simulation, assets: AssetStore) {
         self.simulation = simulation
-        self.assets = assets
-        basePalette = assets.palette
         for child in children where child !== cam { child.removeFromParent() }
 
-        let side = MapImageBuilder.sidePx
-        terrainBuffer = MapImageBuilder.terrainIndices(simulation.state, assets) ?? []
-        let node = SKSpriteNode()
-        node.position = CGPoint(x: side / 2, y: side / 2)
-        node.zPosition = 0
-        terrainNode = node
-        addChild(node)
-        recolorTerrain(tick: 0)
-
-        if unitsLayer.parent == nil { addChild(unitsLayer) }
-        renderUnits()
-        lastTick = -1
+        let renderer = SpriteKitRenderer(source: MapSpriteSource(assets: assets), basePalette: assets.palette)
+        renderer.attach(to: self)
+        renderer.render(simulation.makeFrameInfo())
+        self.renderer = renderer
     }
 
-    /// The game loop: advance the simulation (clocks + structure animations), re-blit the terrain when
-    /// an animation changed a tile, and refresh the palette-cycled colours each tick.
+    /// The game loop: advance the simulation (clocks + scripts + structure animations + explosions), then
+    /// redraw from a fresh `FrameInfo` — units move/fire/die, bullets + soldiers appear, buildings animate
+    /// + vanish when destroyed, and the windtrap power light pulses (palette cycling).
     override func update(_ currentTime: TimeInterval) {
-        guard simulation != nil, let assets else { return }
+        guard simulation != nil, let renderer else { return }
         simulation!.tick()
-        if simulation!.state.mapDirty {
-            terrainBuffer = MapImageBuilder.terrainIndices(simulation!.state, assets) ?? terrainBuffer
-            simulation!.state.mapDirty = false
-        }
-        renderUnits()   // units follow the live sim (move/fire/die; bullets + soldiers appear)
-        let tick = Int(simulation!.state.timerGUI)
-        if tick != lastTick {
-            recolorTerrain(tick: tick)
-            lastTick = tick
-        }
-    }
-
-    private func recolorTerrain(tick: Int) {
-        guard let terrainNode, !terrainBuffer.isEmpty else { return }
-        let palette = PaletteAnimator.animatedPalette(base: basePalette, tick: tick)
-        guard let image = MapImageBuilder.colorize(terrainBuffer, palette: palette) else { return }
-        let texture = SKTexture(cgImage: image)
-        texture.filteringMode = .nearest
-        terrainNode.texture = texture
-        terrainNode.size = texture.size()
+        renderer.render(simulation!.makeFrameInfo())
     }
 }
