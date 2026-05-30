@@ -274,6 +274,41 @@ public extension GameState {
         return result
     }
 
+    /// `House_CalculatePowerAndCredit` (`house.c:470`): recompute house `houseID`'s power usage/production
+    /// and credit storage by summing over its structures. A structure with `powerUsage >= 0` consumes that
+    /// much; a power plant (`powerUsage < 0`) produces `-powerUsage`, scaled by hitpoints when damaged —
+    /// 1.07: a plant at ≤ half HP produces half, otherwise `-powerUsage * hp / maxHP`. The player
+    /// low-power warning + the no-silo credit reset (`g_playerCreditsNoSilo`) are GUI/player-economy seams.
+    mutating func houseCalculatePowerAndCredit(_ houseID: UInt8) {
+        let h = Int(houseID)
+        houses[h].powerUsage = 0
+        houses[h].powerProduction = 0
+        houses[h].creditsStorage = 0
+
+        var find = PoolFind(houseID: houseID)
+        while let s = structureFind(&find) {
+            guard let st = StructureType(rawValue: Int(structures[s].o.type)) else { continue }
+            let si = StructureInfo[st]
+            houses[h].creditsStorage = houses[h].creditsStorage &+ si.creditsStorage
+
+            if si.powerUsage >= 0 {
+                houses[h].powerUsage = houses[h].powerUsage &+ UInt16(si.powerUsage)
+                continue
+            }
+            let capacity = UInt16(-Int(si.powerUsage))          // a plant's full production
+            let hp = structures[s].o.hitpoints
+            let maxHP = si.o.hitpoints
+            if hp >= maxHP {
+                houses[h].powerProduction &+= capacity
+            } else if hp <= maxHP / 2 {                          // 1.07: ≤ half HP → half output
+                houses[h].powerProduction &+= capacity / 2
+            } else {
+                houses[h].powerProduction &+= UInt16(UInt32(capacity) * UInt32(hp) / UInt32(max(maxHP, 1)))
+            }
+        }
+        // SEAM: player low-power GUI warning; the `g_playerCreditsNoSilo` reset when structuresBuilt == 0.
+    }
+
     /// `Unit_EnterStructure` (`unit.c:2177`): a unit arrives inside structure `s`. If the unit is gone or the
     /// structure is dead, just remove the unit. **Allied** (the harvester→refinery / unit→repair case): the
     /// structure goes READY/BUSY, a repair pad heals + times the unit, and the unit links into the
@@ -331,11 +366,11 @@ public extension GameState {
             let oldHouse = Int(structures[structureSlot].o.houseID)
             structures[structureSlot].o.houseID = captor
             houses[oldHouse].structuresBuilt = structureGetStructuresBuilt(houseID: UInt8(oldHouse))
-            // SEAM: House_CalculatePowerAndCredit(oldHouse) — House subsystem.
+            houseCalculatePowerAndCredit(UInt8(oldHouse))
             houses[Int(captor)].structuresBuilt = structureGetStructuresBuilt(houseID: captor)
             let linkedID = structures[structureSlot].o.linkedID
             if linkedID != 0xFF { units[Int(linkedID)].o.houseID = captor }
-            // SEAM: House_CalculatePowerAndCredit(captor) — House subsystem.
+            houseCalculatePowerAndCredit(captor)
             structureUpdateMap(structureSlot)
         } else {
             let dmg = min(UInt16(units[unitSlot].o.hitpoints) &* 2, structures[structureSlot].o.hitpoints / 2)
