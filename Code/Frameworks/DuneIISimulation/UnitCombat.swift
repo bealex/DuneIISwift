@@ -92,6 +92,181 @@ public struct UnitCombat: Sendable {
         }
     }
 
+    // MARK: - Carryall transport (MoveToStructure / Pickup / TransportDeliver)
+
+    /// `Script_Unit_MoveToStructure` (op 0x1E, `unit.c:1376`): link the carrier to (and Move toward) an
+    /// idle, unlinked structure — its passenger's origin structure if it's still idle, else the nearest
+    /// structure of `type` for the carrier's house. Returns the encoded structure (0 if none).
+    public func moveToStructure(slot: Int, type: UInt16, in state: inout GameState) -> UInt16 {
+        let unitEnc = state.indexEncode(state.units[slot].o.index, type: .unit)
+        let linked = state.units[slot].o.linkedID
+        if linked != 0xFF {
+            let origin = state.units[Int(linked)].originEncoded
+            if let s = state.indexGetStructure(origin),
+               state.structures[s].state == .idle, state.structures[s].o.script.variables[4] == 0 {
+                let encoded = state.indexEncode(state.structures[s].o.index, type: .structure)
+                state.objectScriptVariable4Link(unitEnc, encoded)
+                state.units[slot].targetMove = state.units[slot].o.script.variables[4]
+                return encoded
+            }
+        }
+        var find = PoolFind(houseID: state.unitHouseID(state.units[slot]), type: type)
+        while let s = state.structureFind(&find) {
+            if state.structures[s].state != .idle { continue }
+            if state.structures[s].o.script.variables[4] != 0 { continue }
+            let encoded = state.indexEncode(state.structures[s].o.index, type: .structure)
+            state.objectScriptVariable4Link(unitEnc, encoded)
+            state.units[slot].targetMove = encoded
+            return encoded
+        }
+        return 0
+    }
+
+    /// `Script_Unit_Pickup` (op 0x22, `unit.c:225`): pick up a unit. From a READY structure (a deployed
+    /// unit waiting under it) or off the ground (a unit at `targetMove`, routed to its refinery/repair pad).
+    /// No-op (0) if the carrier is already carrying or there's nothing to grab.
+    public func pickup(slot: Int, in state: inout GameState) -> UInt16 {
+        if state.units[slot].o.linkedID != 0xFF { return 0 }
+
+        switch Tools.indexType(state.units[slot].targetMove) {
+            case .structure:
+                guard let s = state.indexGetStructure(state.units[slot].targetMove) else { return 0 }
+                if state.structures[s].state != .ready {
+                    state.objectScriptVariable4Clear(.unit(slot))
+                    state.units[slot].targetMove = 0
+                    return 0
+                }
+                state.units[slot].o.flags.insert(.inTransport)
+                state.objectScriptVariable4Clear(.unit(slot))
+                state.units[slot].targetMove = 0
+
+                let u2 = Int(state.structures[s].o.linkedID)
+                state.units[slot].o.linkedID = UInt8(truncatingIfNeeded: Int(state.units[u2].o.index))
+                let chain = state.units[u2].o.linkedID
+                state.structures[s].o.linkedID = chain
+                state.units[u2].o.linkedID = 0xFF
+                if chain == 0xFF { state.structureSetState(s, .idle) }
+
+                if state.units[u2].targetLast.x != 0 || state.units[u2].targetLast.y != 0 {
+                    state.units[slot].targetMove = state.indexEncode(state.units[u2].targetLast.packed, type: .tile)
+                } else if state.units[u2].o.type == UInt8(UnitType.harvester.rawValue)
+                            && state.unitHouseID(state.units[u2]) != state.playerHouseID {
+                    let spice = movement.map.searchSpice(state.units[slot].o.position.packed, radius: 20, in: state)
+                    state.units[slot].targetMove = state.indexEncode(spice, type: .tile)
+                }
+                return 1
+
+            case .unit:
+                guard let u2 = state.indexGetUnit(state.units[slot].targetMove),
+                      state.units[u2].o.flags.contains(.allocated) else { return 0 }
+                let isHarvester = state.units[u2].o.type == UInt8(UnitType.harvester.rawValue)
+
+                var best = -1
+                var minDistance: Int16 = 0
+                var find = PoolFind(houseID: state.unitHouseID(state.units[slot]))
+                loop: while let s2 = state.structureFind(&find) {
+                    let distance = Int16(bitPattern: Tile32.distanceRoundedUp(from: state.structures[s2].o.position,
+                                                                             to: state.units[slot].o.position))
+                    let wanted = isHarvester ? StructureType.refinery : .repair
+                    if state.structures[s2].o.type != UInt8(wanted.rawValue)
+                        || state.structures[s2].state != .idle
+                        || state.structures[s2].o.script.variables[4] != 0 { continue }
+                    if minDistance != 0 && distance >= minDistance { if isHarvester { break loop } else { continue } }
+                    minDistance = distance
+                    best = s2
+                    if isHarvester { break loop }   // a harvester takes the first idle refinery
+                }
+                guard best != -1 else { return 0 }
+                // SEAM: Unit_Select(NULL) deselect (GUI).
+
+                state.units[slot].o.linkedID = UInt8(truncatingIfNeeded: Int(state.units[u2].o.index))
+                state.units[slot].o.flags.insert(.inTransport)
+                state.unitUpdateMap(0, u2)
+                state.unitHide(u2)
+
+                state.objectScriptVariable4Link(state.indexEncode(state.units[slot].o.index, type: .unit),
+                                                state.indexEncode(state.structures[best].o.index, type: .structure))
+                state.units[slot].targetMove = state.units[slot].o.script.variables[4]
+
+                if !isHarvester { return 0 }
+                if movement.map.searchSpice(state.units[u2].o.position.packed, radius: 2, in: state) == 0 {
+                    state.units[u2].targetPreLast = Tile32(x: 0, y: 0)
+                    state.units[u2].targetLast = Tile32(x: 0, y: 0)
+                }
+                return 0
+
+            default:
+                return 0
+        }
+    }
+
+    /// `Script_Unit_TransportDeliver` (op 0x14, `unit.c:123`): drop the carrier's cargo — into a starport
+    /// (busy→ready), a refinery/repair pad (`Unit_EnterStructure`), or onto the ground at the carrier's
+    /// tile (`Unit_SetPosition`). No-op (0) when empty or aimed at a unit. The audio cues are seams.
+    public func transportDeliver(slot: Int, in state: inout GameState) -> UInt16 {
+        if state.units[slot].o.linkedID == 0xFF { return 0 }
+        if Tools.indexType(state.units[slot].targetMove) == .unit { return 0 }
+
+        if Tools.indexType(state.units[slot].targetMove) == .structure {
+            guard let s = state.indexGetStructure(state.units[slot].targetMove),
+                  let stype = StructureType(rawValue: Int(state.structures[s].o.type)) else { return 0 }
+
+            if stype == .starport {
+                var ret: UInt16 = 0
+                if state.structures[s].state == .busy {
+                    state.structures[s].o.linkedID = state.units[slot].o.linkedID
+                    state.units[slot].o.linkedID = 0xFF
+                    state.units[slot].o.flags.remove(.inTransport)
+                    state.units[slot].amount = 0
+                    state.structureSetState(s, .ready)
+                    ret = 1
+                }
+                state.objectScriptVariable4Clear(.unit(slot))
+                state.units[slot].targetMove = 0
+                return ret
+            }
+
+            if (state.structures[s].state == .idle
+                || (StructureInfo[stype].o.flags.contains(.busyStateIsIncoming) && state.structures[s].state == .busy))
+                && state.structures[s].o.linkedID == 0xFF {
+                state.unitEnterStructure(Int(state.units[slot].o.linkedID), s)
+                state.objectScriptVariable4Clear(.unit(slot))
+                state.units[slot].targetMove = 0
+                state.units[slot].o.linkedID = 0xFF
+                state.units[slot].o.flags.remove(.inTransport)
+                state.units[slot].amount = 0
+                return 1
+            }
+
+            state.objectScriptVariable4Clear(.unit(slot))
+            state.units[slot].targetMove = 0
+            return 0
+        }
+
+        // Ground drop: place the passenger at the carrier's (centred) tile.
+        let drop = state.units[slot].o.position.centered
+        if !state.mapIsValidPosition(drop.packed) { return 0 }
+        let passenger = Int(state.units[slot].o.linkedID)
+        if !unitSetPosition(slot: passenger, position: drop, in: &state) { return 0 }
+        // SEAM: Voice_PlayAtTile(24) for a player unit.
+
+        let facing = state.units[slot].orientation[0].current
+        var u2 = state.units[passenger]
+        movement.unit.setOrientation(&u2, orientation: facing, rotateInstantly: true, level: 0)
+        movement.unit.setOrientation(&u2, orientation: facing, rotateInstantly: true, level: 1)
+        movement.unit.setSpeed(&u2, speed: 0, gameSpeed: state.gameSpeed)
+        state.units[passenger] = u2
+
+        state.units[slot].o.linkedID = state.units[passenger].o.linkedID   // shift the next passenger in
+        state.units[passenger].o.linkedID = 0xFF
+        if state.units[slot].o.linkedID != 0xFF { return 1 }
+
+        state.units[slot].o.flags.remove(.inTransport)
+        state.objectScriptVariable4Clear(.unit(slot))
+        state.units[slot].targetMove = 0
+        return 1
+    }
+
     // MARK: - Spawning (Unit_Create / Unit_CreateBullet)
 
     /// `Unit_IsTileOccupied` (`unit.c:1789`): is the unit's current tile blocked for it? True if the
