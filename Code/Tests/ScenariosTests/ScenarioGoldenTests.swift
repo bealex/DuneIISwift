@@ -20,6 +20,15 @@ import DuneIISimulation
 /// `GameLoop_Unit`); combat scenarios gate at frame 0 until the combat natives (`Fire`'s projectile path,
 /// `FindBestTarget`, damage) land — raise `compared` then (the run + compare loop already does the whole
 /// sequence). New scenarios slot in by adding an `.INI` + a line in the generator + a `Spec` below.
+///
+/// **`guard` gates at its deterministic prefix (6).** Once `Script_Unit_IdleAction` (native `0x31`) is
+/// ported, a sitting GUARD unit performs a *stochastic* idle twitch — a `Tools_RandomLCG_Range(0,10)` roll
+/// and, on a low roll, a turret/body rotation chosen by `Tools_Random_256() & 1`. Matching that twitch
+/// byte-for-byte would require byte-aligning our `random256` stream with the oracle's through every
+/// setup-time + per-tick draw (map-gen, unit init, the mover's render-only `wobble` — which never affects
+/// position, so the old full-trajectory match never pinned it). Per the project parity bar we do **not**
+/// chase byte-exact RNG order, so `guard` is asserted only up to the first idle RNG draw (tick 6); the
+/// trike's full crossing is still covered by `moving`/`move-trike`. See `Documentation/Insights`.
 @Suite("Scenario golden vs OpenDUNE")
 struct ScenarioGoldenTests {
     struct Frame: Decodable { let tick: Int; let units: [UnitState] }
@@ -43,7 +52,7 @@ struct ScenarioGoldenTests {
     static let specs: [Spec] = [
         Spec(name: "moving",       ini: "bootstrap.ini",    attack: false, cmdUnit: 22, tile: 2600, compared: 0),  // tank, full match
         Spec(name: "move-trike",   ini: "move-trike.ini",   attack: false, cmdUnit: 22, tile: 1040, compared: 0),  // trike off-viewport, full match
-        Spec(name: "guard",        ini: "guard.ini",        attack: false, cmdUnit: 23, tile: 1100, compared: 0),  // guard sits + trike approaches (never in range), full match
+        Spec(name: "guard",        ini: "guard.ini",        attack: false, cmdUnit: 23, tile: 1100, compared: 6),  // guard sits + trike approaches; deterministic prefix (idle twitch is RNG ⇒ see note)
         Spec(name: "attack-close", ini: "attack-close.ini", attack: true,  cmdUnit: 22, tile: 1041, compared: 5),  // combat ⇒ deterministic prefix only (defender reacts ~tick 5)
     ]
 

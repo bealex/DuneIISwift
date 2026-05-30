@@ -55,33 +55,12 @@ public struct UnitOrders: Sendable {
         }
     }
 
-    /// `Unit_SetDestination` (`unit.c`): set `targetMove`, resolving a tile that holds a unit/structure
-    /// to that object, and linking script-var-4 when moving into a friendly enterable structure.
+    /// `Unit_SetDestination` (`unit.c:701`): set `targetMove`, resolving a tile that holds a unit/structure
+    /// to that object, and linking script-var-4 when moving into a friendly enterable structure. Delegates
+    /// to the single home of the primitive (`UnitScriptFunctions.unitSetDestination`), which the script
+    /// native `Script_Unit_SetDestination` also uses.
     public func setDestination(slot: Int, _ destination0: UInt16, in state: inout GameState) {
-        var destination = destination0
-        if !state.indexIsValid(destination) { return }
-        if state.units[slot].targetMove == destination { return }
-
-        if Tools.indexType(destination) == .tile {
-            let packed = Tools.indexDecode(destination)
-            if let u2 = state.unitGetByPackedTile(packed) {
-                if u2 != slot { destination = state.indexEncode(state.units[u2].o.index, type: .unit) }
-            } else if let s = state.structureGetByPackedTile(packed) {
-                destination = state.indexEncode(state.structures[s].o.index, type: .structure)
-            }
-        }
-
-        if let sSlot = state.indexGetStructure(destination),
-           state.structures[sSlot].o.houseID == state.unitHouseID(state.units[slot]),
-           let ut = UnitType(rawValue: Int(state.units[slot].o.type)) {
-            let valid = primitives.isValidMovementIntoStructure(state.units[slot], state.structures[sSlot], in: state)
-            if valid == 1 || UnitInfo[ut].movementType == .winger {
-                state.objectScriptVariable4Link(state.indexEncode(state.units[slot].o.index, type: .unit), destination)
-            }
-        }
-
-        state.units[slot].targetMove = destination
-        state.units[slot].route[0] = 0xFF
+        UnitScriptFunctions(unitPrimitives: primitives).unitSetDestination(slot: slot, destination0, in: &state)
     }
 
     /// `Unit_SetTarget` (`unit.c`): set `targetAttack`, resolving a tile to the object on it; targeting

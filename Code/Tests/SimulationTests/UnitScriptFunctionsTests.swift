@@ -233,4 +233,86 @@ struct UnitScriptFunctionsTests {
 
         #expect(fns.setDestinationDirect(slot: slot, encoded: 0, in: &s) == 0)   // invalid ⇒ no-op
     }
+
+    @Test("setDestination native: 0/invalid clears targetMove; a tile sets it; harvester refinery special")
+    func setDestination() {
+        // encoded 0 ⇒ clear targetMove, return 0.
+        var (s, slot) = stateWithUnit(.tank)
+        s.units[slot].targetMove = 1234
+        #expect(fns.setDestination(slot: slot, encoded: 0, in: &s) == 0)
+        #expect(s.units[slot].targetMove == 0)
+
+        // A (vacant) tile index ⇒ the Unit_SetDestination primitive sets targetMove + route[0]=0xFF.
+        var (s2, slot2) = stateWithUnit(.tank, at: 20 * 64 + 20)
+        let tile = s2.indexEncode(40 * 64 + 40, type: .tile)
+        #expect(fns.setDestination(slot: slot2, encoded: tile, in: &s2) == 0)
+        #expect(s2.units[slot2].targetMove == tile)
+        #expect(s2.units[slot2].route[0] == 0xFF)
+
+        // Harvester targeting a tile (no structure there) ⇒ raw store + route reset (the special branch).
+        var (s3, harv) = stateWithUnit(.harvester, at: 10 * 64 + 10)
+        let tile3 = s3.indexEncode(12 * 64 + 12, type: .tile)
+        s3.units[harv].route[0] = 3
+        #expect(fns.setDestination(slot: harv, encoded: tile3, in: &s3) == 0)
+        #expect(s3.units[harv].targetMove == tile3)
+        #expect(s3.units[harv].route[0] == 0xFF)
+    }
+
+    @Test("findStructure: first idle, unlinked, unbusied structure of the unit's house + type, else 0")
+    func findStructure() {
+        var (s, slot) = stateWithUnit(.tank, house: 0)
+        let type = UInt16(StructureType.refinery.rawValue)
+        func addRefinery(house: UInt8) -> Int {
+            let i = s.structureAllocate(index: Pool.structureIndexInvalid,
+                                        type: UInt8(StructureType.refinery.rawValue))!
+            s.structures[i].o.houseID = house
+            s.structures[i].state = .idle
+            return i
+        }
+
+        #expect(fns.findStructure(slot: slot, type: type, in: s) == 0)   // none
+
+        // A busy one is skipped; a wrong-house one is skipped; a wrong-type one is skipped.
+        let busy = addRefinery(house: 0); s.structures[busy].state = .busy
+        let enemy = addRefinery(house: 2)
+        #expect(fns.findStructure(slot: slot, type: type, in: s) == 0)
+
+        // An idle, unlinked, unbusied house-0 refinery matches.
+        let good = addRefinery(house: 0)
+        #expect(fns.findStructure(slot: slot, type: type, in: s)
+                == s.indexEncode(s.structures[good].o.index, type: .structure))
+
+        // Link it ⇒ skipped again (back to none).
+        s.structures[good].o.script.variables[4] = 99
+        #expect(fns.findStructure(slot: slot, type: type, in: s) == 0)
+        _ = enemy
+    }
+
+    @Test("idleAction: ground unit twitches (LCG roll + a turret/body rotation on a low roll); air no-ops")
+    func idleAction() {
+        // A tracked tank on a fresh LCG (seed 0 ⇒ Tools_RandomLCG_Range(0,10)=0 ≤ 2 ⇒ it rotates). Predict
+        // the exact draws (1 LCG, then level-select + orientation) via a probe with the same RNG state.
+        var (s, slot) = stateWithUnit(.tank)
+        var probe = s
+        let roll = probe.randomLCG.range(0, 10)
+        #expect(roll <= 2)
+        let level = (probe.random256.next() & 1) == 0 ? 1 : 0
+        let orientation = Int8(truncatingIfNeeded: probe.random256.next())
+
+        #expect(fns.idleAction(slot: slot, in: &s) == 0)
+        #expect(s.units[slot].orientation[level].target == orientation)
+        #expect(s.units[slot].orientation[level].speed != 0)               // it is now rotating
+        #expect(s.units[slot].orientation[1 - level].target == 0)          // the other level untouched
+        // The RNG advanced by exactly the predicted draws — the streams stay in lockstep.
+        #expect(s.random256.next() == probe.random256.next())
+
+        // An air unit (winger) no-ops after a single LCG roll — no orientation change, random256 untouched.
+        var (sa, air) = stateWithUnit(.carryall)
+        var probeA = sa
+        _ = probeA.randomLCG.range(0, 10)
+        #expect(fns.idleAction(slot: air, in: &sa) == 0)
+        #expect(sa.units[air].orientation[0].target == 0)
+        #expect(sa.units[air].orientation[1].target == 0)
+        #expect(sa.random256.next() == probeA.random256.next())           // no random256 draw happened
+    }
 }

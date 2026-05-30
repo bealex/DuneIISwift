@@ -152,6 +152,108 @@ public struct UnitScriptFunctions: Sendable {
         return 0
     }
 
+    /// `Unit_SetDestination` (`unit.c:701`): the shared move-target primitive — set the unit's
+    /// `targetMove`, resolving a *tile* index that holds a unit/structure to that object, and linking
+    /// script-var-4 when moving into a friendly enterable structure. No-op if the index is invalid or the
+    /// target is unchanged. Used by `Script_Unit_SetDestination` (below) and the player-order path
+    /// (`UnitOrders`), which delegates here so the primitive has a single home.
+    public func unitSetDestination(slot: Int, _ destination0: UInt16, in state: inout GameState) {
+        var destination = destination0
+        if !state.indexIsValid(destination) { return }
+        if state.units[slot].targetMove == destination { return }
+
+        if Tools.indexType(destination) == .tile {
+            let packed = Tools.indexDecode(destination)
+            if let u2 = state.unitGetByPackedTile(packed) {
+                if u2 != slot { destination = state.indexEncode(state.units[u2].o.index, type: .unit) }
+            } else if let s = state.structureGetByPackedTile(packed) {
+                destination = state.indexEncode(state.structures[s].o.index, type: .structure)
+            }
+        }
+
+        if let sSlot = state.indexGetStructure(destination),
+           state.structures[sSlot].o.houseID == state.unitHouseID(state.units[slot]),
+           let ut = UnitType(rawValue: Int(state.units[slot].o.type)) {
+            let valid = unitPrimitives.isValidMovementIntoStructure(state.units[slot], state.structures[sSlot], in: state)
+            if valid == 1 || UnitInfo[ut].movementType == .winger {
+                state.objectScriptVariable4Link(state.indexEncode(state.units[slot].o.index, type: .unit), destination)
+            }
+        }
+
+        state.units[slot].targetMove = destination
+        state.units[slot].route[0] = 0xFF
+    }
+
+    /// `Script_Unit_SetDestination` (`script/unit.c:796`, native `0x05`): set the running unit's move
+    /// destination from the stack arg. A `0` / invalid index just clears `targetMove`. A harvester targets
+    /// a refinery specially — if the encoded index is not a structure it stores it raw (route reset); if it
+    /// *is* a structure already linked (`variables[4] != 0`, i.e. busy) it does nothing. Otherwise it
+    /// defers to the `Unit_SetDestination` primitive. Returns 0.
+    public func setDestination(slot: Int, encoded: UInt16, in state: inout GameState) -> UInt16 {
+        if encoded == 0 || !state.indexIsValid(encoded) {
+            state.units[slot].targetMove = 0
+            return 0
+        }
+
+        if UnitType(rawValue: Int(state.units[slot].o.type)) == .harvester {
+            guard let sSlot = state.indexGetStructure(encoded) else {
+                state.units[slot].targetMove = encoded
+                state.units[slot].route[0] = 0xFF
+                return 0
+            }
+            if state.structures[sSlot].o.script.variables[4] != 0 { return 0 }
+        }
+
+        unitSetDestination(slot: slot, encoded, in: &state)
+        return 0
+    }
+
+    /// `Script_Unit_FindStructure` (`script/unit.c:1572`, native `0x25`): find an *idle, unlinked,
+    /// unbusied* structure of the given `type` owned by the running unit's house (`Structure_Find` over the
+    /// pool, gated `state == IDLE && linkedID == 0xFF && variables[4] == 0`). Returns its encoded index, or
+    /// 0 if none. The GUARD/retreat scripts use it to locate a free repair facility/landing pad. Read-only.
+    public func findStructure(slot: Int, type: UInt16, in state: GameState) -> UInt16 {
+        var find = PoolFind(houseID: state.unitHouseID(state.units[slot]), type: type)
+        while let sSlot = state.structureFind(&find) {
+            let s = state.structures[sSlot]
+            if s.state != .idle { continue }
+            if s.o.linkedID != 0xFF { continue }
+            if s.o.script.variables[4] != 0 { continue }
+            return state.indexEncode(s.o.index, type: .structure)
+        }
+        return 0
+    }
+
+    /// `Script_Unit_IdleAction` (`script/unit.c:1760`, native `0x31`): the "sit idle" fidget a unit holding
+    /// position (GUARD/AREA-GUARD) performs — twitch its sprite/orientation now and then. Ground units only
+    /// (foot/tracked/wheeled); air/slither no-op. Draws `Tools_RandomLCG_Range(0, 10)` once: a foot unit
+    /// rolling > 8 reseats its 6-bit sprite offset (`Tools_Random_256`); on a roll ≤ 2 it spins one
+    /// orientation level to a random facing. The exact RNG draw order — LCG once, then up to three
+    /// `Tools_Random_256` (the `&0x3F` reseat, then the level-select draw, then the orientation draw) — is
+    /// faithful to OpenDUNE so the parity RNG stream stays aligned. Returns 0.
+    public func idleAction(slot: Int, in state: inout GameState) -> UInt16 {
+        let random = state.randomLCG.range(0, 10)
+        guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
+        let movementType = UnitInfo[ut].movementType
+        if movementType != .foot && movementType != .tracked && movementType != .wheeled { return 0 }
+
+        if movementType == .foot && random > 8 {
+            state.units[slot].spriteOffset = Int8(truncatingIfNeeded: state.random256.next() & 0x3F)
+            state.unitUpdateMap(2, slot)
+        }
+
+        if random > 2 { return 0 }
+
+        // Preserve the order of the two Tools_Random_256() draws: the level-select first, the new
+        // orientation second.
+        let level = (state.random256.next() & 1) == 0 ? 1 : 0
+        let orientation = Int8(truncatingIfNeeded: state.random256.next())
+        var u = state.units[slot]
+        unitPrimitives.setOrientation(&u, orientation: orientation, rotateInstantly: false, level: level)
+        state.units[slot] = u
+        return 0
+    }
+
     /// `Script_Unit_RemoveFog` (`script/unit.c`): lift the player's fog around the unit. The fog primitive
     /// itself is ported (`GameState.unitRemoveFog` → `Tile_RemoveFogInRadius` / `Map_UnveilTile`), but it
     /// is **not wired in here yet**: revealing an enemy changes `FindBestTarget`'s visibility inputs
