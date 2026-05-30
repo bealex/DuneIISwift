@@ -1,0 +1,7 @@
+# Unported EMC natives must clean-halt the script (null the PC), not suspend
+
+**Finding.** In OpenDUNE the unit/structure native-function tables are fully populated (unused slots are `Script_General_NoOperation`), so an op-14 `FUNCTION` call **never suspends** a script — only `Delay` does. Our VM dispatch returns `nil` for a not-yet-ported native; the interpreter must treat that as a **clean halt** (set `scriptPC = scriptNull`, return false), not a "stop this tick, resume past the call next tick" suspend.
+
+**Why it matters.** The earlier code kept the PC on `nil` and the per-tick runner broke out — so each unported native cost one whole script-tick and the script *limped forward*, silently skewing tick timing. That's what made the moving tank stall (≈15 ticks to reach `CalculateRoute` instead of 1) and would corrupt any trajectory that touches an unported native. Clean-halt instead makes the gap **loud** (the unit freezes, `Script_IsLoaded` goes false) and never alters timing — matching the project's "surface the gap, don't invent behaviour" rule.
+
+**How to apply.** Keep the native tables conceptually full: the genuine `NoOperation` slots return 0 and continue; a `nil` (unported) halts. Code: `DuneIISimulation/Script/ScriptInterpreter.swift` (op-14 case nulls the PC on `nil`); `UnitScriptRunner.dispatch`. When a unit "freezes" in a scenario, the cause is almost always an unported native it reached — trace the dispatch to find which.
