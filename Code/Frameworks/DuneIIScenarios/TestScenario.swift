@@ -7,6 +7,7 @@ public enum ScenarioKind: String, Sendable, CaseIterable {
     case farAttack
     case guarding
     case moveAroundBuilding
+    case deviate
 
     public var title: String {
         switch self {
@@ -15,6 +16,7 @@ public enum ScenarioKind: String, Sendable, CaseIterable {
             case .farAttack:          return "Far attack"
             case .guarding:           return "Guarding (react at 2:2)"
             case .moveAroundBuilding: return "Move around building"
+            case .deviate:            return "Deviate (enemy steals the unit)"
         }
     }
 

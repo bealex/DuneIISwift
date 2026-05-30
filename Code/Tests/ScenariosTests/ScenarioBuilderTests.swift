@@ -73,4 +73,16 @@ struct ScenarioBuilderTests {
         #expect(world.state.map[centre].hasStructure)
         #expect(world.state.units[world.unitSlots[0]].o.position.packed == world.terrain.mapPacked(lx: 0, ly: 0))
     }
+
+    @Test("deviate: the enemy deviator mind-controls the player unit, which flips to the enemy house")
+    func deviate() throws {
+        guard let builder = try loadBuilder() else { return }
+        let world = builder.build(TestScenario(kind: .deviate, unit1: .tank, unit2: .deviator, terrainSeed: 1))
+        let victim = world.unitSlots[0]
+        #expect(world.state.units[victim].o.houseID == UInt8(HouseID.harkonnen.rawValue))   // still owned by player
+        #expect(world.state.units[victim].deviated == 120)                                  // but deviated
+        #expect(world.state.units[victim].deviatedHouse == UInt8(HouseID.ordos.rawValue))   // by the enemy
+        #expect(world.state.unitHouseID(world.state.units[victim]) == UInt8(HouseID.ordos.rawValue))  // renders as Ordos
+        #expect(world.state.units[victim].targetAttack == 0 && world.state.units[victim].targetMove == 0)
+    }
 }

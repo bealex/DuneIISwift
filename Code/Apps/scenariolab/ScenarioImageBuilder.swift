@@ -53,7 +53,8 @@ enum ScenarioImageBuilder {
             if UnitInfo[type].o.flags.contains(.blurTile) { continue }    // sandworm shimmer not drawn here
             guard let sprites = UnitSprites.info(for: u) else { continue }
 
-            let house = DuneIIRenderer.House(rawValue: Int(u.o.houseID)) ?? .harkonnen
+            // Use the effective house (Unit_GetHouseID) so a deviated unit shows its captor's colours.
+            let house = DuneIIRenderer.House(rawValue: Int(world.state.unitHouseID(u))) ?? .harkonnen
             let cx = Int(u.o.position.x) * tilePx / 256 - originPxX
             let cy = Int(u.o.position.y) * tilePx / 256 - originPxY
 

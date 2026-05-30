@@ -78,6 +78,16 @@ public struct ScenarioBuilder {
                 let u1 = place(&state, scenario.unit1, player, terrain, lx: 0, ly: 0)
                 move(&state, u1, toLocal: (7, 7), terrain, actions)
                 slots = [u1]
+
+            case .deviate:
+                // Demonstrate Unit_Deviate: an enemy deviator mind-controls the player's unit, which
+                // flips to the enemy house (rendered in the enemy's colours). Forced (probability 256)
+                // so the demo always deviates; the RNG-gated path is covered by UnitCombatTests.
+                let u1 = place(&state, scenario.unit1, player, terrain, lx: 2, ly: 3)
+                let u2 = place(&state, scenario.unit2, enemy, terrain, lx: 4, ly: 3)
+                UnitCombat(movement: UnitMovement(scriptInfo: unitScript))
+                    .deviate(slot: u1, probability: 256, houseID: UInt8(enemy.rawValue), in: &state)
+                slots = [u1, u2]
         }
 
         return ScenarioWorld(state: state, runner: runner, actions: actions, unitSlots: slots, terrain: terrain)
