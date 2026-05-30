@@ -153,6 +153,9 @@ public extension GameState {
         teamCreate(houseID: UInt8(house.rawValue), teamActionType: UInt8(action.rawValue),
                    movementType: UInt8(movement.rawValue), minMembers: minMembers, maxMembers: maxMembers,
                    scriptPC: scriptPC)
+        // Flag the team's house AI-active so `GameLoop_Team` runs it. In a real game the bit is set when the
+        // AI first sees an enemy; scenario load pins it on (mirroring the parity harness's Scen_LoadTeam).
+        houses[Int(house.rawValue)].flags.insert(.isAIActive)
     }
 
     private func fields(_ value: String?) -> [String] {

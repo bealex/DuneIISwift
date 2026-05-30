@@ -59,6 +59,7 @@ struct ScenarioGoldenTests {
         let index: UInt16; let type: UInt8; let houseID: UInt8; let packed: UInt16; let orient: Int16
         let hp: UInt16; let actionID: UInt8; let targetMove: UInt16; let targetAttack: UInt16
         let spriteOffset: Int16   // the walk/animation frame (tickUnknown5) — verifies infantry animation
+        let team: UInt8           // 1-based team membership (0 = none) — verifies AI recruiting (Team_AddClosestUnit)
         let alive: Int
     }
     /// The dynamic structure fields (identity + the ones combat/scripts change). The oracle dumps more
@@ -78,6 +79,7 @@ struct ScenarioGoldenTests {
         let tile: UInt16       // the order's target tile
         let compared: Int      // leading ticks asserted; 0 = full trajectory
         var cmd: Bool = true    // whether to issue the player command (false = structure/economy-only scenario)
+        var team: Bool = false  // bridge TEAM.EMC + the team-script offsets (the [TEAMS] AI golden)
         var testDescription: String { name }
     }
 
@@ -90,6 +92,7 @@ struct ScenarioGoldenTests {
         Spec(name: "attack-structure", ini: "attack-structure.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0),  // tank attacks an Ordos windtrap: full 400-tick match (structures + units), inc. the bullet-impact Structure_Damage (200→175). Found the structure-corner-position bug (see note).
         Spec(name: "trooper",     ini: "trooper.ini",     attack: false, cmdUnit: 22, tile: 1040, compared: 0),  // a foot trooper walks: verifies the walk animation (spriteOffset, tickUnknown5) + movement, full match
         Spec(name: "economy", ini: "economy.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false),  // HOUSE golden: an Ordos windtrap+silo base — full 60-tick match of the house aggregate (credits 2000→clamp 1000→power-maint 999, power 100/5, storage 1000) + structures. Validates House_CalculatePowerAndCredit + the credit clamp + power maintenance.
+        Spec(name: "teams", ini: "teams.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false, team: true),  // TEAM-AI golden: an Ordos `Normal`-brain team recruits its tanks via GameLoop_Team. Unit-state + (decisively) the RNG draw stream match the oracle full 400 ticks — proving the team loop + brain run identically cross-engine (recruiting isn't in the dump; the RNG stream is the proof). Targeting is fog-gated off (seenByHouses 0), matching the oracle.
     ]
 
     /// Sorted by `index` so the comparison is independent of pool/find-array enumeration order: our engine
@@ -102,6 +105,7 @@ struct ScenarioGoldenTests {
                              packed: u.o.position.packed, orient: Int16(u.orientation[0].current),
                              hp: u.o.hitpoints, actionID: u.actionID, targetMove: u.targetMove,
                              targetAttack: u.targetAttack, spriteOffset: Int16(u.spriteOffset),
+                             team: u.team,
                              alive: u.o.flags.contains(.used) ? 1 : 0)
         }
         .sorted { $0.index < $1.index }
@@ -142,8 +146,13 @@ struct ScenarioGoldenTests {
 
         let scriptInfo = ScriptInfo(try Emc.Program(emc))
         let structureScriptInfo = ScriptInfo(try Emc.Program(buildEmc))
+        // The [TEAMS] golden bridges TEAM.EMC (the team-script offsets feed Team_Create) + the live runner.
+        let teamScriptInfo: ScriptInfo? = spec.team
+            ? (try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/TEAM/TEAM.emc")))
+                .flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
+            : nil
         var state = GameState()
-        state.loadScenario(ini: Ini(ini), iconMap: try IconMap(icon))
+        state.loadScenario(ini: Ini(ini), iconMap: try IconMap(icon), teamScriptOffsets: teamScriptInfo?.offsets ?? [])
         state.viewportPosition = Tile32.packXY(x: 12, y: 12)   // matches the oracle's pinned parity viewport
 
         // Scen-style prepare (mirrors the oracle's Scen_LoadUnit + Game_Prepare placement): load each
@@ -162,7 +171,8 @@ struct ScenarioGoldenTests {
         }
 
         // Run our engine for the whole trajectory, capturing a frame per tick (frame 0 = post-command).
-        var sim = Simulation(state: state, scriptInfo: scriptInfo, structureScriptInfo: structureScriptInfo)
+        var sim = Simulation(state: state, scriptInfo: scriptInfo, structureScriptInfo: structureScriptInfo,
+                             teamScriptInfo: teamScriptInfo)
         // Record our per-tick RNG draws (post-setup, like the oracle's trace) for the draw-stream assertion.
         let rngSink = RngTraceSink()
         sim.state.random256.traceSink = rngSink
