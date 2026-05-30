@@ -152,6 +152,44 @@ struct StructureScriptFunctions: Sendable {
         UInt16(bitPattern: state.structures[slot].state.rawValue)
     }
 
+    /// `Script_Structure_RefineSpice` (op 0x15, `:105`): convert a linked harvester's spice into the owner
+    /// House's credits, a fraction per tick scaled by the refinery's hitpoint ratio (so a damaged refinery
+    /// refines slower). No linked unit → `SetState(IDLE)`, returns 0. Otherwise returns 1 while refining
+    /// (and throttles itself with `script.delay = 6`); an emptied harvester drops its `inTransport` flag.
+    /// Enemy refineries get a small ±RNG bonus per unit refined. The `g_scenario` harvested-spice tally
+    /// (allied/enemy totals) is a SEAM — scenario score, not modeled headlessly.
+    func refineSpice(slot: Int, in state: inout GameState) -> UInt16 {
+        let linkedID = state.structures[slot].o.linkedID
+        if linkedID == 0xFF {
+            state.structureSetState(slot, .idle)
+            return 0
+        }
+        guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return 0 }
+        let maxHP = UInt32(StructureInfo[st].o.hitpoints)
+        guard maxHP > 0 else { return 0 }
+        let u = Int(linkedID)
+
+        var harvesterStep = UInt16((UInt32(state.structures[slot].o.hitpoints) &* 256 / maxHP) &* 3 / 256)
+        let amount = UInt16(state.units[u].amount)
+        if amount < harvesterStep { harvesterStep = amount }
+        if amount != 0 && harvesterStep < 1 { harvesterStep = 1 }
+        if harvesterStep == 0 { return 0 }
+
+        var creditsStep: UInt16 = 7
+        if state.units[u].o.houseID != state.playerHouseID {
+            creditsStep = UInt16(truncatingIfNeeded: 7 + (Int(state.random256.next() % 4) - 1))   // 6…9
+        }
+        creditsStep = creditsStep &* harvesterStep
+        // SEAM: g_scenario.harvestedAllied / harvestedEnemy tally.
+
+        let h = Int(state.structures[slot].o.houseID)
+        state.houses[h].credits = state.houses[h].credits &+ creditsStep
+        state.units[u].amount = UInt8(truncatingIfNeeded: amount &- harvesterStep)
+        if state.units[u].amount == 0 { state.units[u].o.flags.remove(.inTransport) }
+        state.structures[slot].o.script.delay = 6
+        return 1
+    }
+
     /// `Script_Structure_RemoveFogAroundTile` (op 0x0F, `:88`): reveal fog around a player structure.
     func removeFogAroundTile(slot: Int, in state: inout GameState) -> UInt16 {
         state.structureRemoveFog(slot)

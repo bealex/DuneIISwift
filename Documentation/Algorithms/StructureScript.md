@@ -67,10 +67,13 @@ Ported in this slice (`StructureScriptFunctions`):
 | 0x09 | `Structure_RotateTurret` | step the turret sprite one notch toward the target; 0 = aimed, 1 = rotating |
 | 0x0A | `Structure_GetDirection` | the 8-orientation (×32) to a tile, or the turret's current facing if the index is invalid |
 | 0x0B | `Structure_Fire` | spawn the turret's bullet/missile at `variables[2]` via `Unit_CreateBullet`; returns the fire delay |
+| 0x15 | `Structure_RefineSpice` | convert a linked harvester's spice into the owner's credits (hitpoint-scaled); SetState(IDLE) if unlinked |
 | 0x16 | `Structure_Explode` | `Map_MakeExplosion(EXPLOSION_STRUCTURE)` per layout tile |
 | 0x17 | `Structure_Destroy` | `Structure_Remove` + soldier spawn |
 
-Deferred (clean-halt the script when reached — loud, not invented) to later slices: `FindUnitByType` (0x03), `Unknown0C5A` unit-unload (0x07) — the **factory/refinery deploy** slice; `RefineSpice` (0x15) — the **refinery/economy** slice. A healthy structure's idle loop runs fully; a refinery/factory structure halts cleanly at its first unported native until those slices land.
+`RefineSpice` (`structure.c:105`) refines `harvesterStep = (hitpoints·256 / maxHitpoints)·3 / 256` spice per call (so a damaged refinery is slower), clamped to the harvester's remaining `amount`; credits = 7/unit (enemy refineries get a ±RNG bonus), `script.delay = 6` throttles it, and an emptied harvester drops `inTransport`. The `g_scenario` allied/enemy harvested-spice tally is a SEAM (scenario score). The refinery script only reaches it while `state == READY` with a linked harvester (set by `Unit_EnterStructure`).
+
+Deferred (clean-halt the script when reached — loud, not invented) to the **factory/refinery deploy** slice: `FindUnitByType` (0x03, summon a carryall) and `Unknown0C5A` unit-unload (0x07) — both need `Structure_FindFreePosition` + `Unit_SetPosition` (and `FindUnitByType` also `Unit_CallUnitByType`), and the harvester→refinery entry needs `Unit_EnterStructure`. A refinery refines its linked harvester's spice into credits, then halts cleanly at the carryall-summon step until that slice lands.
 
 ## Turret firing (0x08–0x0B)
 

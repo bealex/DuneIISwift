@@ -38,11 +38,12 @@ public struct StructureScriptRunner: Sendable {
             case 0x0A: return structure.getDirection(slot: slot, encoded: engine.peek(1), in: state)
             case 0x0B: return structure.fire(slot: slot, in: &state)
             case 0x0D: return structure.getState(slot: slot, in: state)
+            case 0x15: return structure.refineSpice(slot: slot, in: &state)
             case 0x0E: return general.noOperation()   // Script_Structure_VoicePlay — audio, player-only (SEAM)
             case 0x0F: return structure.removeFogAroundTile(slot: slot, in: &state)
             case 0x16: return structure.explode(slot: slot, in: &state)
             case 0x17: return structure.destroy(slot: slot, in: &state)
-            default:   return nil   // not yet ported (FindUnitByType 0x03 / unit-unload 0x07 / RefineSpice 0x15)
+            default:   return nil   // not yet ported (FindUnitByType 0x03 / unit-unload 0x07 — the deploy slice)
         }
     }
 

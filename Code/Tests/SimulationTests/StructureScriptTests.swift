@@ -234,6 +234,68 @@ struct StructureScriptTests {
         #expect(fired)   // the turret found the enemy, rotated to aim, and fired
     }
 
+    // MARK: - RefineSpice (0x15)
+
+    @Test("Script_Structure_RefineSpice converts a linked harvester's spice into the owner's credits")
+    func refineSpice() {
+        var (s, combat) = minimal()
+        let fns = StructureScriptFunctions(combat: combat)
+        let ref = placeTurret(&s, .refinery, house: 0, at: 20 * 64 + 20)
+        s.structures[ref].o.hitpoints = StructureInfo[.refinery].o.hitpoints   // full HP → step 3
+        s.structures[ref].state = .busy
+
+        // No linked unit → SetState(IDLE), no credits.
+        s.structures[ref].o.linkedID = 0xFF
+        #expect(fns.refineSpice(slot: ref, in: &s) == 0)
+        #expect(s.structures[ref].state == .idle)
+        #expect(s.houses[0].credits == 0)
+
+        // Link a player harvester carrying 10 spice.
+        let harv = placeUnit(&s, .harvester, house: 0, at: 20 * 64 + 25, seenBy: nil)
+        s.units[harv].amount = 10
+        s.units[harv].o.flags.insert(.inTransport)
+        s.structures[ref].o.linkedID = UInt8(harv)
+
+        // One refine: player credits = 7 × step(3) = 21; amount 10→7; throttle delay 6; still refining.
+        #expect(fns.refineSpice(slot: ref, in: &s) == 1)
+        #expect(s.houses[0].credits == 21)
+        #expect(s.units[harv].amount == 7)
+        #expect(s.structures[ref].o.script.delay == 6)
+        #expect(s.units[harv].o.flags.contains(.inTransport))   // not empty yet
+    }
+
+    @Test("RefineSpice clears inTransport when the harvester is emptied")
+    func refineEmpties() {
+        var (s, combat) = minimal()
+        let fns = StructureScriptFunctions(combat: combat)
+        let ref = placeTurret(&s, .refinery, house: 0, at: 20 * 64 + 20)
+        s.structures[ref].o.hitpoints = StructureInfo[.refinery].o.hitpoints
+        let harv = placeUnit(&s, .harvester, house: 0, at: 20 * 64 + 25, seenBy: nil)
+        s.units[harv].amount = 2          // < step(3) → clamps to 2
+        s.units[harv].o.flags.insert(.inTransport)
+        s.structures[ref].o.linkedID = UInt8(harv)
+
+        #expect(fns.refineSpice(slot: ref, in: &s) == 1)
+        #expect(s.houses[0].credits == 14)   // 7 × 2
+        #expect(s.units[harv].amount == 0)
+        #expect(!s.units[harv].o.flags.contains(.inTransport))   // emptied
+    }
+
+    @Test("RefineSpice gives an enemy refinery a small ±RNG credit bonus")
+    func refineEnemyVariance() {
+        var (s, combat) = minimal()
+        let fns = StructureScriptFunctions(combat: combat)
+        let ref = placeTurret(&s, .refinery, house: 1, at: 20 * 64 + 20)   // enemy house
+        s.structures[ref].o.hitpoints = StructureInfo[.refinery].o.hitpoints
+        let harv = placeUnit(&s, .harvester, house: 1, at: 20 * 64 + 25, seenBy: nil)
+        s.units[harv].amount = 10
+        s.structures[ref].o.linkedID = UInt8(harv)
+
+        #expect(fns.refineSpice(slot: ref, in: &s) == 1)
+        // creditsStep ∈ {6,7,8,9} × step(3) = {18,21,24,27}.
+        #expect((18 ... 27).contains(s.houses[1].credits))
+    }
+
     @Test("Script_Structure_SetState resolves DETECT, GetState reports it")
     func setStateDetect() throws {
         guard var (sim, slot, _) = setup() else { return }
