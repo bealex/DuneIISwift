@@ -43,6 +43,9 @@ public struct ScenarioBuilder {
 
         let terrain = ScenarioTerrain(seed: scenario.terrainSeed)
         terrain.apply(to: &state, iconMap: iconMap)
+        // Point the viewport at the region so the lab's units script at full speed (not the off-viewport
+        // 3-opcode throttle) — the lab is for visual assessment, not oracle-pinned parity.
+        state.viewportPosition = Tile32.packXY(x: UInt16(terrain.originX), y: UInt16(terrain.originY))
 
         let actions = UnitActions()
         let runner = UnitScriptRunner(scriptInfo: unitScript)

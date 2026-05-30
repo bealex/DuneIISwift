@@ -66,6 +66,11 @@ public struct GameState: Sendable {
     /// The local player's house. OpenDUNE's `g_playerHouseID`; set by scenario loading (not yet ported).
     public var playerHouseID: UInt8 = 0
 
+    /// The map viewport's top-left packed tile (OpenDUNE's `g_viewportPosition`). Render state, but it
+    /// feeds the deterministic sim: `GameLoop_Unit` throttles an off-viewport unit's script to 3
+    /// opcodes/tick (`Map_IsPositionInViewport`). Set by the host (camera) / the parity harness.
+    public var viewportPosition: UInt16 = 0
+
     /// Runtime tile-id bases derived from `ICON.MAP` (`Sprites_Init`); populated at load. Anchors
     /// `Map_GetLandscapeType` etc.
     public var tileIDs = TileIDs()

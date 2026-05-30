@@ -50,8 +50,11 @@ run() {
 # ───────────────────────────────────────────────────────────────────────────────────────────
 #  name       id   ini            ticks    commands (kind,unitIndex,packedTile)
 # ───────────────────────────────────────────────────────────────────────────────────────────
-run  moving    99   bootstrap.ini  "$TICKS"  move,22,2600
-# Add scenarios here as their .INI + commands are defined (close/far attack, guarding, building).
+run  moving       99   bootstrap.ini     "$TICKS"  move,22,2600
+run  move-trike   98   move-trike.ini    "$TICKS"  move,22,1040
+# Add scenarios here as their .INI + commands are defined. Multi-unit attack/guard goldens also need the
+# Simulation-layer setup the oracle's Scen path does (Unit_SetAction per unit + Unit_UpdateMap placement)
+# and the combat natives, so they land with the combat-integration slice.
 
 echo
 echo "Done — fixtures written under $FIX/."

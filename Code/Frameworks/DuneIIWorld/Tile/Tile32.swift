@@ -64,6 +64,14 @@ public struct Tile32: Equatable, Sendable {
             y: UInt16(truncatingIfNeeded: Int(tile.y) - (diffY * dist + roundY) / 128))
     }
 
+    /// `Map_IsPositionInViewport` (`map.c:363`): is `position` within the screen viewport whose top-left
+    /// packed tile is `viewport`? Used by `GameLoop_Unit` to throttle off-screen units' scripting.
+    public static func isPositionInViewport(_ position: Tile32, viewport: UInt16) -> Bool {
+        let x = Int16(truncatingIfNeeded: Int(position.x >> 4) - (Int(packedX(viewport)) << 4))
+        let y = Int16(truncatingIfNeeded: Int(position.y >> 4) - (Int(packedY(viewport)) << 4))
+        return x >= -16 && x <= 256 && y >= -16 && y <= 176
+    }
+
     /// `Tile_MoveByOrientation` (`tile.c:405`): step `position` one whole tile (256 sub-units) along the
     /// 8-step facing of `orientation`. Returns the input position unchanged if the step leaves the map.
     public static func moveByOrientation(_ position: Tile32, orientation: UInt8) -> Tile32 {

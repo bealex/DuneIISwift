@@ -161,10 +161,13 @@ extension Simulation {
             if flags.contains(.script), let runner {
                 if state.units[slot].o.script.delay == 0 {
                     if runner.interpreter.isLoaded(state.units[slot].o.script) {
-                        // SEAM: Map_IsPositionInViewport throttles an off-viewport unit to 3 opcodes; we
-                        // pin in-viewport (52), matching the oracle's pinned-viewport scenario harness.
+                        // SCRIPT_UNIT_OPCODES_PER_TICK + 2, but an off-viewport unit (and not flagged
+                        // scriptNoSlowdown) is throttled to 3 — `Map_IsPositionInViewport` (unit.c:289).
+                        let inView = Tile32.isPositionInViewport(state.units[slot].o.position,
+                                                                 viewport: state.viewportPosition)
+                        let budget = (!ui.o.flags.contains(.scriptNoSlowdown) && !inView) ? 3 : 52
                         state.units[slot].o.script.variables[3] = UInt16(state.playerHouseID)
-                        runner.run(slot: slot, in: &state, budget: 52)
+                        runner.run(slot: slot, in: &state, budget: budget)
                     }
                 } else {
                     state.units[slot].o.script.delay &-= 1
