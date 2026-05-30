@@ -63,10 +63,22 @@ Ported in this slice (`StructureScriptFunctions`):
 | 0x0D | `Structure_GetState` | return `s.state` |
 | 0x0E | `Structure_VoicePlay` | SEAM (audio) → noop |
 | 0x0F | `Structure_RemoveFogAroundTile` | `Structure_RemoveFog` (player-only, `fogUncoverRadius`) |
+| 0x08 | `Structure_FindTargetUnit` | nearest… actually the *last* in-range non-allied seen unit (1.07 picks last, not closest — see below) |
+| 0x09 | `Structure_RotateTurret` | step the turret sprite one notch toward the target; 0 = aimed, 1 = rotating |
+| 0x0A | `Structure_GetDirection` | the 8-orientation (×32) to a tile, or the turret's current facing if the index is invalid |
+| 0x0B | `Structure_Fire` | spawn the turret's bullet/missile at `variables[2]` via `Unit_CreateBullet`; returns the fire delay |
 | 0x16 | `Structure_Explode` | `Map_MakeExplosion(EXPLOSION_STRUCTURE)` per layout tile |
 | 0x17 | `Structure_Destroy` | `Structure_Remove` + soldier spawn |
 
-Deferred (clean-halt the script when reached — loud, not invented) to later slices: `FindUnitByType` (0x03), `Unknown0C5A` unit-unload (0x07), `FindTargetUnit` (0x08), `RotateTurret` (0x09), `GetDirection` (0x0A), `Fire` (0x0B) — the **turret-firing** slice; `RefineSpice` (0x15) — the **refinery/economy** slice. A healthy structure's idle loop (set-state / remove-fog / delay) runs fully; turret and refinery structures halt cleanly at their first unported native until those slices land.
+Deferred (clean-halt the script when reached — loud, not invented) to later slices: `FindUnitByType` (0x03), `Unknown0C5A` unit-unload (0x07) — the **factory/refinery deploy** slice; `RefineSpice` (0x15) — the **refinery/economy** slice. A healthy structure's idle loop runs fully; a refinery/factory structure halts cleanly at its first unported native until those slices land.
+
+## Turret firing (0x08–0x0B)
+
+The gun/rocket turret scripts (BUILD.EMC types 15/16) loop: `RemoveFogAroundTile → FindTargetUnit(range) → variables[2] = target → (if target) RotateTurret(target) until aimed → Fire(target) → Delay(fireDelay) → loop`. With these four natives a defensive turret acquires, aims, and fires at a seen enemy.
+
+- **`FindTargetUnit`** scans the unit pool for a non-allied unit within `range` (256/tile; ornithopters use `range*3`) that the structure's house can see (`seenByHouses`, except ornithopters). **1.07 faithfulness:** `distanceCurrent` is initialised to 32000 and *never updated* (OpenDUNE notes the original swapped the assignment, making it a no-op), so the "closest" logic is inert — it returns the **last** matching unit in pool-iteration order, encoded `IT_UNIT` (or 0). We reproduce the 1.07 behaviour, not the enhanced "closest".
+- **`RotateTurret`** reads the turret's `groundTileID` (= base sprite + current rotation 0–7; base from `ICM_ICONGROUP_BASE_DEFENSE_TURRET`=23 / `BASE_ROCKET_TURRET`=24 via the `iconMap`), steps it one notch toward `Orientation8(direction to target)`, writes back `groundTileID` + `rotationSpriteDiff`, and returns 0 once aimed. Needs an `iconMap`; the `Map_Update` render redraw is a seam. (A turret's `structureInfo.iconGroup` *is* its ICM base group, so a freshly placed turret starts at rotation 0.)
+- **`Fire`** reads `variables[2]`; a rocket turret ≥ 0x300 from its target fires a `UNIT_MISSILE_TURRET` (damage 30, launcher fire delay), else a `UNIT_BULLET` (damage 20, tank fire delay), via the already-ported `Unit_CreateBullet`, stamping the bullet's `originEncoded` with the structure. Returns the speed-adjusted fire delay.
 
 ## Testing
 

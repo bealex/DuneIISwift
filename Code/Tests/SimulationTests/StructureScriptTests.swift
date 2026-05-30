@@ -101,6 +101,139 @@ struct StructureScriptTests {
         for p in tiles { #expect(!sim.state.map[p].hasStructure) }   // tile occupancy cleared
     }
 
+    // MARK: - Turret natives (0x08–0x0B)
+
+    /// A minimal `GameState` (houses 0 player + 1 enemy) + a `UnitCombat` built on a stub `ScriptInfo`, for
+    /// directly exercising the structure natives without the full EMC/iconMap.
+    private func minimal() -> (GameState, UnitCombat) {
+        var s = GameState(random256Seed: 0x777)
+        s.playerHouseID = 0
+        _ = s.houseAllocate(index: 0); s.houses[0].unitCountMax = 200
+        _ = s.houseAllocate(index: 1); s.houses[1].unitCountMax = 200
+        let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+        return (s, UnitCombat(movement: UnitMovement(scriptInfo: info)))
+    }
+
+    private func placeTurret(_ s: inout GameState, _ type: StructureType, house: UInt8, at packed: UInt16) -> Int {
+        let slot = s.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(type.rawValue))!
+        s.structures[slot].o.houseID = house
+        s.structures[slot].o.position = Tile32.unpack(packed)
+        s.structures[slot].o.hitpoints = 200
+        return slot
+    }
+
+    @discardableResult
+    private func placeUnit(_ s: inout GameState, _ type: UnitType, house: UInt8, at packed: UInt16,
+                           seenBy: UInt8? = 0) -> Int {
+        let slot = s.unitAllocate(index: Pool.unitIndexInvalid, type: UInt8(type.rawValue), houseID: house)!
+        s.units[slot].o.position = Tile32.unpack(packed)
+        s.units[slot].o.hitpoints = 200
+        if let seenBy { s.units[slot].o.seenByHouses |= UInt8(1 << seenBy) }
+        return slot
+    }
+
+    @Test("Script_Structure_FindTargetUnit picks the last in-range, seen, non-allied unit (1.07)")
+    func findTargetUnit() {
+        var (s, combat) = minimal()
+        let fns = StructureScriptFunctions(combat: combat)
+        let turret = placeTurret(&s, .turret, house: 0, at: 20 * 64 + 20)
+
+        let a = placeUnit(&s, .tank, house: 1, at: 20 * 64 + 21, seenBy: 0)   // seen enemy, in range
+        let b = placeUnit(&s, .tank, house: 1, at: 20 * 64 + 22, seenBy: 0)   // seen enemy, in range, later in pool
+        // 1.07 returns the LAST matching unit in pool order, not the closest → b.
+        #expect(fns.findTargetUnit(slot: turret, range: 1280, in: &s) == s.indexEncode(UInt16(s.units[b].o.index), type: .unit))
+        _ = a
+
+        // Allied (same house) ignored; unseen ignored; out-of-range ignored.
+        var (s2, c2) = minimal()
+        let f2 = StructureScriptFunctions(combat: c2)
+        let t2 = placeTurret(&s2, .turret, house: 0, at: 20 * 64 + 20)
+        placeUnit(&s2, .tank, house: 0, at: 20 * 64 + 21, seenBy: 0)          // allied
+        placeUnit(&s2, .tank, house: 1, at: 20 * 64 + 21, seenBy: nil)        // not seen by house 0
+        placeUnit(&s2, .tank, house: 1, at: 20 * 64 + 40, seenBy: 0)          // 20 tiles away, out of range 1280 (5)
+        #expect(f2.findTargetUnit(slot: t2, range: 1280, in: &s2) == 0)
+    }
+
+    @Test("Script_Structure_GetDirection: 8-orientation ×32 to a tile, or the turret facing if invalid")
+    func getDirection() {
+        var (s, combat) = minimal()
+        let fns = StructureScriptFunctions(combat: combat)
+        let turret = placeTurret(&s, .turret, house: 0, at: 20 * 64 + 20)
+
+        // Invalid index → current facing (rotationSpriteDiff << 5).
+        s.structures[turret].rotationSpriteDiff = 3
+        #expect(fns.getDirection(slot: turret, encoded: 0, in: s) == 3 << 5)
+
+        // Valid tile → (orientation8 to that tile) << 5, a multiple of 32 matching the primitive.
+        let target = UInt16(20 * 64 + 24)   // due east
+        let encoded = s.indexEncode(target, type: .tile)
+        let expected = UInt16(Orientation.to8(UInt8(bitPattern: Tile32.direction(from: s.structures[turret].o.position, to: Tile32.unpack(target))))) << 5
+        let got = fns.getDirection(slot: turret, encoded: encoded, in: s)
+        #expect(got == expected)
+        #expect(got % 32 == 0)
+    }
+
+    @Test("Script_Structure_Fire spawns a bullet at the target, stamped with the structure as origin")
+    func fire() {
+        var (s, combat) = minimal()
+        let fns = StructureScriptFunctions(combat: combat)
+        let turret = placeTurret(&s, .turret, house: 0, at: 20 * 64 + 20)
+        let enemy = placeUnit(&s, .tank, house: 1, at: 20 * 64 + 23, seenBy: 0)
+
+        s.structures[turret].o.script.variables[2] = s.indexEncode(UInt16(s.units[enemy].o.index), type: .unit)
+        let delay = fns.fire(slot: turret, in: &s)
+        #expect(delay > 0)   // returns the speed-adjusted fire delay
+
+        // A gun turret fires a UNIT_BULLET (type 23), origin = the turret structure.
+        var find = PoolFind(), bullet: Int?
+        while bullet == nil, let u = s.unitFind(&find) {
+            if s.units[u].o.type == UInt8(UnitType.bullet.rawValue) { bullet = u }
+        }
+        let b = try! #require(bullet)
+        #expect(s.units[b].originEncoded == s.indexEncode(UInt16(s.structures[turret].o.index), type: .structure))
+
+        // No target → no shot.
+        s.structures[turret].o.script.variables[2] = 0
+        #expect(fns.fire(slot: turret, in: &s) == 0)
+    }
+
+    @Test("a placed turret acquires + fires at a seen enemy over GameLoop_Structure ticks")
+    func turretFiresAtEnemy() throws {
+        guard let unit = emc("Resources/Scripts/UNIT/UNIT.emc"),
+              let build = emc("Resources/Scripts/BUILD/BUILD.emc") else { return }
+        var repo = URL(fileURLWithPath: #filePath)
+        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }
+        guard let iconMap = try? IconMap(Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP"))) else { return }
+
+        var s = GameState(random256Seed: 0x2468)
+        s.playerHouseID = 0
+        s.iconMap = iconMap
+        _ = s.houseAllocate(index: 0); s.houses[0].unitCountMax = 200
+        _ = s.houseAllocate(index: 1); s.houses[1].unitCountMax = 200
+
+        let turret = placeTurret(&s, .turret, house: 0, at: 20 * 64 + 20)
+        s.structureUpdateMap(turret)                                   // stamp groundTileID (rotation 0)
+        placeUnit(&s, .tank, house: 1, at: 20 * 64 + 23, seenBy: 0)    // a seen enemy 3 tiles east
+
+        var sim = Simulation(state: s, scriptInfo: unit, structureScriptInfo: build)
+
+        func bulletExists() -> Bool {
+            var find = PoolFind()
+            while let u = sim.state.unitFind(&find) {
+                let t = sim.state.units[u].o.type
+                if t == UInt8(UnitType.bullet.rawValue) || t == UInt8(UnitType.missileTurret.rawValue) { return true }
+            }
+            return false
+        }
+
+        var fired = false
+        for _ in 0 ..< 800 where !fired {
+            sim.tick()
+            fired = bulletExists()
+        }
+        #expect(fired)   // the turret found the enemy, rotated to aim, and fired
+    }
+
     @Test("Script_Structure_SetState resolves DETECT, GetState reports it")
     func setStateDetect() throws {
         guard var (sim, slot, _) = setup() else { return }

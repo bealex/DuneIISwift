@@ -55,6 +55,98 @@ struct StructureScriptFunctions: Sendable {
         return 0
     }
 
+    /// `Script_Structure_FindTargetUnit` (op 0x08, `:303`): scan the unit pool for a non-allied unit within
+    /// `range` (256/tile; ornithopters use `range*3`) that the structure's house can see, encoded `IT_UNIT`
+    /// (0 if none). **1.07 faithfulness:** `distanceCurrent` is never updated (the original swapped
+    /// assignment is a no-op), so the closest-unit logic is inert — this returns the *last* matching unit in
+    /// pool order, not the nearest. The distance is measured from the structure's top-left (un-centred) tile.
+    func findTargetUnit(slot: Int, range: UInt16, in state: inout GameState) -> UInt16 {
+        let sHouse = state.structures[slot].o.houseID
+        let position = state.structures[slot].o.position
+        let ornithopter = UInt8(UnitType.ornithopter.rawValue)
+        var found: Int?
+        var find = PoolFind()
+        while let u = state.unitFind(&find) {
+            if House.areAllied(sHouse, state.unitHouseID(state.units[u]), playerHouseID: state.playerHouseID) { continue }
+            let uType = state.units[u].o.type
+            if uType != ornithopter, state.units[u].o.seenByHouses & (1 << sHouse) == 0 { continue }
+            let distance = Tile32.distance(from: state.units[u].o.position, to: position)
+            // 1.07: `distance >= distanceCurrent(32000)` never fires; the range gate uses `>=`.
+            if distance >= (uType == ornithopter ? range &* 3 : range) { continue }
+            found = u
+        }
+        guard let f = found else { return 0 }   // IT_NONE
+        return state.indexEncode(UInt16(state.units[f].o.index), type: .unit)
+    }
+
+    /// `Script_Structure_RotateTurret` (op 0x09, `:375`): step the turret one notch toward `encoded`'s tile;
+    /// 0 = already aimed, 1 = still rotating. Reads/writes the turret's `groundTileID` (base sprite +
+    /// rotation 0–7). Needs an `iconMap` to resolve the base sprite; without one it reports "rotating". The
+    /// `Map_Update` render redraw is a seam.
+    func rotateTurret(slot: Int, encoded: UInt16, in state: inout GameState) -> UInt16 {
+        if encoded == 0 { return 0 }
+        guard let iconMap = state.iconMap,
+              let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return 1 }
+        let group = (st == .rocketTurret) ? 24 : 23   // ICM_ICONGROUP_BASE_ROCKET / DEFENSE_TURRET
+        guard let baseTileID = iconMap.tileID(group: group, offset: 2) else { return 1 }
+
+        let packed = Int(state.structures[slot].o.position.packed)
+        var rotation = Int(state.map[packed].groundTileID) - baseTileID
+        if rotation < 0 || rotation > 7 { return 1 }
+
+        let lookAt = state.indexGetTile(encoded)
+        let needed = Int(Orientation.to8(UInt8(bitPattern: Tile32.direction(from: state.structures[slot].o.position, to: lookAt))))
+        if needed == rotation { return 0 }
+
+        var diff = needed - rotation
+        if diff < 0 { diff += 8 }
+        rotation += (diff < 4) ? 1 : -1
+        rotation &= 0x7
+
+        state.map[packed].groundTileID = UInt16(truncatingIfNeeded: baseTileID + rotation)
+        state.structures[slot].rotationSpriteDiff = UInt16(rotation)
+        state.mapDirty = true
+        return 1
+    }
+
+    /// `Script_Structure_GetDirection` (op 0x0A, `:440`): the 8-orientation (×32) from the structure to
+    /// `encoded`'s tile, or the turret's current facing (`rotationSpriteDiff` ×32) if the index is invalid.
+    func getDirection(slot: Int, encoded: UInt16, in state: GameState) -> UInt16 {
+        if !state.indexIsValid(encoded) { return state.structures[slot].rotationSpriteDiff << 5 }
+        let tile = state.indexGetTile(encoded)
+        let o8 = Orientation.to8(UInt8(bitPattern: Tile32.direction(from: state.structures[slot].o.position, to: tile)))
+        return UInt16(o8) << 5
+    }
+
+    /// `Script_Structure_Fire` (op 0x0B, `:513`): fire the turret's bullet/missile at `variables[2]` via the
+    /// already-ported `Unit_CreateBullet`. A rocket turret ≥ 0x300 from its target launches a missile
+    /// (damage 30, launcher fire delay); otherwise a bullet (damage 20, tank fire delay). Returns the
+    /// speed-adjusted ticks until the next shot (0 if no target or the spawn failed).
+    func fire(slot: Int, in state: inout GameState) -> UInt16 {
+        let target = state.structures[slot].o.script.variables[2]
+        if target == 0 { return 0 }
+        guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return 0 }
+
+        let type: UInt8, damage: UInt16, fireDelayBase: UInt16
+        if st == .rocketTurret,
+           Tile32.distance(from: state.indexGetTile(target), to: state.structures[slot].o.position) >= 0x300 {
+            type = UInt8(UnitType.missileTurret.rawValue); damage = 30; fireDelayBase = UnitInfo[.launcher].fireDelay
+        } else {
+            type = UInt8(UnitType.bullet.rawValue); damage = 20; fireDelayBase = UnitInfo[.tank].fireDelay
+        }
+        let fireDelay = Tools.adjustToGameSpeed(normal: fireDelayBase, minimum: 1, maximum: 0xFFFF,
+                                                inverseSpeed: true, gameSpeed: state.gameSpeed)
+
+        var position = state.structures[slot].o.position
+        position.x = position.x &+ 0x80
+        position.y = position.y &+ 0x80
+        guard let bullet = combat.unitCreateBullet(position: position, type: type,
+                                                   houseID: state.structures[slot].o.houseID,
+                                                   damage: damage, target: target, in: &state) else { return 0 }
+        state.units[bullet].originEncoded = state.indexEncode(UInt16(state.structures[slot].o.index), type: .structure)
+        return fireDelay
+    }
+
     /// `Script_Structure_GetState` (op 0x0D, `:36`): the structure's current state.
     func getState(slot: Int, in state: GameState) -> UInt16 {
         UInt16(bitPattern: state.structures[slot].state.rawValue)
