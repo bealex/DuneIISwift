@@ -93,6 +93,7 @@ If something genuinely can't be tested (rare — usually visual correctness), sa
 Scripts/check.sh                    # incremental build + full test suite → concise BUILD/TESTS/VERDICT
 Scripts/check.sh --full             # `swift package clean` first — the zero-warnings audit (workflow step 5)
 Scripts/check.sh --filter <Suite>   # build + only matching tests (fast inner loop)
+Scripts/log-history.sh "<bullet>"   # append a dated bullet to History/YYYY-MM.md (workflow step 6; new-month aware)
 Scripts/build-oracle.sh             # rebuild + re-sign the OpenDUNE parity oracle (run with sandbox disabled)
 Scripts/gen-scenario-goldens.sh     # regenerate the scenario goldens from the oracle
 ```
