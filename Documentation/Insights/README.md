@@ -31,3 +31,5 @@ Capture an insight when something surprised you, cost real time to figure out, o
 - [render-contextual-palette](render-contextual-palette.md) — many CPS/WSA/SHP assets embed no palette; the correct one is loaded separately at runtime (mercenary mentat → BENE.PAL, intro/finale WSAs → INTRO.PAL, else IBM.PAL).
 - [render-structure-layout](render-structure-layout.md) — a building is a W×H grid of ICON.ICN tiles; its ICON.MAP group lists consecutive W·H-tile states (row-major), dimensions from structureInfo.layout. Built look = state index 2.
 - [build-exec-eperm](build-exec-eperm.md) — sandboxed agent: direct clang/binary exec + out-of-repo writes are EPERM; build via the `.shim/gcc`→xcrun shim and a repo-local `TMPDIR` + `xcrun swift … --disable-sandbox`.
+- [sim-viewport-script-throttle](sim-viewport-script-throttle.md) — off-viewport units script at 3 (not 52) opcodes/tick; pin `viewportPosition` for parity.
+- [sim-emc-unported-native-halt](sim-emc-unported-native-halt.md) — unported EMC natives must clean-halt (null the PC), not suspend, or timing skews silently.
