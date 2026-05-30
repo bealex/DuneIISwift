@@ -16,10 +16,10 @@ public extension GameState {
         if houseID != playerHouseID { return false }
         if Tile32.isOutOfMap(packed) { return false }
 
-        // Already unveiled (and not still showing the veiled-fog overlay) ⇒ nothing to do.
-        if map[Int(packed)].isUnveiled && UInt16(map[Int(packed)].overlayTileID) != tileIDs.veiled {
-            return false
-        }
+        // Already unveiled ⇒ nothing to do. (OpenDUNE re-unveils a tile still showing the partial-fog
+        // overlay sprite via `Tile_IsUnveiled(overlayTileID)`; we don't model that overlay headlessly —
+        // `overlayTileID` stays 0 = fully clear — so a set `isUnveiled` is final here.)
+        if map[Int(packed)].isUnveiled { return false }
         map[Int(packed)].isUnveiled = true
         map[Int(packed)].overlayTileID = 0
 
@@ -37,7 +37,9 @@ public extension GameState {
 
         let x = Int(Tile32.packedX(packed))
         let y = Int(Tile32.packedY(packed))
-        let centre = tile.centered
+        // OpenDUNE `Tile_MakeXY`s both the centre and each candidate from their tile coords, so both carry
+        // the same sub-tile offset — use the centred `unpack` for both so the distance is symmetric.
+        let centre = Tile32.unpack(packed)
         let r = Int(radius)
 
         for j in -r ... r {
@@ -45,8 +47,7 @@ public extension GameState {
                 if x + i < 0 || x + i >= 64 { continue }
                 if y + j < 0 || y + j >= 64 { continue }
                 let curPacked = Tile32.packXY(x: UInt16(x + i), y: UInt16(y + j))
-                let t = Tile32(x: UInt16(truncatingIfNeeded: (x + i) << 8),
-                               y: UInt16(truncatingIfNeeded: (y + j) << 8))
+                let t = Tile32.unpack(curPacked)
                 if Tile32.distanceRoundedUp(from: centre, to: t) <= radius {
                     mapUnveilTile(curPacked, houseID: playerHouseID)
                 }
