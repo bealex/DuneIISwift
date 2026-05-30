@@ -21,12 +21,30 @@ public extension StructureType {
     }
 }
 
+public extension MovementType {
+    /// `Unit_MovementStringToType` (`unit.c:375`, `g_table_movementTypeName`). Note "Winged" → `.winger`.
+    static func named(_ name: String) -> MovementType? {
+        let names = ["Foot", "Tracked", "Harvester", "Wheeled", "Winged", "Slither"]
+        guard let i = names.firstIndex(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return nil }
+        return MovementType(rawValue: i)
+    }
+}
+
+public extension TeamActionType {
+    /// `Team_ActionStringToType` (`team.c:108`, `g_table_teamActionName`).
+    static func named(_ name: String) -> TeamActionType? {
+        let names = ["Normal", "Staging", "Flee", "Kamikaze", "Guard"]
+        guard let i = names.firstIndex(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return nil }
+        return TeamActionType(rawValue: i)
+    }
+}
+
 public extension GameState {
     /// Load a scenario `.INI` into this state: derive the tile-id bases + generate the landscape from
     /// `BASIC/Seed`, set the map scale, activate the `[HOUSES]`, and place the `[UNITS]` and `[STRUCTURES]`.
     /// A pragmatic port of `Scenario_Load*` (`src/scenario.c`) — enough to populate a
     /// drawable/simulatable `GameState`.
-    mutating func loadScenario(ini: Ini, iconMap: IconMap) {
+    mutating func loadScenario(ini: Ini, iconMap: IconMap, teamScriptOffsets: [UInt16] = []) {
         tileIDs = TileIDs(iconMap: iconMap) ?? TileIDs()
         mapScale = UInt8(clamping: ini.integer(section: "BASIC", key: "MapScale"))
         let seed = UInt32(bitPattern: Int32(truncatingIfNeeded: ini.integer(section: "MAP", key: "Seed")))
@@ -48,6 +66,10 @@ public extension GameState {
         for key in ini.keys(section: "UNITS") { loadUnit(ini.string(section: "UNITS", key: key)) }
         for key in ini.keys(section: "STRUCTURES") {
             loadStructure(key: key, value: ini.string(section: "STRUCTURES", key: key))
+        }
+        // `[TEAMS]` = "<House>,<TeamAction>,<MovementType>,<minMembers>,<maxMembers>" → `Team_Create`.
+        for key in ini.keys(section: "TEAMS") {
+            loadTeam(ini.string(section: "TEAMS", key: key), offsets: teamScriptOffsets)
         }
 
         // Stamp each structure's tiles onto the map + start its idle animation.
@@ -114,6 +136,23 @@ public extension GameState {
         structures[i].o.hitpoints = StructureInfo[type].o.hitpoints
         structures[i].hitpointsMax = StructureInfo[type].o.hitpoints
         structures[i].o.flags.remove(.degrades)
+    }
+
+    /// `<House>,<TeamAction>,<MovementType>,<minMembers>,<maxMembers>` → `Team_Create` (`Scenario_Load_Team`).
+    /// `offsets` is the team `ScriptInfo`'s per-action entry table; the team's action script is loaded to
+    /// `offsets[teamAction]` (or left unloaded — `scriptNull` — when no team script is supplied).
+    private mutating func loadTeam(_ value: String?, offsets: [UInt16]) {
+        let parts = fields(value)
+        guard parts.count >= 5,
+              let house = HouseID.named(parts[0]),
+              let action = TeamActionType.named(parts[1]),
+              let movement = MovementType.named(parts[2]) else { return }
+        let minMembers = UInt16(clamping: Int(parts[3]) ?? 0)
+        let maxMembers = UInt16(clamping: Int(parts[4]) ?? 0)
+        let scriptPC = action.rawValue < offsets.count ? offsets[action.rawValue] : ScriptEngine.scriptNull
+        teamCreate(houseID: UInt8(house.rawValue), teamActionType: UInt8(action.rawValue),
+                   movementType: UInt8(movement.rawValue), minMembers: minMembers, maxMembers: maxMembers,
+                   scriptPC: scriptPC)
     }
 
     private func fields(_ value: String?) -> [String] {

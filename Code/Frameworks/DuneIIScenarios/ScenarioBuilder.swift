@@ -151,7 +151,7 @@ public struct ScenarioBuilder {
                 structSlots = [w]
                 settle(&state, w)
                 state.structures[w].o.hitpoints = StructureInfo[.windtrap].o.hitpoints / 2
-                state.structures[w].o.flags.insert(.repairing)
+                state.structureSetRepairingState(w, state: 1)   // Structure_SetRepairingState (damaged → repairs)
                 state.houses[Int(player.rawValue)].credits = 4000
                 slots = []
 
@@ -161,8 +161,8 @@ public struct ScenarioBuilder {
                 let b = placeStructure(&state, .barracks, player, terrain, lx: 3, ly: 3)
                 structSlots = [b]
                 settle(&state, b)
-                state.structures[b].o.flags.insert(.upgrading)
                 state.structures[b].upgradeTimeLeft = 30                        // ~6 structure-ticks → level up
+                state.structureSetUpgradingState(b, state: 1)                  // Structure_SetUpgradingState
                 state.houses[Int(player.rawValue)].credits = 4000
                 slots = []
         }

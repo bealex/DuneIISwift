@@ -241,6 +241,28 @@ public extension GameState {
         return idx
     }
 
+    /// `Team_Create` (`team.c:75`): allocate a team, set its house / action / movement-type / membership
+    /// bounds, and load its action script. `scriptPC` is the team `ScriptInfo`'s `offsets[teamActionType]`
+    /// (resolved by the caller — the script *program* lives in the Simulation layer, so World can't index
+    /// it); pass `ScriptEngine.scriptNull` when no team script is supplied, leaving the team inert
+    /// (`GameLoop_Team` won't run an unloaded script). `action == actionStart` initially (so `Load2` can
+    /// restore it). Returns the slot, or `nil` if the team pool is full.
+    @discardableResult
+    mutating func teamCreate(houseID: UInt8, teamActionType: UInt8, movementType: UInt8,
+                             minMembers: UInt16, maxMembers: UInt16, scriptPC: UInt16) -> Int? {
+        guard let slot = teamAllocate(index: Pool.teamIndexInvalid) else { return nil }
+        teams[slot].houseID = houseID
+        teams[slot].action = UInt16(teamActionType)
+        teams[slot].actionStart = UInt16(teamActionType)
+        teams[slot].movementType = UInt16(movementType)
+        teams[slot].minMembers = minMembers
+        teams[slot].maxMembers = maxMembers
+        teams[slot].script.reset()              // Script_Reset(&t->script, g_scriptTeam)
+        teams[slot].script.scriptPC = scriptPC  // Script_Load(&t->script, teamActionType)
+        teams[slot].script.delay = 0
+        return slot
+    }
+
     // MARK: - Free
 
     /// `Unit_Free` (`pool/unit.c`): mark the unit slot unused, reset its script, drop it from the find

@@ -392,6 +392,56 @@ public extension GameState {
     /// the generic `upgradeCampaign[level]` test; the construction yard's 2nd upgrade also needs the rocket
     /// turret's prerequisite structures. A level past the 3-entry `upgradeCampaign` table is not upgradable
     /// (Swift-guards the OOB read OpenDUNE leaves implicit for the Ordos Heavy-Vehicle level-3 case).
+    /// `Structure_SetRepairingState` (`structure.c:1735`): start/stop a structure's self-repair (the
+    /// `tickStructure` repair branch acts on `.repairing`). `state`: 1 start, 0 stop, −1 toggle. Starting
+    /// requires the structure allocated + below full HP. Sets `.onHold` while repairing (production pauses).
+    /// The `Widget`/`GUI_DisplayText` feedback is a GUI seam; `g_dune2_enhanced` is pinned false (1.07).
+    /// Returns whether it acted.
+    @discardableResult
+    mutating func structureSetRepairingState(_ slot: Int, state: Int8) -> Bool {
+        guard let st = StructureType(rawValue: Int(structures[slot].o.type)) else { return false }
+        var state = state
+        var ret = false
+        if !structures[slot].o.flags.contains(.allocated) { state = 0 }
+        if state == -1 { state = structures[slot].o.flags.contains(.repairing) ? 0 : 1 }
+
+        if state == 0 && structures[slot].o.flags.contains(.repairing) {
+            structures[slot].o.flags.remove(.repairing)
+            structures[slot].o.flags.remove(.onHold)
+            ret = true
+        }
+        if state == 0 || structures[slot].o.flags.contains(.repairing)
+            || structures[slot].o.hitpoints == StructureInfo[st].o.hitpoints { return ret }
+
+        structures[slot].o.flags.insert(.onHold)
+        structures[slot].o.flags.insert(.repairing)
+        return true
+    }
+
+    /// `Structure_SetUpgradingState` (`structure.c:1691`): start/stop a structure's upgrade (the
+    /// `tickStructure` upgrade branch acts on `.upgrading`). `state`: 1 start, 0 stop, −1 toggle. Starting
+    /// requires `upgradeTimeLeft != 0`, clears `.repairing`, and sets `.onHold`. GUI feedback is a seam.
+    /// Returns whether it acted.
+    @discardableResult
+    mutating func structureSetUpgradingState(_ slot: Int, state: Int8) -> Bool {
+        var state = state
+        var ret = false
+        if state == -1 { state = structures[slot].o.flags.contains(.upgrading) ? 0 : 1 }
+
+        if state == 0 && structures[slot].o.flags.contains(.upgrading) {
+            structures[slot].o.flags.remove(.upgrading)
+            structures[slot].o.flags.remove(.onHold)
+            ret = true
+        }
+        if state == 0 || structures[slot].o.flags.contains(.upgrading)
+            || structures[slot].upgradeTimeLeft == 0 { return ret }
+
+        structures[slot].o.flags.insert(.onHold)
+        structures[slot].o.flags.remove(.repairing)
+        structures[slot].o.flags.insert(.upgrading)
+        return true
+    }
+
     func structureIsUpgradable(_ slot: Int) -> Bool {
         guard let st = StructureType(rawValue: Int(structures[slot].o.type)) else { return false }
         let si = StructureInfo[st]
