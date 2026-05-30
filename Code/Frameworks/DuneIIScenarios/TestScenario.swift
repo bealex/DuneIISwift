@@ -10,6 +10,9 @@ public enum ScenarioKind: String, Sendable, CaseIterable {
     case deviate
     case attackStructure
     case turretDefense
+    case factoryProduce
+    case repairBuilding
+    case upgradeBuilding
 
     public var title: String {
         switch self {
@@ -21,12 +24,19 @@ public enum ScenarioKind: String, Sendable, CaseIterable {
             case .deviate:            return "Deviate (enemy steals the unit)"
             case .attackStructure:    return "Attack a building (→ destroyed)"
             case .turretDefense:      return "Turret defends (fires at an attacker)"
+            case .factoryProduce:     return "Factory builds a unit (credits drain → READY)"
+            case .repairBuilding:     return "Building self-repairs (HP climbs)"
+            case .upgradeBuilding:    return "Building upgrades (level up)"
         }
     }
 
-    /// Whether the scenario uses a second *unit*. `moving` and `attackStructure` use only the first unit
-    /// (in `attackStructure` the second combatant is a structure, not a unit).
-    public var usesSecondUnit: Bool { self != .moving && self != .attackStructure }
+    /// Whether the scenario uses a second *unit*. The single-unit / structure-only scenarios don't.
+    public var usesSecondUnit: Bool {
+        switch self {
+            case .moving, .attackStructure, .factoryProduce, .repairBuilding, .upgradeBuilding: return false
+            default: return true
+        }
+    }
 }
 
 /// A fully-specified scenario: which behaviour, the two chosen unit types, and the terrain seed (which

@@ -99,6 +99,52 @@ struct ScenarioBuilderTests {
         #expect(after == nil || after!.o.hitpoints < fullHP)
     }
 
+    private func structure(_ s: GameState, _ type: StructureType) -> Int? {
+        s.structures.firstIndex { $0.o.flags.contains(.used) && $0.o.type == UInt8(type.rawValue) }
+    }
+
+    @Test("factoryProduce: the factory drains credits, advances the build, and completes to READY")
+    func factoryProduces() throws {
+        guard let builder = try loadBuilder() else { return }
+        var world = builder.build(TestScenario(kind: .factoryProduce, unit1: .tank, unit2: .tank, terrainSeed: 42))
+        let f = try #require(structure(world.state, .lightVehicle))
+        let credits0 = world.state.houses[Int(HouseID.harkonnen.rawValue)].credits
+        #expect(world.state.structures[f].state == .busy)
+
+        for _ in 0 ..< 250 { world.tick() }
+
+        #expect(world.state.houses[Int(HouseID.harkonnen.rawValue)].credits < credits0)   // billed
+        #expect(world.state.structures[f].countDown == 0)                                 // build finished
+        #expect(world.state.structures[f].state == .ready)                                // → READY
+    }
+
+    @Test("repairBuilding: the damaged windtrap heals over ticks")
+    func repairHeals() throws {
+        guard let builder = try loadBuilder() else { return }
+        var world = builder.build(TestScenario(kind: .repairBuilding, unit1: .tank, unit2: .tank, terrainSeed: 42))
+        let w = try #require(structure(world.state, .windtrap))
+        let hp0 = world.state.structures[w].o.hitpoints
+        let credits0 = world.state.houses[Int(HouseID.harkonnen.rawValue)].credits
+
+        for _ in 0 ..< 200 { world.tick() }
+
+        #expect(world.state.structures[w].o.hitpoints > hp0)                              // healed
+        #expect(world.state.houses[Int(HouseID.harkonnen.rawValue)].credits < credits0)   // billed
+    }
+
+    @Test("upgradeBuilding: the barracks completes its upgrade (level 0 → 1)")
+    func upgradeLevels() throws {
+        guard let builder = try loadBuilder() else { return }
+        var world = builder.build(TestScenario(kind: .upgradeBuilding, unit1: .tank, unit2: .tank, terrainSeed: 42))
+        let b = try #require(structure(world.state, .barracks))
+        #expect(world.state.structures[b].upgradeLevel == 0)
+
+        for _ in 0 ..< 300 { world.tick() }
+
+        #expect(world.state.structures[b].upgradeLevel == 1)                      // upgraded
+        #expect(!world.state.structures[b].o.flags.contains(.upgrading))          // and finished
+    }
+
     @Test("turretDefense: the turret's script fires — a bullet spawns over ticks")
     func turretFires() throws {
         guard let builder = try loadBuilder() else { return }

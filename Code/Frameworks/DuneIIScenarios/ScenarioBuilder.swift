@@ -43,6 +43,10 @@ public struct ScenarioBuilder {
         _ = state.houseAllocate(index: UInt8(enemy.rawValue))
         state.houses[Int(player.rawValue)].unitCountMax = 100
         state.houses[Int(enemy.rawValue)].unitCountMax = 100
+        // Let the player hold credits without a spice silo (the starting no-silo allowance). Otherwise the
+        // House loop's storage clamp would wipe the economy scenarios' starting credits to 0 on tick 1
+        // (a lone factory/barracks/windtrap has no credit storage).
+        state.playerCreditsNoSilo = 5000
 
         let terrain = ScenarioTerrain(seed: scenario.terrainSeed)
         terrain.apply(to: &state, iconMap: iconMap)
@@ -114,6 +118,43 @@ public struct ScenarioBuilder {
                 state.units[u2].o.seenByHouses |= UInt8(1 << player.rawValue)   // the turret can see it
                 move(&state, u2, toLocal: (4, 3), terrain, actions)             // it advances toward the base
                 slots = [u2]
+
+            case .factoryProduce:
+                // A Light Factory builds a Trike: `tickStructure`'s factory branch drains credits + advances
+                // the build countdown each structure-tick, completing to READY. A queued (hidden) trike is
+                // linked so the build is faithful.
+                let f = placeStructure(&state, .lightVehicle, player, terrain, lx: 3, ly: 3)
+                settle(&state, f)
+                state.houses[Int(player.rawValue)].credits = 4000
+                let built = state.unitAllocate(index: 0, type: UInt8(UnitType.trike.rawValue),
+                                               houseID: UInt8(player.rawValue))!
+                state.units[built].o.hitpoints = UnitInfo[.trike].o.hitpoints
+                state.units[built].o.flags.insert(.isNotOnMap)                  // in the factory
+                state.structures[f].o.linkedID = UInt8(built)
+                state.structures[f].objectType = UInt16(UnitType.trike.rawValue)
+                state.structures[f].state = .busy
+                state.structures[f].countDown = 1536                            // ~6 structure-ticks of build
+                slots = []
+
+            case .repairBuilding:
+                // A damaged windtrap self-repairs: `tickStructure`'s repair branch heals +5 HP each
+                // structure-tick (billing the 1.07 repair cost) until it reaches full HP.
+                let w = placeStructure(&state, .windtrap, player, terrain, lx: 3, ly: 3)
+                settle(&state, w)
+                state.structures[w].o.hitpoints = StructureInfo[.windtrap].o.hitpoints / 2
+                state.structures[w].o.flags.insert(.repairing)
+                state.houses[Int(player.rawValue)].credits = 4000
+                slots = []
+
+            case .upgradeBuilding:
+                // A barracks upgrades: `tickStructure`'s upgrade branch pays `buildCredits/40` per
+                // structure-tick and steps `upgradeTimeLeft` to 0, then bumps `upgradeLevel`.
+                let b = placeStructure(&state, .barracks, player, terrain, lx: 3, ly: 3)
+                settle(&state, b)
+                state.structures[b].o.flags.insert(.upgrading)
+                state.structures[b].upgradeTimeLeft = 30                        // ~6 structure-ticks → level up
+                state.houses[Int(player.rawValue)].credits = 4000
+                slots = []
         }
 
         return ScenarioWorld(state: state, runner: runner, actions: actions, unitSlots: slots,
@@ -164,5 +205,14 @@ public struct ScenarioBuilder {
         state.structures[slot].state = .idle
         state.structureUpdateMap(slot)
         return slot
+    }
+
+    /// Suspend a freshly-placed structure's BUILD.EMC script (a long `script.delay`) so its one-time
+    /// placement animation — a `SetState(-1)/.../SetState(-2)` sequence (BUILD.EMC `Jump 0`) — doesn't
+    /// overwrite the `state` the economy scenarios set up. In real play the structure has long since
+    /// settled into its steady main loop before it produces/repairs/upgrades; this demo starts it
+    /// mid-production, so we hold the animation off and let `tickStructure` (the economy) run in isolation.
+    private func settle(_ state: inout GameState, _ slot: Int) {
+        state.structures[slot].o.script.delay = 10_000
     }
 }

@@ -63,7 +63,29 @@ func runDemo(_ builder: ScenarioBuilder, _ kind: ScenarioKind, ticks: Int) {
     print("  t\(ticks) structures: [\(structureSummary(world.state))]")
 }
 
+/// Print the tickStructure economy progression for a single tracked building (the structure of `type`):
+/// its credits, build/repair countdown, HP, upgrade timer, and state at t0 → completion.
+func runEconomyDemo(_ builder: ScenarioBuilder, _ kind: ScenarioKind, type: StructureType, ticks: Int) {
+    var world = builder.build(TestScenario(kind: kind, unit1: .tank, unit2: .tank, terrainSeed: 42))
+    func find() -> Structure? {
+        world.state.structures.first { $0.o.flags.contains(.used) && $0.o.type == UInt8(type.rawValue) }
+    }
+    func line(_ label: String) {
+        guard let s = find() else { return }
+        let credits = world.state.houses[Int(HouseID.harkonnen.rawValue)].credits
+        print("  \(label) credits \(credits)  hp \(s.o.hitpoints)  countDown \(s.countDown)  "
+            + "upgrade \(s.upgradeLevel)/\(s.upgradeTimeLeft)  state \(s.state.rawValue)")
+    }
+    print("── \(kind.title) ──")
+    line("t0  ")
+    for _ in 1 ... ticks { world.tick() }
+    line("t\(ticks)")
+}
+
 print("duneii-headless — behavioural demo (deterministic, headless: no renderer/input/audio)\n")
 runDemo(builder, .attackStructure, ticks: 250)
 runDemo(builder, .turretDefense, ticks: 300)
+runEconomyDemo(builder, .factoryProduce, type: .lightVehicle, ticks: 250)
+runEconomyDemo(builder, .repairBuilding, type: .windtrap, ticks: 300)
+runEconomyDemo(builder, .upgradeBuilding, type: .barracks, ticks: 250)
 print("\ndone.")
