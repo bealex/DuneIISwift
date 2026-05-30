@@ -15,6 +15,7 @@ public struct UnitScriptRunner: Sendable {
     let unit: UnitScriptFunctions
     let actions: UnitActions
     public let movement: UnitMovement
+    let targets: TargetFinder
 
     public init(scriptInfo: ScriptInfo,
                 interpreter: any ScriptInterpreter = DefaultScriptInterpreter(),
@@ -29,6 +30,7 @@ public struct UnitScriptRunner: Sendable {
         self.movement = UnitMovement(scriptInfo: scriptInfo, interpreter: interpreter,
                                      unitPrimitives: unitPrimitives, mapPrimitives: mapPrimitives,
                                      housePrimitives: housePrimitives)
+        self.targets = TargetFinder(map: mapPrimitives, house: housePrimitives)
     }
 
     /// op-14 dispatch for a unit script — route the function `index` to its native, peeking arguments
@@ -59,6 +61,7 @@ public struct UnitScriptRunner: Sendable {
             case 0x19: return unit.setDestinationDirect(slot: slot, encoded: engine.peek(1), in: &state)
             case 0x1A: return unit.stop(slot: slot, in: &state)
             case 0x1B: return unit.setSpeed(slot: slot, requestedSpeed: engine.peek(1), in: &state)
+            case 0x1C: return targets.findBestTargetEncoded(slot: slot, mode: engine.peek(1), in: &state)
             case 0x1F: return unit.isInTransport(u)
             case 0x20: return unit.getAmount(u, in: state)
             case 0x24: return unit.unknown2552(slot: slot, in: &state)
