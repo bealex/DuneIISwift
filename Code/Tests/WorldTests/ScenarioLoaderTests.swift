@@ -32,6 +32,9 @@ struct ScenarioLoaderTests {
             $0.o.flags.contains(.used) && $0.o.type == UInt8(StructureType.constructionYard.rawValue)
         }
         #expect(cy != nil)
-        #expect(cy?.o.position == Tile32.unpack(1630))
+        // A structure stores its tile *corner* (the 0x80 sub-tile stripped), not the centred unpack
+        // (`Structure_Place`: `position &= 0xFF00`) — units centre, structures don't.
+        #expect(cy?.o.position == Tile32(x: Tile32.unpack(1630).x & 0xFF00, y: Tile32.unpack(1630).y & 0xFF00))
+        #expect(cy?.o.position.packed == 1630)   // same packed tile either way
     }
 }

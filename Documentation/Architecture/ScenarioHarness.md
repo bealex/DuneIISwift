@@ -55,7 +55,9 @@ renders terrain + units for visual assessment — the same scenario the golden v
 - [x] Oracle scenario parity mode (`--parity-scenario` in `parity.c`, self-contained: pools + ICON.MAP +
   `UNIT.EMC` + `Map_CreateLandscape` + `[UNITS]` + command replay + per-tick dump) + golden test
   (`ScenarioGoldenTests`, frame-0 parity for the moving scenario).
-- [ ] Per-tick trajectory comparison + the other scenarios, as the movement/combat/guard natives land.
+- [x] Per-tick trajectory comparison + 6 scenarios (move/move-trike/guard/attack-close/attack-rocket/attack-structure).
+- [x] **Structures + houses in the golden** — the oracle dump is now `Scen_DumpState` (`{tick, houses, structures, units}`, reusing `Parity_DumpHouses`/`Parity_DumpStructures`); the scenario mode loads `[STRUCTURES]` (`Scen_LoadStructure` + `Structure_Create` placement + `BUILD.EMC`); `ScenarioGoldenTests` compares structures (hp/state/linkedID) per tick. `attack-structure` (a tank vs an Ordos windtrap) matches the **full 400 ticks** — including the bullet-impact `Structure_Damage` (200→175). **This golden immediately found a real bug:** structures must store the tile *corner*, not the centred sub-tile (`Structure_Place`: `position &= 0xFF00`) — see insight `world-structure-corner-position`.
+- [ ] **Even-better harness (next, per `ParityHarness.md`):** **Tier-2a structure decision-trace** — the oracle already emits a per-opcode trace (`pc/op/param/SP/FP/return`) for a structure index (`g_parityScriptTraceStructureIndex`, `--parity-script-trace`); emit the same from our `StructureScriptRunner` and compare opcode-by-opcode (directly tests "matches EMC exactly", localizes any divergence to the exact PC). Then **Tier-3i semantic event-trace alignment** (RNG-robust): both engines emit `(tick, event, entity, payload)` for fire/damage/dock/refine/destroy, aligned tolerant-on-tick.
 
 **Oracle mode (`--parity-scenario=<id>`) — self-contained + headless, with real movement.** OpenDUNE's
 full game init (GFX/sprites/strings) and `Game_Prepare` don't run headless, so the mode is dispatched

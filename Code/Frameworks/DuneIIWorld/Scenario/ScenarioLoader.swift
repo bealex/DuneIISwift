@@ -92,8 +92,15 @@ public extension GameState {
         guard let i = structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(type.rawValue))
         else { return }
         structures[i].o.houseID = UInt8(house.rawValue)
-        structures[i].o.position = Tile32.unpack(packed)
+        // A structure stores its tile *corner*, not the centred sub-tile — `Structure_Place` zeroes the
+        // 0x80 (`s->o.position &= 0xFF00`). Units centre; structures don't. The 128px offset matters for
+        // every unit-vs-structure distance/aim calc (it shifts the firing direction onto a 2×2 footprint).
+        structures[i].o.position = Tile32(x: Tile32.unpack(packed).x & 0xFF00, y: Tile32.unpack(packed).y & 0xFF00)
         structures[i].state = .idle
+        // 1.07 ignores the scenario HP% — structures load at full hitpoints (`Scenario_Load_Structure`).
+        structures[i].o.hitpoints = StructureInfo[type].o.hitpoints
+        structures[i].hitpointsMax = StructureInfo[type].o.hitpoints
+        structures[i].o.flags.remove(.degrades)
     }
 
     private func fields(_ value: String?) -> [String] {

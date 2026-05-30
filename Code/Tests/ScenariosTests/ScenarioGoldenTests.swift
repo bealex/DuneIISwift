@@ -42,10 +42,16 @@ import DuneIISimulation
 /// trike's full crossing is still covered by `moving`/`move-trike`. See `Documentation/Insights`.
 @Suite("Scenario golden vs OpenDUNE")
 struct ScenarioGoldenTests {
-    struct Frame: Decodable { let tick: Int; let units: [UnitState] }
+    struct Frame: Decodable { let tick: Int; let units: [UnitState]; let structures: [StructureGolden]? }
     struct UnitState: Decodable, Equatable {
         let index: UInt16; let type: UInt8; let houseID: UInt8; let packed: UInt16; let orient: Int16
         let hp: UInt16; let actionID: UInt8; let targetMove: UInt16; let targetAttack: UInt16; let alive: Int
+    }
+    /// The dynamic structure fields (identity + the ones combat/scripts change). The oracle dumps more
+    /// (position/upgrades); `Decodable` ignores those.
+    struct StructureGolden: Decodable, Equatable {
+        let index: UInt16; let type: UInt8; let houseID: UInt8
+        let hitpoints: UInt16; let state: Int16; let linkedID: UInt8
     }
 
     /// One golden scenario: the shared `.INI`, the player order applied to the first unit, and how many
@@ -66,6 +72,7 @@ struct ScenarioGoldenTests {
         Spec(name: "guard",        ini: "guard.ini",        attack: false, cmdUnit: 23, tile: 1100, compared: 6),  // guard sits + trike approaches; deterministic prefix (idle twitch is RNG ⇒ see note)
         Spec(name: "attack-close", ini: "attack-close.ini", attack: true,  cmdUnit: 22, tile: 1041, compared: 0),  // FULL 400-tick combat match: fire→bullet→impact damage→retaliation, bit-identical to the oracle
         Spec(name: "attack-rocket", ini: "attack-rocket.ini", attack: true, cmdUnit: 22, tile: 1045, compared: 69),  // Launcher duel → notAccurate rocket: spawn + homing match; gates on a 1-unit sub-tile scatter residual (see note)
+        Spec(name: "attack-structure", ini: "attack-structure.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0),  // tank attacks an Ordos windtrap: full 400-tick match (structures + units), inc. the bullet-impact Structure_Damage (200→175). Found the structure-corner-position bug (see note).
     ]
 
     /// Sorted by `index` so the comparison is independent of pool/find-array enumeration order: our engine
@@ -82,6 +89,15 @@ struct ScenarioGoldenTests {
         .sorted { $0.index < $1.index }
     }
 
+    private func structureSnapshot(_ s: GameState) -> [StructureGolden] {
+        s.structures.indices.filter { s.structures[$0].o.flags.contains(.used) }.map { i in
+            let st = s.structures[i]
+            return StructureGolden(index: st.o.index, type: st.o.type, houseID: st.o.houseID,
+                                   hitpoints: st.o.hitpoints, state: st.state.rawValue, linkedID: st.o.linkedID)
+        }
+        .sorted { $0.index < $1.index }
+    }
+
     @Test("per-tick run matches the oracle", arguments: specs)
     func scenario(_ spec: Spec) throws {
         var repo = URL(fileURLWithPath: #filePath)
@@ -89,6 +105,7 @@ struct ScenarioGoldenTests {
         let fix = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures")
         guard let icon = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")),
               let emc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
+              let buildEmc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc")),
               let ini = try? Data(contentsOf: fix.appendingPathComponent(spec.ini)),
               let golden = try? String(contentsOf: fix.appendingPathComponent("\(spec.name)-golden.jsonl"), encoding: .utf8)
         else { return }
@@ -97,6 +114,7 @@ struct ScenarioGoldenTests {
         #expect(!oracle.isEmpty)
 
         let scriptInfo = ScriptInfo(try Emc.Program(emc))
+        let structureScriptInfo = ScriptInfo(try Emc.Program(buildEmc))
         var state = GameState()
         state.loadScenario(ini: Ini(ini), iconMap: try IconMap(icon))
         state.viewportPosition = Tile32.packXY(x: 12, y: 12)   // matches the oracle's pinned parity viewport
@@ -115,23 +133,25 @@ struct ScenarioGoldenTests {
         UnitOrders(scriptInfo: scriptInfo).apply(order, in: &state)
 
         // Run our engine for the whole trajectory, capturing a frame per tick (frame 0 = post-command).
-        var sim = Simulation(state: state, scriptInfo: scriptInfo)
-        var ours: [[UnitState]] = [snapshot(sim.state)]
+        var sim = Simulation(state: state, scriptInfo: scriptInfo, structureScriptInfo: structureScriptInfo)
+        var ours: [(units: [UnitState], structures: [StructureGolden])] = [(snapshot(sim.state), structureSnapshot(sim.state))]
         for _ in 1 ..< max(oracle.count, 1) {
             sim.tick()
-            ours.append(snapshot(sim.state))
+            ours.append((snapshot(sim.state), structureSnapshot(sim.state)))
         }
 
         // Assert the leading `compared` frames (0 ⇒ the whole trajectory) match tick by tick.
         let comparedTicks = spec.compared == 0 ? oracle.count : spec.compared
         var firstMismatch: Int? = nil
-        for t in 0 ..< min(comparedTicks, oracle.count, ours.count)
-            where ours[t] != oracle[t].units.sorted(by: { $0.index < $1.index }) {
-            firstMismatch = t
-            break
+        var what = "units"
+        for t in 0 ..< min(comparedTicks, oracle.count, ours.count) {
+            if ours[t].units != oracle[t].units.sorted(by: { $0.index < $1.index }) { firstMismatch = t; what = "units"; break }
+            if ours[t].structures != (oracle[t].structures ?? []).sorted(by: { $0.index < $1.index }) { firstMismatch = t; what = "structures"; break }
         }
         let msg: String = firstMismatch.map { t in
-            "\(spec.name): first divergence at tick \(t): ours=\(ours[t]) oracle=\(oracle[t].units.sorted(by: { $0.index < $1.index }))"
+            what == "structures"
+                ? "\(spec.name): structures diverge at tick \(t): ours=\(ours[t].structures) oracle=\((oracle[t].structures ?? []).sorted(by: { $0.index < $1.index }))"
+                : "\(spec.name): units diverge at tick \(t): ours=\(ours[t].units) oracle=\(oracle[t].units.sorted(by: { $0.index < $1.index }))"
         } ?? "\(spec.name): no divergence"
         #expect(firstMismatch == nil, "\(msg)")
     }

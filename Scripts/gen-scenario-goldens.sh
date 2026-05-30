@@ -55,8 +55,10 @@ run  move-trike   98   move-trike.ini    "$TICKS"  move,22,1040
 run  attack-close 97   attack-close.ini  "$TICKS"  attack,22,1041
 run  guard        96   guard.ini         "$TICKS"  move,23,1100
 run  attack-rocket 95   attack-rocket.ini "$TICKS"  attack,22,1045
+run  attack-structure 94 attack-structure.ini "$TICKS" attack,22,1042
 # Multi-unit attack/guard match the deterministic prefix (setup + movement + the guard sitting); the
 # Swift side gates `compared` before combat RNG (target acquisition / fire), which parity doesn't chase.
+# attack-structure dumps structures + houses too (Scen_DumpState): a tank drains + destroys a windtrap.
 
 echo
 echo "Done — fixtures written under $FIX/."
