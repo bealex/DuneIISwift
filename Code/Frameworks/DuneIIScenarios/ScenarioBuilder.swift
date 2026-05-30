@@ -42,7 +42,7 @@ public struct ScenarioBuilder {
         state.houses[Int(enemy.rawValue)].unitCountMax = 100
 
         let terrain = ScenarioTerrain(seed: scenario.terrainSeed)
-        terrain.apply(to: &state)
+        terrain.apply(to: &state, iconMap: iconMap)
 
         let actions = UnitActions()
         let runner = UnitScriptRunner(scriptInfo: unitScript)
