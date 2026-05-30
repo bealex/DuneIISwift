@@ -63,4 +63,13 @@ public extension GameState {
         guard let ut = UnitType(rawValue: Int(units[slot].o.type)) else { return }
         tileRemoveFogInRadius(pos, radius: UInt16(UnitInfo[ut].o.fogUncoverRadius))
     }
+
+    /// `Structure_RemoveFog` (`structure.c:954`): lift the fog around a player-owned structure by its
+    /// type's `fogUncoverRadius`. AI houses reveal nothing. We pin the non-enhanced (1.07) path: the fog
+    /// disc is centred on the structure's origin tile, not its visual centre.
+    mutating func structureRemoveFog(_ slot: Int) {
+        guard structures[slot].o.houseID == playerHouseID else { return }
+        guard let st = StructureType(rawValue: Int(structures[slot].o.type)) else { return }
+        tileRemoveFogInRadius(structures[slot].o.position, radius: UInt16(StructureInfo[st].o.fogUncoverRadius))
+    }
 }

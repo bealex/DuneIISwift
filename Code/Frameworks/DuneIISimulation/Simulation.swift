@@ -22,9 +22,16 @@ public struct Simulation: Sendable {
     /// exists; without it the unit phase still runs the cadence + the orientation/idle work.
     public var unitScript: UnitScriptRunner?
 
+    /// The structure-script runner (VM + op-14 dispatch over `g_scriptFunctionsStructure`), present when a
+    /// `structureScriptInfo` (the bridged `BUILD.EMC`) was supplied alongside the unit one. `GameLoop_Structure`
+    /// runs structure scripts only when it exists. It shares the unit runner's `UnitCombat` so the structure
+    /// death natives reach the same explosion / unit-spawn layer.
+    public var structureScript: StructureScriptRunner?
+
     public init(
         state: GameState,
         scriptInfo: ScriptInfo? = nil,
+        structureScriptInfo: ScriptInfo? = nil,
         unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
         mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
         housePrimitives: any HousePrimitives = DefaultHousePrimitives()
@@ -33,21 +40,30 @@ public struct Simulation: Sendable {
         self.unitPrimitives = unitPrimitives
         self.mapPrimitives = mapPrimitives
         self.housePrimitives = housePrimitives
-        self.unitScript = scriptInfo.map {
+        let unitRunner = scriptInfo.map {
             UnitScriptRunner(scriptInfo: $0, unitPrimitives: unitPrimitives,
                              mapPrimitives: mapPrimitives, housePrimitives: housePrimitives)
         }
+        self.unitScript = unitRunner
+        // A structure script needs the unit layer (its death natives spawn units + reuse the explosion
+        // path), so it's built only when both EMCs are present.
+        self.structureScript = (structureScriptInfo != nil && unitRunner != nil)
+            ? StructureScriptRunner(scriptInfo: structureScriptInfo!, combat: unitRunner!.combat,
+                                    interpreter: unitRunner!.interpreter)
+            : nil
     }
 
     public init(
         random256Seed: UInt32 = 0, randomLCGSeed: UInt16 = 0,
         scriptInfo: ScriptInfo? = nil,
+        structureScriptInfo: ScriptInfo? = nil,
         unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
         mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
         housePrimitives: any HousePrimitives = DefaultHousePrimitives()
     ) {
         self.init(state: GameState(random256Seed: random256Seed, randomLCGSeed: randomLCGSeed),
-                  scriptInfo: scriptInfo, unitPrimitives: unitPrimitives, mapPrimitives: mapPrimitives,
+                  scriptInfo: scriptInfo, structureScriptInfo: structureScriptInfo,
+                  unitPrimitives: unitPrimitives, mapPrimitives: mapPrimitives,
                   housePrimitives: housePrimitives)
     }
 
@@ -223,8 +239,55 @@ extension Simulation {
     /// `GameLoop_Team` — ported in a later Phase-3 slice (order-preserving stub for now).
     mutating func gameLoopTeam() {}
 
-    /// `GameLoop_Structure` — ported in a later Phase-3 slice (order-preserving stub for now).
-    mutating func gameLoopStructure() {}
+    /// `GameLoop_Structure` (`structure.c:53`). Advances the four structure tick cursors; when the **script**
+    /// cursor fires, runs each structure's EMC script (3 opcodes) via `structureScript`. The degrade /
+    /// structure-build-repair / palace activities advance their cursors but their bodies are seams (the
+    /// campaign-degrade, BUILD/REPAIR/factory-production, and palace special-weapon slices). See
+    /// `Documentation/Algorithms/StructureScript.md`.
+    mutating func gameLoopStructure() {
+        let g = state.timerGame
+
+        // degrade (campaign>1 only — not modeled) + structure (BUILD/REPAIR — SEAM): advance cursors faithfully.
+        if state.structureTick.degrade <= g {
+            state.structureTick.degrade = g &+ UInt32(adjustToGameSpeed(normal: 10800, minimum: 5400, maximum: 21600, inverse: true))
+        }
+        if state.structureTick.structure <= g {
+            state.structureTick.structure = g &+ UInt32(adjustToGameSpeed(normal: 30, minimum: 15, maximum: 60, inverse: true))
+        }
+        var tickScript = false
+        if state.structureTick.script <= g {
+            tickScript = true
+            state.structureTick.script = g &+ 5
+        }
+        if state.structureTick.palace <= g {            // palace special weapon — SEAM
+            state.structureTick.palace = g &+ 60
+        }
+
+        guard tickScript, let runner = structureScript else { return }
+
+        var find = PoolFind()
+        while let slot = state.structureFind(&find) {
+            // SEAM: per-structure palace countdown, campaign degrade, and the BUILD/REPAIR/factory state machine.
+            if state.structures[slot].o.script.delay != 0 {
+                state.structures[slot].o.script.delay &-= 1
+                continue
+            }
+            if runner.interpreter.isLoaded(state.structures[slot].o.script) {
+                let executed = runner.run(slot: slot, in: &state, budget: 3)
+                // OpenDUNE 1.07: a structure whose script errors before its 3 opcodes aborts the remaining
+                // structures this tick (`if (!g_dune2_enhanced && i != 3) return;`).
+                if executed != 3 { return }
+            } else {
+                // (Re)load the type's script — the start path and the death-script restart (Structure_Destroy
+                // resets the script, so its death branch loads here with the death flag already set).
+                guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { continue }
+                state.structures[slot].o.script.reset()                          // Script_Reset
+                var engine = state.structures[slot].o.script
+                runner.interpreter.load(&engine, info: runner.scriptInfo, typeID: Int(st.rawValue))  // Script_Load
+                state.structures[slot].o.script = engine
+            }
+        }
+    }
 
     /// `GameLoop_House` — ported in a later Phase-3 slice (order-preserving stub for now).
     mutating func gameLoopHouse() {}

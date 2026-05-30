@@ -1,0 +1,9 @@
+# Map tile occupancy implies a valid 1-based pool index
+
+**Finding:** a map tile's `hasUnit`/`hasStructure` flag and its `index` field are a coupled invariant — whenever occupancy is set, `index` is the 1-based pool slot (`slot + 1`). The by-tile pool queries (`unitGetByPackedTile` / `structureGetByPackedTile`) trust this: they gate on the flag, then compute `slot = index - 1` with no guard against `index == 0`.
+
+**Why it matters:** stamping occupancy without the index (e.g. a test that sets `map[p].hasStructure = true` directly to place a building, skipping `structureUpdateMap`) makes the query read `index = 0` → `slot = -1` → a hard `Index out of range` crash the moment anything resolves that tile (fog reveal, target search, occupancy check). The flag says "someone is here," the query believes it, and dereferences slot −1. In OpenDUNE the same `index - 1` is benign (C reads `array[-1]`); in Swift it traps.
+
+**Evidence:** `DuneIIWorld/State/GameState+Pools.swift` `structureGetByPackedTile`/`unitGetByPackedTile` (gate on `hasStructure`/`hasUnit`, then `index - 1`); `GameState+Animation.swift` `structureUpdateMap` sets `hasStructure` + `index = slot + 1` together (the production path that upholds the invariant). Surfaced while testing the structure death path (`Tests/SimulationTests/StructureScriptTests.swift`): a fog reveal over the building's own tile crashed until the test stamped `map[p].index` alongside `hasStructure`.
+
+**How to apply:** never set `hasUnit`/`hasStructure` on a tile without also setting `index = slot + 1` (and clearing both together on removal). In tests, prefer the real placement path (`structureUpdateMap` / `Unit_UpdateMap`) when an `iconMap` is available; when stamping occupancy by hand (no iconMap), set `index` in the same loop. Treat "occupancy flag set, index 0" as a corrupt tile, never a valid empty one.

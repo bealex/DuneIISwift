@@ -34,3 +34,4 @@ Capture an insight when something surprised you, cost real time to figure out, o
 - [sim-viewport-script-throttle](sim-viewport-script-throttle.md) — off-viewport units script at 3 (not 52) opcodes/tick; pin `viewportPosition` for parity.
 - [sim-emc-unported-native-halt](sim-emc-unported-native-halt.md) — unported EMC natives must clean-halt (null the PC), not suspend, or timing skews silently.
 - [sim-rng-stream-unpinned-wobble](sim-rng-stream-unpinned-wobble.md) — a green movement golden doesn't prove random256-stream parity (wobble draws are render-only/invisible); gate stochastic-idle scenarios at the deterministic prefix.
+- [world-map-occupancy-index-invariant](world-map-occupancy-index-invariant.md) — a tile's `hasUnit`/`hasStructure` flag implies a valid 1-based `index`; by-tile pool queries do `index - 1` unguarded, so stamping occupancy without the index crashes (slot −1).

@@ -14,6 +14,18 @@ public struct UnitTickCursors: Sendable, Equatable {
     public init() {}
 }
 
+/// "Next-due" tick timestamps for each `GameLoop_Structure` sub-activity (OpenDUNE's `s_tickStructure*`).
+/// An activity fires when its cursor is `<= timerGame`, then advances by its interval. Only `script` drives
+/// logic today; `degrade`/`structure`/`palace` advance their cursors but their bodies are still seams
+/// (the campaign-degrade, BUILD/REPAIR/factory production, and palace special-weapon slices).
+public struct StructureTickCursors: Sendable, Equatable {
+    public var degrade: UInt32 = 0
+    public var structure: UInt32 = 0
+    public var script: UInt32 = 0
+    public var palace: UInt32 = 0
+    public init() {}
+}
+
 /// The single owned aggregate of all mutable simulation state (engine principle 4). A port of the
 /// OpenDUNE globals: the object pools (`g_unitArray`/`g_structureArray`/`g_houseArray`/`g_teamArray`
 /// + their find arrays), the `g_map[64*64]` grid, both RNGs, and the two tick clocks.
@@ -54,6 +66,9 @@ public struct GameState: Sendable {
 
     /// Per-subsystem "next-due" tick cursors for `GameLoop_Unit` (OpenDUNE's `s_tickUnit*` statics).
     public var unitTick = UnitTickCursors()
+
+    /// Per-subsystem "next-due" tick cursors for `GameLoop_Structure` (OpenDUNE's `s_tickStructure*`).
+    public var structureTick = StructureTickCursors()
 
     /// OpenDUNE's `g_validateStrictIfZero`: 0 = strict validation (normal play); non-zero bypasses the
     /// allocate / placement guards (used while loading a save or scenario).
