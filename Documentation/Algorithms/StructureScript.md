@@ -18,9 +18,11 @@ Runs every tick; throttles sub-activities with next-due cursors (`StructureTickC
 | activity   | interval (ticks)                              | status |
 |------------|-----------------------------------------------|--------|
 | degrade    | `AdjustToGameSpeed(10800,5400,21600, inv)`, campaign>1 | SEAM (AI/campaign) |
-| structure  | `AdjustToGameSpeed(30,15,60, inv)`            | SEAM (BUILD/REPAIR/factory state machine — the economy/production slice) |
+| structure  | `AdjustToGameSpeed(30,15,60, inv)`            | **live** (`structureTickStructure` — production/repair; upgrade + AI seams) |
 | script     | `+5`                                          | **live** |
 | palace     | `+60`                                         | SEAM (special-weapon countdown) |
+
+Slabs/walls (`SLAB_1x1`/`SLAB_2x2`/`WALL`) are skipped at the top of the per-structure loop, as in OpenDUNE — they have no script or economy.
 
 Per structure (via `Structure_Find`), when the **script** cursor fires:
 
@@ -33,6 +35,36 @@ else:                        Script_Reset; Script_Load(type)   // (re)load the t
 The `else` (not-loaded) branch is how a structure's script starts **and** restarts: a freshly placed structure (or one whose script erred / was reset by `Structure_Destroy`) gets `Script_Load(type)` here, then runs from the type entry next script-tick. So the **death-script `Script_Load` lives in `GameLoop_Structure`, not in `Structure_Destroy`** — `Structure_Destroy` only `Script_Reset`s (World layer), keeping `ScriptInfo` a Simulation concern, exactly like the unit path (`Unit_Remove` resets; `Unit_SetAction` loads).
 
 OpenDUNE quirk (1.07, not enhanced): if one structure's script errors before running its 3 opcodes, `GameLoop_Structure` **aborts the remaining structures** this tick (`if (!g_dune2_enhanced && i != 3) return;`). We reproduce it.
+
+## The `tickStructure` body — build/repair economy (`structureTickStructure`)
+
+When the **structure** cursor fires, each non-slab structure runs `structureTickStructure` (`GameState+Lifecycle`, the `if (tickStructure)` block of `structure.c:53`). Three mutually-exclusive branches on the object flags:
+
+```
+if upgrading:    (SEAM — Structure_IsUpgradable-gated upgrade progress; a follow-up slice)
+elif repairing:  bill the 1.07 repair cost; heal +5 (player / campaign≥3) or +3; finish at full HP. Broke ⇒ cancel.
+else:            factory production + (for the repair pad) the unit-repair countdown.
+```
+
+**Factory production** (a `factory`-flagged structure that is `BUSY` with a queued object — `countDown != 0`, `linkedID != 0xFF`, not `onHold`):
+
+```
+oi          = constructionYard ? structureInfo[objectType] : repair ? unitInfo[linkedUnit.type] : unitInfo[objectType]
+buildSpeed  = (hp < maxHP) ? hp*256/maxHP : 256          // damaged factories build slower
+              (AI: clamped to campaignID*20+95)
+buildCost   = oi.buildCredits*256 / oi.buildTime ; if buildSpeed<256 scale by it ; repair ⇒ /4
+buildCost  += buildCostRemainder
+if buildCost/256 <= credits:
+    credits -= buildCost/256 ; buildCostRemainder = buildCost & 0xFF
+    countDown -= buildSpeed   (or, when buildSpeed >= countDown: countDown=0, remainder=0, SetState(READY))
+else if player:  set onHold       // out of money halts the player's build
+```
+
+The completion-to-`READY` path is where a finished unit/structure becomes available; the player GUI text + sound, and the AI's immediate auto-place of a finished construction-yard structure (`Structure_Place` into `ai_structureRebuild`), are **SEAMs** (the latter belongs to the Team/AI slice).
+
+**The repair pad** (`STRUCTURE_REPAIR`) additionally drives a linked unit's repair countdown — `repairCost = 2*unit.buildCredits/256`, `countDown -= repairSpeed` until 0 → `READY`; with nothing linked but money available it auto-clears `onHold`. (The pad lacks the `factory` flag, so it never enters the production block above — only this one.)
+
+**SEAMs in this body:** the upgrade branch; the AI-maintenance block (`isAIActive`: auto-repair below 50% HP + `Structure_AI_PickNextToBuild`/`Structure_BuildObject`); the AI construction-yard auto-place; and all GUI/sound. `campaignID` (new `GameState` field, default 1 = first campaign) feeds the repair heal amount + the AI build-speed cap faithfully.
 
 ## The death path
 

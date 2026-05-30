@@ -103,6 +103,12 @@ public struct GameState: Sendable {
     /// The local player's house. OpenDUNE's `g_playerHouseID`; set by scenario loading (not yet ported).
     public var playerHouseID: UInt8 = 0
 
+    /// The active campaign (mission) number, 1…9. OpenDUNE's `g_campaignID`. Feeds several deterministic
+    /// economy formulas faithfully — the structure-degrade gate (`> 1`), the AI build-speed cap
+    /// (`campaignID*20+95`), the repair heal amount (`>= 3` → +5), and `Structure_IsUpgradable`. Defaults to
+    /// the first campaign; scenario loading will set it. (Replaces the earlier "campaigns aren't modeled" pins.)
+    public var campaignID: UInt8 = 1
+
     /// The map viewport's top-left packed tile (OpenDUNE's `g_viewportPosition`). Render state, but it
     /// feeds the deterministic sim: `GameLoop_Unit` throttles an off-viewport unit's script to 3
     /// opcodes/tick (`Map_IsPositionInViewport`). Set by the host (camera) / the parity harness.

@@ -239,19 +239,21 @@ extension Simulation {
     /// `GameLoop_Team` — ported in a later Phase-3 slice (order-preserving stub for now).
     mutating func gameLoopTeam() {}
 
-    /// `GameLoop_Structure` (`structure.c:53`). Advances the four structure tick cursors; when the **script**
-    /// cursor fires, runs each structure's EMC script (3 opcodes) via `structureScript`. The degrade /
-    /// structure-build-repair / palace activities advance their cursors but their bodies are seams (the
-    /// campaign-degrade, BUILD/REPAIR/factory-production, and palace special-weapon slices). See
-    /// `Documentation/Algorithms/StructureScript.md`.
+    /// `GameLoop_Structure` (`structure.c:53`). Advances the four structure tick cursors; per structure
+    /// (skipping slabs/walls, as OpenDUNE does), when the **structure** cursor fires runs the build/repair
+    /// economy (`structureTickStructure`), and when the **script** cursor fires runs its EMC script
+    /// (3 opcodes) via `structureScript`. Degrade (campaign-degrade) + palace (special-weapon countdown)
+    /// advance their cursors but their bodies remain seams. See `Documentation/Algorithms/StructureScript.md`.
     mutating func gameLoopStructure() {
         let g = state.timerGame
 
-        // degrade (campaign>1 only — not modeled) + structure (BUILD/REPAIR — SEAM): advance cursors faithfully.
+        // degrade (campaign>1 only) — advance the cursor; its body is a SEAM (AI/campaign degrade).
         if state.structureTick.degrade <= g {
             state.structureTick.degrade = g &+ UInt32(adjustToGameSpeed(normal: 10800, minimum: 5400, maximum: 21600, inverse: true))
         }
+        var tickStructure = false
         if state.structureTick.structure <= g {
+            tickStructure = true
             state.structureTick.structure = g &+ UInt32(adjustToGameSpeed(normal: 30, minimum: 15, maximum: 60, inverse: true))
         }
         var tickScript = false
@@ -263,28 +265,39 @@ extension Simulation {
             state.structureTick.palace = g &+ 60
         }
 
-        guard tickScript, let runner = structureScript else { return }
+        guard tickStructure || tickScript else { return }
 
         var find = PoolFind()
         while let slot = state.structureFind(&find) {
-            // SEAM: per-structure palace countdown, campaign degrade, and the BUILD/REPAIR/factory state machine.
-            if state.structures[slot].o.script.delay != 0 {
-                state.structures[slot].o.script.delay &-= 1
-                continue
+            let t = state.structures[slot].o.type
+            if t == UInt8(StructureType.slab1x1.rawValue) || t == UInt8(StructureType.slab2x2.rawValue)
+                || t == UInt8(StructureType.wall.rawValue) { continue }
+            // SEAM: per-structure palace countdown + campaign degrade.
+
+            if tickStructure {
+                state.structureTickStructure(slot)
             }
-            if runner.interpreter.isLoaded(state.structures[slot].o.script) {
-                let executed = runner.run(slot: slot, in: &state, budget: 3)
-                // OpenDUNE 1.07: a structure whose script errors before its 3 opcodes aborts the remaining
-                // structures this tick (`if (!g_dune2_enhanced && i != 3) return;`).
-                if executed != 3 { return }
-            } else {
-                // (Re)load the type's script — the start path and the death-script restart (Structure_Destroy
-                // resets the script, so its death branch loads here with the death flag already set).
-                guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { continue }
-                state.structures[slot].o.script.reset()                          // Script_Reset
-                var engine = state.structures[slot].o.script
-                runner.interpreter.load(&engine, info: runner.scriptInfo, typeID: Int(st.rawValue))  // Script_Load
-                state.structures[slot].o.script = engine
+
+            if tickScript {
+                guard let runner = structureScript else { continue }
+                if state.structures[slot].o.script.delay != 0 {
+                    state.structures[slot].o.script.delay &-= 1
+                    continue
+                }
+                if runner.interpreter.isLoaded(state.structures[slot].o.script) {
+                    let executed = runner.run(slot: slot, in: &state, budget: 3)
+                    // OpenDUNE 1.07: a structure whose script errors before its 3 opcodes aborts the remaining
+                    // structures this tick (`if (!g_dune2_enhanced && i != 3) return;`).
+                    if executed != 3 { return }
+                } else {
+                    // (Re)load the type's script — the start path and the death-script restart (Structure_Destroy
+                    // resets the script, so its death branch loads here with the death flag already set).
+                    guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { continue }
+                    state.structures[slot].o.script.reset()                          // Script_Reset
+                    var engine = state.structures[slot].o.script
+                    runner.interpreter.load(&engine, info: runner.scriptInfo, typeID: Int(st.rawValue))  // Script_Load
+                    state.structures[slot].o.script = engine
+                }
             }
         }
     }

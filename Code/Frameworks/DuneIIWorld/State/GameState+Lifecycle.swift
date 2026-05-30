@@ -343,6 +343,120 @@ public extension GameState {
         }
     }
 
+    /// The `tickStructure` body of `GameLoop_Structure` (`structure.c:53`, the `if (tickStructure)` block):
+    /// one structure's per-tick build/repair economy, run every `AdjustToGameSpeed(30,15,60)` ticks. Three
+    /// mutually-exclusive branches on the structure's flags:
+    ///   - **upgrading** — `Structure_IsUpgradable`-gated upgrade progress. SEAM (a follow-up slice).
+    ///   - **repairing** — structure self-repair: bill the 1.07 repair cost, heal HP (+5 for the player /
+    ///     campaign ≥ 3, else +3), finish at full HP. Out of money cancels the repair.
+    ///   - **else (factory production)** — a BUSY factory with a queued object (`countDown != 0`,
+    ///     `linkedID != 0xFF`) advances its build by `buildSpeed` (HP-scaled), billing `buildCost` credits;
+    ///     completing → `STRUCTURE_STATE_READY`. Out of money puts the player's build on hold. The repair
+    ///     pad (`STRUCTURE_REPAIR`) additionally advances a linked unit's repair countdown.
+    /// SEAMs: the upgrade branch; the player completion GUI text + sound; the AI auto-place of a finished
+    /// construction-yard structure; and the whole AI-maintenance block (`isAIActive`: auto-repair below 50%
+    /// HP + `Structure_AI_PickNextToBuild`/`Structure_BuildObject`) — all of which belong to the Team/AI
+    /// slice. Degrade + palace are separate cursors handled by the caller.
+    mutating func structureTickStructure(_ slot: Int) {
+        guard let st = StructureType(rawValue: Int(structures[slot].o.type)) else { return }
+        let si = StructureInfo[st]
+        let hID = Int(structures[slot].o.houseID)
+
+        if structures[slot].o.flags.contains(.upgrading) {
+            // SEAM: the upgrade branch (Structure_IsUpgradable + upgradeLevel/upgradeTimeLeft progress).
+        } else if structures[slot].o.flags.contains(.repairing) {
+            // 1.07 repair cost (the float-resolution-256 rounding OpenDUNE flags as "a bit unfair").
+            let repairCost = UInt16((2 * 256 / UInt32(si.o.hitpoints) * UInt32(si.o.buildCredits) + 128) / 256)
+            if repairCost <= houses[hID].credits {
+                houses[hID].credits &-= repairCost
+                let heal: UInt16 = (structures[slot].o.houseID == playerHouseID || campaignID >= 3) ? 5 : 3
+                structures[slot].o.hitpoints &+= heal
+                if structures[slot].o.hitpoints > si.o.hitpoints {
+                    structures[slot].o.hitpoints = si.o.hitpoints
+                    structures[slot].o.flags.remove(.repairing)
+                    structures[slot].o.flags.remove(.onHold)
+                }
+            } else {
+                structures[slot].o.flags.remove(.repairing)
+            }
+        } else {
+            // Factory production: advance a queued build.
+            if !structures[slot].o.flags.contains(.onHold), structures[slot].countDown != 0,
+               structures[slot].o.linkedID != 0xFF, structures[slot].state == .busy, si.o.flags.contains(.factory) {
+                let buildCredits: UInt16, buildTime: UInt16
+                if st == .constructionYard {
+                    let oi = StructureInfo[StructureType(rawValue: Int(structures[slot].objectType))!].o
+                    (buildCredits, buildTime) = (oi.buildCredits, oi.buildTime)
+                } else if st == .repair {
+                    let ut = UnitType(rawValue: Int(units[Int(structures[slot].o.linkedID)].o.type))!
+                    (buildCredits, buildTime) = (UnitInfo[ut].o.buildCredits, UnitInfo[ut].o.buildTime)
+                } else {
+                    let ut = UnitType(rawValue: Int(structures[slot].objectType))!
+                    (buildCredits, buildTime) = (UnitInfo[ut].o.buildCredits, UnitInfo[ut].o.buildTime)
+                }
+
+                var buildSpeed: UInt32 = 256
+                if structures[slot].o.hitpoints < si.o.hitpoints {
+                    buildSpeed = UInt32(structures[slot].o.hitpoints) * 256 / UInt32(si.o.hitpoints)
+                }
+                // AIs build slower in all but the last campaign.
+                if playerHouseID != structures[slot].o.houseID {
+                    let cap = UInt32(campaignID) * 20 + 95
+                    if buildSpeed > cap { buildSpeed = cap }
+                }
+
+                var buildCost = UInt32(buildCredits) * 256 / UInt32(buildTime)
+                if buildSpeed < 256 { buildCost = buildSpeed * buildCost / 256 }
+                if st == .repair, buildCost > 4 { buildCost /= 4 }
+                buildCost += UInt32(structures[slot].buildCostRemainder)
+
+                if buildCost / 256 <= UInt32(houses[hID].credits) {
+                    structures[slot].buildCostRemainder = UInt16(buildCost & 0xFF)
+                    houses[hID].credits &-= UInt16(buildCost / 256)
+                    if buildSpeed < UInt32(structures[slot].countDown) {
+                        structures[slot].countDown &-= UInt16(buildSpeed)
+                    } else {
+                        structures[slot].countDown = 0
+                        structures[slot].buildCostRemainder = 0
+                        structureSetState(slot, .ready)
+                        // SEAM: player completion GUI text + Sound_Output_Feedback.
+                        // SEAM: AI construction-yard auto-place (Structure_Place into ai_structureRebuild).
+                    }
+                } else if structures[slot].o.houseID == playerHouseID {
+                    structures[slot].o.flags.insert(.onHold)   // out of money → hold (+ GUI text SEAM)
+                }
+            }
+
+            // The repair pad also drives a linked unit's repair countdown.
+            if st == .repair {
+                if !structures[slot].o.flags.contains(.onHold), structures[slot].countDown != 0,
+                   structures[slot].o.linkedID != 0xFF {
+                    let ut = UnitType(rawValue: Int(units[Int(structures[slot].o.linkedID)].o.type))!
+                    var repairSpeed: UInt32 = 256
+                    if structures[slot].o.hitpoints < si.o.hitpoints {
+                        repairSpeed = UInt32(structures[slot].o.hitpoints) * 256 / UInt32(si.o.hitpoints)
+                    }
+                    // XXX (OpenDUNE): repairing a more-damaged pad costs more — faithfully reproduced.
+                    let repairCost = UInt16(2 * UInt32(UnitInfo[ut].o.buildCredits) / 256)
+                    if repairCost < houses[hID].credits {
+                        houses[hID].credits &-= repairCost
+                        if repairSpeed < UInt32(structures[slot].countDown) {
+                            structures[slot].countDown &-= UInt16(repairSpeed)
+                        } else {
+                            structures[slot].countDown = 0
+                            structureSetState(slot, .ready)
+                            // SEAM: Sound_Output_Feedback.
+                        }
+                    }
+                } else if houses[hID].credits != 0 {
+                    structures[slot].o.flags.remove(.onHold)   // money is back → auto-resume
+                }
+            }
+
+            // SEAM: the AI-maintenance block (isAIActive auto-repair + AI_PickNextToBuild/BuildObject).
+        }
+    }
+
     /// `Unit_EnterStructure` (`unit.c:2177`): a unit arrives inside structure `s`. If the unit is gone or the
     /// structure is dead, just remove the unit. **Allied** (the harvester→refinery / unit→repair case): the
     /// structure goes READY/BUSY, a repair pad heals + times the unit, and the unit links into the
