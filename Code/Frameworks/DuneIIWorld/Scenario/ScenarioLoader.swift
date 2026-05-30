@@ -65,6 +65,12 @@ public extension GameState {
         units[i].orientation[0].current = orientation
         units[i].orientation[1].current = orientation
         units[i].o.flags.insert(.byScenario)
+        // The 6th field is the action (`Unit_ActionStringToType`); record it (World can't load the script
+        // — that's `Unit_SetAction`, a Simulation concern — but the action id is part of the scenario).
+        if parts.count >= 6, let action = ActionType.named(parts[5]) {
+            units[i].actionID = UInt8(action.rawValue)
+        }
+        units[i].nextActionID = 0xFF
     }
 
     /// `GEN<packed>=House,StructureType` (slabs/walls) or `ID<n>=House,StructureType,HP%,packed`.

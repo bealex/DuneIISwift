@@ -52,9 +52,10 @@ run() {
 # ───────────────────────────────────────────────────────────────────────────────────────────
 run  moving       99   bootstrap.ini     "$TICKS"  move,22,2600
 run  move-trike   98   move-trike.ini    "$TICKS"  move,22,1040
-# Add scenarios here as their .INI + commands are defined. Multi-unit attack/guard goldens also need the
-# Simulation-layer setup the oracle's Scen path does (Unit_SetAction per unit + Unit_UpdateMap placement)
-# and the combat natives, so they land with the combat-integration slice.
+run  attack-close 97   attack-close.ini  "$TICKS"  attack,22,1041
+run  guard        96   guard.ini         "$TICKS"  move,23,1100
+# Multi-unit attack/guard match the deterministic prefix (setup + movement + the guard sitting); the
+# Swift side gates `compared` before combat RNG (target acquisition / fire), which parity doesn't chase.
 
 echo
 echo "Done — fixtures written under $FIX/."

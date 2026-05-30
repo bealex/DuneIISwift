@@ -34,14 +34,17 @@ struct ScenarioGoldenTests {
         let name: String       // golden file base (`<name>-golden.jsonl`)
         let ini: String        // shared scenario `.INI`
         let attack: Bool       // false = move order, true = attack order
+        let cmdUnit: UInt16    // pool index of the unit the order targets (matches the oracle --parity-cmd)
         let tile: UInt16       // the order's target tile
         let compared: Int      // leading ticks asserted; 0 = full trajectory
         var testDescription: String { name }
     }
 
     static let specs: [Spec] = [
-        Spec(name: "moving",     ini: "bootstrap.ini",  attack: false, tile: 2600, compared: 0),   // tank, full match
-        Spec(name: "move-trike", ini: "move-trike.ini", attack: false, tile: 1040, compared: 0),   // trike (off-viewport throttle), full match
+        Spec(name: "moving",       ini: "bootstrap.ini",    attack: false, cmdUnit: 22, tile: 2600, compared: 0),  // tank, full match
+        Spec(name: "move-trike",   ini: "move-trike.ini",   attack: false, cmdUnit: 22, tile: 1040, compared: 0),  // trike off-viewport, full match
+        Spec(name: "guard",        ini: "guard.ini",        attack: false, cmdUnit: 23, tile: 1100, compared: 0),  // guard sits + trike approaches (never in range), full match
+        Spec(name: "attack-close", ini: "attack-close.ini", attack: true,  cmdUnit: 22, tile: 1041, compared: 5),  // combat ⇒ deterministic prefix only (defender reacts ~tick 5)
     ]
 
     private func snapshot(_ s: GameState) -> [UnitState] {
@@ -72,9 +75,18 @@ struct ScenarioGoldenTests {
         var state = GameState()
         state.loadScenario(ini: Ini(ini), iconMap: try IconMap(icon))
         state.viewportPosition = Tile32.packXY(x: 12, y: 12)   // matches the oracle's pinned parity viewport
-        let unit = state.units.first { $0.o.flags.contains(.used) }!
-        let order: Command = spec.attack ? .attack(unit: unit.o.index, tile: spec.tile)
-                                         : .move(unit: unit.o.index, tile: spec.tile)
+
+        // Scen-style prepare (mirrors the oracle's Scen_LoadUnit + Game_Prepare placement): load each
+        // unit's action script and stamp it on the map, so multi-unit setup — target resolution
+        // (Unit_Get_ByPackedTile) and occupancy — matches the oracle before the command is issued.
+        let setup = UnitActions()
+        for slot in state.units.indices where state.units[slot].o.flags.contains(.used) {
+            setup.setAction(slot: slot, action: state.units[slot].actionID, scriptInfo: scriptInfo, in: &state)
+            state.unitUpdateMap(1, slot)
+        }
+
+        let order: Command = spec.attack ? .attack(unit: spec.cmdUnit, tile: spec.tile)
+                                         : .move(unit: spec.cmdUnit, tile: spec.tile)
         UnitOrders(scriptInfo: scriptInfo).apply(order, in: &state)
 
         // Run our engine for the whole trajectory, capturing a frame per tick (frame 0 = post-command).

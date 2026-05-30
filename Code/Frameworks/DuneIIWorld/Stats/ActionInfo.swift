@@ -14,6 +14,14 @@ public enum ActionType: Int, CaseIterable, Sendable {
     case hunt = 11
     case deploy = 12
     case destruct = 13
+
+    /// `Unit_ActionStringToType` (`unit.c`): the scenario-`.INI` action name (case-insensitive), matching
+    /// `g_table_actionInfo[].name`. `nil` for an unknown name (OpenDUNE's `ACTION_INVALID`).
+    public static func named(_ name: String) -> ActionType? {
+        let names = ["attack", "move", "retreat", "guard", "area guard", "harvest", "return", "stop",
+                     "ambush", "sabotage", "die", "hunt", "deploy", "destruct"]
+        return names.firstIndex(of: name.lowercased()).flatMap { ActionType(rawValue: $0) }
+    }
 }
 
 /// The active input/selection mode, in OpenDUNE's `SelectionType` order (`src/gui/gui.h:21`). Referenced
