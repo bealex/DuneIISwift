@@ -209,7 +209,8 @@ public struct UnitMovement: Sendable {
                                 mapMakeExplosion(type: UInt16(ExplosionType.sandBurst.rawValue), position: newPosition,
                                                  hitpoints: state.units[slot].o.hitpoints, origin: state.units[slot].originEncoded, in: &state)
                             } else if ut == .missileDeviator {
-                                // SEAM: Map_DeviateArea (deviator gas) — Tier-E, not yet ported.
+                                mapDeviateArea(type: ui.explosionType, position: newPosition, radius: 32,
+                                               houseID: state.units[slot].o.houseID, in: &state)
                             } else {
                                 mapMakeExplosion(type: (ui.explosionType &+ UInt16(state.units[slot].o.hitpoints) / 20) & 3,
                                                  position: newPosition, hitpoints: state.units[slot].o.hitpoints,
@@ -275,8 +276,11 @@ public struct UnitMovement: Sendable {
         state.units[slot].o.position = newPosition
         state.unitUpdateMap(1, slot)
 
-        // SEAM: Map_Bloom_ExplodeSpecial / Map_Bloom_ExplodeSpice (map bloom not yet ported).
-        _ = isSpiceBloom
+        // A ground unit that stopped on a spice bloom detonates it. (`isSpecialBloom` is unreachable in
+        // 1.07, so `Map_Bloom_ExplodeSpecial` is intentionally not wired.)
+        if isSpiceBloom {
+            mapBloomExplodeSpice(packed: packed, houseID: state.unitHouseID(state.units[slot]), in: &state)
+        }
 
         return ret
     }

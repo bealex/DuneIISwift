@@ -16,44 +16,11 @@ public struct UnitCombat: Sendable {
 
     public init(movement: UnitMovement) { self.movement = movement }
 
-    /// `Unit_Deviate` (`unit.c:1241`): try to deviate (mind-control) the unit to `houseID`. A normal,
-    /// not-already-deviated, deviatable unit deviates with chance `probability`/256 (defaulting to the
-    /// owner house's `toughness`, reduced by ⅛ for non-player units). On success: `deviated = 120`,
-    /// `deviatedHouse = houseID`, flip to the new owner's default action, and drop all targets. Returns
-    /// true iff it deviated. Consumes one `Random256` draw on the eligible path. `Unit_UpdateMap(2)` is a
-    /// render seam.
+    /// `Unit_Deviate` (`unit.c:1241`): the combat-facing entry point. The port lives on `UnitMovement`
+    /// (also driven by `Map_DeviateArea` in `Unit_Move`); this delegates so the logic has one home.
     @discardableResult
-    public func deviate(slot: Int, probability prob0: UInt16, houseID: UInt8, in state: inout GameState) -> Bool {
-        guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
-        let ui = UnitInfo[ut]
-        if !ui.flags.contains(.isNormalUnit) { return false }
-        if state.units[slot].deviated != 0 { return false }
-        if ui.flags.contains(.isNotDeviatable) { return false }
-
-        var probability = prob0
-        if probability == 0 {
-            probability = HouseInfo[HouseID(rawValue: Int(state.units[slot].o.houseID)) ?? .harkonnen].toughness
-        }
-        if state.units[slot].o.houseID != state.playerHouseID { probability -= probability / 8 }
-
-        if UInt16(state.random256.next()) >= probability { return false }
-
-        state.units[slot].deviated = 120
-        state.units[slot].deviatedHouse = houseID
-        // SEAM: Unit_UpdateMap(2) render redraw.
-
-        let action: UInt8
-        if state.playerHouseID == state.units[slot].deviatedHouse {
-            action = UInt8(ui.o.actionsPlayer[3].rawValue)
-        } else {
-            action = UInt8(truncatingIfNeeded: ui.actionAI)
-        }
-        actions.setAction(slot: slot, action: action, scriptInfo: scriptInfo, in: &state)
-
-        state.unitUntargetMe(slot)
-        state.units[slot].targetAttack = 0
-        state.units[slot].targetMove = 0
-        return true
+    public func deviate(slot: Int, probability: UInt16, houseID: UInt8, in state: inout GameState) -> Bool {
+        movement.deviate(slot: slot, probability: probability, houseID: houseID, in: &state)
     }
 
     /// `Unit_Damage` (`unit.c:1530`): apply `damage` to the unit, returning true iff it died. The port

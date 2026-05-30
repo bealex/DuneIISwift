@@ -40,7 +40,11 @@ extension UnitMovement {
 
         if state.units[slot].o.hitpoints == 0 {
             state.unitRemovePlayer(slot)
-            // SEAM: harvester death spreads spice (Map_FillCircleWithSpice); Sound_Output_Feedback (audio).
+            if ut == .harvester {   // a dying harvester spills its load as spice
+                map.fillCircleWithSpice(state.units[slot].o.position.packed,
+                                        radius: UInt16(state.units[slot].amount) / 32, in: &state)
+            }
+            // SEAM: Sound_Output_Feedback death cue (audio).
             actions.setAction(slot: slot, action: UInt8(ActionType.die.rawValue), scriptInfo: scriptInfo, in: &state)
             return true
         }
@@ -84,6 +88,75 @@ extension UnitMovement {
         state.units[slot].spriteOffset = 0
         state.units[slot].timer = 0
         return false
+    }
+
+    /// `Unit_Deviate` (`unit.c:1241`): try to deviate (mind-control) the unit to `houseID`. A normal,
+    /// not-already-deviated, deviatable unit deviates with chance `probability`/256 (defaulting to the
+    /// owner house's `toughness`, reduced by ⅛ for non-player units). On success: `deviated = 120`,
+    /// `deviatedHouse = houseID`, flip to the new owner's default action, and drop all targets. Returns
+    /// true iff it deviated. Consumes one `Random256` draw on the eligible path. `Unit_UpdateMap(2)` is a
+    /// render seam. Hosted here (not `UnitCombat`) so `Map_DeviateArea`'s `Unit_Move` caller can reach it.
+    @discardableResult
+    public func deviate(slot: Int, probability prob0: UInt16, houseID: UInt8, in state: inout GameState) -> Bool {
+        guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
+        let ui = UnitInfo[ut]
+        if !ui.flags.contains(.isNormalUnit) { return false }
+        if state.units[slot].deviated != 0 { return false }
+        if ui.flags.contains(.isNotDeviatable) { return false }
+
+        var probability = prob0
+        if probability == 0 {
+            probability = HouseInfo[HouseID(rawValue: Int(state.units[slot].o.houseID)) ?? .harkonnen].toughness
+        }
+        if state.units[slot].o.houseID != state.playerHouseID { probability -= probability / 8 }
+
+        if UInt16(state.random256.next()) >= probability { return false }
+
+        state.units[slot].deviated = 120
+        state.units[slot].deviatedHouse = houseID
+        // SEAM: Unit_UpdateMap(2) render redraw.
+
+        let action: UInt8
+        if state.playerHouseID == state.units[slot].deviatedHouse {
+            action = UInt8(ui.o.actionsPlayer[3].rawValue)
+        } else {
+            action = UInt8(truncatingIfNeeded: ui.actionAI)
+        }
+        actions.setAction(slot: slot, action: action, scriptInfo: scriptInfo, in: &state)
+
+        state.unitUntargetMe(slot)
+        state.units[slot].targetAttack = 0
+        state.units[slot].targetMove = 0
+        return true
+    }
+
+    /// `Map_DeviateArea` (`map.c:642`): a deviator missile's gas cloud. Starts the `type` explosion at
+    /// `position`, then deviates every unit within `radius` tiles to `houseID` (probability 0 ⇒ each
+    /// unit's owner toughness). Each eligible unit costs one `Random256` draw — gated off the goldens
+    /// (no deviator missile appears in them).
+    public func mapDeviateArea(type: UInt16, position: Tile32, radius: UInt16, houseID: UInt8, in state: inout GameState) {
+        state.explosionStart(type: Int(type), position: position)
+        var find = PoolFind()
+        while let u = state.unitFind(&find) {
+            if Tile32.distance(from: position, to: state.units[u].o.position) / 16 >= radius { continue }
+            deviate(slot: u, probability: 0, houseID: houseID, in: &state)
+        }
+    }
+
+    /// `Map_Bloom_ExplodeSpice` (`map.c:669`): detonate a spice bloom at `packed`. Removes the unit on the
+    /// bloom tile, reverts the ground to its base tile, fires the (cosmetic) tremor explosion, and spreads
+    /// spice in a radius-5 circle. The `Sound_Output_Feedback` cue is an audio SEAM. `Map_FillCircleWithSpice`
+    /// draws RNG (the radius-edge half-skip) — no bloom tile appears in the goldens, so it stays neutral.
+    /// (`Map_Bloom_ExplodeSpecial`, `map.c:833`, is unreachable in 1.07 — `isSpecialBloom` is never set.)
+    public func mapBloomExplodeSpice(packed: UInt16, houseID: UInt8, in state: inout GameState) {
+        if state.validateStrictIfZero == 0 {
+            if let u = state.unitGetByPackedTile(packed) { state.unitRemove(u) }
+            state.map[Int(packed)].groundTileID = state.mapBaseTileID[Int(packed)] & 0x1FF
+            mapMakeExplosion(type: UInt16(ExplosionType.spiceBloomTremor.rawValue),
+                             position: Tile32.unpack(packed), hitpoints: 0, origin: 0, in: &state)
+        }
+        // SEAM: Sound_Output_Feedback(36) for the player house (audio).
+        map.fillCircleWithSpice(packed, radius: 5, in: &state)
     }
 
     /// `Map_MakeExplosion` (`map.c:403`): the area effect of an explosion at `position` carrying

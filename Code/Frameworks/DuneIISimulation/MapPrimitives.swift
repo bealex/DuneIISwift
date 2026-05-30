@@ -32,6 +32,11 @@ public protocol MapPrimitives: Sendable {
     /// (preferring thick spice closer than 4, else any spice), skipping tiles with a structure or a
     /// unit. Returns the packed position, or `0` if none was found. Read-only.
     func searchSpice(_ packed: UInt16, radius: UInt16, in state: GameState) -> UInt16
+
+    /// `Map_FillCircleWithSpice` (`map.c:687`): grow spice by one step on every tile within `radius` of
+    /// `packed` (the circle's edge tiles are kept ~half the time via one `Random256` draw each), then once
+    /// more on the centre. A no-op for `radius == 0`. Used by spice-bloom detonation + harvester death.
+    func fillCircleWithSpice(_ packed: UInt16, radius: UInt16, in state: inout GameState)
 }
 
 public struct DefaultMapPrimitives: MapPrimitives {
@@ -130,6 +135,24 @@ public struct DefaultMapPrimitives: MapPrimitives {
             state.mapBaseTileID[Int(packed)] = 0x8000 | spriteID
             state.map[Int(packed)].groundTileID = spriteID
         }
+    }
+
+    public func fillCircleWithSpice(_ packed: UInt16, radius: UInt16, in state: inout GameState) {
+        if radius == 0 { return }
+        let x = Int(Tile32.packedX(packed))
+        let y = Int(Tile32.packedY(packed))
+        let r = Int(radius)
+        for i in -r ... r {
+            for j in -r ... r {
+                let curPacked = Tile32.packXY(x: UInt16(truncatingIfNeeded: x + j), y: UInt16(truncatingIfNeeded: y + i))
+                let distance = Tile32.distancePacked(packed, curPacked)
+                if distance > radius { continue }
+                if distance == radius && (state.random256.next() & 1) == 0 { continue }
+                if landscapeType(state.map[Int(curPacked)], tileIDs: state.tileIDs) == .spice { continue }
+                changeSpiceAmount(curPacked, 1, in: &state)
+            }
+        }
+        changeSpiceAmount(packed, 1, in: &state)
     }
 
     public func searchSpice(_ packed: UInt16, radius: UInt16, in state: GameState) -> UInt16 {
