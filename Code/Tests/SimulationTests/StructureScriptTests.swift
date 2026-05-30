@@ -296,6 +296,70 @@ struct StructureScriptTests {
         #expect((18 ... 27).contains(s.houses[1].credits))
     }
 
+    // MARK: - Deploy cluster (Unit_SetPosition / Structure_FindFreePosition / unit-unload 0x07)
+
+    @Test("Unit_SetPosition places an off-map unit on a free tile, fails on an occupied one")
+    func unitSetPosition() {
+        var (s, combat) = minimal()
+        let slot = s.unitAllocate(index: Pool.unitIndexInvalid, type: UInt8(UnitType.tank.rawValue), houseID: 1)!
+        s.units[slot].o.flags.insert(.isNotOnMap)
+
+        // Free tile → placed (centred, on-map), and a second unit can't take the same tile.
+        #expect(combat.unitSetPosition(slot: slot, position: Tile32.unpack(20 * 64 + 20), in: &s))
+        #expect(!s.units[slot].o.flags.contains(.isNotOnMap))
+        #expect(s.units[slot].o.position.packed == 20 * 64 + 20)
+        #expect(s.map[20 * 64 + 20].hasUnit)
+
+        let other = s.unitAllocate(index: Pool.unitIndexInvalid, type: UInt8(UnitType.tank.rawValue), houseID: 1)!
+        s.units[other].o.flags.insert(.isNotOnMap)
+        #expect(!combat.unitSetPosition(slot: other, position: Tile32.unpack(20 * 64 + 20), in: &s))   // occupied
+        #expect(s.units[other].o.flags.contains(.isNotOnMap))
+    }
+
+    @Test("Structure_FindFreePosition returns a free adjacent tile, or 0 when the ring is full")
+    func findFreePosition() {
+        var (s, combat) = minimal()
+        let fns = StructureScriptFunctions(combat: combat)
+        let st = placeTurret(&s, .turret, house: 0, at: 20 * 64 + 20)
+
+        let pos = fns.findFreePosition(slot: st, checkForSpice: false, in: &s)
+        #expect(pos != 0)
+        // The returned tile is in the structure's surrounding ring and is unoccupied passable ground.
+        let ringInts: [Int] = [20 * 64 + 19, 20 * 64 + 21, 19 * 64 + 20, 21 * 64 + 20,
+                               19 * 64 + 19, 19 * 64 + 21, 21 * 64 + 19, 21 * 64 + 21]
+        let ring = Set(ringInts.map { UInt16($0) })
+        #expect(ring.contains(pos))
+
+        // Fill the whole ring → no free position.
+        for p in ring { s.map[Int(p)].hasStructure = true }
+        #expect(fns.findFreePosition(slot: st, checkForSpice: false, in: &s) == 0)
+    }
+
+    @Test("unit-unload deploys a structure's linked unit to a free tile and unlinks it")
+    func unloadLinkedUnit() {
+        var (s, combat) = minimal()
+        let fns = StructureScriptFunctions(combat: combat)
+        let st = placeTurret(&s, .refinery, house: 1, at: 20 * 64 + 20)
+        s.structures[st].state = .busy
+
+        // No link → 0.
+        s.structures[st].o.linkedID = 0xFF
+        #expect(fns.unloadLinkedUnit(slot: st, in: &s) == 0)
+
+        // Link a ground unit (inside the structure, off-map) and unload it.
+        let unit = s.unitAllocate(index: Pool.unitIndexInvalid, type: UInt8(UnitType.tank.rawValue), houseID: 1)!
+        s.units[unit].o.flags.insert(.isNotOnMap)
+        s.units[unit].o.linkedID = 0xFF                 // end of the link chain
+        s.structures[st].o.linkedID = UInt8(unit)
+
+        #expect(fns.unloadLinkedUnit(slot: st, in: &s) == 1)
+        #expect(!s.units[unit].o.flags.contains(.isNotOnMap))      // deployed onto the map
+        #expect(s.map[Int(s.units[unit].o.position.packed)].hasUnit)
+        #expect(s.units[unit].o.linkedID == 0xFF)
+        #expect(s.structures[st].o.linkedID == 0xFF)               // structure's chain now empty
+        #expect(s.structures[st].state == .idle)                   // → IDLE once unlinked
+    }
+
     @Test("Script_Structure_SetState resolves DETECT, GetState reports it")
     func setStateDetect() throws {
         guard var (sim, slot, _) = setup() else { return }

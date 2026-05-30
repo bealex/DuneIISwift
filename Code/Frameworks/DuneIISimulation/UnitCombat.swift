@@ -89,6 +89,49 @@ public struct UnitCombat: Sendable {
         return state.structureGetByPackedTile(packed) != nil
     }
 
+    /// `Unit_SetPosition` (`unit.c:1107`): place `slot`'s unit (centred) at `position`. Fails — marking the
+    /// unit off-map (`isNotOnMap`) — if the tile is occupied. On success it clears the unit's destination +
+    /// targets, refreshes visibility if the tile is unveiled (a fresh-from-factory `seenByHouses` update),
+    /// switches it to its default action (AI / harvester / saboteur → `actionAI`, else player action 3), and
+    /// stamps it onto the map. Used by the structure deploy/unload natives. Returns whether it was placed.
+    @discardableResult
+    public func unitSetPosition(slot: Int, position: Tile32, in state: inout GameState) -> Bool {
+        guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
+        let ui = UnitInfo[ut]
+
+        state.units[slot].o.flags.remove(.isNotOnMap)
+        state.units[slot].o.position = position.centered
+
+        if state.units[slot].originEncoded == 0 { _ = state.unitFindClosestRefinery(slot) }
+        state.units[slot].o.script.variables[4] = 0
+
+        if unitIsTileOccupied(slot: slot, in: state) {
+            state.units[slot].o.flags.insert(.isNotOnMap)
+            return false
+        }
+
+        state.units[slot].currentDestination = Tile32(x: 0, y: 0)
+        state.units[slot].targetMove = 0
+        state.units[slot].targetAttack = 0
+
+        if state.map[Int(state.units[slot].o.position.packed)].isUnveiled {
+            state.units[slot].o.seenByHouses &= ~(UInt8(1) << state.units[slot].o.houseID)
+            state.unitHouseUnitCountAdd(slot, houseID: state.playerHouseID)
+        }
+
+        let action: UInt8
+        if state.units[slot].o.houseID != state.playerHouseID || ut == .harvester || ut == .saboteur {
+            action = UInt8(truncatingIfNeeded: ui.actionAI)
+        } else {
+            action = UInt8(ui.o.actionsPlayer[3].rawValue)
+        }
+        actions.setAction(slot: slot, action: action, scriptInfo: scriptInfo, in: &state)
+
+        state.units[slot].spriteOffset = 0
+        state.unitUpdateMap(1, slot)
+        return true
+    }
+
     /// `Unit_Create` (`unit.c:1380`): allocate + fully initialize a unit of `type` for `houseID` at
     /// `position` facing `orientation`, and (if on-map) place it and switch it to its default action.
     /// `index` is the desired slot or `Pool.unitIndexInvalid` for any free one. Returns the new slot, or

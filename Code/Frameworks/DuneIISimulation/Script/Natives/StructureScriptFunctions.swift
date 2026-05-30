@@ -147,6 +147,79 @@ struct StructureScriptFunctions: Sendable {
         return fireDelay
     }
 
+    /// `Structure_FindFreePosition` (`structure.c:1101`): pick a free deploy tile from the ring around the
+    /// structure (random start offset), skipping walls, mountains, and occupied tiles. With `checkForSpice`
+    /// (a harvester) it returns the ring tile nearest the closest spice within 10; otherwise the first free
+    /// tile. Returns the packed tile, or 0 if none is free.
+    func findFreePosition(slot: Int, checkForSpice: Bool, in state: inout GameState) -> UInt16 {
+        guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return 0 }
+        let layout = StructureLayoutInfo[StructureInfo[st].layout]
+        let map = combat.movement.map
+        let packed = state.structures[slot].o.position.centered.packed
+        let spicePacked: UInt16 = checkForSpice ? map.searchSpice(packed, radius: 10, in: state) : 0
+
+        var bestPacked: UInt16 = 0
+        var bestDistance: UInt16 = 0
+        var i = Int(state.random256.next() & 0xF)
+        for _ in 0 ..< 16 {
+            let offset = layout.tilesAround[i]
+            i = (i + 1) & 0xF                      // advance now so the `continue`s don't skip it
+            if offset == 0 { continue }
+            let curPacked = UInt16(truncatingIfNeeded: Int(packed) + Int(offset))
+            if !map.isValidPosition(curPacked, mapScale: state.mapScale) { continue }
+            let type = map.landscapeType(state.map[Int(curPacked)], tileIDs: state.tileIDs)
+            if type == .wall || type == .entirelyMountain || type == .partialMountain { continue }
+            if state.map[Int(curPacked)].hasUnit || state.map[Int(curPacked)].hasStructure { continue }
+            if !checkForSpice { return curPacked }
+            let d = Tile32.distancePacked(curPacked, spicePacked)
+            if bestDistance == 0 || d < bestDistance { bestPacked = curPacked; bestDistance = d }
+        }
+        return bestPacked
+    }
+
+    /// `Script_Structure_Unknown0C5A` (op 0x07, `:237`): deploy the structure's linked unit. A winger
+    /// (carryall) lifts off onto the structure's own tile; a ground unit is placed on a free adjacent tile
+    /// (spice-nearest for a harvester). Either way the unit is unlinked, the next queued unit shifts in (or
+    /// the structure goes IDLE), and the structure's var-4 link is cleared. Returns 1 on success, 0 if it
+    /// couldn't place. The harvester "search for spice" hint + the deploy sound are seams.
+    func unloadLinkedUnit(slot: Int, in state: inout GameState) -> UInt16 {
+        let linkedID = state.structures[slot].o.linkedID
+        if linkedID == 0xFF { return 0 }
+        let u = Int(linkedID)
+        guard let ut = UnitType(rawValue: Int(state.units[u].o.type)) else { return 0 }
+
+        // Carryall pickup: a winger lifts off from the structure's tile.
+        if UnitInfo[ut].movementType == .winger,
+           combat.unitSetPosition(slot: u, position: state.structures[slot].o.position, in: &state) {
+            state.structures[slot].o.linkedID = state.units[u].o.linkedID
+            state.units[u].o.linkedID = 0xFF
+            if state.structures[slot].o.linkedID == 0xFF { state.structureSetState(slot, .idle) }
+            state.objectScriptVariable4Clear(.structure(slot))
+            return 1   // SEAM: Sound_Output_Feedback
+        }
+
+        let position = findFreePosition(slot: slot, checkForSpice: ut == .harvester, in: &state)
+        if position == 0 { return 0 }
+
+        state.units[u].o.seenByHouses |= state.structures[slot].o.seenByHouses
+        // `unitSetPosition` re-centres, so `Tile32.unpack` (a tile origin) is fine to hand it.
+        if !combat.unitSetPosition(slot: u, position: Tile32.unpack(position), in: &state) { return 0 }
+
+        state.structures[slot].o.linkedID = state.units[u].o.linkedID
+        state.units[u].o.linkedID = 0xFF
+
+        var v = state.units[u]
+        let dir = Int8(bitPattern: UInt8(bitPattern: Tile32.direction(from: state.structures[slot].o.position, to: v.o.position)) & 0xE0)
+        combat.movement.unit.setOrientation(&v, orientation: dir, rotateInstantly: true, level: 0)
+        combat.movement.unit.setOrientation(&v, orientation: v.orientation[0].current, rotateInstantly: true, level: 1)
+        state.units[u] = v
+        // SEAM: GUI_DisplayHint (harvester "search for spice fields").
+
+        if state.structures[slot].o.linkedID == 0xFF { state.structureSetState(slot, .idle) }
+        state.objectScriptVariable4Clear(.structure(slot))
+        return 1   // SEAM: Sound_Output_Feedback (player non-repair deploy)
+    }
+
     /// `Script_Structure_GetState` (op 0x0D, `:36`): the structure's current state.
     func getState(slot: Int, in state: GameState) -> UInt16 {
         UInt16(bitPattern: state.structures[slot].state.rawValue)

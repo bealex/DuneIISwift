@@ -33,6 +33,7 @@ public struct StructureScriptRunner: Sendable {
             case 0x04: return structure.setState(slot: slot, state: Int16(bitPattern: engine.peek(1)), in: &state)
             case 0x05: return general.noOperation()   // Script_Structure_DisplayText — GUI (SEAM)
             case 0x06: return structure.unknown11B9(encoded: engine.peek(1), in: &state)
+            case 0x07: return structure.unloadLinkedUnit(slot: slot, in: &state)
             case 0x08: return structure.findTargetUnit(slot: slot, range: engine.peek(1), in: &state)
             case 0x09: return structure.rotateTurret(slot: slot, encoded: engine.peek(1), in: &state)
             case 0x0A: return structure.getDirection(slot: slot, encoded: engine.peek(1), in: state)
@@ -43,7 +44,7 @@ public struct StructureScriptRunner: Sendable {
             case 0x0F: return structure.removeFogAroundTile(slot: slot, in: &state)
             case 0x16: return structure.explode(slot: slot, in: &state)
             case 0x17: return structure.destroy(slot: slot, in: &state)
-            default:   return nil   // not yet ported (FindUnitByType 0x03 / unit-unload 0x07 — the deploy slice)
+            default:   return nil   // not yet ported (FindUnitByType 0x03 — needs Unit_CallUnitByType)
         }
     }
 

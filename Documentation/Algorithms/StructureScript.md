@@ -60,6 +60,7 @@ Ported in this slice (`StructureScriptFunctions`):
 | 0x04 | `Structure_SetState` | `DETECT` → resolve from `linkedID`/`countDown`; `Structure_SetState` |
 | 0x05 | `General_DisplayText` | SEAM (GUI) → noop |
 | 0x06 | `Structure_Unknown11B9` | clear a unit's var-4 + `targetMove` |
+| 0x07 | `Structure_Unknown0C5A` | deploy the linked unit (winger lifts off / ground unit to a free adjacent tile), unlink + SetState(IDLE) |
 | 0x0D | `Structure_GetState` | return `s.state` |
 | 0x0E | `Structure_VoicePlay` | SEAM (audio) → noop |
 | 0x0F | `Structure_RemoveFogAroundTile` | `Structure_RemoveFog` (player-only, `fogUncoverRadius`) |
@@ -73,7 +74,9 @@ Ported in this slice (`StructureScriptFunctions`):
 
 `RefineSpice` (`structure.c:105`) refines `harvesterStep = (hitpoints·256 / maxHitpoints)·3 / 256` spice per call (so a damaged refinery is slower), clamped to the harvester's remaining `amount`; credits = 7/unit (enemy refineries get a ±RNG bonus), `script.delay = 6` throttles it, and an emptied harvester drops `inTransport`. The `g_scenario` allied/enemy harvested-spice tally is a SEAM (scenario score). The refinery script only reaches it while `state == READY` with a linked harvester (set by `Unit_EnterStructure`).
 
-Deferred (clean-halt the script when reached — loud, not invented) to the **factory/refinery deploy** slice: `FindUnitByType` (0x03, summon a carryall) and `Unknown0C5A` unit-unload (0x07) — both need `Structure_FindFreePosition` + `Unit_SetPosition` (and `FindUnitByType` also `Unit_CallUnitByType`), and the harvester→refinery entry needs `Unit_EnterStructure`. A refinery refines its linked harvester's spice into credits, then halts cleanly at the carryall-summon step until that slice lands.
+The deploy primitives `Structure_FindFreePosition` (`structure.c:1101`, a free ring tile around the structure — random start, spice-nearest for a harvester) and `Unit_SetPosition` (`unit.c:1107`, place a unit centred on a tile + default-action + map-stamp, failing if occupied) back the unit-unload native `Unknown0C5A` (0x07): a winger (carryall) lifts off the structure's own tile, a ground unit deploys to a free adjacent tile; either way the unit unlinks, the next queued unit shifts in (or the structure goes IDLE), and var-4 clears.
+
+Deferred (clean-halt the script when reached — loud, not invented): `FindUnitByType` (0x03, summon a carryall) needs `Unit_CallUnitByType`; and the harvester→refinery entry that sets `state = READY` + links the harvester (so `RefineSpice` fires in real play) needs `Unit_EnterStructure`. A refinery refines its linked harvester's spice into credits, then halts cleanly at the carryall-summon step until those land.
 
 ## Turret firing (0x08–0x0B)
 
