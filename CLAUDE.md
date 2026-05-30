@@ -87,10 +87,24 @@ If something genuinely can't be tested (rare — usually visual correctness), sa
 
 ## Running things
 
+**Per-round checks go through `Scripts/`** — they encapsulate this repo's environment quirks (repo-local `TMPDIR`, `xcrun`, `--disable-sandbox`, the OpenDUNE shim + re-sign) and distill output to a concise "what's wrong" summary. Prefer them over re-typing raw commands:
+
+```
+Scripts/check.sh                    # incremental build + full test suite → concise BUILD/TESTS/VERDICT
+Scripts/check.sh --full             # `swift package clean` first — the zero-warnings audit (workflow step 5)
+Scripts/check.sh --filter <Suite>   # build + only matching tests (fast inner loop)
+Scripts/build-oracle.sh             # rebuild + re-sign the OpenDUNE parity oracle (run with sandbox disabled)
+Scripts/gen-scenario-goldens.sh     # regenerate the scenario goldens from the oracle
+```
+
+**Maintain these scripts.** When you catch yourself repeating a manual step round after round — a new check, an output-parse, a probe you keep re-typing — fold it into `Scripts/check.sh` (or add a focused sibling script). The `Scripts/` directory is the single source of truth for "the regular actions each round"; keep it current instead of re-deriving the commands.
+
+Raw commands (what the scripts wrap), if you need them directly:
+
 ```
 cd Code
-swift build                       # libraries + CLI executables
-swift test                        # full suite
+TMPDIR="$PWD/.build/tmp" xcrun swift build --disable-sandbox    # libraries + CLI executables
+TMPDIR="$PWD/.build/tmp" xcrun swift test  --disable-sandbox    # full suite
 swift run assetgen                # re-extract Resources/ from the install
 swift run assetgen emc-disasm     # disassemble UNIT/BUILD/TEAM.EMC
 ```
