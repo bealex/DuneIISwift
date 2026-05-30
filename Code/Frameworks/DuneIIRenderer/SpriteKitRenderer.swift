@@ -22,12 +22,22 @@ public final class SpriteKitRenderer {
 
     private var terrainBuffer: [UInt8] = []
     private var lastTiles: [FrameInfo.Tile] = []
-    private var lastPaletteTick = -1
     private var sidePx = 0
+
+    // Palette cycling, advanced incrementally (O(1) per tick) rather than replayed from tick 0 each
+    // frame (which is O(tick) and slows the longer the game runs).
+    private var colors: [Palette.Color]
+    private var cycle = PaletteAnimator.CycleState()
+    private var lastTick = 0
+    /// Whether the composed terrain actually uses the wind-trap index (223) — the only animated colour
+    /// that appears in terrain/structure tiles, so terrain only needs a recolour when *it* moves.
+    private var terrainHasWindIndex = false
+    private var terrainDrawn = false
 
     public init(source: WorldSpriteSource, basePalette: Palette) {
         self.source = source
         self.basePalette = basePalette
+        self.colors = basePalette.colors
     }
 
     /// The base side length in pixels of the composed world image (`terrainTileSize · 64`).
@@ -40,25 +50,29 @@ public final class SpriteKitRenderer {
         if spritesLayer.parent == nil { scene.addChild(spritesLayer) }
     }
 
-    /// Draw one frame: recomposite the terrain only when its tiles changed, recolour it on a
-    /// palette-cycle tick change (the windtrap light etc.), and rebuild the moving sprites every frame.
+    /// Draw one frame: advance the palette one tick at a time, recomposite the terrain only when its
+    /// tiles changed, recolour it only when its tiles or the wind-trap colour actually changed (not every
+    /// frame), and rebuild the moving sprites.
     public func render(_ frame: FrameInfo) {
         sidePx = source.terrainTileSize * frame.mapWidth
-        let palette = PaletteAnimator.animatedPalette(base: basePalette, tick: Int(frame.tick))
+        let windChanged = advancePalette(to: Int(frame.tick))
+        let palette = Palette(colors: colors)
 
+        var terrainChanged = false
         if frame.tiles != lastTiles {
             terrainBuffer = FrameComposer.terrainBuffer(frame, source: source)
             lastTiles = frame.tiles
-            lastPaletteTick = -1                       // force a recolour after a re-composite
+            terrainHasWindIndex = terrainBuffer.contains(UInt8(PaletteAnimator.windTrapIndex))
+            terrainChanged = true
         }
-        if Int(frame.tick) != lastPaletteTick {
+        if terrainChanged || !terrainDrawn || (windChanged && terrainHasWindIndex) {
             if let image = IndexedImage.cgImage(indices: terrainBuffer, width: sidePx, height: sidePx,
                                                 palette: palette) {
                 terrainNode.texture = nearest(image)
                 terrainNode.size = CGSize(width: sidePx, height: sidePx)
                 terrainNode.position = CGPoint(x: sidePx / 2, y: sidePx / 2)
+                terrainDrawn = true
             }
-            lastPaletteTick = Int(frame.tick)
         }
 
         spritesLayer.removeAllChildren()
@@ -75,6 +89,25 @@ public final class SpriteKitRenderer {
             if sprite.flipped { node.xScale = -1 }     // W-half sprites are the E-half mirrored
             spritesLayer.addChild(node)
         }
+    }
+
+    /// Advance the cycling palette from `lastTick` to `tick`, one tick at a time (O(ticks elapsed),
+    /// normally 1). Returns whether the wind-trap colour changed. Reseeds from base on a backward seek
+    /// (a scenario reload), so the result still matches a fresh `animatedPalette(base:tick:)`.
+    private func advancePalette(to tick: Int) -> Bool {
+        guard colors.count > PaletteAnimator.selectionIndex else { return false }
+        if tick < lastTick {
+            colors = basePalette.colors
+            cycle = PaletteAnimator.CycleState()
+            lastTick = 0
+        }
+        guard tick > lastTick else { return false }
+        let windBefore = colors[PaletteAnimator.windTrapIndex]
+        for step in (lastTick + 1) ... tick {
+            PaletteAnimator.stepTick(&colors, tick: step, state: &cycle)
+        }
+        lastTick = tick
+        return colors[PaletteAnimator.windTrapIndex] != windBefore
     }
 
     private func nearest(_ image: CGImage) -> SKTexture {

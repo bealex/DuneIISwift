@@ -57,6 +57,36 @@ struct RendererTests {
         #expect(PaletteAnimator.animatedPalette(base: base, tick: 5).colors[223] == Palette.Color(red: 9, green: 9, blue: 9))
     }
 
+    @Test("incremental stepTick reproduces animatedPalette exactly")
+    func paletteIncremental() throws {
+        var bytes = [UInt8](repeating: 0, count: 768)
+        for i in 0 ..< 256 {                                   // distinct-ish entries so cycling moves
+            bytes[i * 3] = UInt8(i % 64)
+            bytes[i * 3 + 1] = UInt8((i * 2) % 64)
+            bytes[i * 3 + 2] = UInt8((i * 3) % 64)
+        }
+        let base = try Palette(bytes: bytes)
+
+        // Stepping 1...T tick-by-tick must equal the from-scratch replay at every checkpoint.
+        var colors = base.colors
+        var state = PaletteAnimator.CycleState()
+        var tick = 0
+        for target in [1, 3, 5, 6, 9, 15, 59, 60, 61, 120, 300] {
+            while tick < target {
+                tick += 1
+                PaletteAnimator.stepTick(&colors, tick: tick, state: &state)
+            }
+            #expect(colors == PaletteAnimator.animatedPalette(base: base, tick: target).colors,
+                    "incremental palette diverged from replay at tick \(target)")
+        }
+
+        // The change flag: a non-cycling tick reports no change; a wind tick (×5) moves index 223.
+        var c = base.colors
+        var s = PaletteAnimator.CycleState()
+        #expect(PaletteAnimator.stepTick(&c, tick: 4, state: &s) == false)
+        #expect(PaletteAnimator.stepTick(&c, tick: 5, state: &s) == true)
+    }
+
     @Test("sprite catalog groups unit SHP frames with valid ranges")
     func catalog() {
         let units2 = SpriteCatalog.groups(inShp: "UNITS2.SHP")

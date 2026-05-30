@@ -16,37 +16,61 @@ public enum PaletteAnimator {
     public static let selectionIndex = 255
     public static let repairIndex = 239
 
-    /// The palette as it appears `tick` GUI ticks (1/60 s each) after `base`. A pure function: it
-    /// replays the cycling from tick 0, so callers can drive it straight from elapsed time. Each tick
-    /// is O(1) (only three indices move), so replaying a few thousand ticks per frame is cheap.
-    public static func animatedPalette(base: Palette, tick: Int) -> Palette {
-        guard tick > 0 else { return base }
-
-        var colors = base.colors
-        guard colors.count > selectionIndex else { return base }
-
+    /// The per-tick cycle state the replay tracks (the targets it would otherwise recompute from
+    /// scratch). Seed it at tick 0 and step forward with `stepTick` and you reproduce `animatedPalette`
+    /// exactly, but at O(1) per tick instead of O(tick) per call — the form a per-frame renderer wants.
+    public struct CycleState: Equatable, Sendable {
         var windTarget = 12
         var selectionTarget = 15
         var repairToggle = false
+        public init() {}
+    }
 
-        for step in 1 ... tick {
-            if step % 5 == 0 {
-                if !shift(&colors, windTrapIndex, toward: windTarget) {
-                    windTarget = windTarget == 12 ? 10 : 12
-                }
-            }
-            if step % 3 == 0 {
-                for _ in 0 ..< 4 { _ = shift(&colors, selectionIndex, toward: selectionTarget) }
-                if equal(colors, selectionIndex, selectionTarget) {
-                    selectionTarget = selectionTarget == 15 ? 13 : 15
-                }
-            }
-            if step % 60 == 0 {
-                colors[repairIndex] = repairToggle ? colors[6] : colors[15]
-                repairToggle.toggle()
-            }
-        }
+    /// The palette as it appears `tick` GUI ticks (1/60 s each) after `base`. A pure function: it
+    /// replays the cycling from tick 0, so callers can drive it straight from elapsed time. **O(tick)** —
+    /// fine for a one-off lookup (a single asset preview), but a per-frame world renderer should instead
+    /// keep a `CycleState` + colours and advance with `stepTick` (O(1) per tick), or it slows linearly as
+    /// the game runs.
+    public static func animatedPalette(base: Palette, tick: Int) -> Palette {
+        guard tick > 0 else { return base }
+        var colors = base.colors
+        guard colors.count > selectionIndex else { return base }
+        var state = CycleState()
+        for step in 1 ... tick { _ = stepTick(&colors, tick: step, state: &state) }
         return Palette(colors: colors)
+    }
+
+    /// Advance `colors` by exactly the cycling of GUI tick `tick` (one iteration of `animatedPalette`'s
+    /// loop), updating `state`. Returns whether any animated index's colour changed — a renderer can skip
+    /// recolouring when nothing moved. Stepping `1...T` from `base` + a fresh `CycleState` equals
+    /// `animatedPalette(base:tick:T)`.
+    @discardableResult
+    public static func stepTick(_ colors: inout [Palette.Color], tick: Int, state: inout CycleState) -> Bool {
+        guard tick > 0, colors.count > selectionIndex else { return false }
+        var changed = false
+
+        if tick % 5 == 0 {
+            let before = colors[windTrapIndex]
+            if !shift(&colors, windTrapIndex, toward: state.windTarget) {
+                state.windTarget = state.windTarget == 12 ? 10 : 12
+            }
+            changed = changed || colors[windTrapIndex] != before
+        }
+        if tick % 3 == 0 {
+            let before = colors[selectionIndex]
+            for _ in 0 ..< 4 { _ = shift(&colors, selectionIndex, toward: state.selectionTarget) }
+            if equal(colors, selectionIndex, state.selectionTarget) {
+                state.selectionTarget = state.selectionTarget == 15 ? 13 : 15
+            }
+            changed = changed || colors[selectionIndex] != before
+        }
+        if tick % 60 == 0 {
+            let before = colors[repairIndex]
+            colors[repairIndex] = state.repairToggle ? colors[6] : colors[15]
+            state.repairToggle.toggle()
+            changed = changed || colors[repairIndex] != before
+        }
+        return changed
     }
 
     /// Move each RGB component of `colors[index]` one step toward `colors[reference]`. Returns whether
