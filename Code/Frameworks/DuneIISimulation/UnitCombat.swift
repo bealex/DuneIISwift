@@ -267,6 +267,162 @@ public struct UnitCombat: Sendable {
         return 1
     }
 
+    // MARK: - MCV deploy + structure placement (Structure_Create / Place / IsValidBuildLocation)
+
+    /// `Structure_IsValidBuildLocation` (`structure.c:734`): 0 if the footprint can't hold `type`, 1 if it
+    /// can (all on slab), or −neededSlabs (buildable but missing N slabs → a later HP penalty). General
+    /// building case (the non-CY "must touch a friendly structure" rule + the wall/slab specials are seams;
+    /// MCV only deploys a construction yard, which is exempt from that rule).
+    func structureIsValidBuildLocation(_ position: UInt16, type: StructureType, in state: GameState) -> Int16 {
+        let si = StructureInfo[type]
+        let layout = StructureLayoutInfo[si.layout]
+        var neededSlabs: UInt16 = 0
+        for i in 0 ..< Int(layout.tileCount) {
+            let curPos = position &+ layout.tiles[i]
+            if !state.mapIsValidPosition(curPos) { return 0 }
+            let lst = movement.map.landscapeType(state.map[Int(curPos)], tileIDs: state.tileIDs)
+            if si.o.flags.contains(.notOnConcrete) {
+                if !LandscapeInfo[lst].isValidForStructure2 && state.validateStrictIfZero == 0 { return 0 }
+            } else {
+                if !LandscapeInfo[lst].isValidForStructure && state.validateStrictIfZero == 0 { return 0 }
+                if lst != .concreteSlab { neededSlabs &+= 1 }
+            }
+            if state.unitGetByPackedTile(curPos) != nil || state.structureGetByPackedTile(curPos) != nil { return 0 }
+        }
+        return neededSlabs == 0 ? 1 : -Int16(bitPattern: neededSlabs)
+    }
+
+    /// `Structure_Place` (`structure.c:442`), general-building case: validate the spot, stamp the footprint,
+    /// remove any units under it, bump the windtrap count + recompute the house economy. The `BUILD.EMC`
+    /// script is left **unloaded** — `GameLoop_Structure` loads it on the next script tick. Fog reveal +
+    /// the wall/slab specials are seams. Returns false if the location is invalid (caller frees the slot).
+    func structurePlace(_ slot: Int, position: UInt16, in state: inout GameState) -> Bool {
+        guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return false }
+        let si = StructureInfo[st]
+        let valid = structureIsValidBuildLocation(position, type: st, in: state)
+        if valid == 0 && state.structures[slot].o.houseID == state.playerHouseID && state.validateStrictIfZero == 0 { return false }
+
+        let houseID = state.structures[slot].o.houseID
+        state.structures[slot].o.seenByHouses |= UInt8(1 << houseID)
+        if houseID == state.playerHouseID { state.structures[slot].o.seenByHouses = 0xFF }
+        state.structures[slot].o.flags.remove(.isNotOnMap)
+        let corner = Tile32.unpack(position)
+        state.structures[slot].o.position = Tile32(x: corner.x & 0xFF00, y: corner.y & 0xFF00)
+        state.structures[slot].rotationSpriteDiff = 0
+        state.structures[slot].o.hitpoints = si.o.hitpoints
+        state.structures[slot].hitpointsMax = si.o.hitpoints
+        if valid < 0 {
+            let tilesWithoutSlab = UInt16(-valid)
+            let count = UInt16(StructureLayoutInfo[si.layout].tileCount)
+            state.structures[slot].o.hitpoints &-= (si.o.hitpoints / 2) &* tilesWithoutSlab / count
+        }
+        state.structures[slot].o.flags.insert(.degrades)   // 1.07 (non-enhanced): a placed structure always degrades
+        state.structures[slot].o.script.reset()            // Script_Reset; Script_Load is deferred to GameLoop_Structure
+        state.structures[slot].o.script.variables[0] = 0
+        state.structures[slot].o.script.variables[4] = 0
+        state.structures[slot].o.script.delay = 0
+
+        let layout = StructureLayoutInfo[si.layout]
+        for i in 0 ..< Int(layout.tileCount) {
+            if let u = state.unitGetByPackedTile(position &+ layout.tiles[i]) { state.unitRemove(u) }
+            // SEAM: Tile_RemoveFogInRadius (player fog reveal).
+        }
+        if st == .windtrap { state.houses[Int(houseID)].windtrapCount &+= 1 }
+        if state.validateStrictIfZero == 0 { state.houseCalculatePowerAndCredit(houseID) }
+        state.structureUpdateMap(slot)
+        state.houses[Int(houseID)].structuresBuilt = state.structureGetStructuresBuilt(houseID: houseID)
+        return true
+    }
+
+    /// `Structure_Create` (`structure.c:373`): allocate + initialise a structure of `type`, then place it at
+    /// `position` (freeing it again if the spot is invalid). The GUI build-menu setup (`Structure_BuildObject`
+    /// 0xFFFE) is a seam; an AI gets its full upgrade immediately. Returns the slot, or `nil`.
+    func structureCreate(type: StructureType, houseID: UInt8, position: UInt16, in state: inout GameState) -> Int? {
+        if houseID >= 6 { return nil }
+        guard let slot = state.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(type.rawValue)) else { return nil }
+        let si = StructureInfo[type]
+        state.structures[slot].o.houseID = houseID
+        state.structures[slot].creatorHouseID = UInt16(houseID)
+        state.structures[slot].o.flags.insert(.isNotOnMap)
+        state.structures[slot].o.position = Tile32(x: 0, y: 0)
+        state.structures[slot].o.linkedID = 0xFF
+        state.structures[slot].state = .justBuilt
+        state.structures[slot].o.hitpoints = si.o.hitpoints
+        state.structures[slot].hitpointsMax = si.o.hitpoints
+        if houseID == UInt8(HouseID.harkonnen.rawValue) && type == .lightVehicle { state.structures[slot].upgradeLevel = 1 }
+        if si.o.flags.contains(.factory) { state.structures[slot].upgradeTimeLeft = state.structureIsUpgradable(slot) ? 100 : 0 }
+        state.structures[slot].objectType = 0xFFFF
+        // SEAM: Structure_BuildObject(s, 0xFFFE) — the GUI build-menu / `available`-flag handler.
+        state.structures[slot].countDown = 0
+        if houseID != state.playerHouseID {
+            while state.structureIsUpgradable(slot) { state.structures[slot].upgradeLevel &+= 1 }
+            state.structures[slot].upgradeTimeLeft = 0
+        }
+        if position != 0xFFFF && !structurePlace(slot, position: position, in: &state) {
+            state.structureFree(slot)
+            return nil
+        }
+        return slot
+    }
+
+    /// `Script_Unit_MCVDeploy` (op 0x09, `script/unit.c:1846`): deploy the MCV into a construction yard at
+    /// its tile (trying the tile + 3 NW offsets) and remove the MCV; returns 1 on success, else restores the
+    /// MCV and returns 0 (the "can't deploy here" GUI text is a seam).
+    public func mcvDeploy(slot: Int, in state: inout GameState) -> UInt16 {
+        state.unitUpdateMap(0, slot)
+        let base = Int(state.units[slot].o.position.packed)
+        for off in [0, -1, -64, -65] {
+            let pos = UInt16(truncatingIfNeeded: base + off)
+            if structureCreate(type: .constructionYard, houseID: state.units[slot].o.houseID, position: pos, in: &state) != nil {
+                state.unitRemove(slot)
+                return 1
+            }
+        }
+        // SEAM: GUI "unit is unable to deploy here" text.
+        state.unitUpdateMap(1, slot)
+        return 0
+    }
+
+    // MARK: - Spawn / summon natives (RandomSoldier / CallUnitByType)
+
+    /// `Script_Unit_RandomSoldier` (op 0x21, `script/unit.c:48`): with probability `spawnChance/256`, spawn
+    /// a `SOLDIER` near the unit (inheriting its `deviated` state) and give it `action`. The death-spray of
+    /// a destroyed infantry/trooper. Draws `Random256` (the chance), `Tile_MoveByRandom` (2×), `Random256`
+    /// (the soldier's facing) — that order.
+    public func randomSoldier(slot: Int, action: UInt16, in state: inout GameState) -> UInt16 {
+        guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
+        if UInt16(state.random256.next()) >= UnitInfo[ut].o.spawnChance { return 0 }
+        let position = Tile32.moveByRandom(state.units[slot].o.position, distance: 20, center: true, rng: &state.random256)
+        let orientation = Int8(bitPattern: state.random256.next())
+        guard let nu = unitCreate(index: Pool.unitIndexInvalid, type: UInt8(UnitType.soldier.rawValue),
+                                  houseID: state.units[slot].o.houseID, position: position,
+                                  orientation: orientation, in: &state) else { return 0 }
+        state.units[nu].deviated = state.units[slot].deviated
+        movement.actions.setAction(slot: nu, action: UInt8(truncatingIfNeeded: action),
+                                   scriptInfo: movement.scriptInfo, in: &state)
+        return 1
+    }
+
+    /// `Script_Unit_CallUnitByType` (op 0x23, `script/unit.c:1512`): summon a same-house transport of
+    /// `type` (a carryall) to come collect this pickup-able, non-deviated unit — two-way `variables[4]`
+    /// linking the caller and the summoned carrier, whose `targetMove` is set to the caller. Returns the
+    /// encoded carrier (or the existing link / 0). Reuses the shared `Unit_CallUnitByType`.
+    public func callUnitByType(slot: Int, type: UInt16, in state: inout GameState) -> UInt16 {
+        let var4 = state.units[slot].o.script.variables[4]
+        if var4 != 0 { return var4 }
+        guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
+        if !UnitInfo[ut].o.flags.contains(.canBePickedUp) || state.units[slot].deviated != 0 { return 0 }
+
+        let encoded = state.indexEncode(state.units[slot].o.index, type: .unit)
+        guard let u2 = unitCallUnitByType(type: UInt8(truncatingIfNeeded: type),
+                                          houseID: state.unitHouseID(state.units[slot]),
+                                          target: encoded, createCarryall: false, in: &state) else { return 0 }
+        let encoded2 = state.indexEncode(state.units[u2].o.index, type: .unit)
+        state.objectScriptVariable4Link(encoded, encoded2)
+        state.units[u2].targetMove = encoded
+        return encoded2
+    }
+
     // MARK: - Spawning (Unit_Create / Unit_CreateBullet)
 
     /// `Unit_IsTileOccupied` (`unit.c:1789`): is the unit's current tile blocked for it? True if the
