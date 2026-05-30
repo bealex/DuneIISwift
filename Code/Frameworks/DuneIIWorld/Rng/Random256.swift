@@ -9,6 +9,10 @@ public struct Random256: Sendable {
     /// The 3 active feedback bytes (a 4th seed byte is loaded but unused, mirroring OpenDUNE).
     private var seed: (UInt8, UInt8, UInt8)
 
+    /// Opt-in draw recorder (a shared reference) for parity trace-alignment. `nil` in production and in
+    /// every non-tracing test — then `next()` only nil-checks it. See `RngTraceSink`.
+    public var traceSink: RngTraceSink?
+
     public init(seed: UInt32 = 0) {
         self.seed = (0, 0, 0)
         reseed(seed)
@@ -31,6 +35,8 @@ public struct Random256: Sendable {
         seed.0 = (val8 << 7) | (seed.0 >> 1)
         seed.1 = UInt8(val16 >> 8)
         seed.2 = UInt8(val16 & 0xFF)
-        return seed.0 ^ seed.1
+        let result = seed.0 ^ seed.1
+        traceSink?.recordR256(result)
+        return result
     }
 }

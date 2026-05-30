@@ -46,7 +46,8 @@ final class MapModel {
             }
         }
 
-        let simulation = Simulation(state: state, scriptInfo: unitScript, structureScriptInfo: structureScript)
+        let simulation = Simulation(state: state, scriptInfo: unitScript, structureScriptInfo: structureScript,
+                                    tickExplosions: true, tickAnimations: true)   // visual app, not golden-pinned
         currentScenario = scenarioName
         scene.load(simulation: simulation, assets: assets)
         scene.setZoom(CGFloat(scale))

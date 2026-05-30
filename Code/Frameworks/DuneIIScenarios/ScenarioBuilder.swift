@@ -17,6 +17,9 @@ public struct ScenarioWorld {
     /// Advance the explosion animations each tick (impacts/deaths/destruction). Off by default so the
     /// golden runner matches the oracle (which doesn't tick explosions); `scenariolab` turns it on.
     public var tickExplosions = false
+    /// Advance structure animations each tick. Off by default for the same parity reason (the oracle's
+    /// harness doesn't tick animations + `Animation_Tick` draws RNG); the visual apps turn it on.
+    public var tickAnimations = false
 }
 
 /// Lays out a `GameState` for a `TestScenario`: terrain + two houses + the units (positions + initial

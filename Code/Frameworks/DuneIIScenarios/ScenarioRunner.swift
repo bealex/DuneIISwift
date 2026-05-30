@@ -27,7 +27,7 @@ public extension ScenarioWorld {
     /// attack scenario fires + impacts here rather than halting.
     mutating func tick() {
         var sim = Simulation(state: state, scriptInfo: runner.scriptInfo, structureScriptInfo: structureScript,
-                             tickExplosions: tickExplosions)
+                             tickExplosions: tickExplosions, tickAnimations: tickAnimations)
         sim.tick()
         state = sim.state
     }

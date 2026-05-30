@@ -1,0 +1,7 @@
+tick=1 idx=0 byte=0x13 ctx=NULL
+tick=9 idx=1 byte=0xC2 ctx=s1
+tick=16 idx=2 byte=0xF6 ctx=s1
+tick=27 idx=3 byte=0x55 ctx=s1
+tick=37 idx=4 byte=0x76 ctx=s1
+tick=48 idx=5 byte=0x03 ctx=s1
+tick=56 idx=6 byte=0x70 ctx=s1

@@ -51,7 +51,8 @@ run() {
   [ -n "$ONLY" ] && [ "$ONLY" != "$name" ] && return 0
   cp "$FIX/$ini" "$DATADIR/$(printf 'SCENH%03d.INI' "$id")"
   local args=(--parity-scenario="$id" --parity-ticks="$ticks"
-              --parity-data-dir="$DATADIR" --parity-dump="$FIX/$name-golden.jsonl")
+              --parity-data-dir="$DATADIR" --parity-dump="$FIX/$name-golden.jsonl"
+              --parity-random-trace="$FIX/$name-r256.txt" --parity-lcg-trace="$FIX/$name-lcg.txt")
   local c; for c in "$@"; do args+=(--parity-cmd="$c"); done
   echo "  $name  (scenario $id, $ticks ticks, cmds: $*)"
   "$ORACLE/bin/opendune" "${args[@]}"

@@ -40,6 +40,13 @@ public struct Simulation: Sendable {
     /// (`scenariolab`) sets it `true` so impacts/deaths/destruction animate.
     public let tickExplosions: Bool
 
+    /// Whether to advance structure **animations** each tick (`Animation_Tick`). Default `false` for the
+    /// same reason as `tickExplosions`: the oracle's parity **scenario harness** runs only the four
+    /// `GameLoop_*` phases — it never ticks animations — and `Animation_Tick` draws `Random256` (the
+    /// `.pause` command's `% 4`), so ticking it in the golden path desyncs the shared RNG stream off the
+    /// oracle's. The visual apps (`scenariolab`/`mapview`) set it `true` so structures animate.
+    public let tickAnimations: Bool
+
     public init(
         state: GameState,
         scriptInfo: ScriptInfo? = nil,
@@ -47,12 +54,14 @@ public struct Simulation: Sendable {
         teamScriptInfo: ScriptInfo? = nil,
         structureTracer: StructureScriptTracer? = nil,
         tickExplosions: Bool = false,
+        tickAnimations: Bool = false,
         unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
         mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
         housePrimitives: any HousePrimitives = DefaultHousePrimitives()
     ) {
         self.state = state
         self.tickExplosions = tickExplosions
+        self.tickAnimations = tickAnimations
         self.unitPrimitives = unitPrimitives
         self.mapPrimitives = mapPrimitives
         self.housePrimitives = housePrimitives
@@ -79,13 +88,14 @@ public struct Simulation: Sendable {
         structureScriptInfo: ScriptInfo? = nil,
         teamScriptInfo: ScriptInfo? = nil,
         tickExplosions: Bool = false,
+        tickAnimations: Bool = false,
         unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
         mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
         housePrimitives: any HousePrimitives = DefaultHousePrimitives()
     ) {
         self.init(state: GameState(random256Seed: random256Seed, randomLCGSeed: randomLCGSeed),
                   scriptInfo: scriptInfo, structureScriptInfo: structureScriptInfo,
-                  teamScriptInfo: teamScriptInfo, tickExplosions: tickExplosions,
+                  teamScriptInfo: teamScriptInfo, tickExplosions: tickExplosions, tickAnimations: tickAnimations,
                   unitPrimitives: unitPrimitives, mapPrimitives: mapPrimitives,
                   housePrimitives: housePrimitives)
     }
@@ -101,8 +111,10 @@ public struct Simulation: Sendable {
         gameLoopUnit()
         gameLoopStructure()
         gameLoopHouse()
-        state.animationTick()   // structure animations (mutates the map ground tiles over time)
-        if tickExplosions { state.explosionTick() }   // explosion sprite animations (lab only — draws RNG)
+        // Visual subsystems the oracle's parity harness doesn't tick (both draw RNG) — gated off the
+        // golden/oracle-matched path, on for the visual apps. See `tickAnimations`/`tickExplosions`.
+        if tickAnimations { state.animationTick() }   // structure animations (mutates the map ground tiles)
+        if tickExplosions { state.explosionTick() }   // explosion sprite animations
     }
 
     /// `Tools_AdjustToGameSpeed` with this run's `gameSpeed`.

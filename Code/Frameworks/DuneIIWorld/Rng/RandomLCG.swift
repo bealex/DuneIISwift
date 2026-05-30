@@ -8,6 +8,10 @@
 public struct RandomLCG: Sendable {
     private var state: UInt32
 
+    /// Opt-in draw recorder (shared reference) for parity trace-alignment — records the `range(_:_:)`
+    /// result, mirroring the oracle's `--parity-lcg-trace`. `nil` in production. See `RngTraceSink`.
+    public var traceSink: RngTraceSink?
+
     public init(seed: UInt16 = 0) {
         state = UInt32(seed)
     }
@@ -37,6 +41,7 @@ public struct RandomLCG: Sendable {
             let value = Int32(next()) * span / 0x8000 + Int32(lo)
             result = UInt16(truncatingIfNeeded: value)
         } while result > hi
+        traceSink?.recordLCG(result)
         return result
     }
 }

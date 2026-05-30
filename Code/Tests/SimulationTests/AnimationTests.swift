@@ -16,7 +16,7 @@ struct AnimationTests {
         let iconMap = try IconMap(Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
         let ini = try Ini(Data(contentsOf: repo.appendingPathComponent("Resources/Scenarios/SCENA001.INI")))
 
-        var sim = Simulation()
+        var sim = Simulation(tickAnimations: true)   // opt into the visual subsystem (off in the parity path)
         sim.state.loadScenario(ini: ini, iconMap: iconMap)
 
         // The construction yard (animationIndex 22 → cycles ground states 2↔3).

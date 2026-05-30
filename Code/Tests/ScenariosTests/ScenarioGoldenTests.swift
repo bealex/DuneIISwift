@@ -163,9 +163,14 @@ struct ScenarioGoldenTests {
 
         // Run our engine for the whole trajectory, capturing a frame per tick (frame 0 = post-command).
         var sim = Simulation(state: state, scriptInfo: scriptInfo, structureScriptInfo: structureScriptInfo)
+        // Record our per-tick RNG draws (post-setup, like the oracle's trace) for the draw-stream assertion.
+        let rngSink = RngTraceSink()
+        sim.state.random256.traceSink = rngSink
+        sim.state.randomLCG.traceSink = rngSink
         func frame() -> Frame { Frame(tick: 0, units: snapshot(sim.state), structures: structureSnapshot(sim.state), houses: houseSnapshot(sim.state)) }
         var ours: [Frame] = [frame()]
-        for _ in 1 ..< max(oracle.count, 1) {
+        for t in 1 ..< max(oracle.count, 1) {
+            rngSink.setTick(UInt32(t))
             sim.tick()
             ours.append(frame())
         }
@@ -187,5 +192,22 @@ struct ScenarioGoldenTests {
             }
         } ?? "\(spec.name): no divergence"
         #expect(firstMismatch == nil, "\(msg)")
+
+        // RNG-stream golden: for full-match scenarios, assert our per-tick draw stream is byte-identical to
+        // the oracle's `--parity-random-trace` / `--parity-lcg-trace`. This catches a missing/extra/reordered
+        // draw the instant it happens — even when it doesn't (yet) move a compared field (exactly the
+        // GameLoop_Team cursor bug that hid for months). The first-divergence message names the draw site.
+        if spec.compared == 0 {
+            if let r256Text = try? String(contentsOf: fix.appendingPathComponent("\(spec.name)-r256.txt"), encoding: .utf8) {
+                let div = RngTraceSink.firstDivergence(ours: rngSink.r256,
+                                                       oracle: RngTraceSink.parseOracleTrace(r256Text), label: "\(spec.name) R256")
+                #expect(div == nil, "\(div ?? "")")
+            }
+            if let lcgText = try? String(contentsOf: fix.appendingPathComponent("\(spec.name)-lcg.txt"), encoding: .utf8) {
+                let div = RngTraceSink.firstDivergence(ours: rngSink.lcg,
+                                                       oracle: RngTraceSink.parseOracleTrace(lcgText), label: "\(spec.name) LCG")
+                #expect(div == nil, "\(div ?? "")")
+            }
+        }
     }
 }
