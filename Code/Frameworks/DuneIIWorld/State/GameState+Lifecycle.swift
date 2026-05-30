@@ -418,6 +418,32 @@ public extension GameState {
         return true
     }
 
+    /// `Structure_CancelBuild` (`structure.c:1412`): abort the structure's in-progress build, free the
+    /// queued (off-map) unit/structure, and refund the credits proportional to the unbuilt remainder. A
+    /// no-op when nothing is being built (`linkedID == 0xFF`).
+    mutating func structureCancelBuild(_ slot: Int) {
+        if structures[slot].o.linkedID == 0xFF { return }
+        let buildTime: UInt16, buildCredits: UInt16
+        let linked = Int(structures[slot].o.linkedID)
+        if structures[slot].o.type == UInt8(StructureType.constructionYard.rawValue) {
+            guard let st2 = StructureType(rawValue: Int(structures[linked].o.type)) else { return }
+            buildTime = StructureInfo[st2].o.buildTime; buildCredits = StructureInfo[st2].o.buildCredits
+            structureFree(linked)
+        } else {
+            guard let ut = UnitType(rawValue: Int(units[linked].o.type)) else { return }
+            buildTime = UnitInfo[ut].o.buildTime; buildCredits = UnitInfo[ut].o.buildCredits
+            unitFree(linked)
+        }
+        if buildTime != 0 {
+            let refund = (Int(buildTime) - Int(structures[slot].countDown >> 8)) * 256 / Int(buildTime) * Int(buildCredits) / 256
+            let h = Int(structures[slot].o.houseID)
+            houses[h].credits = UInt16(truncatingIfNeeded: Int(houses[h].credits) + refund)
+        }
+        structures[slot].o.flags.remove(.onHold)
+        structures[slot].countDown = 0
+        structures[slot].o.linkedID = 0xFF
+    }
+
     /// `Structure_SetUpgradingState` (`structure.c:1691`): start/stop a structure's upgrade (the
     /// `tickStructure` upgrade branch acts on `.upgrading`). `state`: 1 start, 0 stop, −1 toggle. Starting
     /// requires `upgradeTimeLeft != 0`, clears `.repairing`, and sets `.onHold`. GUI feedback is a seam.

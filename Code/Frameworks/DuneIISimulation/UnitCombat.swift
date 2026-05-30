@@ -332,6 +332,63 @@ public struct UnitCombat: Sendable {
         return slot
     }
 
+    /// `Structure_BuildObject` (`structure.c:1442`) — the **headless state-setup** path: start a factory
+    /// building a concrete `objectType` (a unit, or a structure for a construction yard). Stops any repair,
+    /// cancels a differing in-progress build, creates the product off-map, links it, sets the build
+    /// `countDown` (`buildTime << 8`), and flips the factory to BUSY. Returns true once building.
+    ///
+    /// The player build GUI is **deferred to Phase 6**: the factory-window sentinels (`0xFFFD` upgrade,
+    /// `0xFFFE` first-buildable, `0xFFFF` open-window) — and with them `Structure_GetBuildable` + the
+    /// per-type `available` flags, the starport stock allocation, and concrete-placement hints — are seams.
+    @discardableResult
+    public func structureBuildObject(slot: Int, objectType: UInt16, in state: inout GameState) -> Bool {
+        guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return false }
+        if !StructureInfo[st].o.flags.contains(.factory) { return false }
+
+        state.structureSetRepairingState(slot, state: 0)
+
+        if objectType >= 0xFFFD {
+            // SEAM (Phase 6): Structure_SetUpgradingState / Structure_GetBuildable + `available` flags /
+            // GUI_DisplayFactoryWindow / the starport stock allocation.
+            return false
+        }
+
+        if st == .starport { return true }
+
+        if state.structures[slot].objectType != objectType { state.structureCancelBuild(slot) }
+        if state.structures[slot].o.linkedID != 0xFF { return false }
+
+        let houseID = state.structures[slot].o.houseID
+        let objIndex: UInt16
+        let buildTime: UInt16
+        if st != .constructionYard {
+            guard let ut = UnitType(rawValue: Int(objectType)),
+                  let u = unitCreate(index: Pool.unitIndexInvalid, type: UInt8(objectType), houseID: houseID,
+                                     position: Tile32(x: 0xFFFF, y: 0xFFFF), orientation: 0, in: &state) else {
+                state.structures[slot].o.flags.remove(.onHold)
+                return false   // SEAM (player): GUI "unable to create more".
+            }
+            objIndex = state.units[u].o.index
+            buildTime = UnitInfo[ut].o.buildTime
+        } else {
+            guard let st2 = StructureType(rawValue: Int(objectType)),
+                  let sNew = structureCreate(type: st2, houseID: houseID, position: 0xFFFF, in: &state) else {
+                state.structures[slot].o.flags.remove(.onHold)
+                return false
+            }
+            objIndex = state.structures[sNew].o.index
+            buildTime = StructureInfo[st2].o.buildTime
+        }
+
+        state.structures[slot].o.flags.remove(.onHold)
+        state.structures[slot].o.linkedID = UInt8(truncatingIfNeeded: Int(objIndex))
+        state.structures[slot].objectType = objectType
+        state.structures[slot].countDown = UInt16(truncatingIfNeeded: Int(buildTime) << 8)
+        state.structureSetState(slot, .busy)
+        // SEAM (player): GUI "production of <name> has started".
+        return true
+    }
+
     /// `Script_Unit_MCVDeploy` (op 0x09, `script/unit.c:1846`): deploy the MCV into a construction yard at
     /// its tile (trying the tile + 3 NW offsets) and remove the MCV; returns 1 on success, else restores the
     /// MCV and returns 0 (the "can't deploy here" GUI text is a seam).
