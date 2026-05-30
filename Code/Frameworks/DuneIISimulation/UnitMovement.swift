@@ -167,8 +167,10 @@ public struct UnitMovement: Sendable {
                     state.units[slot].currentDestination = Tile32(x: 0, y: 0)
 
                     if state.units[slot].o.flags.contains(.degrades) && (state.random256.next() & 3) == 0 {
-                        // SEAM: Unit_Damage(unit, 1, 0) (#18). `degrades` is an object flag set on no
-                        // ground unit by default; the RNG draw above is faithful to OpenDUNE.
+                        // Unit_Damage(unit, 1, 0) — now ported (`UnitCombat.damage`); wiring it in here is
+                        // deferred to the combat-integration slice (with Fire/explosions) to avoid a
+                        // Move↔Combat cycle. `degrades` is set on no ground unit by default, and the RNG
+                        // draw above is faithful to OpenDUNE regardless.
                     }
 
                     if ut == .saboteur {
@@ -306,6 +308,17 @@ public struct UnitMovement: Sendable {
         state.units[slot].targetAttack = 0
         state.units[slot].targetMove = 0
         return true
+    }
+
+    /// Standalone `Unit_Deviation_Decrease` for callers outside a script run (e.g. `Unit_Damage`, the
+    /// loop's `tickDeviation`): the unit's own `o.script` is the engine. Copied out/in around the
+    /// engine-threaded core to avoid overlapping `inout` access to `state`.
+    @discardableResult
+    public func deviationDecrease(slot: Int, amount: UInt16, in state: inout GameState) -> Bool {
+        var engine = state.units[slot].o.script
+        let r = deviationDecrease(slot: slot, amount: amount, engine: &engine, in: &state)
+        state.units[slot].o.script = engine
+        return r
     }
 
     // MARK: - Script_Unit_CalculateRoute (native 0x0C)

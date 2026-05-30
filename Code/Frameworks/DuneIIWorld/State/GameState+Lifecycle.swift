@@ -71,6 +71,19 @@ public extension GameState {
         return teams[t].maxMembers &- teams[t].members
     }
 
+    /// `Unit_RemovePlayer` (`unit.c:2440`): when a *player-owned* allocated unit is lost, mark it
+    /// unallocated and drop it from its team. The deselect / selection-type / active-action cleanup
+    /// (`Unit_Select`, `GUI_ChangeSelectionType`) is a render/UI seam. Returns true if it acted.
+    @discardableResult
+    mutating func unitRemovePlayer(_ slot: Int) -> Bool {
+        if unitHouseID(units[slot]) != playerHouseID { return false }
+        if !units[slot].o.flags.contains(.allocated) { return false }
+        units[slot].o.flags.remove(.allocated)
+        unitRemoveFromTeam(slot)
+        // SEAM: if this was the selected unit — deselect + selection-type/active-action reset (UI).
+        return true
+    }
+
     /// `Unit_UntargetMe` (`unit.c`): scrub every reference to a unit before it is removed — clear its
     /// own two-way link, then zero any `targetMove`/`targetAttack`/script-var-4 on other units, the
     /// `variables[2]` of turret structures, the unit's team membership, and any team `target` pointing
