@@ -92,6 +92,57 @@ struct TeamLoopTests {
         #expect(sim.state.teams[slot].script.scriptPC == loadedPC)     // no opcode ran
     }
 
+    @Test("end-to-end: an AI team recruits members, acquires a target, and orders an attack")
+    func endToEndTeamAI() throws {
+        guard let teamEMC = emc("Resources/Scripts/TEAM/TEAM.emc"),
+              let unitEMC = emc("Resources/Scripts/UNIT/UNIT.emc") else { return }
+        var s = GameState(random256Seed: 0xBEEF)
+        s.playerHouseID = 1   // house 0 is the AI; house 1 is the (human) enemy
+        _ = s.houseAllocate(index: 0); s.houses[0].unitCountMax = 100; s.houses[0].flags.insert(.isAIActive)
+        _ = s.houseAllocate(index: 1); s.houses[1].unitCountMax = 100
+
+        func tank(house: UInt8, at packed: UInt16, scenario: Bool) -> Int {
+            let u = s.unitAllocate(index: 0, type: UInt8(UnitType.tank.rawValue), houseID: house)!
+            s.units[u].o.position = Tile32.unpack(packed)
+            s.units[u].o.hitpoints = UnitInfo[.tank].o.hitpoints
+            s.units[u].o.flags.insert(.allocated)   // targetable (targetUnitPriority requires it)
+            if scenario { s.units[u].o.flags.insert(.byScenario) }
+            s.unitUpdateMap(1, u)
+            return u
+        }
+        // Three recruitable AI tanks, clustered, plus a (seen) enemy tank to target. (Tanks allocate into
+        // their type band, not slots 0…3, so capture the real slots.)
+        let members = [tank(house: 0, at: Tile32.packXY(x: 20, y: 20), scenario: true),
+                       tank(house: 0, at: Tile32.packXY(x: 21, y: 20), scenario: true),
+                       tank(house: 0, at: Tile32.packXY(x: 20, y: 21), scenario: true)]
+        let enemy = tank(house: 1, at: Tile32.packXY(x: 28, y: 20), scenario: false)
+        s.units[enemy].o.seenByHouses = 0xFF   // visible to the AI → findable as a target
+
+        // The team running the `normal` brain (recruit → average-distance → target → attack orders → loop).
+        let team = s.teamCreate(houseID: 0, teamActionType: UInt8(TeamActionType.normal.rawValue),
+                                movementType: UInt8(MovementType.tracked.rawValue),
+                                minMembers: 2, maxMembers: 4,
+                                scriptPC: teamEMC.offsets[Int(TeamActionType.normal.rawValue)])!
+        s.viewportPosition = Tile32.packXY(x: 12, y: 12)
+
+        // Track the full chain across the run — the AI evolves (recruits attack, fight, may die), so the
+        // recruit → target → order steps are observed as they happen rather than only in the end-state.
+        var everRecruited = false, everTargeted = false, everOrdered = false
+        var sim = Simulation(state: s, scriptInfo: unitEMC, teamScriptInfo: teamEMC)
+        for _ in 0 ..< 2500 {
+            sim.tick()
+            if members.contains(where: { sim.state.units[$0].team == UInt8(team + 1) }) { everRecruited = true }
+            if sim.state.teams[team].target != 0 { everTargeted = true }
+            if members.contains(where: { sim.state.units[$0].o.flags.contains(.allocated)
+                                      && sim.state.units[$0].targetAttack != 0 }) { everOrdered = true }
+        }
+
+        // The team brain ran end-to-end through the live loop: recruit → acquire a target → order an attack.
+        #expect(everRecruited)   // Team_AddClosestUnit pulled a real unit into the team
+        #expect(everTargeted)    // Team_FindBestTarget acquired the seen enemy
+        #expect(everOrdered)     // Team_Unknown0788 set a member's attack target
+    }
+
     @Test("with no team script bridged, the team phase is inert (no RNG draw)")
     func loopInertWithoutScript() {
         var s = GameState(random256Seed: 0x1234)
