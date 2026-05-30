@@ -360,6 +360,79 @@ struct StructureScriptTests {
         #expect(s.structures[st].state == .idle)                   // → IDLE once unlinked
     }
 
+    // MARK: - Unit_EnterStructure
+
+    @Test("a harvester entering an allied refinery: refinery READY, harvester linked + hidden, not removed")
+    func enterRefinery() {
+        var (s, _) = minimal()
+        let ref = placeTurret(&s, .refinery, house: 0, at: 20 * 64 + 20)
+        s.structures[ref].o.hitpoints = StructureInfo[.refinery].o.hitpoints
+        s.structures[ref].o.linkedID = 0xFF
+        let harv = placeUnit(&s, .harvester, house: 0, at: 20 * 64 + 25, seenBy: nil)
+        s.units[harv].amount = 10
+
+        s.unitEnterStructure(harv, ref)
+        #expect(s.structures[ref].state == .ready)            // refinery has busyStateIsIncoming
+        #expect(s.structures[ref].o.linkedID == UInt8(harv))
+        #expect(s.units[harv].o.flags.contains(.isNotOnMap))  // hidden inside
+        #expect(s.units[harv].o.flags.contains(.allocated))   // NOT removed (allied)
+        #expect(s.units[harv].amount == 10)                   // spice intact, to be refined
+    }
+
+    @Test("a saboteur entering an enemy structure detonates it and is removed")
+    func enterSaboteur() {
+        var (s, _) = minimal()
+        let st = placeTurret(&s, .windtrap, house: 1, at: 20 * 64 + 20)
+        s.structures[st].o.hitpoints = 200
+        let sab = placeUnit(&s, .saboteur, house: 0, at: 20 * 64 + 20, seenBy: nil)
+
+        s.unitEnterStructure(sab, st)
+        #expect(!s.units[sab].o.flags.contains(.allocated))         // removed
+        #expect(s.structures[st].o.script.variables[0] == 1)        // 500 dmg destroyed the 200-HP windtrap
+    }
+
+    @Test("entering a dead structure (0 HP) just removes the unit")
+    func enterDeadStructure() {
+        var (s, _) = minimal()
+        let st = placeTurret(&s, .windtrap, house: 0, at: 20 * 64 + 20)
+        s.structures[st].o.hitpoints = 0
+        let u = placeUnit(&s, .tank, house: 0, at: 20 * 64 + 25, seenBy: nil)
+        s.unitEnterStructure(u, st)
+        #expect(!s.units[u].o.flags.contains(.allocated))
+    }
+
+    @Test("harvester→refinery loop: a linked harvester's spice becomes credits over GameLoop_Structure ticks")
+    func harvesterEconomyLoop() throws {
+        guard let unit = emc("Resources/Scripts/UNIT/UNIT.emc"),
+              let build = emc("Resources/Scripts/BUILD/BUILD.emc") else { return }
+        var repo = URL(fileURLWithPath: #filePath)
+        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }
+        guard let iconMap = try? IconMap(Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP"))) else { return }
+
+        var s = GameState(random256Seed: 0x1357)
+        s.playerHouseID = 0
+        s.iconMap = iconMap
+        _ = s.houseAllocate(index: 0); s.houses[0].unitCountMax = 200
+
+        let ref = placeTurret(&s, .refinery, house: 0, at: 20 * 64 + 20)
+        s.structures[ref].o.hitpoints = StructureInfo[.refinery].o.hitpoints
+        s.structures[ref].o.linkedID = 0xFF
+        s.structureUpdateMap(ref)
+
+        let harv = placeUnit(&s, .harvester, house: 0, at: 21 * 64 + 20, seenBy: nil)
+        s.units[harv].amount = 10
+        s.unitEnterStructure(harv, ref)   // simulate arrival: refinery → READY + harvester linked
+
+        var sim = Simulation(state: s, scriptInfo: unit, structureScriptInfo: build)
+        var credited = false
+        for _ in 0 ..< 400 where !credited {
+            sim.tick()
+            credited = sim.state.houses[0].credits > 0
+        }
+        #expect(credited)                            // the refinery refined the harvester's spice into credits
+        #expect(sim.state.units[harv].amount < 10)   // spice consumed
+    }
+
     @Test("Script_Structure_SetState resolves DETECT, GetState reports it")
     func setStateDetect() throws {
         guard var (sim, slot, _) = setup() else { return }

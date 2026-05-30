@@ -64,7 +64,7 @@ public struct UnitMovement: Sendable {
     /// orientation, reconciling the map and handling arrival at the current waypoint. Returns true when
     /// the step completes a waypoint (or the unit was removed). The bullet / sonic-blast / saboteur /
     /// spice-bloom branches are transcribed with `SEAM` markers for their not-yet-ported dependencies
-    /// (`Unit_Damage` #18, `Map_MakeExplosion` #15, `Unit_EnterStructure`, `Map_Bloom_Explode*`); they do
+    /// (`Unit_Damage` #18, `Map_MakeExplosion` #15, `Map_Bloom_Explode*`); they do
     /// not fire for a ground unit crossing open terrain. See `UnitMovement.md`.
     @discardableResult
     public func move(slot: Int, distance distance0: UInt16, in state: inout GameState) -> Bool {
@@ -213,10 +213,10 @@ public struct UnitMovement: Sendable {
                         state.units[slot].targetMove = 0
                     }
 
-                    if state.structureGetByPackedTile(packed) != nil {
+                    if let s = state.structureGetByPackedTile(packed) {
                         state.units[slot].targetPreLast = Tile32(x: 0, y: 0)
                         state.units[slot].targetLast = Tile32(x: 0, y: 0)
-                        // SEAM: Unit_EnterStructure(unit, s) — structure entry not yet ported.
+                        state.unitEnterStructure(slot, s)   // Unit_EnterStructure(unit, s)
                         return true
                     }
 

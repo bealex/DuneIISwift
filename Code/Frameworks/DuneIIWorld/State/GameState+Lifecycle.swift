@@ -242,6 +242,110 @@ public extension GameState {
         return false
     }
 
+    /// `Unit_Hide` (`unit.c:1083`): take a unit off the map + out of play without freeing it — used when it
+    /// enters a structure. Clears its tile occupancy (the `bulletIsBig` toggle keeps a 2-tile bullet's
+    /// footprint clearing), resets its script, scrubs references, flags it off-map, and drops it from the
+    /// per-house visibility counts.
+    mutating func unitHide(_ slot: Int) {
+        units[slot].o.flags.insert(.bulletIsBig)
+        unitUpdateMap(0, slot)
+        units[slot].o.flags.remove(.bulletIsBig)
+        units[slot].o.script.reset()
+        unitUntargetMe(slot)
+        units[slot].o.flags.insert(.isNotOnMap)
+        unitHouseUnitCountRemove(slot)
+    }
+
+    /// `Structure_GetStructuresBuilt` (`structure.c:1378`): the bitmask of structure types `houseID` has on
+    /// the map (excluding slabs/walls and off-map structures), recounting the house's windtraps as a side
+    /// effect (`bit N` = structure type `N` is built).
+    mutating func structureGetStructuresBuilt(houseID: UInt8) -> UInt32 {
+        var result: UInt32 = 0
+        houses[Int(houseID)].windtrapCount = 0
+        var find = PoolFind(houseID: houseID)
+        while let s = structureFind(&find) {
+            if structures[s].o.flags.contains(.isNotOnMap) { continue }
+            let t = structures[s].o.type
+            if t == UInt8(StructureType.slab1x1.rawValue) || t == UInt8(StructureType.slab2x2.rawValue)
+                || t == UInt8(StructureType.wall.rawValue) { continue }
+            result |= UInt32(1) << UInt32(t)
+            if t == UInt8(StructureType.windtrap.rawValue) { houses[Int(houseID)].windtrapCount &+= 1 }
+        }
+        return result
+    }
+
+    /// `Unit_EnterStructure` (`unit.c:2177`): a unit arrives inside structure `s`. If the unit is gone or the
+    /// structure is dead, just remove the unit. **Allied** (the harvester→refinery / unit→repair case): the
+    /// structure goes READY/BUSY, a repair pad heals + times the unit, and the unit links into the
+    /// structure's chain and stays (hidden, not removed). A **saboteur** detonates the structure. An **enemy**
+    /// unit captures a low-HP enemy structure (houseID swap + rebuild the structures-built masks) or else
+    /// damages it. Seams: the `g_unitSelected` deselect (render/UI) and `House_CalculatePowerAndCredit` (the
+    /// House power/credit recompute — House subsystem); the 1.07-enhanced takeover untarget/unveil are off.
+    mutating func unitEnterStructure(_ unitSlot: Int, _ structureSlot: Int) {
+        guard let ut = UnitType(rawValue: Int(units[unitSlot].o.type)),
+              let st = StructureType(rawValue: Int(structures[structureSlot].o.type)) else { return }
+        let ui = UnitInfo[ut]
+        let si = StructureInfo[st]
+        // SEAM: g_unitSelected → Unit_Select(NULL) / Map_SetSelection (render/UI).
+
+        if !units[unitSlot].o.flags.contains(.allocated) || structures[structureSlot].o.hitpoints == 0 {
+            unitRemove(unitSlot)
+            return
+        }
+
+        units[unitSlot].o.seenByHouses |= structures[structureSlot].o.seenByHouses
+        unitHide(unitSlot)
+
+        // Allied: the structure receives the unit (harvester refines, repair heals) and links it in.
+        if House.areAllied(structures[structureSlot].o.houseID, unitHouseID(units[unitSlot]),
+                           playerHouseID: playerHouseID) {
+            structureSetState(structureSlot, si.o.flags.contains(.busyStateIsIncoming) ? .ready : .busy)
+
+            if st == .repair {
+                let maxHP = UInt32(ui.o.hitpoints)
+                var countDown: UInt16 = 1
+                if maxHP > 0 {
+                    let cd = (maxHP - UInt32(units[unitSlot].o.hitpoints)) * 256 / maxHP
+                        * (UInt32(ui.o.buildTime) << 6) / 256
+                    countDown = cd > 1 ? UInt16(truncatingIfNeeded: cd) : 1
+                }
+                structures[structureSlot].countDown = countDown
+                units[unitSlot].o.hitpoints = ui.o.hitpoints
+                units[unitSlot].o.flags.remove(.isSmoking)
+                units[unitSlot].spriteOffset = 0
+            }
+            units[unitSlot].o.linkedID = structures[structureSlot].o.linkedID
+            structures[structureSlot].o.linkedID = UInt8(truncatingIfNeeded: units[unitSlot].o.index & 0xFF)
+            return
+        }
+
+        if ut == .saboteur {
+            structureDamage(structureSlot, damage: 500, range: 1)
+            unitRemove(unitSlot)
+            return
+        }
+
+        // Take over a low-HP enemy structure, else damage it.
+        if structures[structureSlot].o.hitpoints < si.o.hitpoints / 4 {
+            let captor = unitHouseID(units[unitSlot])
+            let oldHouse = Int(structures[structureSlot].o.houseID)
+            structures[structureSlot].o.houseID = captor
+            houses[oldHouse].structuresBuilt = structureGetStructuresBuilt(houseID: UInt8(oldHouse))
+            // SEAM: House_CalculatePowerAndCredit(oldHouse) — House subsystem.
+            houses[Int(captor)].structuresBuilt = structureGetStructuresBuilt(houseID: captor)
+            let linkedID = structures[structureSlot].o.linkedID
+            if linkedID != 0xFF { units[Int(linkedID)].o.houseID = captor }
+            // SEAM: House_CalculatePowerAndCredit(captor) — House subsystem.
+            structureUpdateMap(structureSlot)
+        } else {
+            let dmg = min(UInt16(units[unitSlot].o.hitpoints) &* 2, structures[structureSlot].o.hitpoints / 2)
+            structureDamage(structureSlot, damage: dmg, range: 1)
+        }
+
+        objectScriptVariable4Clear(.structure(structureSlot))
+        unitRemove(unitSlot)
+    }
+
     // MARK: - Map occupancy + visibility counts
 
     /// `Unit_RemoveFromTile` (`unit.c`): clear a map tile's unit occupancy, but only if the tile
