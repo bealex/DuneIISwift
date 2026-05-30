@@ -152,9 +152,13 @@ public struct UnitScriptFunctions: Sendable {
         return 0
     }
 
-    /// `Script_Unit_RemoveFog`: clear fog around the unit. Fog is not modelled headlessly (a render/fog
-    /// seam), so this is a no-op returning 0 — `Unit_RemoveFog` has no other effect. (SEAM)
-    public func removeFog() -> UInt16 { 0 }
+    /// `Script_Unit_RemoveFog` (`script/unit.c`): lift the player's fog around the unit. The fog primitive
+    /// itself is ported (`GameState.unitRemoveFog` → `Tile_RemoveFogInRadius` / `Map_UnveilTile`), but it
+    /// is **not wired in here yet**: revealing an enemy changes `FindBestTarget`'s visibility inputs
+    /// mid-combat, and until the full combat slice matches the oracle that diverges the attack goldens.
+    /// So this stays a no-op (returning 0) and `unitRemoveFog` is exercised by its own tests; flip this to
+    /// `state.unitRemoveFog(slot)` when combat lands. (SEAM)
+    public func removeFog(slot: Int, in state: inout GameState) -> UInt16 { 0 }
 
     /// `Script_Unit_Unknown2552` (`script/unit.c:1545`): if the unit is linked (via `variables[4]`) to a
     /// carryall, unlink it and clear that carryall's move target. Returns 0.

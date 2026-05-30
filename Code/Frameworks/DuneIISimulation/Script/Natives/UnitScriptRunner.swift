@@ -65,7 +65,7 @@ public struct UnitScriptRunner: Sendable {
             case 0x1F: return unit.isInTransport(u)
             case 0x20: return unit.getAmount(u, in: state)
             case 0x24: return unit.unknown2552(slot: slot, in: &state)
-            case 0x28: return unit.removeFog()
+            case 0x28: return unit.removeFog(slot: slot, in: &state)
             case 0x2C: return general.getLinkedUnitType(linkedID: u.o.linkedID, in: state)
             case 0x2D: return general.getIndexType(encoded: engine.peek(1), in: state)
             case 0x2E: return general.decodeIndex(encoded: engine.peek(1), in: state)
