@@ -96,6 +96,32 @@ struct GameStateLifecycleTests {
         #expect(s.teams[team].members == 0)
     }
 
+    @Test("structureUntargetMe scrubs every reference to a structure")
+    func structureUntargetMe() {
+        var s = GameState()
+        s.houses[0].unitCountMax = 100
+        let victim = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.refinery))!
+        let unit = s.unitAllocate(index: 0, type: u(.tank), houseID: 0)!
+        let encV = s.indexEncode(s.structures[victim].o.index, type: .structure)
+        let encU = s.indexEncode(s.units[unit].o.index, type: .unit)
+
+        s.units[unit].targetMove = encV
+        s.units[unit].targetAttack = encV
+        s.objectScriptVariable4Set(.unit(unit), encV)        // two-way var4 link
+        s.objectScriptVariable4Set(.structure(victim), encU)
+
+        let team = s.teamAllocate(index: Pool.teamIndexInvalid)!
+        s.teams[team].target = encV
+
+        s.structureUntargetMe(victim)
+
+        #expect(s.units[unit].targetMove == 0)
+        #expect(s.units[unit].targetAttack == 0)
+        #expect(s.units[unit].o.script.variables[4] == 0)
+        #expect(s.structures[victim].o.script.variables[4] == 0)
+        #expect(s.teams[team].target == 0)
+    }
+
     @Test("unitHouseUnitCountAdd counts on first sight, wakes the AI, and doesn't double-count")
     func houseUnitCountAdd() {
         var s = GameState()

@@ -117,6 +117,28 @@ public extension GameState {
         }
     }
 
+    /// `Structure_UntargetMe` (`structure.c`): scrub every reference to a structure before it is destroyed
+    /// — clear its own two-way script-var-4 link, then zero any unit `targetMove`/`targetAttack`/script-
+    /// var-4 and any team `target` pointing at it. (The unit `Unit_UntargetMe` analog, minus the turret +
+    /// team-membership bits, which only apply to a unit.)
+    mutating func structureUntargetMe(_ structureSlot: Int) {
+        let encoded = indexEncode(structures[structureSlot].o.index, type: .structure)
+
+        objectScriptVariable4Clear(.structure(structureSlot))
+
+        var unitIter = PoolFind()
+        while let u = unitFind(&unitIter) {
+            if units[u].targetMove == encoded { units[u].targetMove = 0 }
+            if units[u].targetAttack == encoded { units[u].targetAttack = 0 }
+            if units[u].o.script.variables[4] == encoded { objectScriptVariable4Clear(.unit(u)) }
+        }
+
+        var teamIter = PoolFind()
+        while let t = teamFind(&teamIter) {
+            if teams[t].target == encoded { teams[t].target = 0 }
+        }
+    }
+
     // MARK: - Map occupancy + visibility counts
 
     /// `Unit_RemoveFromTile` (`unit.c`): clear a map tile's unit occupancy, but only if the tile
