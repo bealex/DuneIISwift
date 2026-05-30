@@ -30,6 +30,7 @@ public struct StructureScriptRunner: Sendable {
             case 0x00: let d = general.delay(ticks: engine.peek(1)); engine.delay = d; return d
             case 0x01, 0x0C, 0x10, 0x11, 0x12, 0x13, 0x14, 0x18: return general.noOperation()
             case 0x02: return structure.unknown0A81(slot: slot, in: &state)
+            case 0x03: return structure.findUnitByType(slot: slot, type: engine.peek(1), in: &state)
             case 0x04: return structure.setState(slot: slot, state: Int16(bitPattern: engine.peek(1)), in: &state)
             case 0x05: return general.noOperation()   // Script_Structure_DisplayText — GUI (SEAM)
             case 0x06: return structure.unknown11B9(encoded: engine.peek(1), in: &state)
@@ -44,7 +45,7 @@ public struct StructureScriptRunner: Sendable {
             case 0x0F: return structure.removeFogAroundTile(slot: slot, in: &state)
             case 0x16: return structure.explode(slot: slot, in: &state)
             case 0x17: return structure.destroy(slot: slot, in: &state)
-            default:   return nil   // not yet ported (FindUnitByType 0x03 — needs Unit_CallUnitByType)
+            default:   return nil   // all BUILD.EMC natives ported; an unused slot would clean-halt
         }
     }
 

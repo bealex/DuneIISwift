@@ -220,6 +220,36 @@ struct StructureScriptFunctions: Sendable {
         return 1   // SEAM: Sound_Output_Feedback (player non-repair deploy)
     }
 
+    /// `Script_Structure_FindUnitByType` (op 0x03, `:195`): summon a unit of `type` (in practice a carryall)
+    /// to pick up the structure's linked unit. No-op unless the structure is READY with a linked unit. A
+    /// player harvester that has no last-target and a free deploy spot is left to walk out on its own
+    /// (returns 0). Otherwise `Unit_CallUnitByType` finds/creates the carryall (creating one only when the
+    /// deploy spot is blocked), links it via the structure's var-4, and returns its encoded index (0 if none).
+    func findUnitByType(slot: Int, type: UInt16, in state: inout GameState) -> UInt16 {
+        if state.structures[slot].state != .ready { return 0 }
+        if state.structures[slot].o.linkedID == 0xFF { return 0 }
+
+        let position = findFreePosition(slot: slot, checkForSpice: false, in: &state)
+        let u = Int(state.structures[slot].o.linkedID)
+
+        if state.playerHouseID == state.structures[slot].o.houseID,
+           state.units[u].o.type == UInt8(UnitType.harvester.rawValue),
+           state.units[u].targetLast.x == 0, state.units[u].targetLast.y == 0,
+           position != 0 {
+            return 0
+        }
+
+        let structureEncoded = state.indexEncode(UInt16(state.structures[slot].o.index), type: .structure)
+        guard let carryall = combat.unitCallUnitByType(type: UInt8(truncatingIfNeeded: type),
+                                                       houseID: state.structures[slot].o.houseID,
+                                                       target: structureEncoded, createCarryall: position == 0,
+                                                       in: &state) else { return 0 }
+
+        let carryallEncoded = state.indexEncode(UInt16(state.units[carryall].o.index), type: .unit)
+        state.objectScriptVariable4Set(.structure(slot), carryallEncoded)
+        return carryallEncoded
+    }
+
     /// `Script_Structure_GetState` (op 0x0D, `:36`): the structure's current state.
     func getState(slot: Int, in state: GameState) -> UInt16 {
         UInt16(bitPattern: state.structures[slot].state.rawValue)

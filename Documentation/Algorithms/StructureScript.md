@@ -57,6 +57,7 @@ Ported in this slice (`StructureScriptFunctions`):
 | 0x00 | `General_Delay` | reused from `GeneralScriptFunctions` |
 | 0x01,0x0C,0x10–0x14,0x18 | `NoOperation` | |
 | 0x02 | `Structure_Unknown0A81` | scrub the structure↔unit var-4 link |
+| 0x03 | `Structure_FindUnitByType` | summon a carryall (`Unit_CallUnitByType`) to collect the linked unit; var-4 link |
 | 0x04 | `Structure_SetState` | `DETECT` → resolve from `linkedID`/`countDown`; `Structure_SetState` |
 | 0x05 | `General_DisplayText` | SEAM (GUI) → noop |
 | 0x06 | `Structure_Unknown11B9` | clear a unit's var-4 + `targetMove` |
@@ -76,7 +77,7 @@ Ported in this slice (`StructureScriptFunctions`):
 
 The deploy primitives `Structure_FindFreePosition` (`structure.c:1101`, a free ring tile around the structure — random start, spice-nearest for a harvester) and `Unit_SetPosition` (`unit.c:1107`, place a unit centred on a tile + default-action + map-stamp, failing if occupied) back the unit-unload native `Unknown0C5A` (0x07): a winger (carryall) lifts off the structure's own tile, a ground unit deploys to a free adjacent tile; either way the unit unlinks, the next queued unit shifts in (or the structure goes IDLE), and var-4 clears.
 
-Deferred (clean-halt the script when reached — loud, not invented): `FindUnitByType` (0x03, summon a carryall) needs `Unit_CallUnitByType`; and the harvester→refinery entry that sets `state = READY` + links the harvester (so `RefineSpice` fires in real play) needs `Unit_EnterStructure`. A refinery refines its linked harvester's spice into credits, then halts cleanly at the carryall-summon step until those land.
+With `FindUnitByType` (0x03 → `Unit_CallUnitByType`, find/create an idle carryall and order it to the structure) ported, **every native BUILD.EMC actually calls is now implemented**, so a structure script runs its full loop (no clean-halt). Together with `Unit_EnterStructure` (the harvester→refinery entry, wired into the `Unit_Move` arrival), the whole refinery cycle runs: a harvester enters → the refinery goes READY + refines its spice into credits → it summons a carryall (or the harvester walks out) → unloads. The carryall flight/pickup AI itself, the BUILD/REPAIR/factory production state machine, and `House_CalculatePowerAndCredit` remain the House/production subsystem's work.
 
 ## Turret firing (0x08–0x0B)
 

@@ -433,6 +433,55 @@ struct StructureScriptTests {
         #expect(sim.state.units[harv].amount < 10)   // spice consumed
     }
 
+    // MARK: - FindUnitByType (0x03) / Unit_CallUnitByType
+
+    @Test("Script_Structure_FindUnitByType summons an idle carryall to a READY linked structure")
+    func findUnitByType() {
+        var (s, combat) = minimal()
+        let fns = StructureScriptFunctions(combat: combat)
+        let ref = placeTurret(&s, .refinery, house: 1, at: 20 * 64 + 20)   // enemy → no player early-return
+        let harv = placeUnit(&s, .harvester, house: 1, at: 20 * 64 + 25, seenBy: nil)
+        s.structures[ref].o.linkedID = UInt8(harv)
+
+        // Not READY → 0.
+        s.structures[ref].state = .busy
+        #expect(fns.findUnitByType(slot: ref, type: UInt16(UnitType.carryall.rawValue), in: &s) == 0)
+
+        // READY + an idle carryall available → returns it, ordered to the structure, linked via var-4.
+        s.structures[ref].state = .ready
+        let carry = placeUnit(&s, .carryall, house: 1, at: 30 * 64 + 30, seenBy: nil)
+        let got = fns.findUnitByType(slot: ref, type: UInt16(UnitType.carryall.rawValue), in: &s)
+        #expect(got == s.indexEncode(UInt16(s.units[carry].o.index), type: .unit))
+        #expect(s.units[carry].targetMove == s.indexEncode(UInt16(s.structures[ref].o.index), type: .structure))
+        #expect(s.structures[ref].o.script.variables[4] == got)
+    }
+
+    @Test("FindUnitByType leaves a player harvester with a free deploy spot to walk out itself")
+    func findUnitByTypePlayerHarvester() {
+        var (s, combat) = minimal()
+        let fns = StructureScriptFunctions(combat: combat)
+        let ref = placeTurret(&s, .refinery, house: 0, at: 20 * 64 + 20)   // player refinery
+        s.structures[ref].state = .ready
+        let harv = placeUnit(&s, .harvester, house: 0, at: 20 * 64 + 25, seenBy: nil)
+        s.units[harv].targetLast = Tile32(x: 0, y: 0)
+        s.structures[ref].o.linkedID = UInt8(harv)
+        // A free deploy spot exists (blank map) → 0 (the harvester deploys on its own).
+        #expect(fns.findUnitByType(slot: ref, type: UInt16(UnitType.carryall.rawValue), in: &s) == 0)
+    }
+
+    @Test("Unit_CallUnitByType creates an off-map scenario carryall when none is free + spot blocked")
+    func callUnitCreatesCarryall() {
+        var (s, combat) = minimal()
+        let target: UInt16 = 0x4001   // any valid-looking encoded target
+        // No carryall exists → create one (createCarryall: true).
+        let made = combat.unitCallUnitByType(type: UInt8(UnitType.carryall.rawValue), houseID: 1,
+                                             target: target, createCarryall: true, in: &s)
+        let c = try! #require(made)
+        #expect(s.units[c].o.type == UInt8(UnitType.carryall.rawValue))
+        #expect(s.units[c].o.flags.contains(.byScenario))
+        #expect(s.units[c].targetMove == target)
+    }
+
     @Test("Script_Structure_SetState resolves DETECT, GetState reports it")
     func setStateDetect() throws {
         guard var (sim, slot, _) = setup() else { return }

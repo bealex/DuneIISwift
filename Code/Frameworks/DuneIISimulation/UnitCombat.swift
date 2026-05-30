@@ -132,6 +132,36 @@ public struct UnitCombat: Sendable {
         return true
     }
 
+    /// `Unit_CallUnitByType` (`unit.c:2017`): find an idle (`linkedID == 0xFF`, not already moving) unit of
+    /// `type`/`houseID` — the *last* one in pool order — and order it to `target` (also storing `target` in
+    /// its var-4). With `createCarryall` and none free (and `type == CARRYALL`), spawn a fresh off-map
+    /// scenario carryall (placement guards bypassed via `validateStrictIfZero`). Returns the unit slot, or nil.
+    @discardableResult
+    public func unitCallUnitByType(type: UInt8, houseID: UInt8, target: UInt16,
+                                   createCarryall: Bool, in state: inout GameState) -> Int? {
+        var found: Int?
+        var find = PoolFind(houseID: houseID, type: UInt16(type))
+        while let u = state.unitFind(&find) {
+            if state.units[u].o.linkedID != 0xFF { continue }
+            if state.units[u].targetMove != 0 { continue }
+            found = u
+        }
+
+        if createCarryall, found == nil, type == UInt8(UnitType.carryall.rawValue) {
+            state.validateStrictIfZero &+= 1
+            let slot = unitCreate(index: Pool.unitIndexInvalid, type: type, houseID: houseID,
+                                  position: Tile32(x: 0, y: 0), orientation: 96, in: &state)
+            state.validateStrictIfZero &-= 1
+            if let slot { state.units[slot].o.flags.insert(.byScenario); found = slot }
+        }
+
+        if let f = found {
+            state.units[f].targetMove = target
+            state.objectScriptVariable4Set(.unit(f), target)
+        }
+        return found
+    }
+
     /// `Unit_Create` (`unit.c:1380`): allocate + fully initialize a unit of `type` for `houseID` at
     /// `position` facing `orientation`, and (if on-map) place it and switch it to its default action.
     /// `index` is the desired slot or `Pool.unitIndexInvalid` for any free one. Returns the new slot, or
