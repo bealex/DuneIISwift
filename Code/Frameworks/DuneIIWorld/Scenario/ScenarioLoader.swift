@@ -23,8 +23,9 @@ public extension StructureType {
 
 public extension GameState {
     /// Load a scenario `.INI` into this state: derive the tile-id bases + generate the landscape from
-    /// `BASIC/Seed`, set the map scale, and place the `[UNITS]` and `[STRUCTURES]`. A pragmatic port of
-    /// `Scenario_Load*` (`src/scenario.c`) — enough to populate a drawable/simulatable `GameState`.
+    /// `BASIC/Seed`, set the map scale, activate the `[HOUSES]`, and place the `[UNITS]` and `[STRUCTURES]`.
+    /// A pragmatic port of `Scenario_Load*` (`src/scenario.c`) — enough to populate a
+    /// drawable/simulatable `GameState`.
     mutating func loadScenario(ini: Ini, iconMap: IconMap) {
         tileIDs = TileIDs(iconMap: iconMap) ?? TileIDs()
         mapScale = UInt8(clamping: ini.integer(section: "BASIC", key: "MapScale"))
@@ -36,6 +37,14 @@ public extension GameState {
         validateStrictIfZero = 1
         defer { validateStrictIfZero = savedStrict }
 
+        // `[HOUSES]` = "<HouseName>=<startingCredits>" — activate the house (so GameLoop_House runs it) and
+        // seed its credits. Optional: scenarios without the section run with no active houses.
+        for key in ini.keys(section: "HOUSES") {
+            guard let house = HouseID.named(key) else { continue }
+            let h = houseAllocate(index: UInt8(house.rawValue)) ?? Int(house.rawValue)
+            houses[h].credits = UInt16(clamping: Int(ini.string(section: "HOUSES", key: key) ?? "") ?? 0)
+        }
+
         for key in ini.keys(section: "UNITS") { loadUnit(ini.string(section: "UNITS", key: key)) }
         for key in ini.keys(section: "STRUCTURES") {
             loadStructure(key: key, value: ini.string(section: "STRUCTURES", key: key))
@@ -45,6 +54,10 @@ public extension GameState {
         for index in structures.indices where structures[index].o.flags.contains(.used) {
             structureUpdateMap(index)
         }
+
+        // Seed each active house's power/storage from its structures (the oracle's tick-0 baseline).
+        var find = PoolFind()
+        while let h = houseFind(&find) { houseCalculatePowerAndCredit(houses[h].index) }
     }
 
     /// `House,UnitType,HP%,packedPosition,orientation,actionState`.

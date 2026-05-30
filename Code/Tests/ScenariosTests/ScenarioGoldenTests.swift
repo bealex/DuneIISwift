@@ -32,6 +32,14 @@ import DuneIISimulation
 /// 57) — a sub-tile difference in the scattered `currentDestination` from `Tile_MoveByRandom`'s untested
 /// `center: false` path; flagged for a focused golden, not chased (a stochastic scatter under our parity bar).
 ///
+/// **`economy` is a HOUSE golden — the per-tick house aggregate, not units.** An Ordos windtrap+silo base
+/// (no units, no combat) activated via the `.INI`'s new `[HOUSES]` section (`Ordos=2000` starting credits).
+/// It compares the dumped house economy (`credits`/`creditsStorage`/`powerProduction`/`powerUsage`) tick by
+/// tick: tick 0 = `House_CalculatePowerAndCredit` (power 100/5, storage 1000, credits 2000), tick 1 = the
+/// `GameLoop_House` clamp (2000→storage 1000) **and** power-maintenance upkeep (→999), then static — a full
+/// 60-tick match. Validates this session's House subsystem cross-engine. Scenarios without `[HOUSES]` have
+/// no active houses (both dumps empty), so the unit/combat goldens are unchanged.
+///
 /// **`guard` gates at its deterministic prefix (6).** Once `Script_Unit_IdleAction` (native `0x31`) is
 /// ported, a sitting GUARD unit performs a *stochastic* idle twitch — a `Tools_RandomLCG_Range(0,10)` roll
 /// and, on a low roll, a turret/body rotation chosen by `Tools_Random_256() & 1`. Matching that twitch
@@ -42,7 +50,13 @@ import DuneIISimulation
 /// trike's full crossing is still covered by `moving`/`move-trike`. See `Documentation/Insights`.
 @Suite("Scenario golden vs OpenDUNE")
 struct ScenarioGoldenTests {
-    struct Frame: Decodable { let tick: Int; let units: [UnitState]; let structures: [StructureGolden]? }
+    struct Frame: Decodable { let tick: Int; let units: [UnitState]; let structures: [StructureGolden]?; let houses: [HouseGolden]? }
+    /// The dynamic house-economy fields (`House_CalculatePowerAndCredit` + the House-loop clamp/upkeep). The
+    /// oracle dumps more (unitCount/starport); `Decodable` ignores those.
+    struct HouseGolden: Decodable, Equatable {
+        let index: UInt16; let credits: UInt16; let creditsStorage: UInt16
+        let powerProduction: UInt16; let powerUsage: UInt16
+    }
     struct UnitState: Decodable, Equatable {
         let index: UInt16; let type: UInt8; let houseID: UInt8; let packed: UInt16; let orient: Int16
         let hp: UInt16; let actionID: UInt8; let targetMove: UInt16; let targetAttack: UInt16; let alive: Int
@@ -63,6 +77,7 @@ struct ScenarioGoldenTests {
         let cmdUnit: UInt16    // pool index of the unit the order targets (matches the oracle --parity-cmd)
         let tile: UInt16       // the order's target tile
         let compared: Int      // leading ticks asserted; 0 = full trajectory
+        var cmd: Bool = true    // whether to issue the player command (false = structure/economy-only scenario)
         var testDescription: String { name }
     }
 
@@ -73,6 +88,7 @@ struct ScenarioGoldenTests {
         Spec(name: "attack-close", ini: "attack-close.ini", attack: true,  cmdUnit: 22, tile: 1041, compared: 0),  // FULL 400-tick combat match: fire→bullet→impact damage→retaliation, bit-identical to the oracle
         Spec(name: "attack-rocket", ini: "attack-rocket.ini", attack: true, cmdUnit: 22, tile: 1045, compared: 69),  // Launcher duel → notAccurate rocket: spawn + homing match; gates on a 1-unit sub-tile scatter residual (see note)
         Spec(name: "attack-structure", ini: "attack-structure.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0),  // tank attacks an Ordos windtrap: full 400-tick match (structures + units), inc. the bullet-impact Structure_Damage (200→175). Found the structure-corner-position bug (see note).
+        Spec(name: "economy", ini: "economy.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false),  // HOUSE golden: an Ordos windtrap+silo base — full 60-tick match of the house aggregate (credits 2000→clamp 1000→power-maint 999, power 100/5, storage 1000) + structures. Validates House_CalculatePowerAndCredit + the credit clamp + power maintenance.
     ]
 
     /// Sorted by `index` so the comparison is independent of pool/find-array enumeration order: our engine
@@ -94,6 +110,15 @@ struct ScenarioGoldenTests {
             let st = s.structures[i]
             return StructureGolden(index: st.o.index, type: st.o.type, houseID: st.o.houseID,
                                    hitpoints: st.o.hitpoints, state: st.state.rawValue, linkedID: st.o.linkedID)
+        }
+        .sorted { $0.index < $1.index }
+    }
+
+    private func houseSnapshot(_ s: GameState) -> [HouseGolden] {
+        s.houses.indices.filter { s.houses[$0].flags.contains(.used) }.map { i in
+            let h = s.houses[i]
+            return HouseGolden(index: UInt16(h.index), credits: h.credits, creditsStorage: h.creditsStorage,
+                               powerProduction: h.powerProduction, powerUsage: h.powerUsage)
         }
         .sorted { $0.index < $1.index }
     }
@@ -128,16 +153,19 @@ struct ScenarioGoldenTests {
             state.unitUpdateMap(1, slot)
         }
 
-        let order: Command = spec.attack ? .attack(unit: spec.cmdUnit, tile: spec.tile)
-                                         : .move(unit: spec.cmdUnit, tile: spec.tile)
-        UnitOrders(scriptInfo: scriptInfo).apply(order, in: &state)
+        if spec.cmd {
+            let order: Command = spec.attack ? .attack(unit: spec.cmdUnit, tile: spec.tile)
+                                             : .move(unit: spec.cmdUnit, tile: spec.tile)
+            UnitOrders(scriptInfo: scriptInfo).apply(order, in: &state)
+        }
 
         // Run our engine for the whole trajectory, capturing a frame per tick (frame 0 = post-command).
         var sim = Simulation(state: state, scriptInfo: scriptInfo, structureScriptInfo: structureScriptInfo)
-        var ours: [(units: [UnitState], structures: [StructureGolden])] = [(snapshot(sim.state), structureSnapshot(sim.state))]
+        func frame() -> Frame { Frame(tick: 0, units: snapshot(sim.state), structures: structureSnapshot(sim.state), houses: houseSnapshot(sim.state)) }
+        var ours: [Frame] = [frame()]
         for _ in 1 ..< max(oracle.count, 1) {
             sim.tick()
-            ours.append((snapshot(sim.state), structureSnapshot(sim.state)))
+            ours.append(frame())
         }
 
         // Assert the leading `compared` frames (0 ⇒ the whole trajectory) match tick by tick.
@@ -146,12 +174,15 @@ struct ScenarioGoldenTests {
         var what = "units"
         for t in 0 ..< min(comparedTicks, oracle.count, ours.count) {
             if ours[t].units != oracle[t].units.sorted(by: { $0.index < $1.index }) { firstMismatch = t; what = "units"; break }
-            if ours[t].structures != (oracle[t].structures ?? []).sorted(by: { $0.index < $1.index }) { firstMismatch = t; what = "structures"; break }
+            if (ours[t].structures ?? []) != (oracle[t].structures ?? []).sorted(by: { $0.index < $1.index }) { firstMismatch = t; what = "structures"; break }
+            if (ours[t].houses ?? []) != (oracle[t].houses ?? []).sorted(by: { $0.index < $1.index }) { firstMismatch = t; what = "houses"; break }
         }
         let msg: String = firstMismatch.map { t in
-            what == "structures"
-                ? "\(spec.name): structures diverge at tick \(t): ours=\(ours[t].structures) oracle=\((oracle[t].structures ?? []).sorted(by: { $0.index < $1.index }))"
-                : "\(spec.name): units diverge at tick \(t): ours=\(ours[t].units) oracle=\(oracle[t].units.sorted(by: { $0.index < $1.index }))"
+            switch what {
+                case "structures": return "\(spec.name): structures diverge at tick \(t): ours=\(ours[t].structures ?? []) oracle=\((oracle[t].structures ?? []).sorted(by: { $0.index < $1.index }))"
+                case "houses":     return "\(spec.name): houses diverge at tick \(t): ours=\(ours[t].houses ?? []) oracle=\((oracle[t].houses ?? []).sorted(by: { $0.index < $1.index }))"
+                default:           return "\(spec.name): units diverge at tick \(t): ours=\(ours[t].units) oracle=\(oracle[t].units.sorted(by: { $0.index < $1.index }))"
+            }
         } ?? "\(spec.name): no divergence"
         #expect(firstMismatch == nil, "\(msg)")
     }
