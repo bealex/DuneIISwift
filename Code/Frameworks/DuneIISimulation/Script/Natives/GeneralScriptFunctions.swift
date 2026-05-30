@@ -1,3 +1,4 @@
+import DuneIIContracts
 import DuneIIWorld
 
 /// The category-independent EMC native script functions (`Script_General_*`, `src/script/general.c`),
@@ -34,6 +35,29 @@ public struct GeneralScriptFunctions: Sendable {
     public func getDistanceToTile(from: Tile32, encoded: UInt16, in state: GameState) -> UInt16 {
         if !state.indexIsValid(encoded) { return 0xFFFF }
         return Tile32.distance(from: from, to: state.indexGetTile(encoded))
+    }
+
+    /// `Script_General_GetDistanceToObject` (`script/general.c:162`, native `0x3E`) → `Object_GetDistance`
+    /// `ToEncoded` (`object.c:114`): tile distance from `from` (the running object's position) to the
+    /// unit/structure/tile `encoded` points at; `0xFFFF` if `encoded` is invalid. A *structure* target is
+    /// measured to the edge tile facing `from` (the `layoutEdgeTiles` offset rotated by the 8-dir from
+    /// `from`, `+4` to the near side), not its origin; a unit/tile target is measured to its tile.
+    public func getDistanceToObject(from: Tile32, encoded: UInt16, in state: GameState) -> UInt16 {
+        if !state.indexIsValid(encoded) { return 0xFFFF }
+
+        let position: Tile32
+        if let sSlot = state.indexGetStructure(encoded), let st = StructureType(rawValue: Int(state.structures[sSlot].o.type)) {
+            let s = state.structures[sSlot]
+            let dir8 = Orientation.to8(UInt8(bitPattern: Tile32.direction(from: from, to: s.o.position)))
+            // OpenDUNE indexes the *structure's* layout here — an un-gated enhancement over 1.07's
+            // unit-type index; we match the oracle (the golden source). Only affects a structure target.
+            let edge = StructureLayoutInfo[StructureInfo[st].layout].edgeTiles[Int((dir8 &+ 4) & 7)]
+            position = Tile32.unpack(s.o.position.packed &+ edge)
+        } else {
+            position = state.indexGetTile(encoded)
+        }
+
+        return Tile32.distance(from: from, to: position)
     }
 
     /// `Script_General_IsEnemy`: 1 iff `encoded` is a valid unit/structure of a different house than

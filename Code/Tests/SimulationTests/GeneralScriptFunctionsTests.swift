@@ -70,6 +70,36 @@ struct GeneralScriptFunctionsTests {
         #expect(gen.getDistanceToTile(from: from, encoded: 0, in: s) == 0xFFFF)   // invalid
     }
 
+    @Test("getDistanceToObject: unit/tile to its tile, structure to its facing edge, invalid ⇒ 0xFFFF")
+    func getDistanceToObject() {
+        var s = makeState()
+        let from = Tile32.unpack(20 * 64 + 20)
+
+        #expect(gen.getDistanceToObject(from: from, encoded: 0, in: s) == 0xFFFF)   // invalid
+
+        // A tile target ⇒ distance to that tile (same as getDistanceToTile).
+        let tileEnc = s.indexEncode(30 * 64 + 30, type: .tile)
+        #expect(gen.getDistanceToObject(from: from, encoded: tileEnc, in: s)
+                == Tile32.distance(from: from, to: s.indexGetTile(tileEnc)))
+
+        // A unit target ⇒ distance to the unit's tile.
+        let unit = s.unitAllocate(index: 0, type: u(.tank), houseID: 2)!
+        s.units[unit].o.position = Tile32.unpack(25 * 64 + 25)
+        let unitEnc = s.indexEncode(s.units[unit].o.index, type: .unit)
+        #expect(gen.getDistanceToObject(from: from, encoded: unitEnc, in: s)
+                == Tile32.distance(from: from, to: s.units[unit].o.position))
+
+        // A structure target ⇒ distance to the edge tile facing `from` (≠ the naive origin distance).
+        let str = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.refinery))!
+        s.structures[str].o.houseID = 0
+        s.structures[str].o.position = Tile32.unpack(28 * 64 + 28)
+        let strEnc = s.indexEncode(s.structures[str].o.index, type: .structure)
+        let dir8 = Orientation.to8(UInt8(bitPattern: Tile32.direction(from: from, to: s.structures[str].o.position)))
+        let edge = StructureLayoutInfo[StructureInfo[.refinery].layout].edgeTiles[Int((dir8 &+ 4) & 7)]
+        let expected = Tile32.distance(from: from, to: Tile32.unpack(s.structures[str].o.position.packed &+ edge))
+        #expect(gen.getDistanceToObject(from: from, encoded: strEnc, in: s) == expected)
+    }
+
     @Test("isEnemy: different house ⇒ 1, same ⇒ 0, deviation-aware, invalid ⇒ 0")
     func isEnemy() {
         var s = makeState()

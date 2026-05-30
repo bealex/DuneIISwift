@@ -17,9 +17,10 @@ import DuneIISimulation
 ///
 /// **`compared`** gates how many leading ticks are asserted (`0` = the whole trajectory). Movement
 /// scenarios match end-to-end (the movement cluster + the real `UNIT.EMC` MOVE script run under
-/// `GameLoop_Unit`); combat scenarios gate at frame 0 until the combat natives (`Fire`'s projectile path,
-/// `FindBestTarget`, damage) land — raise `compared` then (the run + compare loop already does the whole
-/// sequence). New scenarios slot in by adding an `.INI` + a line in the generator + a `Spec` below.
+/// `GameLoop_Unit`); a combat scenario gates at its deterministic horizon — `attack-close` now matches
+/// the whole setup→aim→target-acquire prefix and diverges only at the first *shot* (the oracle spawns a
+/// projectile our `Script_Unit_Fire` SEAM doesn't yet create) — raise `compared` further as the projectile
+/// path lands. New scenarios slot in by adding an `.INI` + a line in the generator + a `Spec` below.
 ///
 /// **`guard` gates at its deterministic prefix (6).** Once `Script_Unit_IdleAction` (native `0x31`) is
 /// ported, a sitting GUARD unit performs a *stochastic* idle twitch — a `Tools_RandomLCG_Range(0,10)` roll
@@ -53,7 +54,7 @@ struct ScenarioGoldenTests {
         Spec(name: "moving",       ini: "bootstrap.ini",    attack: false, cmdUnit: 22, tile: 2600, compared: 0),  // tank, full match
         Spec(name: "move-trike",   ini: "move-trike.ini",   attack: false, cmdUnit: 22, tile: 1040, compared: 0),  // trike off-viewport, full match
         Spec(name: "guard",        ini: "guard.ini",        attack: false, cmdUnit: 23, tile: 1100, compared: 6),  // guard sits + trike approaches; deterministic prefix (idle twitch is RNG ⇒ see note)
-        Spec(name: "attack-close", ini: "attack-close.ini", attack: true,  cmdUnit: 22, tile: 1041, compared: 5),  // combat ⇒ deterministic prefix only (defender reacts ~tick 5)
+        Spec(name: "attack-close", ini: "attack-close.ini", attack: true,  cmdUnit: 22, tile: 1041, compared: 61),  // full setup→aim→acquire prefix; diverges at the first shot (tick 61, projectile = Fire SEAM)
     ]
 
     private func snapshot(_ s: GameState) -> [UnitState] {

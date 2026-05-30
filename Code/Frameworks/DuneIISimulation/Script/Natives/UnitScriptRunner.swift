@@ -78,6 +78,7 @@ public struct UnitScriptRunner: Sendable {
             case 0x3A: return unit.setTarget(slot: slot, target: engine.peek(1), in: &state)
             case 0x3C: let d = general.delayRandom(maxTicks: engine.peek(1), in: &state); engine.delay = d; return d
             case 0x3D: return unit.rotate(slot: slot, in: &state)
+            case 0x3E: return general.getDistanceToObject(from: u.o.position, encoded: engine.peek(1), in: state)
             default:   return nil   // not yet ported
         }
     }
