@@ -98,7 +98,7 @@ struct ScriptVMTests {
         #expect(runProgram(prog(1), steps: 3).returnValue == 5)
     }
 
-    @Test("FUNCTION dispatches op 14 to the injected table; unknown ⇒ error")
+    @Test("FUNCTION dispatches op 14 to the injected table; unported ⇒ clean halt")
     func functionDispatch() {
         var calls = 0
         let e = runProgram([inlineOp(FUNCTION, 5)], steps: 1) { index, _ in
@@ -109,13 +109,14 @@ struct ScriptVMTests {
         #expect(calls == 1)
         #expect(e.returnValue == 77)
 
-        // Unknown function (closure returns nil) ⇒ run returns false, PC is kept (not nulled).
+        // Unported native (closure returns nil) ⇒ run returns false AND the script halts (PC nulled), so
+        // it stays stopped rather than silently resuming past the call (which would skew tick timing).
         var engine = ScriptEngine()
         let info = ScriptInfo(program: [inlineOp(FUNCTION, 9)], offsets: [0])
         vm.load(&engine, info: info, typeID: 0)
         let ok = vm.run(&engine, info: info, callFunction: { _, _ in nil })
         #expect(!ok)
-        #expect(vm.isLoaded(engine))
+        #expect(!vm.isLoaded(engine))
     }
 
     @Test("loadAsSubroutine + RETURN restores the caller's PC and returnValue")

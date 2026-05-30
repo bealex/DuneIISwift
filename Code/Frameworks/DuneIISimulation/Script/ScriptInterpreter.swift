@@ -7,8 +7,14 @@ import DuneIIWorld
 /// `run` executes **one** opcode (as `Script_Run` does); the per-tick driver loops it up to
 /// `SCRIPT_UNIT_OPCODES_PER_TICK` (50) times. Op-14 (FUNCTION) dispatch is delegated to a closure so
 /// the core needs none of the per-category native tables (which read `GameState` + the current object);
-/// the closure returns the function's value, or `nil` for an unknown function (→ run returns `false`,
-/// matching OpenDUNE, without nulling the PC).
+/// the closure returns the function's value, or `nil` for a **not-yet-ported** native.
+///
+/// In OpenDUNE the native table is fully populated (unused slots are `Script_General_NoOperation`), so a
+/// function call never suspends a script — only `Delay` does. We mirror that: a function call either
+/// returns a value and execution continues, or — for a native we haven't ported — the script is **halted
+/// cleanly** (PC nulled, so `Script_IsLoaded` becomes false and the unit freezes). That keeps the gap
+/// loud and visible (project principle: surface the gap, don't invent behavior) and, crucially, never
+/// silently alters tick timing the way the old "suspend, keep the PC, skip it next tick" path did.
 public protocol ScriptInterpreter: Sendable {
     /// `Script_IsLoaded`: a script is active iff its PC isn't the NULL sentinel.
     func isLoaded(_ engine: ScriptEngine) -> Bool
@@ -160,7 +166,9 @@ public struct DefaultScriptInterpreter: ScriptInterpreter {
                 s.stackPointer = s.stackPointer &- UInt8(truncatingIfNeeded: parameter)
 
             case 14:  // FUNCTION
-                guard let value = callFunction(p & 0xFF, &s) else { return false }  // unknown ⇒ false (PC kept)
+                // A ported native returns its value; an unported one (`nil`) halts the script cleanly —
+                // null the PC so it stays stopped rather than silently resuming past the call next tick.
+                guard let value = callFunction(p & 0xFF, &s) else { s.scriptPC = ScriptEngine.scriptNull; return false }
                 s.returnValue = value
 
             case 15:  // JUMP_NE

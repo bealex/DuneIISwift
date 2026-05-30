@@ -5,8 +5,9 @@ import DuneIIWorld
 /// its arguments off the engine stack) plus the per-call run loop. This is the layer that connects the
 /// category-agnostic VM (`ScriptInterpreter`) to the clean `Script_*` native functions.
 ///
-/// Not-yet-ported natives return `nil` from `dispatch`, which the VM treats as an unknown-function
-/// error and halts — so a script only runs as far as the natives it actually reaches are implemented.
+/// Not-yet-ported natives return `nil` from `dispatch`, which halts the script cleanly (the VM nulls the
+/// PC) — so a script runs as far as the natives it reaches are implemented, then the unit freezes. The
+/// gap is loud (the unit visibly stops) rather than a silent no-op or a timing-skewing per-tick suspend.
 public struct UnitScriptRunner: Sendable {
     public let interpreter: any ScriptInterpreter
     public let scriptInfo: ScriptInfo

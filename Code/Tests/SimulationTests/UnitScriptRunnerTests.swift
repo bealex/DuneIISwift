@@ -79,14 +79,17 @@ struct UnitScriptRunnerTests {
         #expect(s.units[slot].o.script.scriptPC == 2)   // stopped right after the Delay opcode
     }
 
-    @Test("run halts on an unported native and writes the engine back")
+    @Test("run halts cleanly on an unported native (PC nulled) and writes the engine back")
     func runHaltsOnUnported() {
-        // Program: FUNCTION 0x04 (StartAnimation) — not yet ported ⇒ dispatch returns nil ⇒ run stops.
+        // Program: FUNCTION 0x04 (StartAnimation) — not yet ported ⇒ dispatch returns nil ⇒ the script
+        // halts cleanly: the run stops after the one opcode and the PC is nulled so it stays stopped.
         let prog = [inlineOp(14, 0x04)]
         let info = ScriptInfo(program: prog, offsets: [0])
         var (s, slot, runner) = setup(.tank, scriptInfo: info)
         runner.interpreter.load(&s.units[slot].o.script, info: info, typeID: 0)
         let executed = runner.run(slot: slot, in: &s, budget: 10)
         #expect(executed == 1)
+        #expect(!runner.interpreter.isLoaded(s.units[slot].o.script))   // halted, not merely suspended
+        #expect(runner.run(slot: slot, in: &s, budget: 10) == 0)        // stays stopped
     }
 }
