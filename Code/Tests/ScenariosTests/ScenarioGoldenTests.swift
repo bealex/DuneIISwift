@@ -54,9 +54,12 @@ struct ScenarioGoldenTests {
         Spec(name: "moving",       ini: "bootstrap.ini",    attack: false, cmdUnit: 22, tile: 2600, compared: 0),  // tank, full match
         Spec(name: "move-trike",   ini: "move-trike.ini",   attack: false, cmdUnit: 22, tile: 1040, compared: 0),  // trike off-viewport, full match
         Spec(name: "guard",        ini: "guard.ini",        attack: false, cmdUnit: 23, tile: 1100, compared: 6),  // guard sits + trike approaches; deterministic prefix (idle twitch is RNG ⇒ see note)
-        Spec(name: "attack-close", ini: "attack-close.ini", attack: true,  cmdUnit: 22, tile: 1041, compared: 61),  // full setup→aim→acquire prefix; diverges at the first shot (tick 61, projectile = Fire SEAM)
+        Spec(name: "attack-close", ini: "attack-close.ini", attack: true,  cmdUnit: 22, tile: 1041, compared: 67),  // setup→aim→fire→bullet-spawn→bullet-flight match; diverges at impact damage (tick 67 = Unit_Move bullet-impact SEAM)
     ]
 
+    /// Sorted by `index` so the comparison is independent of pool/find-array enumeration order: our engine
+    /// dumps in slot order, the oracle in allocation (find-array) order, which differ once a unit is
+    /// spawned mid-run (e.g. a bullet lands in a low slot but is allocated last). `index` is unique.
     private func snapshot(_ s: GameState) -> [UnitState] {
         s.units.indices.filter { s.units[$0].o.flags.contains(.used) }.map { i in
             let u = s.units[i]
@@ -65,6 +68,7 @@ struct ScenarioGoldenTests {
                              hp: u.o.hitpoints, actionID: u.actionID, targetMove: u.targetMove,
                              targetAttack: u.targetAttack, alive: u.o.flags.contains(.used) ? 1 : 0)
         }
+        .sorted { $0.index < $1.index }
     }
 
     @Test("per-tick run matches the oracle", arguments: specs)
@@ -110,12 +114,13 @@ struct ScenarioGoldenTests {
         // Assert the leading `compared` frames (0 ⇒ the whole trajectory) match tick by tick.
         let comparedTicks = spec.compared == 0 ? oracle.count : spec.compared
         var firstMismatch: Int? = nil
-        for t in 0 ..< min(comparedTicks, oracle.count, ours.count) where ours[t] != oracle[t].units {
+        for t in 0 ..< min(comparedTicks, oracle.count, ours.count)
+            where ours[t] != oracle[t].units.sorted(by: { $0.index < $1.index }) {
             firstMismatch = t
             break
         }
         let msg: String = firstMismatch.map { t in
-            "\(spec.name): first divergence at tick \(t): ours=\(ours[t]) oracle=\(oracle[t].units)"
+            "\(spec.name): first divergence at tick \(t): ours=\(ours[t]) oracle=\(oracle[t].units.sorted(by: { $0.index < $1.index }))"
         } ?? "\(spec.name): no divergence"
         #expect(firstMismatch == nil, "\(msg)")
     }

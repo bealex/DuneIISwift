@@ -15,6 +15,7 @@ public struct UnitScriptRunner: Sendable {
     let unit: UnitScriptFunctions
     let actions: UnitActions
     public let movement: UnitMovement
+    let combat: UnitCombat
     let targets: TargetFinder
 
     public init(scriptInfo: ScriptInfo,
@@ -30,6 +31,7 @@ public struct UnitScriptRunner: Sendable {
         self.movement = UnitMovement(scriptInfo: scriptInfo, interpreter: interpreter,
                                      unitPrimitives: unitPrimitives, mapPrimitives: mapPrimitives,
                                      housePrimitives: housePrimitives)
+        self.combat = UnitCombat(movement: movement)
         self.targets = TargetFinder(map: mapPrimitives, house: housePrimitives)
     }
 
@@ -52,7 +54,7 @@ public struct UnitScriptRunner: Sendable {
             case 0x05: return unit.setDestination(slot: slot, encoded: engine.peek(1), in: &state)
             case 0x06: return unit.getOrientation(u, encoded: engine.peek(1), in: state)
             case 0x07: return unit.setOrientation(slot: slot, orientation: Int8(truncatingIfNeeded: engine.peek(1)), in: &state)
-            case 0x08: return unit.fire(slot: slot, in: &state)
+            case 0x08: return combat.fire(slot: slot, in: &state)
             case 0x0C: return movement.calculateRoute(slot: slot, encoded: engine.peek(1), engine: &engine, in: &state)
             case 0x0D: return general.isEnemy(currentHouseID: state.unitHouseID(u), encoded: engine.peek(1), in: state)
             case 0x10: let d = general.delay(ticks: engine.peek(1)); engine.delay = d; return d

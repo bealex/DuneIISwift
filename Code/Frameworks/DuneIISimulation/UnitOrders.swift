@@ -63,31 +63,11 @@ public struct UnitOrders: Sendable {
         UnitScriptFunctions(unitPrimitives: primitives).unitSetDestination(slot: slot, destination0, in: &state)
     }
 
-    /// `Unit_SetTarget` (`unit.c`): set `targetAttack`, resolving a tile to the object on it; targeting
-    /// self becomes a tile target; a turretless unit also moves to the target.
+    /// `Unit_SetTarget` (`unit.c:621`): set `targetAttack`, resolving a tile to the object on it; targeting
+    /// self becomes a tile target; a turretless unit also moves to the target. Delegates to the single home
+    /// of the primitive (`UnitScriptFunctions.unitSetTarget`), which `Script_Unit_Fire` also uses.
     public func setTarget(slot: Int, _ encoded0: UInt16, in state: inout GameState) {
-        var encoded = encoded0
-        if !state.indexIsValid(encoded) { return }
-        if state.units[slot].targetAttack == encoded { return }
-
-        if Tools.indexType(encoded) == .tile {
-            let packed = Tools.indexDecode(encoded)
-            if let u = state.unitGetByPackedTile(packed) {
-                encoded = state.indexEncode(state.units[u].o.index, type: .unit)
-            } else if let s = state.structureGetByPackedTile(packed) {
-                encoded = state.indexEncode(state.structures[s].o.index, type: .structure)
-            }
-        }
-
-        if state.indexEncode(state.units[slot].o.index, type: .unit) == encoded {
-            encoded = state.indexEncode(state.units[slot].o.position.packed, type: .tile)
-        }
-
-        state.units[slot].targetAttack = encoded
-        if let ut = UnitType(rawValue: Int(state.units[slot].o.type)), !UnitInfo[ut].o.flags.contains(.hasTurret) {
-            state.units[slot].targetMove = encoded
-            state.units[slot].route[0] = 0xFF
-        }
+        UnitScriptFunctions(unitPrimitives: primitives).unitSetTarget(slot: slot, encoded0, in: &state)
     }
 
     /// `Unit_FindTargetAround` (`unit.c`): the tile of a unit on or adjacent to `packed` (preferring a

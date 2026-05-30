@@ -184,6 +184,35 @@ public struct UnitScriptFunctions: Sendable {
         state.units[slot].route[0] = 0xFF
     }
 
+    /// `Unit_SetTarget` (`unit.c:621`): the shared attack-target primitive — set the unit's `targetAttack`,
+    /// resolving a *tile* index that holds a unit/structure to that object, mapping a self-target to the
+    /// unit's own tile, and (for a turretless unit) also driving `targetMove`. No-op if invalid/unchanged.
+    /// Used by `Script_Unit_Fire` and the player-order path (`UnitOrders.setTarget`, which delegates here).
+    public func unitSetTarget(slot: Int, _ encoded0: UInt16, in state: inout GameState) {
+        var encoded = encoded0
+        if !state.indexIsValid(encoded) { return }
+        if state.units[slot].targetAttack == encoded { return }
+
+        if Tools.indexType(encoded) == .tile {
+            let packed = Tools.indexDecode(encoded)
+            if let u = state.unitGetByPackedTile(packed) {
+                encoded = state.indexEncode(state.units[u].o.index, type: .unit)
+            } else if let s = state.structureGetByPackedTile(packed) {
+                encoded = state.indexEncode(state.structures[s].o.index, type: .structure)
+            }
+        }
+
+        if state.indexEncode(state.units[slot].o.index, type: .unit) == encoded {
+            encoded = state.indexEncode(state.units[slot].o.position.packed, type: .tile)
+        }
+
+        state.units[slot].targetAttack = encoded
+        if let ut = UnitType(rawValue: Int(state.units[slot].o.type)), !UnitInfo[ut].o.flags.contains(.hasTurret) {
+            state.units[slot].targetMove = encoded
+            state.units[slot].route[0] = 0xFF
+        }
+    }
+
     /// `Script_Unit_SetDestination` (`script/unit.c:796`, native `0x05`): set the running unit's move
     /// destination from the stack arg. A `0` / invalid index just clears `targetMove`. A harvester targets
     /// a refinery specially — if the encoded index is not a structure it stores it raw (route reset); if it
@@ -274,14 +303,4 @@ public struct UnitScriptFunctions: Sendable {
         return 0
     }
 
-    /// `Script_Unit_Fire` (`script/unit.c:577`): fire the unit's weapon at `targetAttack`. The early-out
-    /// paths (no/invalid target, self-target, still turning, out of range, off-aim) are ported faithfully;
-    /// the actual projectile spawn (`Unit_CreateBullet` / damage) is Tier-E combat and marked SEAM. A
-    /// targetless unit (the move case) returns 0 here.
-    public func fire(slot: Int, in state: inout GameState) -> UInt16 {
-        let target = state.units[slot].targetAttack
-        if target == 0 || !state.indexIsValid(target) { return 0 }
-        // SEAM: the firing path (range/aim checks + projectile creation) is Tier-E combat, not yet ported.
-        return 0
-    }
 }

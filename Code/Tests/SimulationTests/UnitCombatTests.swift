@@ -121,4 +121,59 @@ struct UnitCombatTests {
         #expect(!ok)
         #expect(s.units[slot].deviated == 0)
     }
+
+    // MARK: - Spawning (Unit_Create / Unit_CreateBullet) + Fire
+
+    @Test("unitCreate: a winger spawns placed, allocated, full HP, on-map, at its default action")
+    func createWinger() throws {
+        var (s, _, combat) = setup(.tank, hp: 200)
+        let pos = Tile32.unpack(30 * 64 + 30)
+        let c = try #require(combat.unitCreate(index: Pool.unitIndexInvalid, type: UInt8(UnitType.carryall.rawValue),
+                                               houseID: 0, position: pos, orientation: 64, in: &s))
+        #expect(s.units[c].o.flags.contains(.used))
+        #expect(s.units[c].o.flags.contains(.allocated))
+        #expect(!s.units[c].o.flags.contains(.isNotOnMap))
+        #expect(s.units[c].o.position == pos)
+        #expect(s.units[c].o.hitpoints == UnitInfo[.carryall].o.hitpoints)
+        #expect(s.units[c].orientation[0].current == 64)
+        #expect(s.units[c].actionID == UInt8(UnitInfo[.carryall].o.actionsPlayer[3].rawValue))
+    }
+
+    @Test("unitCreate: an off-map position ⇒ isNotOnMap, unplaced")
+    func createOffMap() throws {
+        var (s, _, combat) = setup(.tank, hp: 200)
+        let c = try #require(combat.unitCreate(index: Pool.unitIndexInvalid, type: UInt8(UnitType.carryall.rawValue),
+                                               houseID: 0, position: Tile32(x: 0xFFFF, y: 0xFFFF), orientation: 0, in: &s))
+        #expect(s.units[c].o.flags.contains(.isNotOnMap))
+    }
+
+    @Test("unitCreateBullet (bullet): faces the target, carries the damage, big when damage>15")
+    func createBullet() throws {
+        var (s, attacker, combat) = setup(.tank, hp: 200)
+        let target = s.unitAllocate(index: 0, type: UInt8(UnitType.tank.rawValue), houseID: 0)!
+        s.units[target].o.position = Tile32.unpack(20 * 64 + 25)
+        let targetEnc = s.indexEncode(s.units[target].o.index, type: .unit)
+        let pos = s.units[attacker].o.position
+
+        let b = try #require(combat.unitCreateBullet(position: pos, type: UInt8(UnitType.bullet.rawValue),
+                                                     houseID: 0, damage: 25, target: targetEnc, in: &s))
+        #expect(s.units[b].o.type == UInt8(UnitType.bullet.rawValue))
+        #expect(s.units[b].o.hitpoints == 25)
+        #expect(s.units[b].currentDestination == s.indexGetTile(targetEnc))
+        #expect(s.units[b].o.flags.contains(.bulletIsBig))   // 25 > 15
+        #expect(s.units[b].orientation[0].current == Tile32.direction(from: pos, to: s.indexGetTile(targetEnc)))
+
+        // A small bullet (≤ 15 damage) is not "big".
+        let b2 = try #require(combat.unitCreateBullet(position: pos, type: UInt8(UnitType.bullet.rawValue),
+                                                      houseID: 0, damage: 10, target: targetEnc, in: &s))
+        #expect(!s.units[b2].o.flags.contains(.bulletIsBig))
+    }
+
+    @Test("fire: no/invalid attack target ⇒ no shot (0)")
+    func fireNoTarget() {
+        var (s, slot, combat) = setup(.tank, hp: 200)
+        #expect(combat.fire(slot: slot, in: &s) == 0)            // targetAttack 0
+        s.units[slot].targetAttack = 0xABCD                      // invalid index
+        #expect(combat.fire(slot: slot, in: &s) == 0)
+    }
 }
