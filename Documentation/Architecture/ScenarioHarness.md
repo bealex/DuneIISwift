@@ -34,6 +34,8 @@ move-around-building. Each = a `.INI` (terrain seed + unit placements) + a `Comm
 | guarding | unit 1 (Guard) + unit 2 | select unit 2, move toward unit 1 |
 | moveAroundBuilding | a building + unit 1 | select unit 1, move past the building |
 
+Beyond these golden-parity kinds, the harness (`DuneIIScenarios.ScenarioKind`) also carries **demo / visual** scenarios that exercise later subsystems without an oracle pin: `deviate`, `attackStructure` (golden-pinned), `turretDefense`, and the `tickStructure` economy trio `factoryProduce` / `repairBuilding` / `upgradeBuilding` (a factory builds → READY, a building self-repairs, a building upgrades). The economy ones set the player's no-silo credit allowance and suspend the structure's placement-animation script (`settle`) so the production state isn't clobbered — see `DuneIIScenarios/CLAUDE.md`.
+
 ## Pieces (dependency order)
 
 1. **Bootstrap `.INI`** + our `loadScenario` of it (terrain via `createLandscape`, units placed). ← first.
