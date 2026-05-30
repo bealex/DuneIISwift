@@ -16,6 +16,7 @@ final class MapScene: SKScene {
     private var basePalette = AssetStore.grayscale
     private var terrainBuffer: [UInt8] = []
     private var terrainNode: SKSpriteNode?
+    private let unitsLayer = SKNode()
     private var lastTick = -1
 
     func configure() {
@@ -26,6 +27,23 @@ final class MapScene: SKScene {
         addChild(cam)
         camera = cam
         cam.position = CGPoint(x: side / 2, y: side / 2)
+    }
+
+    /// Rebuild the unit sprites from current sim state — units move/fire/die, and bullets + spawned
+    /// soldiers appear, as the live simulation ticks.
+    private func renderUnits() {
+        guard let simulation, let assets else { return }
+        unitsLayer.removeAllChildren()
+        let side = MapImageBuilder.sidePx
+        for sprite in MapImageBuilder.unitSprites(simulation.state, assets) {
+            let texture = SKTexture(cgImage: sprite.image)
+            texture.filteringMode = .nearest
+            let unitNode = SKSpriteNode(texture: texture)
+            unitNode.position = CGPoint(x: CGFloat(sprite.centerX), y: CGFloat(side - sprite.centerY))
+            unitNode.zPosition = sprite.z
+            if sprite.flipped { unitNode.xScale = -1 }   // W-half sprites are the E-half mirrored
+            unitsLayer.addChild(unitNode)
+        }
     }
 
     func setZoom(_ factor: CGFloat) { cam.setScale(1 / max(factor, 1)) }
@@ -45,15 +63,8 @@ final class MapScene: SKScene {
         addChild(node)
         recolorTerrain(tick: 0)
 
-        for sprite in MapImageBuilder.unitSprites(simulation.state, assets) {
-            let texture = SKTexture(cgImage: sprite.image)
-            texture.filteringMode = .nearest
-            let unitNode = SKSpriteNode(texture: texture)
-            unitNode.position = CGPoint(x: CGFloat(sprite.centerX), y: CGFloat(side - sprite.centerY))
-            unitNode.zPosition = sprite.z
-            if sprite.flipped { unitNode.xScale = -1 }   // W-half sprites are the E-half mirrored
-            addChild(unitNode)
-        }
+        if unitsLayer.parent == nil { addChild(unitsLayer) }
+        renderUnits()
         lastTick = -1
     }
 
@@ -66,6 +77,7 @@ final class MapScene: SKScene {
             terrainBuffer = MapImageBuilder.terrainIndices(simulation!.state, assets) ?? terrainBuffer
             simulation!.state.mapDirty = false
         }
+        renderUnits()   // units follow the live sim (move/fire/die; bullets + soldiers appear)
         let tick = Int(simulation!.state.timerGUI)
         if tick != lastTick {
             recolorTerrain(tick: tick)

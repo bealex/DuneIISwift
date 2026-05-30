@@ -8,6 +8,8 @@ public enum ScenarioKind: String, Sendable, CaseIterable {
     case guarding
     case moveAroundBuilding
     case deviate
+    case attackStructure
+    case turretDefense
 
     public var title: String {
         switch self {
@@ -17,11 +19,14 @@ public enum ScenarioKind: String, Sendable, CaseIterable {
             case .guarding:           return "Guarding (react at 2:2)"
             case .moveAroundBuilding: return "Move around building"
             case .deviate:            return "Deviate (enemy steals the unit)"
+            case .attackStructure:    return "Attack a building (→ destroyed)"
+            case .turretDefense:      return "Turret defends (fires at an attacker)"
         }
     }
 
-    /// Whether the scenario uses a second unit (everything but plain moving).
-    public var usesSecondUnit: Bool { self != .moving }
+    /// Whether the scenario uses a second *unit*. `moving` and `attackStructure` use only the first unit
+    /// (in `attackStructure` the second combatant is a structure, not a unit).
+    public var usesSecondUnit: Bool { self != .moving && self != .attackStructure }
 }
 
 /// A fully-specified scenario: which behaviour, the two chosen unit types, and the terrain seed (which

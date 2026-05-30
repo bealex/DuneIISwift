@@ -154,6 +154,7 @@ public extension GameState {
             // SEAM: Animation_Stop_ByTile(curPacked) — the per-tile structure animation.
             if curPacked >= 0 && curPacked < map.count { map[curPacked].hasStructure = false }
         }
+        mapDirty = true   // the cleared tiles must re-blit (a destroyed building disappears)
         // SEAM: Animation_Start(death) — the destruction animation (render).
         // SEAM: House.ai_structureRebuild[] — AI rebuild queue (no headless AI consumer yet).
 

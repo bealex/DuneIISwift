@@ -21,12 +21,12 @@ public extension ScenarioWorld {
         }
     }
 
-    /// Advance one tick by running the real `Simulation.tick()` — the full four-phase loop with the
-    /// `GameLoop_Unit` cadence (movement / rotation / script / …). With the movement cluster ported, a
-    /// unit ordered to move now actually crosses the terrain here; attack/guard units run their scripts
-    /// until they reach an unported native (then halt cleanly — they aim but don't yet fire).
+    /// Advance one tick by running the real `Simulation.tick()` — the full four-phase loop (unit + structure
+    /// scripts + the House economy). Units move/aim/fire; structures run their BUILD.EMC scripts (a turret
+    /// fires, a destroyed building runs its death branch then is removed). Combat is fully ported now, so an
+    /// attack scenario fires + impacts here rather than halting.
     mutating func tick() {
-        var sim = Simulation(state: state, scriptInfo: runner.scriptInfo)
+        var sim = Simulation(state: state, scriptInfo: runner.scriptInfo, structureScriptInfo: structureScript)
         sim.tick()
         state = sim.state
     }

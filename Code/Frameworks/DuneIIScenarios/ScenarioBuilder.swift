@@ -11,6 +11,7 @@ public struct ScenarioWorld {
     public let actions: UnitActions
     public let unitSlots: [Int]      // [unit1] for moving / moveAroundBuilding, else [unit1, unit2]
     public let terrain: ScenarioTerrain
+    public let structureScript: ScriptInfo   // BUILD.EMC — so structures run their scripts in the runner
 }
 
 /// Lays out a `GameState` for a `TestScenario`: terrain + two houses + the units (positions + initial
@@ -19,13 +20,15 @@ public struct ScenarioWorld {
 public struct ScenarioBuilder {
     public let iconMap: IconMap
     public let unitScript: ScriptInfo
+    public let structureScript: ScriptInfo
     public let player: HouseID
     public let enemy: HouseID
 
-    public init(iconMap: IconMap, unitScript: ScriptInfo,
+    public init(iconMap: IconMap, unitScript: ScriptInfo, structureScript: ScriptInfo,
                 player: HouseID = .harkonnen, enemy: HouseID = .ordos) {
         self.iconMap = iconMap
         self.unitScript = unitScript
+        self.structureScript = structureScript
         self.player = player
         self.enemy = enemy
     }
@@ -77,7 +80,7 @@ public struct ScenarioBuilder {
                 slots = [u1, u2]
 
             case .moveAroundBuilding:
-                placeBuilding(&state, player, terrain, lx: 3, ly: 3)
+                placeStructure(&state, .windtrap, player, terrain, lx: 3, ly: 3)
                 let u1 = place(&state, scenario.unit1, player, terrain, lx: 0, ly: 0)
                 move(&state, u1, toLocal: (7, 7), terrain, actions)
                 slots = [u1]
@@ -91,9 +94,30 @@ public struct ScenarioBuilder {
                 UnitCombat(movement: UnitMovement(scriptInfo: unitScript))
                     .deviate(slot: u1, probability: 256, houseID: UInt8(enemy.rawValue), in: &state)
                 slots = [u1, u2]
+
+            case .attackStructure:
+                // A player tank attacks the enemy's windtrap. It's pre-weakened so a single tank shot drops
+                // it to 0 HP (a tank only fires once at a structure), so the demo actually shows the BUILD.EMC
+                // death branch (Explode → Delay → Destroy → Structure_Remove) run in GameLoop_Structure.
+                let s = placeStructure(&state, .windtrap, enemy, terrain, lx: 4, ly: 3)
+                state.structures[s].o.hitpoints = 20
+                let u1 = place(&state, scenario.unit1, player, terrain, lx: 2, ly: 3)
+                actions.setAction(slot: u1, action: UInt8(ActionType.attack.rawValue), scriptInfo: unitScript, in: &state)
+                state.units[u1].targetAttack = state.indexEncode(UInt16(state.structures[s].o.index), type: .structure)
+                slots = [u1]
+
+            case .turretDefense:
+                // A player gun-turret defends on its own: its BUILD.EMC script runs FindTargetUnit → aim →
+                // Fire at the approaching (seen) enemy unit, which it damages.
+                placeStructure(&state, .turret, player, terrain, lx: 3, ly: 3)
+                let u2 = place(&state, scenario.unit2, enemy, terrain, lx: 7, ly: 3)
+                state.units[u2].o.seenByHouses |= UInt8(1 << player.rawValue)   // the turret can see it
+                move(&state, u2, toLocal: (4, 3), terrain, actions)             // it advances toward the base
+                slots = [u2]
         }
 
-        return ScenarioWorld(state: state, runner: runner, actions: actions, unitSlots: slots, terrain: terrain)
+        return ScenarioWorld(state: state, runner: runner, actions: actions, unitSlots: slots,
+                             terrain: terrain, structureScript: structureScript)
     }
 
     // MARK: - Placement helpers
@@ -126,15 +150,19 @@ public struct ScenarioBuilder {
         state.units[attacker].targetAttack = state.indexEncode(state.units[target].o.index, type: .unit)
     }
 
-    private func placeBuilding(_ state: inout GameState, _ house: HouseID,
-                               _ terrain: ScenarioTerrain, lx: Int, ly: Int) {
-        let slot = state.structureAllocate(index: Pool.structureIndexInvalid,
-                                            type: UInt8(StructureType.windtrap.rawValue))!
+    @discardableResult
+    private func placeStructure(_ state: inout GameState, _ type: StructureType, _ house: HouseID,
+                                _ terrain: ScenarioTerrain, lx: Int, ly: Int) -> Int {
+        let slot = state.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(type.rawValue))!
         state.structures[slot].o.houseID = UInt8(house.rawValue)
-        state.structures[slot].o.position = Tile32.unpack(terrain.mapPacked(lx: lx, ly: ly))
-        state.structures[slot].o.hitpoints = StructureInfo[.windtrap].o.hitpoints
+        // A structure stores its tile *corner*, not the centred sub-tile (`Structure_Place: &= 0xFF00`) —
+        // matters for a unit-vs-structure aim (see insight world-structure-corner-position).
+        let p = terrain.mapPacked(lx: lx, ly: ly)
+        state.structures[slot].o.position = Tile32(x: Tile32.unpack(p).x & 0xFF00, y: Tile32.unpack(p).y & 0xFF00)
+        state.structures[slot].o.hitpoints = StructureInfo[type].o.hitpoints
         state.structures[slot].o.flags.insert(.byScenario)
         state.structures[slot].state = .idle
         state.structureUpdateMap(slot)
+        return slot
     }
 }

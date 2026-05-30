@@ -15,9 +15,11 @@ struct ScenarioBuilderTests {
         var repo = URL(fileURLWithPath: #filePath)
         for _ in 0 ..< 4 { repo.deleteLastPathComponent() }   // Code/Tests/ScenariosTests → repo root
         guard let icon = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")),
-              let emc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc"))
+              let emc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
+              let build = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc"))
         else { return nil }
-        return ScenarioBuilder(iconMap: try IconMap(icon), unitScript: ScriptInfo(try Emc.Program(emc)))
+        return ScenarioBuilder(iconMap: try IconMap(icon), unitScript: ScriptInfo(try Emc.Program(emc)),
+                               structureScript: ScriptInfo(try Emc.Program(build)))
     }
 
     @Test("moving: the mover starts at 0:0 with Move + targetMove 7:7, then actually crosses the terrain")
@@ -84,5 +86,28 @@ struct ScenarioBuilderTests {
         #expect(world.state.units[victim].deviatedHouse == UInt8(HouseID.ordos.rawValue))   // by the enemy
         #expect(world.state.unitHouseID(world.state.units[victim]) == UInt8(HouseID.ordos.rawValue))  // renders as Ordos
         #expect(world.state.units[victim].targetAttack == 0 && world.state.units[victim].targetMove == 0)
+    }
+
+    @Test("attackStructure: the tank damages the enemy windtrap (Structure_Damage runs in the loop)")
+    func attackStructureRuns() throws {
+        guard let builder = try loadBuilder() else { return }
+        var world = builder.build(TestScenario(kind: .attackStructure, unit1: .tank, unit2: .tank, terrainSeed: 42))
+        let fullHP = try #require(world.state.structures.first(where: { $0.o.flags.contains(.used) })).o.hitpoints
+        for _ in 0 ..< 250 { world.tick() }
+        // The windtrap took damage (or was destroyed → removed) — the structure-damage path ran end-to-end.
+        let after = world.state.structures.first(where: { $0.o.flags.contains(.used) })
+        #expect(after == nil || after!.o.hitpoints < fullHP)
+    }
+
+    @Test("turretDefense: the turret's script fires — a bullet spawns over ticks")
+    func turretFires() throws {
+        guard let builder = try loadBuilder() else { return }
+        var world = builder.build(TestScenario(kind: .turretDefense, unit1: .tank, unit2: .tank, terrainSeed: 42))
+        var fired = false
+        for _ in 0 ..< 300 where !fired {
+            world.tick()
+            fired = world.state.units.contains { $0.o.flags.contains(.used) && $0.o.type == UInt8(UnitType.bullet.rawValue) }
+        }
+        #expect(fired)
     }
 }

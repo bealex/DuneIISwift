@@ -93,7 +93,8 @@ let package = Package(
         // Apps (runnable end-products).
         .executableTarget(
             name: "duneii-headless",
-            dependencies: [ "DuneIISimulation", "DuneIIRenderer", "DuneIIInput", "DuneIIAudio" ],
+            dependencies: [ "DuneIIContracts", "DuneIIFormats", "DuneIIWorld", "DuneIISimulation",
+                            "DuneIIScenarios", "DuneIIRenderer", "DuneIIInput", "DuneIIAudio" ],
             path: "Apps/duneii-headless"
         ),
         // Native macOS SwiftUI asset inspector (render-test app). Builds via `swift run rendertest`.

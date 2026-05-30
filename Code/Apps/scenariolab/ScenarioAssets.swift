@@ -40,7 +40,11 @@ final class ScenarioAssets {
         guard let emc = data("UNIT.EMC"), let program = try? Emc.Program(emc) else {
             error = "Missing UNIT.EMC."; return
         }
-        builder = ScenarioBuilder(iconMap: iconMap, unitScript: ScriptInfo(program))
+        guard let build = data("BUILD.EMC"), let buildProgram = try? Emc.Program(build) else {
+            error = "Missing BUILD.EMC."; return
+        }
+        builder = ScenarioBuilder(iconMap: iconMap, unitScript: ScriptInfo(program),
+                                  structureScript: ScriptInfo(buildProgram))
         if tileSet == nil { error = "Missing ICON.ICN." }
     }
 
