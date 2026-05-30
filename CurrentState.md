@@ -1,6 +1,6 @@
 # Current State
 
-**Branch:** `main`. **Plan of record:** `Documentation/Plan.v1.md`. **Architecture:** `Documentation/Architecture/Overview.md`.
+**Branch:** `phase2-world-stat-tables` (feature branch off `main`; all Phase 2/3 work lives here). **Plan of record:** `Documentation/Plan.v1.md`. **Architecture:** `Documentation/Architecture/Overview.md`.
 
 ## Active task
 
