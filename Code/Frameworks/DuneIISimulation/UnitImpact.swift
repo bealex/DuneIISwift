@@ -156,8 +156,12 @@ extension UnitMovement {
             }
         }
 
-        // SEAM: structure damage at the impact tile (Structure_HouseUnderAttack + Structure_Damage).
-        if hitpoints != 0 { _ = state.structureGetByPackedTile(positionPacked) }
+        // Structure at the impact tile takes the blast. The EXPLOSION_IMPACT_LARGE → SMOKE_PLUME type
+        // swap (when the building is already below half HP) is animation-only (SEAM), and
+        // Structure_HouseUnderAttack (the AI alert) is a SEAM; the damage itself is ported.
+        if hitpoints != 0, let sSlot = state.structureGetByPackedTile(positionPacked) {
+            state.structureDamage(sSlot, damage: hitpoints, range: 0)
+        }
         // SEAM: wall destruction (Map_UpdateWall) when the impact tile is a wall.
         // SEAM: Explosion_Start(type, position) — the explosion animation (render).
     }

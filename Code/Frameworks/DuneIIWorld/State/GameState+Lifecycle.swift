@@ -161,6 +161,87 @@ public extension GameState {
         structureUntargetMe(slot)
     }
 
+    /// `Structure_Destroy` (`structure.c:979`): begin a structure's destruction — mark it destroyed
+    /// (`variables[0] = 1`, no longer `allocated`), reset its script, remove any units it has linked (or
+    /// destroy a construction yard's linked structure), and apply the House credit penalty + windtrap
+    /// decrement. It does **not** free the slot: OpenDUNE loads the structure's death script, which plays
+    /// the collapse animation and then calls `Structure_Remove`. We **seam** that `Script_Load` (it needs
+    /// the structure `ScriptInfo` from `BUILD.EMC`, a Simulation concern) + the audio — so the destroyed
+    /// structure stays unallocated-but-unremoved here until the script layer drives `structureRemove`.
+    /// The `g_campaignID > 7` extra-refund bonus is pinned off (campaigns aren't modeled).
+    mutating func structureDestroy(_ slot: Int) {
+        guard let st = StructureType(rawValue: Int(structures[slot].o.type)) else { return }
+        let si = StructureInfo[st]
+
+        structures[slot].o.script.variables[0] = 1
+        structures[slot].o.flags.remove(.allocated)
+        structures[slot].o.flags.remove(.repairing)
+        structures[slot].o.script.delay = 0
+        structures[slot].o.script.reset()                 // Script_Reset
+        // SEAM: Script_Load(structure death script) — needs BUILD.EMC + the structure ScriptInfo.
+        // SEAM: Voice_PlayAtTile(44) — audio.
+
+        let linkedID = structures[slot].o.linkedID
+        if linkedID != 0xFF {
+            if st == .constructionYard {
+                structureDestroy(Int(linkedID))
+                structures[slot].o.linkedID = 0xFF
+            } else {
+                var lid = linkedID
+                while lid != 0xFF {
+                    let next = units[Int(lid)].o.linkedID
+                    unitRemove(Int(lid))
+                    lid = next
+                }
+            }
+        }
+
+        // Credit penalty: lose a share proportional to this structure's storage; an *enemy* structure also
+        // refunds its build cost to its owner (the player's does not).
+        let hID = Int(structures[slot].o.houseID)
+        let credits = houses[hID].credits
+        let loss: UInt16
+        if houses[hID].creditsStorage == 0 {
+            loss = credits
+        } else {
+            let f = UInt32(credits) * 256 / UInt32(houses[hID].creditsStorage) * UInt32(si.creditsStorage) / 256
+            loss = UInt16(min(UInt32(credits), f))
+        }
+        houses[hID].credits = credits &- loss
+        if structures[slot].o.houseID != playerHouseID { houses[hID].credits &+= si.o.buildCredits }
+
+        if st == .windtrap { houses[hID].windtrapCount &-= 1 }
+    }
+
+    /// `Structure_Damage` (`structure.c:1037`): apply `damage` to a structure, returning true iff it was
+    /// destroyed. A no-op for 0 damage or an already-destroying structure. On reaching 0 HP it begins
+    /// destruction (`Structure_Destroy` + `Structure_UntargetMe`); the score tally + sound are seams.
+    /// A survivor with `range != 0` would spawn a surrounding `Map_MakeExplosion(IMPACT_LARGE)` — that is
+    /// a Simulation-layer call (`UnitImpact`), so it is a seam here; the bullet/impact path passes range 0.
+    @discardableResult
+    mutating func structureDamage(_ slot: Int, damage: UInt16, range: UInt16) -> Bool {
+        if damage == 0 { return false }
+        if structures[slot].o.script.variables[0] == 1 { return false }
+
+        if structures[slot].o.hitpoints >= damage {
+            structures[slot].o.hitpoints &-= damage
+        } else {
+            structures[slot].o.hitpoints = 0
+        }
+
+        if structures[slot].o.hitpoints == 0 {
+            // SEAM: g_scenario score (destroyedAllied/Enemy + score delta).
+            structureDestroy(slot)
+            // SEAM: Sound_Output_Feedback (audio).
+            structureUntargetMe(slot)
+            return true
+        }
+
+        if range == 0 { return false }
+        // SEAM: Map_MakeExplosion(EXPLOSION_IMPACT_LARGE, structure tile, 0, 0) — Simulation layer.
+        return false
+    }
+
     // MARK: - Map occupancy + visibility counts
 
     /// `Unit_RemoveFromTile` (`unit.c`): clear a map tile's unit occupancy, but only if the tile

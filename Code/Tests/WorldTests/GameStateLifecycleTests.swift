@@ -154,6 +154,62 @@ struct GameStateLifecycleTests {
         #expect(!stillFound)                                              // gone from the find array
     }
 
+    @Test("structureDamage: a non-lethal hit just drains HP; 0 damage / already-destroying is a no-op")
+    func structureDamageNonLethal() {
+        var s = GameState()
+        let b = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.refinery))!
+        s.structures[b].o.hitpoints = 1000
+
+        let r0 = s.structureDamage(b, damage: 0, range: 0)                // 0 damage ⇒ no-op
+        #expect(!r0)
+        #expect(s.structures[b].o.hitpoints == 1000)
+        let r1 = s.structureDamage(b, damage: 300, range: 0)             // survives
+        #expect(!r1)
+        #expect(s.structures[b].o.hitpoints == 700)
+
+        s.structures[b].o.script.variables[0] = 1                          // marked destroying
+        let r2 = s.structureDamage(b, damage: 300, range: 0)             // no-op while destroying
+        #expect(!r2)
+        #expect(s.structures[b].o.hitpoints == 700)
+    }
+
+    @Test("structureDamage lethal: destroys the structure, refunds an enemy's build cost, scrubs refs")
+    func structureDamageLethal() {
+        var s = GameState()
+        s.playerHouseID = 0
+        s.houses[2].credits = 0
+        s.houses[2].creditsStorage = 0
+        let enemy = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.refinery))!  // enemy (house 2)
+        s.structures[enemy].o.houseID = 2
+        s.structures[enemy].o.hitpoints = 50
+        let encE = s.indexEncode(s.structures[enemy].o.index, type: .structure)
+
+        // A unit aiming at it + a windtrap whose count should drop on its own destruction (separate case).
+        s.houses[0].unitCountMax = 100
+        let unit = s.unitAllocate(index: 0, type: u(.tank), houseID: 0)!
+        s.units[unit].targetAttack = encE
+
+        let died = s.structureDamage(enemy, damage: 50, range: 0)
+        #expect(died)
+        #expect(s.structures[enemy].o.hitpoints == 0)
+        #expect(s.structures[enemy].o.script.variables[0] == 1)           // marked destroyed
+        #expect(!s.structures[enemy].o.flags.contains(.allocated))
+        #expect(s.units[unit].targetAttack == 0)                          // Structure_UntargetMe scrubbed it
+        #expect(s.houses[2].credits == UInt16(StructureInfo[.refinery].o.buildCredits))  // enemy build-cost refund
+    }
+
+    @Test("structureDestroy: a windtrap decrements its house's windtrapCount")
+    func structureDestroyWindtrap() {
+        var s = GameState()
+        s.playerHouseID = 0
+        s.houses[0].windtrapCount = 3
+        let wt = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.windtrap))!
+        s.structures[wt].o.houseID = 0
+        s.structureDestroy(wt)
+        #expect(s.houses[0].windtrapCount == 2)
+        #expect(s.structures[wt].o.script.variables[0] == 1)
+    }
+
     @Test("unitHouseUnitCountAdd counts on first sight, wakes the AI, and doesn't double-count")
     func houseUnitCountAdd() {
         var s = GameState()
