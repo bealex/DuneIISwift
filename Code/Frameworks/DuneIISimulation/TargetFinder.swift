@@ -74,6 +74,41 @@ public struct TargetFinder: Sendable {
         return bestPriority == 0 ? nil : best
     }
 
+    /// `Unit_Sandworm_GetTargetPriority` (`unit.c:987`): how much a sandworm wants to eat `targetSlot` —
+    /// 0 unless the target sits on **revealed sand**; else a movement-type weight (foot 100 / tracked·
+    /// harvester 1000 / wheeled 5000), ×4 if it's moving or firing, ÷distance, ×2 when adjacent.
+    func sandwormGetTargetPriority(unitSlot: Int, targetSlot: Int, in state: GameState) -> UInt16 {
+        let packed = state.units[targetSlot].o.position.packed
+        if !map.isPositionUnveiled(state.map[Int(packed)], tileIDs: state.tileIDs) { return 0 }
+        if !LandscapeInfo[map.landscapeType(state.map[Int(packed)], tileIDs: state.tileIDs)].isSand { return 0 }
+        guard let tt = UnitType(rawValue: Int(state.units[targetSlot].o.type)) else { return 0 }
+
+        var res: UInt16
+        switch UnitInfo[tt].movementType {
+            case .foot:                res = 0x64
+            case .tracked, .harvester: res = 0x3E8
+            case .wheeled:             res = 0x1388
+            default:                   res = 0
+        }
+        if state.units[targetSlot].speed != 0 || state.units[targetSlot].fireDelay != 0 { res &*= 4 }
+        let distance = Tile32.distanceRoundedUp(from: state.units[unitSlot].o.position, to: state.units[targetSlot].o.position)
+        if distance != 0 && res != 0 { res /= distance }
+        if distance < 2 { res &*= 2 }
+        return res
+    }
+
+    /// `Unit_Sandworm_FindBestTarget` (`unit.c:1020`): the highest-priority sandworm prey, or `nil`.
+    func sandwormFindBestTarget(slot: Int, in state: GameState) -> Int? {
+        var best: Int?
+        var bestPriority: UInt16 = 0
+        var find = PoolFind()
+        while let u = state.unitFind(&find) {
+            let priority = sandwormGetTargetPriority(unitSlot: slot, targetSlot: u, in: state)
+            if priority >= bestPriority { best = u; bestPriority = priority }
+        }
+        return bestPriority == 0 ? nil : best
+    }
+
     /// `Script_Unit_GetTargetPriority` (op 0x1D, `script/unit.c:96`): the priority `unitSlot` assigns to
     /// the `encoded` target — a unit (`targetUnitPriority`) or structure (`targetStructurePriority`), 0 if
     /// the target no longer resolves.

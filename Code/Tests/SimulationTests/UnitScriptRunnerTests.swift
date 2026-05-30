@@ -52,7 +52,7 @@ struct UnitScriptRunnerTests {
         var e3 = engine(peeking: [])       // NoOperation
         #expect(runner.dispatch(0x15, engine: &e3, state: &s, slot: slot) == 0)
 
-        #expect(runner.dispatch(0x37, engine: &e3, state: &s, slot: slot) == nil)   // Unknown2BD5 (sandworm): not yet ported
+        #expect(runner.dispatch(0x09, engine: &e3, state: &s, slot: slot) == nil)   // MCVDeploy (needs Structure_Create): not yet ported
     }
 
     @Test("dispatch op-01 SetAction (re)loads the script into the passed engine")
@@ -81,9 +81,9 @@ struct UnitScriptRunnerTests {
 
     @Test("run halts cleanly on an unported native (PC nulled) and writes the engine back")
     func runHaltsOnUnported() {
-        // Program: FUNCTION 0x37 (Unknown2BD5) — not yet ported ⇒ dispatch returns nil ⇒ the script
+        // Program: FUNCTION 0x09 (MCVDeploy) — not yet ported ⇒ dispatch returns nil ⇒ the script
         // halts cleanly: the run stops after the one opcode and the PC is nulled so it stays stopped.
-        let prog = [inlineOp(14, 0x37)]
+        let prog = [inlineOp(14, 0x09)]
         let info = ScriptInfo(program: prog, offsets: [0])
         var (s, slot, runner) = setup(.tank, scriptInfo: info)
         runner.interpreter.load(&s.units[slot].o.script, info: info, typeID: 0)

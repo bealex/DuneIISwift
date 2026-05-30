@@ -377,6 +377,30 @@ public struct UnitScriptFunctions: Sendable {
         return 1
     }
 
+    /// `Script_Unit_Unknown2BD5` (op 0x37, `script/unit.c:1909`): validate the unit's `variables[4]` link —
+    /// 1 if the linked unit/structure links back to this unit and shares its house; otherwise drop the
+    /// (now-stale) link (and clear a linked unit's `targetMove`) and return 0.
+    public func unknown2BD5(slot: Int, in state: inout GameState) -> UInt16 {
+        let var4 = state.units[slot].o.script.variables[4]
+        let selfEnc = state.indexEncode(state.units[slot].o.index, type: .unit)
+        switch Tools.indexType(var4) {
+            case .unit:
+                if let u2 = state.indexGetUnit(var4) {
+                    if selfEnc == state.units[u2].o.script.variables[4]
+                        && state.units[u2].o.houseID == state.units[slot].o.houseID { return 1 }
+                    state.units[u2].targetMove = 0
+                }
+            case .structure:
+                if let s = state.indexGetStructure(var4),
+                   selfEnc == state.structures[s].o.script.variables[4]
+                    && state.structures[s].o.houseID == state.units[slot].o.houseID { return 1 }
+            default:
+                break
+        }
+        state.objectScriptVariable4Clear(.unit(slot))
+        return 0
+    }
+
     /// `Script_Unit_Unknown2552` (`script/unit.c:1545`): if the unit is linked (via `variables[4]`) to a
     /// carryall, unlink it and clear that carryall's move target. Returns 0.
     public func unknown2552(slot: Int, in state: inout GameState) -> UInt16 {

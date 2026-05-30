@@ -95,8 +95,11 @@ public struct UnitScriptRunner: Sendable {
             case 0x32: return general.unitCount(houseID: u.o.houseID, type: engine.peek(1), in: state)
             case 0x33: return unit.goToClosestStructure(slot: slot, type: engine.peek(1), scriptInfo: scriptInfo,
                                                         actions: actions, engine: &engine, in: &state)
+            case 0x36: return targets.sandwormFindBestTarget(slot: slot, in: state).map { state.indexEncode(state.units[$0].o.index, type: .unit) } ?? 0
+            case 0x37: return unit.unknown2BD5(slot: slot, in: &state)
             case 0x38: return general.getOrientation(encoded: engine.peek(1), in: state)
             case 0x3A: return unit.setTarget(slot: slot, target: engine.peek(1), in: &state)
+            case 0x3B: return general.unknown0288(index: engine.peek(1), in: state)
             case 0x3C: let d = general.delayRandom(maxTicks: engine.peek(1), in: &state); engine.delay = d; return d
             case 0x3D: return unit.rotate(slot: slot, in: &state)
             case 0x3E: return general.getDistanceToObject(from: u.o.position, encoded: engine.peek(1), in: state)

@@ -14,6 +14,15 @@ public struct GeneralScriptFunctions: Sendable {
     /// `Script_General_NoOperation`: does nothing, returns 0.
     public func noOperation() -> UInt16 { 0 }
 
+    /// `Script_General_Unknown0288` (op 0x3B, `script/general.c:181`): 1 if the encoded `index` is a stale
+    /// structure reference (resolves to a structure whose canonical encoding differs) or points at nothing;
+    /// 0 if it still resolves to a live object.
+    public func unknown0288(index: UInt16, in state: GameState) -> UInt16 {
+        if let s = state.indexGetStructure(index),
+           state.indexEncode(state.structures[s].o.index, type: .structure) != index { return 1 }
+        return state.indexGetObject(index) == nil ? 1 : 0
+    }
+
     /// `Script_General_Delay`: the suspend duration (in ticks) for a requested `ticks` delay. The glue
     /// stores the result in `engine.delay`.
     public func delay(ticks: UInt16) -> UInt16 { ticks / 5 }
