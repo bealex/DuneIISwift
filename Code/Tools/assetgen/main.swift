@@ -8,7 +8,7 @@ import Foundation
 
 func usage() {
     print("usage:")
-    print("  assetgen emc-disasm <file.EMC> [unit|structure|team]")
+    print("  assetgen emc-disasm <file.EMC> [unit|structure|team] [--linear]")
     print("  assetgen extract <installDir> <outputDir>")
 }
 
@@ -44,15 +44,32 @@ func emcListing(_ program: Emc.Program, kind: Emc.ObjectKind) -> String {
     return lines.joined(separator: "\n")
 }
 
+/// Whole-program linear disassembly (address 0 → end), so the shared subroutines below the lowest type
+/// entry — reached only via `Jump`, never shown by the per-type view — are visible.
+func emcLinearListing(_ program: Emc.Program, kind: Emc.ObjectKind) -> String {
+    let lowest = program.offsets.min() ?? 0
+    var lines = ["; ---- linear (whole program; shared subroutines live below the lowest type entry @\(lowest)) ----"]
+    for instruction in Emc.disassemble(program, from: 0, to: program.data.count, kind: kind) {
+        var line = String(format: "%5d:  %@", instruction.address, instruction.name)
+        if let operand = instruction.operand { line += " \(operand)" }
+        if let functionName = instruction.functionName { line += "  ; \(functionName)" }
+        lines.append(line)
+    }
+    return lines.joined(separator: "\n")
+}
+
 func runEmcDisasm(_ arguments: [String]) {
-    guard let path = arguments.first, let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+    let positional = arguments.filter { !$0.hasPrefix("--") }
+    let linear = arguments.contains("--linear")
+    guard let path = positional.first, let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
         usage()
         exit(1)
     }
 
     do {
         let program = try Emc.Program(data)
-        print(emcListing(program, kind: objectKind(path: path, override: arguments.count >= 2 ? arguments[1] : nil)))
+        let kind = objectKind(path: path, override: positional.count >= 2 ? positional[1] : nil)
+        print(linear ? emcLinearListing(program, kind: kind) : emcListing(program, kind: kind))
     } catch {
         print("assetgen: emc-disasm failed: \(error)")
         exit(1)

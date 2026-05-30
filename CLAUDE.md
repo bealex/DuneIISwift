@@ -95,7 +95,15 @@ Scripts/check.sh --full             # `swift package clean` first — the zero-w
 Scripts/check.sh --filter <Suite>   # build + only matching tests (fast inner loop)
 Scripts/log-history.sh "<bullet>"   # append a dated bullet to History/YYYY-MM.md (workflow step 6; new-month aware)
 Scripts/build-oracle.sh             # rebuild + re-sign the OpenDUNE parity oracle (run with sandbox disabled)
-Scripts/gen-scenario-goldens.sh     # regenerate the scenario goldens from the oracle
+Scripts/gen-scenario-goldens.sh [--only <name>]   # regenerate the scenario goldens (one, with --only)
+```
+
+**Investigation helpers** (the source-reading / disasm probes that recur every porting slice):
+
+```
+Scripts/odfn.sh <FunctionName>          # print an OpenDUNE C function body + its file:line (the #1 re-typed command)
+Scripts/emc.sh <unit|build|team> [N|--linear|all]   # disassemble an EMC script: one type N, the shared region (--linear), or all
+Scripts/golden.sh <name> [both|units|structures]    # a scenario golden JSONL as a per-tick "what changed" timeline
 ```
 
 **Maintain these scripts.** When you catch yourself repeating a manual step round after round — a new check, an output-parse, a probe you keep re-typing — fold it into `Scripts/check.sh` (or add a focused sibling script). The `Scripts/` directory is the single source of truth for "the regular actions each round"; keep it current instead of re-deriving the commands.

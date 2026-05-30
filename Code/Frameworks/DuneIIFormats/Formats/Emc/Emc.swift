@@ -65,10 +65,17 @@ public enum Emc {
 
         let start = program.offsets[typeIndex]
         let end = program.offsets.filter { $0 > start }.min() ?? program.data.count
+        return disassemble(program, from: start, to: end, kind: kind)
+    }
 
+    /// Disassemble a raw address range `[from, to)`. Backs the per-type view (via the ORDR offsets) and the
+    /// whole-program / shared-subroutine view: the common routines below the lowest type entry, reached only
+    /// via `Jump`, that the per-type view never reaches (e.g. a structure's death/turret/refine branches).
+    public static func disassemble(_ program: Program, from: Int, to: Int, kind: ObjectKind) -> [Instruction] {
         var instructions: [Instruction] = []
-        var address = start
-        while address < end, address < program.data.count {
+        var address = max(from, 0)
+        let end = min(to, program.data.count)
+        while address < end {
             let instructionAddress = address
             let word = Int(program.data[address])
             address += 1

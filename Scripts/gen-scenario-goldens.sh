@@ -19,18 +19,27 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-INSTALL="${1:-$REPO/Repositories/patched_107_unofficial}"
 ORACLE="$REPO/Repositories/OpenDUNE"
 FIX="$REPO/Code/Tests/ScenariosTests/Fixtures"
 DATADIR="$REPO/Code/.build/scengen"
 TICKS="${TICKS:-400}"
 
+# Args: [INSTALL_DIR] [--only <name>]. `--only` regenerates just one scenario (skip the other 5 while
+# iterating on one); the first non-flag positional is the install dir.
+ONLY=""; INSTALL=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --only)   ONLY="$2"; shift 2 ;;
+    --only=*) ONLY="${1#--only=}"; shift ;;
+    *)        INSTALL="$1"; shift ;;
+  esac
+done
+INSTALL="${INSTALL:-$REPO/Repositories/patched_107_unofficial}"
+
 [ -d "$INSTALL" ] || { echo "install dir not found: $INSTALL" >&2; exit 1; }
 
 echo "Building the OpenDUNE oracle…"
-( cd "$ORACLE" && PATH="$PWD/.shim:$PATH" make -j4 >/dev/null
-  # Re-sign ad-hoc: a relinked binary's stale code signature makes macOS SIGKILL it ("killed").
-  codesign --force --sign - bin/opendune )
+"$REPO/Scripts/build-oracle.sh" >/dev/null || { echo "oracle build failed" >&2; exit 1; }
 
 echo "Staging data dir ($DATADIR = install + scenario INIs)…"
 rm -rf "$DATADIR"; mkdir -p "$DATADIR"
@@ -39,6 +48,7 @@ for f in "$INSTALL"/*; do ln -sf "$f" "$DATADIR/"; done
 # run <name> <scenarioId> <iniFile> <ticks> <cmd...>   (cmd = move|attack,<unitIndex>,<packedTile>)
 run() {
   local name="$1" id="$2" ini="$3" ticks="$4"; shift 4
+  [ -n "$ONLY" ] && [ "$ONLY" != "$name" ] && return 0
   cp "$FIX/$ini" "$DATADIR/$(printf 'SCENH%03d.INI' "$id")"
   local args=(--parity-scenario="$id" --parity-ticks="$ticks"
               --parity-data-dir="$DATADIR" --parity-dump="$FIX/$name-golden.jsonl")
