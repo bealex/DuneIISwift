@@ -99,9 +99,13 @@ public struct ScenarioBuilder {
 
     private func move(_ state: inout GameState, _ slot: Int, toLocal: (Int, Int),
                       _ terrain: ScenarioTerrain, _ actions: UnitActions) {
-        // SetAction(Move) loads the move script (and clears any destination); set the destination after.
+        // The real move order (`Unit_SetDestination`): SetAction(Move) loads the move script (and clears
+        // `currentDestination`), then set `targetMove` to the destination tile + reset the route. The
+        // move script reads `targetMove` and routes to it via `Script_Unit_CalculateRoute`.
         actions.setAction(slot: slot, action: UInt8(ActionType.move.rawValue), scriptInfo: unitScript, in: &state)
-        state.units[slot].currentDestination = Tile32.unpack(terrain.mapPacked(lx: toLocal.0, ly: toLocal.1))
+        let p = terrain.mapPacked(lx: toLocal.0, ly: toLocal.1)
+        state.units[slot].targetMove = state.indexEncode(p, type: .tile)
+        state.units[slot].route[0] = 0xFF
     }
 
     private func attack(_ state: inout GameState, attacker: Int, target: Int, _ actions: UnitActions) {

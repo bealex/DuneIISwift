@@ -1,3 +1,4 @@
+import DuneIISimulation
 import DuneIIWorld
 
 /// One unit's observable state at a tick — what the visual harness draws and the golden test compares.
@@ -20,18 +21,14 @@ public extension ScenarioWorld {
         }
     }
 
-    /// Advance one tick: tick each placed unit's script (honouring its `delay`). This is a simplified
-    /// stand-in for `GameLoop_Unit`'s per-tick cadence — enough to drive the scripts; the full cadence
-    /// (movement/rotation/blink/… sub-ticks) is wired in when those land. Until the movement/combat
-    /// natives are ported the scripts halt early, so units stay put.
+    /// Advance one tick by running the real `Simulation.tick()` — the full four-phase loop with the
+    /// `GameLoop_Unit` cadence (movement / rotation / script / …). With the movement cluster ported, a
+    /// unit ordered to move now actually crosses the terrain here; attack/guard units run their scripts
+    /// until they reach an unported native (then halt cleanly — they aim but don't yet fire).
     mutating func tick() {
-        for slot in unitSlots where state.units[slot].o.flags.contains(.used) {
-            if state.units[slot].o.script.delay > 0 {
-                state.units[slot].o.script.delay -= 1
-                continue
-            }
-            runner.run(slot: slot, in: &state, budget: 50)
-        }
+        var sim = Simulation(state: state, scriptInfo: runner.scriptInfo)
+        sim.tick()
+        state = sim.state
     }
 
     /// Run `ticks` ticks, returning the snapshot before tick 0 and after each tick (`ticks + 1` frames).
