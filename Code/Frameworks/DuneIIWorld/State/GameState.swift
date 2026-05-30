@@ -87,6 +87,10 @@ public struct GameState: Sendable {
     /// Per-subsystem "next-due" tick cursors for `GameLoop_House` (OpenDUNE's `s_tickHouse*`).
     public var houseTick = HouseTickCursors()
 
+    /// `GameLoop_Team`'s single next-due cursor (OpenDUNE's `s_tickTeamGameLoop`). The team loop fires when
+    /// `teamLoopTick <= timerGame`, then re-arms to `timerGame + (Random256() & 7) + 5` (a 5…12-tick period).
+    public var teamLoopTick: UInt32 = 0
+
     /// `g_playerCreditsNoSilo`: how much credit the player can hold without a spice silo (the starting
     /// allowance + what silos add). The credit clamp uses `max(creditsStorage, playerCreditsNoSilo)` for the
     /// player. Managed at scenario load / on building a silo (a seam for now); 0 ⇒ clamp to storage.

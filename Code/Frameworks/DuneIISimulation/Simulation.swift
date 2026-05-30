@@ -28,10 +28,17 @@ public struct Simulation: Sendable {
     /// death natives reach the same explosion / unit-spawn layer.
     public var structureScript: StructureScriptRunner?
 
+    /// The team-script runner (VM + op-14 dispatch over `g_scriptFunctionsTeam`), present when a
+    /// `teamScriptInfo` (the bridged `TEAM.EMC`) was supplied. `GameLoop_Team` runs team scripts only when it
+    /// exists. It reuses the unit runner's interpreter when present (else a fresh one) — the team getters
+    /// need no unit layer; the brain natives that will reach into units take `&state` directly.
+    public var teamScript: TeamScriptRunner?
+
     public init(
         state: GameState,
         scriptInfo: ScriptInfo? = nil,
         structureScriptInfo: ScriptInfo? = nil,
+        teamScriptInfo: ScriptInfo? = nil,
         unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
         mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
         housePrimitives: any HousePrimitives = DefaultHousePrimitives()
@@ -51,18 +58,23 @@ public struct Simulation: Sendable {
             ? StructureScriptRunner(scriptInfo: structureScriptInfo!, combat: unitRunner!.combat,
                                     interpreter: unitRunner!.interpreter)
             : nil
+        self.teamScript = teamScriptInfo.map {
+            TeamScriptRunner(scriptInfo: $0, interpreter: unitRunner?.interpreter ?? DefaultScriptInterpreter())
+        }
     }
 
     public init(
         random256Seed: UInt32 = 0, randomLCGSeed: UInt16 = 0,
         scriptInfo: ScriptInfo? = nil,
         structureScriptInfo: ScriptInfo? = nil,
+        teamScriptInfo: ScriptInfo? = nil,
         unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
         mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
         housePrimitives: any HousePrimitives = DefaultHousePrimitives()
     ) {
         self.init(state: GameState(random256Seed: random256Seed, randomLCGSeed: randomLCGSeed),
                   scriptInfo: scriptInfo, structureScriptInfo: structureScriptInfo,
+                  teamScriptInfo: teamScriptInfo,
                   unitPrimitives: unitPrimitives, mapPrimitives: mapPrimitives,
                   housePrimitives: housePrimitives)
     }
@@ -236,8 +248,27 @@ extension Simulation {
         return flags
     }
 
-    /// `GameLoop_Team` — ported in a later Phase-3 slice (order-preserving stub for now).
-    mutating func gameLoopTeam() {}
+    /// `GameLoop_Team` (`team.c:22`). Fires on a single random-period cursor (`teamLoopTick`, 5–12 ticks,
+    /// one `Random256` draw per fire); on each fire walks every team and runs **one** opcode of its
+    /// `TEAM.EMC` script — gated on the owning house being `isAIActive`, with the per-team `delay` decrement.
+    /// Per OpenDUNE 1.07, a team whose script halts/errors aborts the remaining teams this fire. Runs only
+    /// when a `teamScript` (bridged `TEAM.EMC`) is present. See `Documentation/Algorithms/TeamScript.md`.
+    mutating func gameLoopTeam() {
+        guard let runner = teamScript else { return }
+        if state.teamLoopTick > state.timerGame { return }
+        state.teamLoopTick = state.timerGame &+ UInt32(state.random256.next() & 7) &+ 5
+
+        var find = PoolFind()
+        while let slot = state.teamFind(&find) {
+            if !state.houses[Int(state.teams[slot].houseID)].flags.contains(.isAIActive) { continue }
+            if state.teams[slot].script.delay != 0 {
+                state.teams[slot].script.delay &-= 1
+                continue
+            }
+            if !runner.interpreter.isLoaded(state.teams[slot].script) { continue }
+            if !runner.runOne(slot: slot, in: &state) { break }   // 1.07: a halt aborts the remaining teams
+        }
+    }
 
     /// `GameLoop_Structure` (`structure.c:53`). Advances the four structure tick cursors; per structure
     /// (skipping slabs/walls, as OpenDUNE does), when the **structure** cursor fires runs the build/repair
