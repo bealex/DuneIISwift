@@ -305,6 +305,56 @@ public struct UnitScriptFunctions: Sendable {
         return 1
     }
 
+    /// `Script_Unit_SetActionDefault` (op 0x0A, `script/unit.c:896`): switch the unit to its type's default
+    /// player action (`actionsPlayer[3]`). Takes the action layer explicitly (this struct holds no runner).
+    public func setActionDefault(slot: Int, scriptInfo: ScriptInfo, actions: UnitActions,
+                                 engine: inout ScriptEngine, in state: inout GameState) -> UInt16 {
+        guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
+        actions.setAction(slot: slot, action: UInt8(UnitInfo[ut].o.actionsPlayer[3].rawValue),
+                          scriptInfo: scriptInfo, engine: &engine, in: &state)
+        return 0
+    }
+
+    /// `Script_Unit_SetSprite` (op 0x13, `script/unit.c:404`): set the unit's render frame to a **negative**
+    /// `spriteOffset` (`-(value & 0xFF)`) — the destroyed/death-animation frames index off `destroyedSpriteID`.
+    public func setSprite(slot: Int, value: UInt16, in state: inout GameState) -> UInt16 {
+        state.units[slot].spriteOffset = Int8(truncatingIfNeeded: -(Int(value & 0xFF)))
+        return 0
+    }
+
+    /// `Script_Unit_Blink` (op 0x0B, `script/unit.c:1950`): flash the unit for 32 ticks (a render cue).
+    public func blink(slot: Int, in state: inout GameState) -> UInt16 {
+        state.units[slot].blinkCounter = 32
+        return 0
+    }
+
+    /// `Script_Unit_GoToClosestStructure` (op 0x33, `script/unit.c:1798`): order the unit to the nearest
+    /// idle, unlinked, un-busy structure of `type` owned by its house (a harvester → an empty refinery).
+    /// Issues a Move to that structure; returns 1 if one was found, else 0. Takes the action layer
+    /// explicitly (`UnitActions` + the live `engine`) since this struct holds no script runner.
+    public func goToClosestStructure(slot: Int, type: UInt16, scriptInfo: ScriptInfo, actions: UnitActions,
+                                     engine: inout ScriptEngine, in state: inout GameState) -> UInt16 {
+        let houseID = state.unitHouseID(state.units[slot])
+        var best = -1
+        var minDistance: UInt16 = 0
+        var find = PoolFind(houseID: houseID, type: type)
+        while let s = state.structureFind(&find) {
+            if state.structures[s].state != .idle { continue }
+            if state.structures[s].o.linkedID != 0xFF { continue }
+            if state.structures[s].o.script.variables[4] != 0 { continue }
+            let distance = Tile32.distanceRoundedUp(from: state.structures[s].o.position, to: state.units[slot].o.position)
+            if distance >= minDistance && minDistance != 0 { continue }
+            minDistance = distance
+            best = s
+        }
+        if best == -1 { return 0 }
+
+        actions.setAction(slot: slot, action: UInt8(ActionType.move.rawValue), scriptInfo: scriptInfo,
+                          engine: &engine, in: &state)
+        unitSetDestination(slot: slot, state.indexEncode(state.structures[best].o.index, type: .structure), in: &state)
+        return 1
+    }
+
     /// `Script_Unit_Unknown2552` (`script/unit.c:1545`): if the unit is linked (via `variables[4]`) to a
     /// carryall, unlink it and clear that carryall's move target. Returns 0.
     public func unknown2552(slot: Int, in state: inout GameState) -> UInt16 {

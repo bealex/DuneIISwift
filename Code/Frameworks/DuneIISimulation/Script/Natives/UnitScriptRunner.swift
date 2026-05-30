@@ -50,8 +50,13 @@ public struct UnitScriptRunner: Sendable {
                 actions.setAction(slot: slot, action: UInt8(truncatingIfNeeded: action),
                                   scriptInfo: scriptInfo, engine: &engine, in: &state)
                 return 0
+            case 0x02: return general.noOperation()   // DisplayText — GUI (SEAM)
             case 0x03: return general.getDistanceToTile(from: u.o.position, encoded: engine.peek(1), in: state)
             case 0x04: return unit.startAnimation(slot: slot, in: &state)
+            case 0x0A: return unit.setActionDefault(slot: slot, scriptInfo: scriptInfo, actions: actions, engine: &engine, in: &state)
+            case 0x0B: return unit.blink(slot: slot, in: &state)
+            case 0x13: return unit.setSprite(slot: slot, value: engine.peek(1), in: &state)
+            case 0x16: return movement.moveToTarget(slot: slot, engine: &engine, in: &state)
             case 0x05: return unit.setDestination(slot: slot, encoded: engine.peek(1), in: &state)
             case 0x06: return unit.getOrientation(u, encoded: engine.peek(1), in: state)
             case 0x07: return unit.setOrientation(slot: slot, orientation: Int8(truncatingIfNeeded: engine.peek(1)), in: &state)
@@ -73,12 +78,16 @@ public struct UnitScriptRunner: Sendable {
             case 0x24: return unit.unknown2552(slot: slot, in: &state)
             case 0x25: return unit.findStructure(slot: slot, type: engine.peek(1), in: state)
             case 0x28: return unit.removeFog(slot: slot, in: &state)
+            case 0x29: return movement.searchSpice(slot: slot, radius: engine.peek(1), in: state)
+            case 0x2A: return movement.harvest(slot: slot, in: &state)
             case 0x2C: return general.getLinkedUnitType(linkedID: u.o.linkedID, in: state)
             case 0x2D: return general.getIndexType(encoded: engine.peek(1), in: state)
             case 0x2E: return general.decodeIndex(encoded: engine.peek(1), in: state)
             case 0x30: return unit.getRandomTile(slot: slot, encoded: engine.peek(1), in: &state)
             case 0x31: return unit.idleAction(slot: slot, in: &state)
             case 0x32: return general.unitCount(houseID: u.o.houseID, type: engine.peek(1), in: state)
+            case 0x33: return unit.goToClosestStructure(slot: slot, type: engine.peek(1), scriptInfo: scriptInfo,
+                                                        actions: actions, engine: &engine, in: &state)
             case 0x38: return general.getOrientation(encoded: engine.peek(1), in: state)
             case 0x3A: return unit.setTarget(slot: slot, target: engine.peek(1), in: &state)
             case 0x3C: let d = general.delayRandom(maxTicks: engine.peek(1), in: &state); engine.delay = d; return d

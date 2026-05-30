@@ -196,4 +196,70 @@ extension UnitMovement {
         }
         return 0
     }
+
+    /// `Script_Unit_Harvest` (op 0x2A, `script/unit.c:1652`): a harvester sitting on spice gathers. Adds a
+    /// random 0/1 to `amount` (capped at 100), flags `inTransport`, and ~1/32 of the time depletes the
+    /// tile's spice. Returns 1 while still gathering, 0 when full / off-spice / not a harvester. Two
+    /// `Random256` draws (the `& 1` fill, then the `& 0x1F` deplete gate) — order matches the oracle.
+    public func harvest(slot: Int, in state: inout GameState) -> UInt16 {
+        guard state.units[slot].o.type == UInt8(UnitType.harvester.rawValue) else { return 0 }
+        if state.units[slot].amount >= 100 { return 0 }
+        let packed = state.units[slot].o.position.packed
+        let type = map.landscapeType(state.map[Int(packed)], tileIDs: state.tileIDs)
+        if type != .spice && type != .thickSpice { return 0 }
+
+        state.units[slot].amount &+= UInt8(state.random256.next() & 1)
+        state.units[slot].o.flags.insert(.inTransport)
+        // SEAM: Unit_UpdateMap(2) render redraw.
+        if state.units[slot].amount > 100 { state.units[slot].amount = 100 }
+
+        if state.random256.next() & 0x1F != 0 { return 1 }
+        map.changeSpiceAmount(packed, -1, in: &state)
+        return 0
+    }
+
+    /// `Script_General_SearchSpice` (op 0x29, `script/general.c:325`): the nearest harvestable spice tile
+    /// within `radius` of the unit, encoded as a tile index (0 if none found).
+    public func searchSpice(slot: Int, radius: UInt16, in state: GameState) -> UInt16 {
+        let spice = map.searchSpice(state.units[slot].o.position.packed, radius: radius, in: state)
+        return spice == 0 ? 0 : state.indexEncode(spice, type: .tile)
+    }
+
+    /// `Script_Unit_MoveToTarget` (op 0x16, `script/unit.c:427`): home the unit onto its `targetMove` tile.
+    /// **Far** (≥128 sub-units): face the target + set a distance/turn-scaled speed. **Close** (<128): stop
+    /// and step ±16/axis toward it — arrived (<32) returns 1, otherwise it re-runs (rewind the script PC by
+    /// one word + a short `delay`) to keep closing. The aircraft/bullet fine-approach. RNG-free; the
+    /// `Unit_UpdateMap(2)` render redraw is a SEAM.
+    public func moveToTarget(slot: Int, engine: inout ScriptEngine, in state: inout GameState) -> UInt16 {
+        if state.units[slot].targetMove == 0 { return 0 }
+        let tile = state.indexGetTile(state.units[slot].targetMove)
+        let distance = Tile32.distance(from: state.units[slot].o.position, to: tile)
+        var u = state.units[slot]
+
+        if Int16(bitPattern: distance) < 128 {
+            unit.setSpeed(&u, speed: 0, gameSpeed: state.gameSpeed)
+            let dx = Int(Int16(bitPattern: tile.x &- u.o.position.x))
+            let dy = Int(Int16(bitPattern: tile.y &- u.o.position.y))
+            u.o.position.x = u.o.position.x &+ UInt16(bitPattern: Int16(max(-16, min(16, dx))))
+            u.o.position.y = u.o.position.y &+ UInt16(bitPattern: Int16(max(-16, min(16, dy))))
+            state.units[slot] = u
+            // SEAM: Unit_UpdateMap(2) render redraw.
+            if Int16(bitPattern: distance) < 32 { return 1 }
+            engine.delay = 2
+            engine.scriptPC &-= 1                                       // re-run this opcode next time (Script_Run: script->script--)
+            return 0
+        }
+
+        let orientation = Tile32.direction(from: u.o.position, to: tile)
+        unit.setOrientation(&u, orientation: orientation, rotateInstantly: false, level: 0)
+        var diff = abs(Int(orientation) - Int(u.orientation[0].current))
+        if diff > 128 { diff = 256 - diff }
+        let speed = (max(min(Int(distance) / 8, 255), 25) * (255 - diff) + 128) / 256
+        unit.setSpeed(&u, speed: UInt16(truncatingIfNeeded: speed), gameSpeed: state.gameSpeed)
+        state.units[slot] = u
+        // SEAM: Unit_UpdateMap(2) render redraw.
+        engine.delay = UInt16(max(Int(Int16(bitPattern: distance)) / 1024, 1))
+        engine.scriptPC &-= 1
+        return 0
+    }
 }
