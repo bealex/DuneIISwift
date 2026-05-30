@@ -37,6 +37,12 @@ public protocol MapPrimitives: Sendable {
     /// `packed` (the circle's edge tiles are kept ~half the time via one `Random256` draw each), then once
     /// more on the centre. A no-op for `radius == 0`. Used by spice-bloom detonation + harvester death.
     func fillCircleWithSpice(_ packed: UInt16, radius: UInt16, in state: inout GameState)
+
+    /// `Map_FindLocationTile` (`map.c:917`): a random valid spawn tile for `locationID` (0-3 = the four
+    /// map edges N/E/S/W, 4 = anywhere ("Air"), 5 = within the radar viewport, 6 = an enemy base, 7 = the
+    /// house's own base), retried until it lands on an unoccupied in-map tile. Draws `RandomLCG` per
+    /// attempt (and `Random256` for the base cases 6/7). Returns the packed tile.
+    func findLocationTile(_ locationID: UInt16, houseID: UInt8, in state: inout GameState) -> UInt16
 }
 
 public struct DefaultMapPrimitives: MapPrimitives {
@@ -153,6 +159,68 @@ public struct DefaultMapPrimitives: MapPrimitives {
             }
         }
         changeSpiceAmount(packed, 1, in: &state)
+    }
+
+    public func findLocationTile(_ locationID: UInt16, houseID houseID0: UInt8, in state: inout GameState) -> UInt16 {
+        let mapBase: [Int] = [1, -2, -2]
+        let info = MapInfo.scales[Int(state.mapScale)]
+        let mapOffset = mapBase[Int(state.mapScale)]
+        var houseID = houseID0
+        var ret: UInt16 = 0
+
+        func packXYi(_ x: Int, _ y: Int) -> UInt16 {
+            Tile32.packXY(x: UInt16(truncatingIfNeeded: x), y: UInt16(truncatingIfNeeded: y))
+        }
+
+        if locationID == 6 {   // an enemy's house, used as the base-search house below
+            var find = PoolFind()
+            while let s = state.structureFind(&find) {
+                let st = state.structures[s].o.type
+                if st == UInt8(StructureType.slab1x1.rawValue) || st == UInt8(StructureType.slab2x2.rawValue)
+                    || st == UInt8(StructureType.wall.rawValue) { continue }
+                if state.structures[s].o.houseID == houseID { continue }
+                houseID = state.structures[s].o.houseID
+                break
+            }
+        }
+
+        while ret == 0 {
+            switch locationID {
+                case 0:   // North
+                    ret = packXYi(Int(info.minX) + Int(state.randomLCG.range(0, info.sizeX - 2)), Int(info.minY) + mapOffset)
+                case 1:   // East
+                    ret = packXYi(Int(info.minX) + Int(info.sizeX) - mapOffset, Int(info.minY) + Int(state.randomLCG.range(0, info.sizeY - 2)))
+                case 2:   // South
+                    ret = packXYi(Int(info.minX) + Int(state.randomLCG.range(0, info.sizeX - 2)), Int(info.minY) + Int(info.sizeY) - mapOffset)
+                case 3:   // West
+                    ret = packXYi(Int(info.minX) + mapOffset, Int(info.minY) + Int(state.randomLCG.range(0, info.sizeY - 2)))
+                case 4:   // Air
+                    ret = packXYi(Int(info.minX) + Int(state.randomLCG.range(0, info.sizeX)), Int(info.minY) + Int(state.randomLCG.range(0, info.sizeY)))
+                    if houseID == state.playerHouseID && !isValidPosition(ret, mapScale: state.mapScale) { ret = 0 }
+                case 5:   // Visible (within the radar viewport)
+                    ret = packXYi(Int(Tile32.packedX(state.minimapPosition)) + Int(state.randomLCG.range(0, 14)),
+                                  Int(Tile32.packedY(state.minimapPosition)) + Int(state.randomLCG.range(0, 9)))
+                    if houseID == state.playerHouseID && !isValidPosition(ret, mapScale: state.mapScale) { ret = 0 }
+                case 6, 7:   // Enemy base / Home base — near a structure, else a unit, else anywhere
+                    var find = PoolFind(houseID: houseID)
+                    if let s = state.structureFind(&find) {
+                        ret = Tile32.moveByRandom(state.structures[s].o.position, distance: 120, center: true, rng: &state.random256).packed
+                    } else {
+                        var uf = PoolFind(houseID: houseID)
+                        if let u = state.unitFind(&uf) {
+                            ret = Tile32.moveByRandom(state.units[u].o.position, distance: 120, center: true, rng: &state.random256).packed
+                        } else {
+                            ret = packXYi(Int(info.minX) + Int(state.randomLCG.range(0, info.sizeX)), Int(info.minY) + Int(state.randomLCG.range(0, info.sizeY)))
+                        }
+                    }
+                    if houseID == state.playerHouseID && !isValidPosition(ret, mapScale: state.mapScale) { ret = 0 }
+                default:
+                    return 0
+            }
+            ret &= 0xFFF
+            if ret != 0 && (state.unitGetByPackedTile(ret) != nil || state.structureGetByPackedTile(ret) != nil) { ret = 0 }
+        }
+        return ret
     }
 
     public func searchSpice(_ packed: UInt16, radius: UInt16, in state: GameState) -> UInt16 {

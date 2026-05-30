@@ -26,10 +26,10 @@ public struct StructureTickCursors: Sendable, Equatable {
     public init() {}
 }
 
-/// "Next-due" tick timestamps for each `GameLoop_House` sub-activity (OpenDUNE's `s_tickHouse*`). Only
-/// `house` (the economy step) + `powerMaintenance` (the upkeep deduction) have live bodies today; the rest
-/// (starport / reinforcement / missile / starport-availability) advance their cursors but their bodies are
-/// seams (scenario reinforcements, the starport delivery + stock, the house missile).
+/// "Next-due" tick timestamps for each `GameLoop_House` sub-activity (OpenDUNE's `s_tickHouse*`). Live
+/// bodies: `house` (economy + `House_EnsureHarvesterAvailable` + harvester-incoming spawn), `powerMaintenance`
+/// (upkeep), `starport` (frigate delivery), `starportAvailability` (stock bump). Still seams: `reinforcement`
+/// (needs `[REINFORCEMENTS]` scenario data) and `missileCountdown` (the palace house-missile, a slice-7 subsystem).
 public struct HouseTickCursors: Sendable, Equatable {
     public var house: UInt32 = 0
     public var powerMaintenance: UInt32 = 0
@@ -117,6 +117,15 @@ public struct GameState: Sendable {
     /// feeds the deterministic sim: `GameLoop_Unit` throttles an off-viewport unit's script to 3
     /// opcodes/tick (`Map_IsPositionInViewport`). Set by the host (camera) / the parity harness.
     public var viewportPosition: UInt16 = 0
+
+    /// The minimap (radar) top-left packed tile (OpenDUNE's `g_minimapPosition`). Feeds the "Visible"
+    /// reinforcement spawn location (`Map_FindLocationTile` case 5).
+    public var minimapPosition: UInt16 = 0
+
+    /// `g_starportAvailable[UNIT_MAX]`: per-unit-type starport stock. -1 = sold out (becomes 1 again),
+    /// 0 = never available, 1…10 = in stock. `GameLoop_House`'s starport-availability tick randomly bumps
+    /// an already-available type. Sized to the unit-type table (0…26).
+    public var starportAvailable: [Int16] = Array(repeating: 0, count: 27)
 
     /// Runtime tile-id bases derived from `ICON.MAP` (`Sprites_Init`); populated at load. Anchors
     /// `Map_GetLandscapeType` etc.

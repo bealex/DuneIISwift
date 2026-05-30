@@ -568,6 +568,84 @@ public struct UnitCombat: Sendable {
         return slot
     }
 
+    /// `Unit_CreateWrapper` (`unit.c:1761`): spawn `type` for `houseID` at a random map edge and (for a
+    /// ground unit) the carryall that ferries it to `destination`. A winger spawns directly. On a failed
+    /// carryall/cargo allocation a pending harvester bumps `harvestersIncoming` so the house retries.
+    /// Returns the spawned unit (the carryall for ground cargo), or `nil`. Draws `Random256` (the spawn
+    /// edge) + the `findLocationTile` LCG draws.
+    @discardableResult
+    public func unitCreateWrapper(houseID: UInt8, type: UnitType, destination: UInt16, in state: inout GameState) -> Int? {
+        let tile = Tile32.unpack(movement.map.findLocationTile(UInt16(state.random256.next() & 3), houseID: houseID, in: &state))
+        let orientation = Tile32.direction(from: tile, to: Tile32(x: 0x2000, y: 0x2000))
+        let setDest = UnitScriptFunctions(unitPrimitives: movement.unit)
+
+        if UnitInfo[type].movementType == .winger {
+            state.validateStrictIfZero &+= 1
+            let u = unitCreate(index: Pool.unitIndexInvalid, type: UInt8(type.rawValue), houseID: houseID,
+                               position: tile, orientation: orientation, in: &state)
+            state.validateStrictIfZero &-= 1
+            guard let u else { return nil }
+            state.units[u].o.flags.insert(.byScenario)
+            if destination != 0 { setDest.unitSetDestination(slot: u, destination, in: &state) }
+            return u
+        }
+
+        state.validateStrictIfZero &+= 1
+        let carryallOpt = unitCreate(index: Pool.unitIndexInvalid, type: UInt8(UnitType.carryall.rawValue),
+                                     houseID: houseID, position: tile, orientation: orientation, in: &state)
+        state.validateStrictIfZero &-= 1
+        guard let carryall = carryallOpt else {
+            if type == .harvester && state.houses[Int(houseID)].harvestersIncoming == 0 { state.houses[Int(houseID)].harvestersIncoming &+= 1 }
+            return nil
+        }
+
+        if movement.house.areAllied(houseID, state.playerHouseID, playerHouseID: state.playerHouseID)
+            || state.unitIsTypeOnMap(houseID: houseID, typeID: UInt8(UnitType.carryall.rawValue)) {
+            state.units[carryall].o.flags.insert(.byScenario)
+        }
+
+        state.validateStrictIfZero &+= 1
+        let unitOpt = unitCreate(index: Pool.unitIndexInvalid, type: UInt8(type.rawValue), houseID: houseID,
+                                 position: Tile32(x: 0xFFFF, y: 0xFFFF), orientation: 0, in: &state)
+        state.validateStrictIfZero &-= 1
+        guard let cargo = unitOpt else {
+            state.unitRemove(carryall)
+            if type == .harvester && state.houses[Int(houseID)].harvestersIncoming == 0 { state.houses[Int(houseID)].harvestersIncoming &+= 1 }
+            return nil
+        }
+
+        state.units[carryall].o.flags.insert(.inTransport)
+        state.units[carryall].o.linkedID = UInt8(truncatingIfNeeded: Int(state.units[cargo].o.index))
+        if type == .harvester { state.units[cargo].amount = 1 }
+        if destination != 0 { setDest.unitSetDestination(slot: carryall, destination, in: &state) }
+        return carryall
+    }
+
+    /// `House_EnsureHarvesterAvailable` (`house.c:298`): if the house has no harvester on the map, in a
+    /// structure, or riding a carryall, dispatch a fresh one to its first refinery (via `Unit_CreateWrapper`).
+    /// 1.07 non-enhanced: the structure scan skips the Heavy-Vehicle factory. The GUI text is a SEAM.
+    public func houseEnsureHarvesterAvailable(houseID: UInt8, in state: inout GameState) {
+        var sf = PoolFind(houseID: houseID)
+        while let s = state.structureFind(&sf) {
+            if state.structures[s].o.type == UInt8(StructureType.heavyVehicle.rawValue) { continue }
+            let linked = state.structures[s].o.linkedID
+            if linked == 0xFF { continue }
+            if state.units[Int(linked)].o.type == UInt8(UnitType.harvester.rawValue) { return }
+        }
+        var cf = PoolFind(houseID: houseID, type: UInt16(UnitType.carryall.rawValue))
+        while let u = state.unitFind(&cf) {
+            let linked = state.units[u].o.linkedID
+            if linked == 0xFF { continue }
+            if state.units[Int(linked)].o.type == UInt8(UnitType.harvester.rawValue) { return }
+        }
+        if state.unitIsTypeOnMap(houseID: houseID, typeID: UInt8(UnitType.harvester.rawValue)) { return }
+        var rf = PoolFind(houseID: houseID, type: UInt16(StructureType.refinery.rawValue))
+        guard let refinery = state.structureFind(&rf) else { return }
+        _ = unitCreateWrapper(houseID: houseID, type: .harvester,
+                              destination: state.indexEncode(state.structures[refinery].o.index, type: .structure), in: &state)
+        // SEAM: GUI "harvester is heading to refinery" text for the player.
+    }
+
     /// `Unit_CreateBullet` (`unit.c:1310`): spawn a projectile of `type` from `position` toward `target`,
     /// owned by `houseID`, carrying `damage`. Missiles spawn at the firing tile and may scatter
     /// (`notAccurate`); a bullet/sonic-blast spawns one tile ahead along the line of fire and is "big" when

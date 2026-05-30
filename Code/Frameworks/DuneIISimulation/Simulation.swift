@@ -381,46 +381,89 @@ extension Simulation {
         }
     }
 
-    /// `GameLoop_House` (`house.c:51`). Advances the six house tick cursors; the **core economy** runs on
-    /// `tickHouse` (every 900: clamp credits to storage + recompute power/credit + decrement the attack
-    /// timers) and `tickPowerMaintenance` (every 10800: deduct the power upkeep). `tickHouse` also rescales
-    /// each structure's max HP to the house power ratio (`Structure_CalculateHitpointsMax`). The starport
-    /// delivery, scenario reinforcements, the house missile, starport stock, `House_EnsureHarvesterAvailable`,
-    /// harvester-incoming spawns, and all GUI/sound are seams.
+    /// `GameLoop_House` (`house.c:51`). Advances the six house tick cursors and runs their bodies: the core
+    /// economy (`tickHouse` every 900 — credit clamp, the `playerCreditsNoSilo` reset, `House_EnsureHarvester`
+    /// Available`, power/credit + HP recompute, attack-timer decrement, harvester-incoming spawn), the power
+    /// upkeep (`tickPowerMaintenance`), the starport stock bump (`tickStarportAvailability`, one LCG draw),
+    /// and the starport frigate delivery (`tickStarport`). Seams: the player credit GUI hints, the scenario
+    /// reinforcement spawns (`tickReinforcement` — needs the not-yet-loaded `[REINFORCEMENTS]` data), and the
+    /// house super-missile launch (`tickMissileCountdown` — tied to the palace missile, a slice-7 subsystem).
     mutating func gameLoopHouse() {
         let g = state.timerGame
+        let combat = unitScript?.combat
 
         var tickHouse = false, tickPowerMaintenance = false
+        var tickStarport = false, tickStarportAvailability = false
         if state.houseTick.house <= g { tickHouse = true; state.houseTick.house = g &+ 900 }
         if state.houseTick.powerMaintenance <= g { tickPowerMaintenance = true; state.houseTick.powerMaintenance = g &+ 10800 }
-        if state.houseTick.starport <= g { state.houseTick.starport = g &+ 180 }                         // SEAM: frigate delivery
+        if state.houseTick.starport <= g { tickStarport = true; state.houseTick.starport = g &+ 180 }
         if state.houseTick.reinforcement <= g { state.houseTick.reinforcement = g &+ 600 }               // SEAM: reinforcements
-        if state.houseTick.missileCountdown <= g { state.houseTick.missileCountdown = g &+ 60 }          // SEAM: house missile
-        if state.houseTick.starportAvailability <= g { state.houseTick.starportAvailability = g &+ 1800 }// SEAM: starport stock
+        if state.houseTick.missileCountdown <= g { state.houseTick.missileCountdown = g &+ 60 }          // SEAM: palace house missile
+        if state.houseTick.starportAvailability <= g { tickStarportAvailability = true; state.houseTick.starportAvailability = g &+ 1800 }
+
+        // Starport stock: randomly bump one already-available unit type (≤ 10). Sold-out (−1) → 1.
+        if tickStarportAvailability {
+            let type = Int(state.randomLCG.range(0, 26))   // 0…UNIT_MAX-1
+            if state.starportAvailable[type] != 0 && state.starportAvailable[type] < 10 {
+                state.starportAvailable[type] = state.starportAvailable[type] == -1 ? 1 : state.starportAvailable[type] &+ 1
+            }
+        }
 
         var find = PoolFind()
         while let h = state.houseFind(&find) {
+            let houseIndex = state.houses[h].index
             if tickHouse {
                 // Credit overflow above storage is lost; the player keeps a no-silo allowance.
-                if state.houses[h].index != state.playerHouseID {
+                if houseIndex != state.playerHouseID {
                     if state.houses[h].creditsStorage < state.houses[h].credits {
                         state.houses[h].credits = state.houses[h].creditsStorage
                     }
                 } else {
                     let maxCredits = max(state.houses[h].creditsStorage, state.playerCreditsNoSilo)
                     if state.houses[h].credits > maxCredits { state.houses[h].credits = maxCredits }
-                    // SEAM: GUI storage-low/lost hints + the g_playerCreditsNoSilo reset.
+                    // SEAM: GUI "insufficient spice storage" hint.
+                    if state.houses[h].creditsStorage > state.playerCreditsNoSilo { state.playerCreditsNoSilo = 0 }
+                    // SEAM: GUI low-storage / low-credits hints (no deterministic state).
                 }
-                // SEAM: House_EnsureHarvesterAvailable.
-                state.houseCalculatePowerAndCredit(state.houses[h].index)
-                state.structureCalculateHitpointsMax(state.houses[h].index)
+                combat?.houseEnsureHarvesterAvailable(houseID: houseIndex, in: &state)
+            }
+
+            // Starport frigate delivery: when the purchase timer elapses, send a frigate to a free starport.
+            if tickStarport && state.houses[h].starportLinkedID != 0xFFFF {
+                state.houses[h].starportTimeLeft = state.houses[h].starportTimeLeft &- 1
+                if Int16(bitPattern: state.houses[h].starportTimeLeft) < 0 { state.houses[h].starportTimeLeft = 0 }
+                if state.houses[h].starportTimeLeft == 0 {
+                    var sf = PoolFind(houseID: houseIndex, type: UInt16(StructureType.starport.rawValue))
+                    var frigate: Int? = nil
+                    while let s = state.structureFind(&sf) {
+                        if state.structures[s].o.linkedID != 0xFF { continue }
+                        frigate = combat?.unitCreateWrapper(houseID: houseIndex, type: .frigate,
+                                                            destination: state.indexEncode(state.structures[s].o.index, type: .structure), in: &state) ?? nil
+                        break
+                    }
+                    if let f = frigate {
+                        state.units[f].o.linkedID = UInt8(truncatingIfNeeded: state.houses[h].starportLinkedID)
+                        state.houses[h].starportLinkedID = 0xFFFF
+                        state.units[f].o.flags.insert(.inTransport)
+                        // SEAM: Sound_Output_Feedback(38).
+                        state.houses[h].starportTimeLeft = HouseInfo[HouseID(rawValue: Int(houseIndex)) ?? .harkonnen].starportDeliveryTime
+                    } else {
+                        state.houses[h].starportTimeLeft = 1
+                    }
+                }
+            }
+
+            if tickHouse {
+                state.houseCalculatePowerAndCredit(houseIndex)
+                state.structureCalculateHitpointsMax(houseIndex)
                 if state.houses[h].timerUnitAttack != 0 { state.houses[h].timerUnitAttack &-= 1 }
                 if state.houses[h].timerSandwormAttack != 0 { state.houses[h].timerSandwormAttack &-= 1 }
                 if state.houses[h].timerStructureAttack != 0 { state.houses[h].timerStructureAttack &-= 1 }
-                // SEAM: harvestersIncoming → Unit_CreateWrapper(HARVESTER).
+                if state.houses[h].harvestersIncoming > 0, let combat,
+                   combat.unitCreateWrapper(houseID: houseIndex, type: .harvester, destination: 0, in: &state) != nil {
+                    state.houses[h].harvestersIncoming &-= 1
+                }
             }
-
-            // SEAM: tickStarport frigate delivery (starportLinkedID).
 
             if tickPowerMaintenance {
                 let cost = state.houses[h].powerUsage / 32 + 1
