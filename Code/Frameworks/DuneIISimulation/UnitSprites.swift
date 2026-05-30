@@ -1,14 +1,10 @@
 import DuneIIContracts
 import DuneIIWorld
 
-/// One drawable sprite layer of a unit: a global sprite index (into the concatenated unit SHPs), a
-/// horizontal flip, and a pixel offset. `spriteIndex` is the value OpenDUNE's `viewport.c` computes.
-public struct UnitSpriteLayer: Equatable, Sendable {
-    public let spriteIndex: Int
-    public let flipped: Bool
-    public let offsetX: Int
-    public let offsetY: Int
-}
+/// One drawable sprite layer of a unit. Aliased to the Contracts `SpriteLayer` (the canonical seam
+/// type) so a unit's resolved layers cross the `sim → render` boundary without conversion; `spriteIndex`
+/// is the global value OpenDUNE's `viewport.c` computes.
+public typealias UnitSpriteLayer = SpriteLayer
 
 /// The body (+ optional turret) sprite layers for a unit.
 public struct UnitSpriteInfo: Equatable, Sendable {

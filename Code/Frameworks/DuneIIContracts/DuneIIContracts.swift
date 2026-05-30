@@ -1,6 +1,7 @@
 /// Shared vocabulary and the seam types between the simulation and the presentation leaves.
 ///
-/// Will define `FrameInfo` (simulation -> renderer), `Command` (input -> simulation),
-/// `SoundEvent` (simulation -> audio), and the shared identifiers/enums. Foundation-only.
-/// Populated in Phase 2 — see `Documentation/Plan.v1.md` and `Documentation/Architecture/Overview.md`.
+/// Defines `FrameInfo`/`SpriteLayer` (simulation → renderer, see `FrameInfo.swift` +
+/// `Documentation/Architecture/FrameInfo.md`), `Command` (input → simulation), and the shared
+/// identifiers/enums (`HouseID`, `UnitType`, `StructureType`). `SoundEvent` (simulation → audio) lands
+/// with Phase 7. Foundation-only. See `Documentation/Plan.v1.md` and `Architecture/Overview.md`.
 public enum DuneIIContracts {}
