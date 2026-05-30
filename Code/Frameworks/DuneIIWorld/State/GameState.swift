@@ -26,6 +26,20 @@ public struct StructureTickCursors: Sendable, Equatable {
     public init() {}
 }
 
+/// "Next-due" tick timestamps for each `GameLoop_House` sub-activity (OpenDUNE's `s_tickHouse*`). Only
+/// `house` (the economy step) + `powerMaintenance` (the upkeep deduction) have live bodies today; the rest
+/// (starport / reinforcement / missile / starport-availability) advance their cursors but their bodies are
+/// seams (scenario reinforcements, the starport delivery + stock, the house missile).
+public struct HouseTickCursors: Sendable, Equatable {
+    public var house: UInt32 = 0
+    public var powerMaintenance: UInt32 = 0
+    public var starport: UInt32 = 0
+    public var reinforcement: UInt32 = 0
+    public var missileCountdown: UInt32 = 0
+    public var starportAvailability: UInt32 = 0
+    public init() {}
+}
+
 /// The single owned aggregate of all mutable simulation state (engine principle 4). A port of the
 /// OpenDUNE globals: the object pools (`g_unitArray`/`g_structureArray`/`g_houseArray`/`g_teamArray`
 /// + their find arrays), the `g_map[64*64]` grid, both RNGs, and the two tick clocks.
@@ -69,6 +83,14 @@ public struct GameState: Sendable {
 
     /// Per-subsystem "next-due" tick cursors for `GameLoop_Structure` (OpenDUNE's `s_tickStructure*`).
     public var structureTick = StructureTickCursors()
+
+    /// Per-subsystem "next-due" tick cursors for `GameLoop_House` (OpenDUNE's `s_tickHouse*`).
+    public var houseTick = HouseTickCursors()
+
+    /// `g_playerCreditsNoSilo`: how much credit the player can hold without a spice silo (the starting
+    /// allowance + what silos add). The credit clamp uses `max(creditsStorage, playerCreditsNoSilo)` for the
+    /// player. Managed at scenario load / on building a silo (a seam for now); 0 ⇒ clamp to storage.
+    public var playerCreditsNoSilo: UInt16 = 0
 
     /// OpenDUNE's `g_validateStrictIfZero`: 0 = strict validation (normal play); non-zero bypasses the
     /// allocate / placement guards (used while loading a save or scenario).
