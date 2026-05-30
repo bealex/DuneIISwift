@@ -33,10 +33,11 @@
 2. ~~`Script_Unit_Fire`'s projectile path.~~ **Done.**
 3. ~~The bullet's impact (`Map_MakeExplosion` → `Unit_Damage`).~~ **Done — attack-close full 400-tick match.**
 4. **NEXT (step 2d/2e): broaden combat coverage.**
+   - ~~Flip `Script_Unit_RemoveFog` (0x28) on.~~ **Done** — wired live, all four goldens stay green (fog + combat-AI visibility now come up together).
    - **`Unit_EnterStructure`** (`unit.c:2177`) — the SEAM in `UnitMovement.move` when a ground unit arrives on a structure tile (a foot unit conquering, a harvester docking). Pairs with a new scenario (unit moves into a building).
-   - **Flip `Script_Unit_RemoveFog` (0x28) to call `state.unitRemoveFog(slot)`** (currently a no-op SEAM in `UnitScriptFunctions.removeFog`) — now that combat matches, re-check whether fog wiring keeps the goldens green (the original concern was it diverging `attack-close`; with full combat parity that may now hold, or surface the next gap).
    - **`Structure_Damage`** (+ `Structure_HouseUnderAttack`) so a bullet can damage a *building* — the `Map_MakeExplosion` structure SEAM; pairs with an attack-a-structure scenario.
    - Consider an **`attack-far` / longer-range** scenario (projectile travel, `notAccurate` missiles drawing RNG) to stress the bullet path beyond point-blank.
+   - **New scenarios need oracle goldens:** add the `.INI` + a `run` line in `Scripts/gen-scenario-goldens.sh`, rebuild+re-sign the oracle, regenerate. The oracle binary is already built this session.
 5. The oracle has `--parity-lcg-trace=`/`--parity-random-trace=` in `Parity_RunScenario`; `scenariolab`/`ScenarioRunner` drive the full `Simulation.tick()`.
 Recorded in Plan §9.
 

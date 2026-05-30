@@ -283,13 +283,14 @@ public struct UnitScriptFunctions: Sendable {
         return 0
     }
 
-    /// `Script_Unit_RemoveFog` (`script/unit.c`): lift the player's fog around the unit. The fog primitive
-    /// itself is ported (`GameState.unitRemoveFog` → `Tile_RemoveFogInRadius` / `Map_UnveilTile`), but it
-    /// is **not wired in here yet**: revealing an enemy changes `FindBestTarget`'s visibility inputs
-    /// mid-combat, and until the full combat slice matches the oracle that diverges the attack goldens.
-    /// So this stays a no-op (returning 0) and `unitRemoveFog` is exercised by its own tests; flip this to
-    /// `state.unitRemoveFog(slot)` when combat lands. (SEAM)
-    public func removeFog(slot: Int, in state: inout GameState) -> UInt16 { 0 }
+    /// `Script_Unit_RemoveFog` (`script/unit.c`): lift the player's fog around the unit
+    /// (`Unit_RemoveFog` → `Tile_RemoveFogInRadius` / `Map_UnveilTile`, the type's `fogUncoverRadius`).
+    /// Returns 0. (Wired live once full combat parity landed — it was held off earlier because revealing an
+    /// enemy shifts `FindBestTarget`'s visibility; the unit-vs-unit goldens confirm it now stays in step.)
+    public func removeFog(slot: Int, in state: inout GameState) -> UInt16 {
+        state.unitRemoveFog(slot)
+        return 0
+    }
 
     /// `Script_Unit_Unknown2552` (`script/unit.c:1545`): if the unit is linked (via `variables[4]`) to a
     /// carryall, unlink it and clear that carryall's move target. Returns 0.
