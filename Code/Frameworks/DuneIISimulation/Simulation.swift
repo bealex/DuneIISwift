@@ -299,12 +299,19 @@ extension Simulation {
     /// `GameLoop_Team` (`team.c:22`). Fires on a single random-period cursor (`teamLoopTick`, 5–12 ticks,
     /// one `Random256` draw per fire); on each fire walks every team and runs **one** opcode of its
     /// `TEAM.EMC` script — gated on the owning house being `isAIActive`, with the per-team `delay` decrement.
-    /// Per OpenDUNE 1.07, a team whose script halts/errors aborts the remaining teams this fire. Runs only
-    /// when a `teamScript` (bridged `TEAM.EMC`) is present. See `Documentation/Algorithms/TeamScript.md`.
+    /// Per OpenDUNE 1.07, a team whose script halts/errors aborts the remaining teams this fire.
+    ///
+    /// The cursor re-arm (and its `Random256` draw) happens **unconditionally** every fire — exactly as
+    /// OpenDUNE does, *before* the team iteration — even with no `TEAM.EMC` bridged and no teams. Skipping
+    /// it (the old `guard teamScript` early-return) silently dropped one shared-`Random256` draw per fire,
+    /// shifting the stream off the oracle's; that surfaced as the `guard`/`attack-rocket` golden divergence
+    /// once a later draw was *read* (a unit's idle twitch / a rocket's scatter). Only the team-script
+    /// *execution* is gated on the runner. See `Documentation/Algorithms/TeamScript.md`.
     mutating func gameLoopTeam() {
-        guard let runner = teamScript else { return }
         if state.teamLoopTick > state.timerGame { return }
         state.teamLoopTick = state.timerGame &+ UInt32(state.random256.next() & 7) &+ 5
+
+        guard let runner = teamScript else { return }   // cursor advanced; without a bridged script, no team runs
 
         var find = PoolFind()
         while let slot = state.teamFind(&find) {

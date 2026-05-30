@@ -143,15 +143,17 @@ struct TeamLoopTests {
         #expect(everOrdered)     // Team_Unknown0788 set a member's attack target
     }
 
-    @Test("with no team script bridged, the team phase is inert (no RNG draw)")
-    func loopInertWithoutScript() {
+    @Test("the team-loop cursor re-arms (one Random256 draw) every fire even with no team script bridged")
+    func loopCursorAdvancesWithoutScript() {
         var s = GameState(random256Seed: 0x1234)
         _ = s.houseAllocate(index: 0)
-        var sim = Simulation(state: s)   // no teamScriptInfo
-        var rngBefore = sim.state.random256
-        sim.tick()
-        var rngAfter = sim.state.random256
-        #expect(sim.state.teamLoopTick == 0)               // never armed
-        #expect(rngBefore.next() == rngAfter.next())       // RNG at the same position → team phase drew nothing
+        var sim = Simulation(state: s)   // no teamScriptInfo, no units/structures
+        var probe = sim.state.random256
+        sim.tick()   // tick 1 → the cursor (0) fires: draws one Random256, re-arms into 6…13
+        // OpenDUNE re-arms s_tickTeamGameLoop unconditionally; dropping this draw shifted the shared
+        // Random256 stream off the oracle's (the guard/attack-rocket golden bug).
+        #expect(sim.state.teamLoopTick >= 6 && sim.state.teamLoopTick <= 13)
+        _ = probe.next()                                   // exactly one draw (the cursor re-arm)…
+        #expect(sim.state.random256.next() == probe.next()) // …so the live RNG is one step past the copy
     }
 }

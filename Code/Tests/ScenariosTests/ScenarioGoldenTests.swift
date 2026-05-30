@@ -22,15 +22,13 @@ import DuneIISimulation
 /// → retaliation — bit-identical to the oracle, with no RNG-spread divergence. New scenarios slot in by
 /// adding an `.INI` + a line in the generator + a `Spec` below.
 ///
-/// **`attack-rocket` (Launcher duel) gates at 69 — the missile spawn + homing path.** Both Launchers are
-/// stationary (mutually in range), so — confirming `sim-rng-stream-unpinned-wobble` — *no* unit draws the
-/// render-only `wobble`, the `random256` stream stays aligned, and even both units' GUARD `IdleAction`
-/// twitches match byte-for-byte (the desync `guard` hits comes from its *moving* trike). The prefix runs
-/// setup → aim → fire → the `notAccurate` rocket spawning bit-identical, then the in-flight **homing**
-/// (`GameLoop_Unit` re-aims a flying missile at its `currentDestination` while `fireDelay != 0`). The
-/// residual divergence at tick 69 is **1 orientation unit** (our rocket aims at orient 58 vs the oracle's
-/// 57) — a sub-tile difference in the scattered `currentDestination` from `Tile_MoveByRandom`'s untested
-/// `center: false` path; flagged for a focused golden, not chased (a stochastic scatter under our parity bar).
+/// **`attack-rocket` (Launcher duel) — now a FULL 400-tick match.** Setup → aim → fire → the `notAccurate`
+/// rocket spawn + in-flight homing (`GameLoop_Unit` re-aims a flying missile at its `currentDestination`
+/// while `fireDelay != 0`), bit-identical to the oracle. The former tick-69 "1-orientation-unit scatter
+/// residual" was **not** a stochastic spread: it was the same `GameLoop_Team` cursor-draw bug as `guard`
+/// (see below) — our team phase dropped one shared-`Random256` draw per fire, so by the time the rocket's
+/// `Tile_MoveByRandom` scatter drew, the stream was one byte off. Re-arming the team cursor unconditionally
+/// (matching OpenDUNE) aligned the stream and closed the residual.
 ///
 /// **`economy` is a HOUSE golden — the per-tick house aggregate, not units.** An Ordos windtrap+silo base
 /// (no units, no combat) activated via the `.INI`'s new `[HOUSES]` section (`Ordos=2000` starting credits).
@@ -40,14 +38,14 @@ import DuneIISimulation
 /// 60-tick match. Validates this session's House subsystem cross-engine. Scenarios without `[HOUSES]` have
 /// no active houses (both dumps empty), so the unit/combat goldens are unchanged.
 ///
-/// **`guard` gates at its deterministic prefix (6).** Once `Script_Unit_IdleAction` (native `0x31`) is
-/// ported, a sitting GUARD unit performs a *stochastic* idle twitch — a `Tools_RandomLCG_Range(0,10)` roll
-/// and, on a low roll, a turret/body rotation chosen by `Tools_Random_256() & 1`. Matching that twitch
-/// byte-for-byte would require byte-aligning our `random256` stream with the oracle's through every
-/// setup-time + per-tick draw (map-gen, unit init, the mover's render-only `wobble` — which never affects
-/// position, so the old full-trajectory match never pinned it). Per the project parity bar we do **not**
-/// chase byte-exact RNG order, so `guard` is asserted only up to the first idle RNG draw (tick 6); the
-/// trike's full crossing is still covered by `moving`/`move-trike`. See `Documentation/Insights`.
+/// **`guard` — now a FULL 400-tick match** (was gated at 6). A sitting GUARD unit's idle twitch
+/// (`Script_Unit_IdleAction` 0x31: a `Tools_RandomLCG_Range(0,10)` roll, then on a low roll a body/turret
+/// rotation from `Tools_Random_256()`) reads the shared `Random256` stream — so it only matches the oracle
+/// if the stream is byte-aligned. It diverged at tick 6 because our `GameLoop_Team` skipped its cursor
+/// re-arm (and its one `Random256` draw) when no `TEAM.EMC` was bridged, while OpenDUNE re-arms it every
+/// fire regardless. With the cursor draw made unconditional the streams align and the guard's twitch
+/// matches tick-for-tick. (The "render-only wobble / don't-chase-RNG-order" diagnosis was wrong — same
+/// logic ⇒ same draw count; the gap was a real one-draw transcription miss, now fixed.)
 @Suite("Scenario golden vs OpenDUNE")
 struct ScenarioGoldenTests {
     struct Frame: Decodable { let tick: Int; let units: [UnitState]; let structures: [StructureGolden]?; let houses: [HouseGolden]? }
@@ -86,9 +84,9 @@ struct ScenarioGoldenTests {
     static let specs: [Spec] = [
         Spec(name: "moving",       ini: "bootstrap.ini",    attack: false, cmdUnit: 22, tile: 2600, compared: 0),  // tank, full match
         Spec(name: "move-trike",   ini: "move-trike.ini",   attack: false, cmdUnit: 22, tile: 1040, compared: 0),  // trike off-viewport, full match
-        Spec(name: "guard",        ini: "guard.ini",        attack: false, cmdUnit: 23, tile: 1100, compared: 6),  // guard sits + trike approaches; deterministic prefix (idle twitch is RNG ⇒ see note)
+        Spec(name: "guard",        ini: "guard.ini",        attack: false, cmdUnit: 23, tile: 1100, compared: 0),  // guard sits + trike approaches: FULL 400-tick match incl. the guard's idle twitch (after the GameLoop_Team cursor-draw fix — see note)
         Spec(name: "attack-close", ini: "attack-close.ini", attack: true,  cmdUnit: 22, tile: 1041, compared: 0),  // FULL 400-tick combat match: fire→bullet→impact damage→retaliation, bit-identical to the oracle
-        Spec(name: "attack-rocket", ini: "attack-rocket.ini", attack: true, cmdUnit: 22, tile: 1045, compared: 69),  // Launcher duel → notAccurate rocket: spawn + homing match; gates on a 1-unit sub-tile scatter residual (see note)
+        Spec(name: "attack-rocket", ini: "attack-rocket.ini", attack: true, cmdUnit: 22, tile: 1045, compared: 0),  // Launcher duel → notAccurate rocket: FULL 400-tick match incl. the scatter (after the GameLoop_Team cursor-draw fix — see note)
         Spec(name: "attack-structure", ini: "attack-structure.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0),  // tank attacks an Ordos windtrap: full 400-tick match (structures + units), inc. the bullet-impact Structure_Damage (200→175). Found the structure-corner-position bug (see note).
         Spec(name: "trooper",     ini: "trooper.ini",     attack: false, cmdUnit: 22, tile: 1040, compared: 0),  // a foot trooper walks: verifies the walk animation (spriteOffset, tickUnknown5) + movement, full match
         Spec(name: "economy", ini: "economy.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false),  // HOUSE golden: an Ordos windtrap+silo base — full 60-tick match of the house aggregate (credits 2000→clamp 1000→power-maint 999, power 100/5, storage 1000) + structures. Validates House_CalculatePowerAndCredit + the credit clamp + power maintenance.
