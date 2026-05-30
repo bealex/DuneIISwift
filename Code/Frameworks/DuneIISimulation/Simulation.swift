@@ -117,8 +117,13 @@ extension Simulation {
 
                 if state.units[slot].fireDelay != 0 {
                     if ui.movementType == .winger && !ui.flags.contains(.isNormalUnit) {
+                        // A flying projectile homes on its scattered `currentDestination` — except a missile
+                        // chasing an *aircraft* (a winger target) re-aims at the moving target each tick.
                         var tile = state.units[slot].currentDestination
-                        if Tools.indexType(state.units[slot].targetAttack) == .unit {
+                        if Tools.indexType(state.units[slot].targetAttack) == .unit,
+                           let tslot = state.indexGetUnit(state.units[slot].targetAttack),
+                           let tut = UnitType(rawValue: Int(state.units[tslot].o.type)),
+                           UnitInfo[tut].movementType == .winger {
                             tile = state.indexGetTile(state.units[slot].targetAttack)
                         }
                         var u = state.units[slot]
