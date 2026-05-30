@@ -310,6 +310,39 @@ public extension GameState {
         // SEAM: player low-power GUI warning; the `g_playerCreditsNoSilo` reset when structuresBuilt == 0.
     }
 
+    /// `Structure_CalculateHitpointsMax` (`structure.c:623`): rescale every one of house `houseID`'s
+    /// structures' max HP by its current power ratio. `power = 256` at full supply (`powerUsage == 0`),
+    /// else `min(powerProduction * 256 / powerUsage, 256)`. Each structure (slabs/walls excluded) gets
+    /// `hitpointsMax = info.hitpoints * power / 256`, floored at half its default HP; if that drops the cap
+    /// below its current HP, it bleeds 1 HP (`Structure_Damage(s, 1, 0)`) so under-powered bases decay.
+    /// The player-only `House_UpdateRadarState` is a GUI/radar seam.
+    mutating func structureCalculateHitpointsMax(_ houseID: UInt8) {
+        let h = Int(houseID)
+        // SEAM: House_UpdateRadarState(h) for the player house.
+        let power: UInt32
+        if houses[h].powerUsage == 0 {
+            power = 256
+        } else {
+            power = min(UInt32(houses[h].powerProduction) &* 256 / UInt32(houses[h].powerUsage), 256)
+        }
+
+        var find = PoolFind(houseID: houseID)
+        while let s = structureFind(&find) {
+            let t = structures[s].o.type
+            if t == UInt8(StructureType.slab1x1.rawValue) || t == UInt8(StructureType.slab2x2.rawValue)
+                || t == UInt8(StructureType.wall.rawValue) { continue }
+            guard let st = StructureType(rawValue: Int(t)) else { continue }
+            let si = StructureInfo[st]
+
+            var hpMax = UInt16(UInt32(si.o.hitpoints) &* power / 256)
+            hpMax = max(hpMax, si.o.hitpoints / 2)
+            structures[s].hitpointsMax = hpMax
+
+            if hpMax >= structures[s].o.hitpoints { continue }
+            _ = structureDamage(s, damage: 1, range: 0)
+        }
+    }
+
     /// `Unit_EnterStructure` (`unit.c:2177`): a unit arrives inside structure `s`. If the unit is gone or the
     /// structure is dead, just remove the unit. **Allied** (the harvester→refinery / unit→repair case): the
     /// structure goes READY/BUSY, a repair pad heals + times the unit, and the unit links into the

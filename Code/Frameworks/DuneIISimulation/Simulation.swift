@@ -291,9 +291,10 @@ extension Simulation {
 
     /// `GameLoop_House` (`house.c:51`). Advances the six house tick cursors; the **core economy** runs on
     /// `tickHouse` (every 900: clamp credits to storage + recompute power/credit + decrement the attack
-    /// timers) and `tickPowerMaintenance` (every 10800: deduct the power upkeep). The starport delivery,
-    /// scenario reinforcements, the house missile, starport stock, `House_EnsureHarvesterAvailable`,
-    /// `Structure_CalculateHitpointsMax`, harvester-incoming spawns, and all GUI/sound are seams.
+    /// timers) and `tickPowerMaintenance` (every 10800: deduct the power upkeep). `tickHouse` also rescales
+    /// each structure's max HP to the house power ratio (`Structure_CalculateHitpointsMax`). The starport
+    /// delivery, scenario reinforcements, the house missile, starport stock, `House_EnsureHarvesterAvailable`,
+    /// harvester-incoming spawns, and all GUI/sound are seams.
     mutating func gameLoopHouse() {
         let g = state.timerGame
 
@@ -320,7 +321,7 @@ extension Simulation {
                 }
                 // SEAM: House_EnsureHarvesterAvailable.
                 state.houseCalculatePowerAndCredit(state.houses[h].index)
-                // SEAM: Structure_CalculateHitpointsMax (house power → each structure's max HP).
+                state.structureCalculateHitpointsMax(state.houses[h].index)
                 if state.houses[h].timerUnitAttack != 0 { state.houses[h].timerUnitAttack &-= 1 }
                 if state.houses[h].timerSandwormAttack != 0 { state.houses[h].timerSandwormAttack &-= 1 }
                 if state.houses[h].timerStructureAttack != 0 { state.houses[h].timerStructureAttack &-= 1 }

@@ -58,4 +58,43 @@ struct HouseEconomyTests {
         s.houseCalculatePowerAndCredit(0)   // a second call must not double-count
         #expect(s.houses[0].powerProduction == first)
     }
+
+    @Test("full power keeps each structure's max HP at its table default")
+    func hitpointsMaxFullPower() {
+        var s = GameState(); _ = s.houseAllocate(index: 0)
+        // Only a producer → powerUsage == 0 → power == 256 → no scaling.
+        place(&s, .windtrap, house: 0, hp: StructureInfo[.windtrap].o.hitpoints)
+        s.houseCalculatePowerAndCredit(0)
+        s.structureCalculateHitpointsMax(0)
+        let slot = s.structures.firstIndex { $0.o.flags.contains(.allocated) && $0.o.houseID == 0 }!
+        #expect(s.structures[slot].hitpointsMax == StructureInfo[.windtrap].o.hitpoints)
+        #expect(s.structures[slot].o.hitpoints == StructureInfo[.windtrap].o.hitpoints)   // not bled
+    }
+
+    @Test("a powerless consumer is capped at half HP and bleeds 1 HP toward it")
+    func hitpointsMaxUnderPowered() {
+        var s = GameState(); _ = s.houseAllocate(index: 0)
+        // A consumer with no producer → powerProduction 0, powerUsage > 0 → power 0.
+        let full = StructureInfo[.refinery].o.hitpoints
+        place(&s, .refinery, house: 0, hp: full)
+        s.houseCalculatePowerAndCredit(0)
+        s.structureCalculateHitpointsMax(0)
+        let slot = s.structures.firstIndex { $0.o.flags.contains(.allocated) && $0.o.houseID == 0 }!
+        #expect(s.structures[slot].hitpointsMax == full / 2)         // floored at half
+        #expect(s.structures[slot].o.hitpoints == full - 1)          // cap < HP → Structure_Damage(1)
+    }
+
+    @Test("partial power scales the max HP by the power ratio (128/256)")
+    func hitpointsMaxPartialPower() {
+        var s = GameState(); _ = s.houseAllocate(index: 0)
+        let full = StructureInfo[.windtrap].o.hitpoints
+        place(&s, .windtrap, house: 0, hp: full)
+        // Pin a 50/100 supply ratio directly to isolate the scaling formula → power == 128.
+        s.houses[0].powerProduction = 50
+        s.houses[0].powerUsage = 100
+        s.structureCalculateHitpointsMax(0)
+        let slot = s.structures.firstIndex { $0.o.flags.contains(.allocated) && $0.o.houseID == 0 }!
+        #expect(s.structures[slot].hitpointsMax == max(full * 128 / 256, full / 2))
+        #expect(s.structures[slot].o.hitpoints == full - 1)          // cap < full HP → bled 1
+    }
 }
