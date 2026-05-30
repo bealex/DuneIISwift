@@ -59,7 +59,8 @@ public struct Simulation: Sendable {
                                     interpreter: unitRunner!.interpreter)
             : nil
         self.teamScript = teamScriptInfo.map {
-            TeamScriptRunner(scriptInfo: $0, interpreter: unitRunner?.interpreter ?? DefaultScriptInterpreter())
+            TeamScriptRunner(scriptInfo: $0, interpreter: unitRunner?.interpreter ?? DefaultScriptInterpreter(),
+                             unit: unitRunner)
         }
     }
 

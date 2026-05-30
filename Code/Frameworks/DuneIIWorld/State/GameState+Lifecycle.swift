@@ -71,6 +71,48 @@ public extension GameState {
         return teams[t].maxMembers &- teams[t].members
     }
 
+    /// `Unit_AddToTeam` (`unit.c:540`): add a unit to team `teamSlot` (its `team` becomes `index+1`,
+    /// `members++`), returning the team's resulting free slots (`maxMembers - members`).
+    @discardableResult
+    mutating func unitAddToTeam(_ unitSlot: Int, team teamSlot: Int) -> UInt16 {
+        units[unitSlot].team = UInt8(teamSlot) &+ 1
+        teams[teamSlot].members &+= 1
+        return teams[teamSlot].maxMembers &- teams[teamSlot].members
+    }
+
+    /// `Map_IsValidPosition` (`map.c`): is `packed` on the playable rectangle for the current `mapScale`?
+    /// (`packed & 0xC000 == 0` and within the scale's `MapInfo` bounds.) The World-side counterpart of
+    /// `MapPrimitives.isValidPosition`, for the World primitives that need a validity check.
+    func mapIsValidPosition(_ packed: UInt16) -> Bool {
+        if packed & 0xC000 != 0 { return false }
+        let x = UInt16(Tile32.packedX(packed)), y = UInt16(Tile32.packedY(packed))
+        let info = MapInfo.scales[Int(mapScale)]
+        return info.minX <= x && x < info.minX + info.sizeX
+            && info.minY <= y && y < info.minY + info.sizeY
+    }
+
+    /// `Tile_GetTileInDirectionOf` (`tile.c:155`): pick a random valid tile roughly in the direction from
+    /// `packedFrom` toward `packedTo`, at `min(distance, 20)` tiles out, jittered ±(31…94) about the
+    /// direction. Returns 0 if either tile is unset or they are within 10 tiles. Draws two `Random256`
+    /// values per attempt; OpenDUNE retries forever until a valid tile, we cap the retries (the cap is not
+    /// reached in practice) and return 0 as a headless-safety fallback.
+    mutating func tileGetTileInDirectionOf(from packedFrom: UInt16, to packedTo: UInt16) -> UInt16 {
+        if packedFrom == 0 || packedTo == 0 { return 0 }
+        let distance = Tile32.distancePacked(packedFrom, packedTo)
+        let direction = Int16(Tile32.directionPacked(packedTo, packedFrom))
+        if distance <= 10 { return 0 }
+
+        for _ in 0 ..< 1024 {
+            var dir = Int16(31) + Int16(random256.next() & 0x3F)
+            if random256.next() & 1 != 0 { dir = -dir }
+            let out = UInt16(min(distance, 20)) << 8
+            let position = Tile32.moveByDirection(Tile32.unpack(packedTo), orientation: direction + dir, distance: out)
+            let packed = position.packed
+            if mapIsValidPosition(packed) { return packed }
+        }
+        return 0
+    }
+
     /// `Unit_RemovePlayer` (`unit.c:2440`): when a *player-owned* allocated unit is lost, mark it
     /// unallocated and drop it from its team. The deselect / selection-type / active-action cleanup
     /// (`Unit_Select`, `GUI_ChangeSelectionType`) is a render/UI seam. Returns true if it acted.

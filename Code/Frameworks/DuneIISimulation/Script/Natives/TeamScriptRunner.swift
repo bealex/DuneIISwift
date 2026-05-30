@@ -14,12 +14,16 @@ public struct TeamScriptRunner: Sendable {
     public let scriptInfo: ScriptInfo
     let general: GeneralScriptFunctions
     let team: TeamScriptFunctions
+    /// The unit-script runner, when present — the team natives reuse its `TargetFinder` (and, in a follow-up
+    /// slice, its action layer) to reach into units. Absent ⇒ those natives clean-halt.
+    let unit: UnitScriptRunner?
 
-    init(scriptInfo: ScriptInfo, interpreter: any ScriptInterpreter) {
+    init(scriptInfo: ScriptInfo, interpreter: any ScriptInterpreter, unit: UnitScriptRunner? = nil) {
         self.interpreter = interpreter
         self.scriptInfo = scriptInfo
         self.general = GeneralScriptFunctions()
         self.team = TeamScriptFunctions()
+        self.unit = unit
     }
 
     /// op-14 dispatch for a team script — route the function `index` to its native (`g_scriptFunctionsTeam`).
@@ -29,12 +33,16 @@ public struct TeamScriptRunner: Sendable {
             case 0x00: let d = general.delay(ticks: engine.peek(1)); engine.delay = d; return d
             case 0x01, 0x0B: return general.noOperation()   // DisplayText / DisplayModalMessage — GUI (SEAM)
             case 0x02: return team.getMembers(slot: slot, in: state)
+            case 0x03: return team.addClosestUnit(slot: slot, in: &state)
+            case 0x04: return team.getAverageDistance(slot: slot, in: &state)
+            case 0x06:
+                guard let targets = unit?.targets else { return nil }
+                return team.findBestTarget(slot: slot, targets: targets, in: &state)
             case 0x0A: return general.delayRandom(maxTicks: engine.peek(1), in: &state)
             case 0x0C: return team.getVariable6(slot: slot, in: state)
             case 0x0D: return team.getTarget(slot: slot, in: state)
             case 0x0E: return general.noOperation()
-            // 0x03 AddClosestUnit, 0x04 GetAverageDistance, 0x05 Unknown0543, 0x06 FindBestTarget,
-            // 0x07 Unknown0788, 0x08 Load, 0x09 Load2 — the team "brain", ported in follow-up slices (SEAM).
+            // 0x05 Unknown0543, 0x07 Unknown0788 (issue orders), 0x08 Load, 0x09 Load2 — follow-up slice (SEAM).
             default:   return nil
         }
     }
