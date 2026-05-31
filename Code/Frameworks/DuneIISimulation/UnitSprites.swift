@@ -42,6 +42,7 @@ public enum UnitSprites {
         var bodyFlip = false
         switch info.displayMode {
             case .unit, .rocket:
+                if info.movementType == .slither { break }   // sandworm/sonic-blast: no directional frame
                 let (offset, flip) = directional[bodyO8]
                 bodyIndex += offset; bodyFlip = flip
             case .infantry3Frames:

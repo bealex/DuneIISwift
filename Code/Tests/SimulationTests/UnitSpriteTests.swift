@@ -70,6 +70,41 @@ struct UnitSpriteTests {
         #expect(east.body.spriteIndex == 311 + 3)
     }
 
+    @Test("body sprite matches OpenDUNE's viewport.c formula for EVERY unit type × 8 directions")
+    func everyUnitEightDirections() throws {
+        // The exact viewport.c tables (`values_32A4`/`values_32C4`/`values_334A`) — re-derived here
+        // independently of `UnitSprites` so a divergence in our resolver is caught. o8 0..7 = N,NE,E,SE,
+        // S,SW,W,NW; the western half (5,6,7) is the eastern half mirrored.
+        let v32A4: [(Int, Bool)] = [(0, false), (1, false), (2, false), (3, false),
+                                    (4, false), (3, true), (2, true), (1, true)]
+        let v32C4: [(Int, Bool)] = [(0, false), (1, false), (1, false), (1, false),
+                                    (2, false), (1, true), (1, true), (1, true)]
+        let v334A = [0, 1, 0, 2]
+
+        for type in UnitType.allCases {
+            let info = UnitInfo[type]
+            let base = Int(info.groundSpriteID)
+            for o8 in 0 ..< 8 {
+                var index = base
+                var flip = false
+                switch info.displayMode {
+                    case .unit, .rocket:
+                        if info.movementType != .slither { index = base + v32A4[o8].0; flip = v32A4[o8].1 }
+                    case .infantry3Frames:
+                        index = base + v32C4[o8].0 * 3 + v334A[0]; flip = v32C4[o8].1   // spriteOffset 0
+                    case .infantry4Frames:
+                        index = base + v32C4[o8].0 * 4; flip = v32C4[o8].1               // spriteOffset 0
+                    case .singleFrame, .ornithopter:
+                        break
+                }
+                let u = unit(type, orientation: Int8(truncatingIfNeeded: o8 * 32))
+                let r = try #require(UnitSprites.info(for: u), "\(type) o8 \(o8): nil")
+                #expect(r.body.spriteIndex == index, "\(type) o8 \(o8): frame \(r.body.spriteIndex) != \(index)")
+                #expect(r.body.flipped == flip, "\(type) o8 \(o8): flip \(r.body.flipped) != \(flip)")
+            }
+        }
+    }
+
     @Test("rocket body mirrors the western half (values_32A4), all 8 orientations")
     func rocketDirections() throws {
         // missileRocket = type 19 = "Rocket", DISPLAYMODE_ROCKET, groundSpriteID 278. Same rule as a
