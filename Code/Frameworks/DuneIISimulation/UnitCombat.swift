@@ -742,8 +742,9 @@ public struct UnitCombat: Sendable {
     /// `Unit_CreateWrapper` (`unit.c:1761`): spawn `type` for `houseID` at a random map edge and (for a
     /// ground unit) the carryall that ferries it to `destination`. A winger spawns directly. On a failed
     /// carryall/cargo allocation a pending harvester bumps `harvestersIncoming` so the house retries.
-    /// Returns the spawned unit (the carryall for ground cargo), or `nil`. Draws `Random256` (the spawn
-    /// edge) + the `findLocationTile` LCG draws.
+    /// Returns the **spawned `type`** — the ferried cargo for a ground unit (OpenDUNE returns `unit`, the
+    /// cargo, *not* the carryall), or the winger itself — so a caller stamping `originEncoded` lands it on the
+    /// right unit. `nil` on failure. Draws `Random256` (the spawn edge) + the `findLocationTile` LCG draws.
     @discardableResult
     public func unitCreateWrapper(houseID: UInt8, type: UnitType, destination: UInt16, in state: inout GameState) -> Int? {
         let tile = Tile32.unpack(movement.map.findLocationTile(UInt16(state.random256.next() & 3), houseID: houseID, in: &state))
@@ -789,7 +790,7 @@ public struct UnitCombat: Sendable {
         state.units[carryall].o.linkedID = UInt8(truncatingIfNeeded: Int(state.units[cargo].o.index))
         if type == .harvester { state.units[cargo].amount = 1 }
         if destination != 0 { setDest.unitSetDestination(slot: carryall, destination, in: &state) }
-        return carryall
+        return cargo   // OpenDUNE returns the ferried cargo, not the carryall (so `originEncoded` lands on it)
     }
 
     /// `House_EnsureHarvesterAvailable` (`house.c:298`): if the house has no harvester on the map, in a

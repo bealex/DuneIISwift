@@ -40,17 +40,21 @@ struct GameLoopHouseTailsTests {
 
     // MARK: - Unit_CreateWrapper
 
-    @Test("unitCreateWrapper ferries a ground unit: carryall + linked cargo")
+    @Test("unitCreateWrapper ferries a ground unit: returns the cargo, riding a linked carryall")
     func createWrapperGround() {
         var (s, combat) = combatBase()
-        let carry = combat.unitCreateWrapper(houseID: 0, type: .harvester, destination: 0, in: &s)
-        let carryall = try! #require(carry)
-        #expect(s.units[carryall].o.type == UInt8(UnitType.carryall.rawValue))
-        #expect(s.units[carryall].o.flags.contains(.inTransport))
-        let cargo = Int(s.units[carryall].o.linkedID)
+        // OpenDUNE's Unit_CreateWrapper returns the ferried CARGO (the harvester), not the carryall — so a
+        // caller stamping `originEncoded` lands it on the harvester (its home refinery), not the carryall.
+        let ret = combat.unitCreateWrapper(houseID: 0, type: .harvester, destination: 0, in: &s)
+        let cargo = try! #require(ret)
         #expect(s.units[cargo].o.type == UInt8(UnitType.harvester.rawValue))
         #expect(s.units[cargo].amount == 1)                       // a fresh harvester carries 1
         #expect(s.units[cargo].o.flags.contains(.isNotOnMap))     // riding inside
+        // The carryall (on-map, in transport) links to that cargo.
+        var f = PoolFind(houseID: 0, type: UInt16(UnitType.carryall.rawValue))
+        let carryall = try! #require(s.unitFind(&f))
+        #expect(s.units[carryall].o.flags.contains(.inTransport))
+        #expect(Int(s.units[carryall].o.linkedID) == cargo)
     }
 
     @Test("unitCreateWrapper spawns a winger directly (no carryall)")

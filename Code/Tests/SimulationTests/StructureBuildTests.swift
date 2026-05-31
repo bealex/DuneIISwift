@@ -102,7 +102,7 @@ struct StructureBuildTests {
     }
 
     @Test("each placed refinery spawns its own harvester (a 2nd refinery ⇒ a 2nd harvester)")
-    func refineryHarvesterPerPlacement() {
+    func refineryHarvesterPerPlacement() throws {
         var s = GameState(random256Seed: 0x55, randomLCGSeed: 0x55)
         s.playerHouseID = 0
         _ = s.houseAllocate(index: 0); s.houses[0].unitCountMax = 100
@@ -129,6 +129,14 @@ struct StructureBuildTests {
         #expect(harvesterCount() == 1)
         placeRefinery(at: Tile32.packXY(x: 30, y: 30))
         #expect(harvesterCount() == 2)   // the fix: the 2nd refinery gets its own harvester (not gated on the 1st)
+
+        // Each ferried harvester carries its home-refinery `originEncoded` — the carryall-vs-cargo fix:
+        // `structurePlaceReady` stamps it on the harvester (the unitCreateWrapper cargo), not the carryall.
+        let harvesters = s.unitFindArray.map { Int($0) }.filter { s.units[$0].o.type == UInt8(UnitType.harvester.rawValue) }
+        for h in harvesters {
+            let origin = try #require(s.indexGetStructure(s.units[h].originEncoded))
+            #expect(s.structures[origin].o.type == UInt8(StructureType.refinery.rawValue))
+        }
     }
 
     @Test("placeReady refuses when the factory isn't ready")

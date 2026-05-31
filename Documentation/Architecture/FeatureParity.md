@@ -172,7 +172,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 
 | Feature | Status | Evidence |
 |---|---|---|
-| `Unit_Create` / `Unit_CreateWrapper` | ◐ | `UnitCombat.unitCreate` / `unitCreateWrapper`. **Known bug:** `unitCreateWrapper` returns the **carryall**, but OpenDUNE's `Unit_CreateWrapper` returns the **cargo** — so the `originEncoded` the caller stamps lands on the carryall, not the ferried harvester (its home refinery is left unset). See insight `parity-structure-placement-golden`; TODO fix + re-run goldens |
+| `Unit_Create` / `Unit_CreateWrapper` | ✅ | `UnitCombat.unitCreate` / `unitCreateWrapper` — returns the ferried **cargo** for a ground unit (matching OpenDUNE), so a caller's `originEncoded` lands on the harvester, not the carryall (`GameLoopHouseTailsTests.createWrapperGround`, `StructureBuildTests.refineryHarvesterPerPlacement`) |
 | `Unit_Remove` (scrub refs, free, map clear) | ✅ | `GameState+Lifecycle.unitRemove` |
 | `Unit_RemovePlayer` | ✅ | `GameState+Lifecycle` |
 | `Unit_Die` (explosion, removal, engine reset) | ✅ | native 0x0F `UnitImpact.die` |
@@ -365,4 +365,4 @@ Everything in the four-phase battle simulation is done and cross-engine-verified
 8. **Save / load + original-save converter** ✗ (§T) — Phase-2 tail. **The only remaining missing gameplay feature** — every other feature in the four-phase battle simulation is done and cross-engine-verified.
 9. ~~Scenario `[MAP] Field` not filled~~ ✅ (§U, 2026-05-31) — `applyScenarioSpiceFields` detonates each hand-placed field (radius-5 spice circle) before the first tick.
 
-**Known parity bug (not a missing feature):** `unitCreateWrapper` returns the carryall instead of the cargo (§H) — a ferried harvester's `originEncoded` (home refinery) is left unset. Low-impact, but a real faithfulness gap; fix + re-run goldens.
+(~~Known parity bug: `unitCreateWrapper` returned the carryall instead of the cargo~~ ✅ fixed 2026-05-31 — §H; it now returns the ferried cargo, so a harvester's `originEncoded` home refinery is set correctly.)
