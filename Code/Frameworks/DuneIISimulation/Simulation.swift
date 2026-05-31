@@ -103,6 +103,7 @@ public struct Simulation: Sendable {
     /// One simulation tick: advance the clocks (pause-aware) then run the four game-loop phases.
     /// Mirrors the headless parity driver (`src/parity.c` `Parity_Run`).
     public mutating func tick() {
+        state.soundEvents.removeAll(keepingCapacity: true)   // the host drained last tick's sounds
         state.timerGUI &+= 1
         if state.paused { return }
         state.timerGame &+= 1

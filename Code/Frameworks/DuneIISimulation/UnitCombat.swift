@@ -824,7 +824,8 @@ public struct UnitCombat: Sendable {
                     state.units[target2].o.script.variables[1] = 0xFFFF
                     state.unitRemove(target2)   // Unit_RemovePlayer + HouseUnitCount_Remove are folded into unitRemove
                 }
-                // SEAM: Map_MakeExplosion(ui.explosionType, position) (#15) + Voice_PlayAtTile.
+                // SEAM: Map_MakeExplosion(ui.explosionType, position) (#15).
+                state.emitSound(63, at: state.units[slot].o.position)   // Voice_PlayAtTile(63, …) — WORMET3P
                 state.unitUpdateMap(1, slot)
                 state.units[slot].amount &-= 1
                 state.units[slot].o.script.delay = 12
@@ -838,7 +839,9 @@ public struct UnitCombat: Sendable {
                                                     houseID: state.unitHouseID(state.units[slot]),
                                                     damage: damage, target: target, in: &state) else { return 0 }
                 state.units[bullet].originEncoded = state.indexEncode(state.units[slot].o.index, type: .unit)
-                // SEAM: Voice_PlayAtTile(bulletSound) audio.
+                // `Voice_PlayAtTile(ui->bulletSound, u->o.position)` (`script/unit.c:99`): the weapon sound.
+                // The sim only emits the id; the host maps it to a VOC and plays it.
+                state.emitSound(Int(ui.bulletSound), at: state.units[slot].o.position)
                 movement.deviationDecrease(slot: slot, amount: 20, in: &state)
 
             default: break

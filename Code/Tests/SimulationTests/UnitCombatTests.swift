@@ -208,6 +208,25 @@ struct UnitCombatTests {
         #expect(combat.fire(slot: slot, in: &s) == 0)
     }
 
+    @Test("fire: a tank shot emits its bulletSound (Voice_PlayAtTile) at the firer's position")
+    func fireEmitsSound() {
+        var (s, slot, combat) = setup(.tank, hp: 200, house: 0, player: 0)
+        _ = s.houseAllocate(index: 1)
+        s.houses[1].unitCountMax = 100
+        let enemy = s.unitAllocate(index: 0, type: UInt8(UnitType.tank.rawValue), houseID: 1)!
+        s.units[enemy].o.position = Tile32.unpack(21 * 64 + 20)   // one tile east, inside fire range
+        let target = s.indexEncode(s.units[enemy].o.index, type: .unit)
+        s.units[slot].targetAttack = target
+        let dir = Tile32.direction(from: s.units[slot].o.position, to: s.units[enemy].o.position)
+        for level in 0 ..< 2 { s.units[slot].orientation[level].current = dir; s.units[slot].orientation[level].speed = 0 }   // tank has a turret ⇒ aimLevel 1
+        s.units[slot].fireDelay = 0
+        s.soundEvents.removeAll()
+
+        #expect(combat.fire(slot: slot, in: &s) == 1)
+        #expect(s.soundEvents.contains { $0.sound == SoundID(Int(UnitInfo[.tank].bulletSound)) })
+        #expect(s.soundEvents.first?.positionX == Int(s.units[slot].o.position.x))
+    }
+
     @Test("mapMakeExplosion: damages units in radius (scaled by distance), spares the far + provokes the enemy")
     func mapMakeExplosion() {
         var (s, origin, combat) = setup(.tank, hp: 200, house: 0, player: 0)   // the firer (house 0)

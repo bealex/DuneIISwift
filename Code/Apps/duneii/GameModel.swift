@@ -94,6 +94,10 @@ final class GameModel {
     private func setupAudio() {
         if let s = assets.voc("CLICK.VOC") { audio.register(.select, sampleRate: s.sampleRate, pcm8: s.samples) }
         if let s = assets.voc("AFFIRM.VOC") { audio.register(.acknowledge, sampleRate: s.sampleRate, pcm8: s.samples) }
+        // The sim's combat sound effects: register each VOC under its OpenDUNE voice id (the SoundEvent id).
+        for (voiceID, voc) in VoiceTable.registrations {
+            if let s = assets.voc(voc) { audio.register(SoundID(voiceID), sampleRate: s.sampleRate, pcm8: s.samples) }
+        }
         audio.start()
     }
 
@@ -110,6 +114,9 @@ final class GameModel {
             }
         }
         sim.tick()
+        // Play this tick's gameplay sounds (combat fire, explosions) — only those the VoiceTable resolved
+        // to a registered effect VOC; unmapped voice ids are silently no-ops in EngineAudioSink.
+        for event in sim.state.soundEvents { audio.play(event.sound) }
         simulation = sim
         let frame = sim.makeFrameInfo()
         lastFrame = frame

@@ -148,6 +148,19 @@ public struct GameState: Sendable {
     /// `s_explosionTimer`: the next tick the explosion pass needs to run.
     public var explosionTimer: UInt32 = 0
 
+    /// Sounds the sim asked to play this tick (the `sim → audio` seam, OpenDUNE's inline
+    /// `Voice_PlayAtTile`/`Sound_Output_Feedback` sites). The host drains + plays them after each tick; the
+    /// loop clears it at the start of every tick, so a non-draining (golden) run never accumulates.
+    /// `SoundID` carries the OpenDUNE voice id (e.g. a unit's `bulletSound`); the host maps it to a VOC.
+    public var soundEvents: [SoundEvent] = []
+
+    /// Queue a sound at a world position (`Voice_PlayAtTile`, `sound.c:134`). Ignores out-of-range ids and
+    /// the `0xFFFF` "no sound" sentinel. RNG-free, so it doesn't perturb the golden/parity path.
+    public mutating func emitSound(_ voiceID: Int, at position: Tile32) {
+        guard voiceID >= 0, voiceID < 120 else { return }
+        soundEvents.append(SoundEvent(sound: SoundID(voiceID), positionX: Int(position.x), positionY: Int(position.y)))
+    }
+
     /// The seed-generated base ground tile of each cell (`g_mapTileID`), so an animation `STOP` can
     /// restore it. Snapshotted by `createLandscape`.
     public var mapBaseTileID = [UInt16](repeating: 0, count: 64 * 64)

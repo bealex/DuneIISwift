@@ -68,7 +68,7 @@ public extension GameState {
                     case .tileDamage:
                         explosionTileDamage(explosions[i].position.packed)
                     case .playVoice:
-                        break   // SEAM: audio (Voice_PlayAtTile)
+                        emitSound(Int(parameter), at: explosions[i].position)   // Explosion_Func_PlayVoice
                     case .screenShake:
                         break   // SEAM: video
                     case .setAnimation:

@@ -1,4 +1,5 @@
 import Testing
+import DuneIIContracts
 @testable import DuneIIWorld
 
 /// The explosion subsystem (`GameState+Explosion.swift`) — a port of OpenDUNE `src/explosion.c`.
@@ -69,7 +70,9 @@ struct ExplosionTests {
         #expect(r256After.next() == r256Before.next())                  // but the 256-RNG is untouched
 
         step(&state); #expect(state.explosions[slot].spriteID == 188)   // setSprite 188
-        step(&state)                                                    // playVoice (seam)
+        state.soundEvents.removeAll()
+        step(&state)                                                    // playVoice 51 → emits a sound
+        #expect(state.soundEvents.contains { $0.sound == SoundID(51) && $0.positionX == Int(pos.x) })
         step(&state)                                                    // setTimeout 7
         step(&state); #expect(state.explosions[slot].spriteID == 189)   // setSprite 189
         step(&state)                                                    // bloom (seam)
@@ -83,6 +86,20 @@ struct ExplosionTests {
         step(&state)                                                    // setTimeout 3
         step(&state)                                                    // stop
         #expect(!state.explosions[slot].active)
+    }
+
+    @Test("emitSound queues an in-range voice and ignores the out-of-range / 0xFFFF sentinel")
+    func emitSoundBounds() {
+        var state = GameState()
+        let pos = Tile32.unpack(Tile32.packXY(x: 3, y: 7))
+        state.emitSound(57, at: pos)        // valid
+        state.emitSound(0xFFFF, at: pos)    // no-sound sentinel
+        state.emitSound(-1, at: pos)        // below range
+        state.emitSound(120, at: pos)       // above range
+        #expect(state.soundEvents.count == 1)
+        #expect(state.soundEvents[0].sound == SoundID(57))
+        #expect(state.soundEvents[0].positionX == Int(pos.x))
+        #expect(state.soundEvents[0].positionY == Int(pos.y))
     }
 
     @Test("TILE_DAMAGE blasts a built concrete slab back to the base landscape tile (slabs are destructible)")
