@@ -437,6 +437,40 @@ public struct UnitCombat: Sendable {
         return true
     }
 
+    /// Place **one** CHOAM order on a starport — the per-unit body of `Structure_BuildObject`'s `FACTORY_BUY`
+    /// loop (`structure.c:1577`), lifted out of the factory-window GUI (which collects the per-type amounts —
+    /// a Phase-6 seam). Creates the ordered unit off-map and chains it onto the house's `starportLinkedID`
+    /// delivery list, arms `starportTimeLeft` if idle, and decrements the type's `starportAvailable` stock
+    /// (clamped to −1 = sold out). The already-ported `tickStarport` frigate dispatch + `transportDeliver`
+    /// drain that list. Returns false if `slot` isn't a starport, the type is out of stock, or the pool is
+    /// full (refunding a carryall's cost, as OpenDUNE does). Credits/CHOAM pricing is charged by the GUI seam.
+    @discardableResult
+    public func structureStarportOrder(slot: Int, objectType: UInt16, in state: inout GameState) -> Bool {
+        guard StructureType(rawValue: Int(state.structures[slot].o.type)) == .starport,
+              UnitType(rawValue: Int(objectType)) != nil else { return false }
+        let typeIndex = Int(objectType)
+        if typeIndex >= state.starportAvailable.count || state.starportAvailable[typeIndex] <= 0 { return false }
+
+        let houseID = state.structures[slot].o.houseID
+        let h = Int(houseID)
+        guard let u = unitCreate(index: Pool.unitIndexInvalid, type: UInt8(objectType), houseID: houseID,
+                                 position: Tile32(x: 0xFFFF, y: 0xFFFF), orientation: 0, in: &state) else {
+            state.houses[h].credits &+= UnitInfo[.carryall].o.buildCredits   // pool full — refund (GUI text seam)
+            return false
+        }
+
+        if state.houses[h].starportTimeLeft == 0 {
+            let hid = HouseID(rawValue: h) ?? .harkonnen
+            state.houses[h].starportTimeLeft = HouseInfo[hid].starportDeliveryTime
+        }
+        state.units[u].o.linkedID = UInt8(truncatingIfNeeded: Int(state.houses[h].starportLinkedID))
+        state.houses[h].starportLinkedID = state.units[u].o.index
+
+        state.starportAvailable[typeIndex] &-= 1
+        if state.starportAvailable[typeIndex] <= 0 { state.starportAvailable[typeIndex] = -1 }
+        return true
+    }
+
     /// `Script_Unit_MCVDeploy` (op 0x09, `script/unit.c:1846`): deploy the MCV into a construction yard at
     /// its tile (trying the tile + 3 NW offsets) and remove the MCV; returns 1 on success, else restores the
     /// MCV and returns 0 (the "can't deploy here" GUI text is a seam).

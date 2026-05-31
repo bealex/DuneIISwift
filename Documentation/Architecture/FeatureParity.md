@@ -23,9 +23,9 @@ Evidence is `file` + symbol (line numbers drift; symbols don't). Audited 2026-05
 | Power-maintenance cursor + upkeep deduction | ✅ | `Simulation` `tickPowerMaintenance` |
 | Starport-availability restock cursor | ✅ | `Simulation` `tickStarportAvailability` |
 | Starport frigate-delivery cursor | ✅ | `Simulation` `tickStarport` |
-| Palace special-weapon cursor | ⊘ gameplay | `Simulation` — cursor advances, **body deferred** (see §P) |
-| Reinforcement cursor | ⊘ gameplay | `Simulation` — cursor advances, **body missing** (see §S) |
-| House-missile countdown cursor | ⊘ gameplay | `Simulation` — cursor only (see §P) |
+| Palace special-weapon cursor + body | ✅ | `Simulation.gameLoopStructure` + `structureActivateSpecial` (AI fires; human launch UI is a Phase-6 seam — see §P) |
+| Reinforcement cursor | ✅ | `gameLoopHouse` → `tickReinforcements` (see §S) |
+| House-missile countdown cursor | ⊘ pres | `Simulation` — the human's 7-sec manual-target window (the AI launches directly, see §P) |
 | Campaign-degrade cursor | ⊘ gameplay | `Simulation` — cursor only (see §Q) |
 | `Random256` (3-byte feedback) | ✅ | `Random256` — bit-exact, golden-verified |
 | `RandomLCG` (Borland 0x015A4E35) | ✅ | `RandomLCG` — bit-exact, golden-verified |
@@ -216,7 +216,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | Silo storage + credit clamp | ✅ | `House_CalculatePowerAndCredit` + house tick |
 | Starport: stock array + random restock | ✅ | `Simulation` `tickStarportAvailability` |
 | Starport: frigate delivery to free starport | ✅ | `Simulation` `tickStarport` |
-| **Starport: order units (CHOAM buy flow)** | ⊘ gameplay | `Structure_BuildObject` starport path returns early — you can't *order* |
+| **Starport: order units (CHOAM buy flow)** | ✅ | `UnitCombat.structureStarportOrder` — creates the unit, chains it onto `starportLinkedID`, arms the timer, decrements stock (`StarportOrderTests`). The factory-window GUI + CHOAM pricing is a Phase-6 seam |
 
 ## K. Structure lifecycle
 
@@ -276,8 +276,8 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | `Team_Create`, `[TEAMS]` loading | ✅ | `GameState+Pools` / `ScenarioLoader` |
 | Full team script table (recruit/target/order/load) | ✅ | `TeamScriptRunner` (§E) |
 | Team order natives reach units (move/guard/attack) | ✅ | exercised end-to-end (`TeamLoopTests`) |
-| **AI structure rebuild** (`House.ai_structureRebuild`) | ⊘ gameplay | no headless consumer — destroyed AI buildings don't return |
-| **AI auto-build / auto-repair** (`AI_PickNextToBuild`) | ⊘ gameplay | `structureTickStructure` AI-maintenance block is a seam — AI doesn't expand |
+| **AI structure rebuild** (`House.aiStructureRebuild`) | ✅ | `structureRemove` records the loss; `aiStructureMaintenance` + `structureAIPickNextToBuild` rebuild + auto-place it (`AIMaintenanceTests`) |
+| **AI auto-build / auto-repair** (`AI_PickNextToBuild`) | ✅ | `Simulation.aiStructureMaintenance` (`structure.c:308`) — auto-repair <50% HP, auto-build idle factories (`AIMaintenanceTests`) |
 
 ## P. Super-weapons / Palace
 
@@ -285,9 +285,9 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 |---|---|---|
 | Saboteur detonation + capture | ✅ | §K |
 | Death-hand blast pattern (when a missile lands) | ✅ | §G |
-| **Palace special-weapon countdown body** (death-hand launch, Fremen call, saboteur deploy) | ✗/⊘ gameplay | cursor ticks; body deferred (slice 7). The palace doesn't fire. |
-| **House-missile launch** (palace → death-hand frigate) | ⊘ gameplay | cursor only |
-| Fremen reinforcement call | ✗ gameplay | not implemented |
+| **Palace special-weapon countdown body** (death-hand launch, Fremen call, saboteur deploy) | ✅ | `Simulation.structureActivateSpecial` (`structure.c:822`) — an AI palace fires its house weapon when `countDown` hits 0 (`PalaceTests`). The player's manual launch UI is a Phase-6 seam |
+| **House-missile launch** (palace → death-hand) | ◐ | the AI launches directly (`Unit_LaunchHouseMissile`, in `structureActivateSpecial`); the human's 7-second target-select window is a Phase-6 GUI seam |
+| Fremen reinforcement call | ✅ | the Atreides/Fremen palace weapon — 5 hunting Fremen (`PalaceTests`) |
 
 ## Q. Campaign / tech / degrade
 
@@ -359,8 +359,8 @@ Everything in the four-phase battle simulation is done and cross-engine-verified
 2. ~~Scenario reinforcements~~ ✅ (§S, 2026-05-31) — `[REINFORCEMENTS]` parsing + timed edge/air spawns; 1.07 fires each once.
 3. ~~Campaign degrade body~~ ✅ (§Q, 2026-05-31) — campaign>1 periodic degradation to half HP.
 4. ~~`[CHOAM]` starport stock seed~~ ✅ (§U, 2026-05-31) — `starportAvailable` seeded from the scenario.
-5. **Palace super-weapons** ⊘/✗ (§P) — death-hand launch, Fremen, saboteur deploy bodies (slice 7).
-6. **AI base expansion** ⊘ (§O) — `ai_structureRebuild` + auto-build/repair; the AI fights with its starting base.
-7. **Starport ordering** ⊘ (§J) — the CHOAM buy flow returns early.
+5. ~~Palace super-weapons~~ ✅ (§P, 2026-05-31) — `structureActivateSpecial`: AI death-hand launch / Fremen call / saboteur deploy. The human launch UI stays a Phase-6 seam.
+6. ~~AI base expansion~~ ✅ (§O, 2026-05-31) — `aiStructureMaintenance` + `structureAIPickNextToBuild` + the `aiStructureRebuild` queue: auto-repair, auto-build, rebuild-and-auto-place.
+7. ~~Starport ordering~~ ✅ (§J, 2026-05-31) — `structureStarportOrder` chains an order onto the delivery list; the factory-window GUI + CHOAM pricing stays a Phase-6 seam.
 8. **Save / load + original-save converter** ✗ (§T) — Phase-2 tail.
 9. **Scenario `[MAP] Field` not filled** ✗ (§U) — hand-placed spice fields are parsed-but-dropped (needs a sim-layer post-load circle-fill); procedural seed spice still generates.

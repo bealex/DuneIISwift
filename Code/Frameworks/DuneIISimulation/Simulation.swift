@@ -340,10 +340,11 @@ extension Simulation {
     }
 
     /// `GameLoop_Structure` (`structure.c:53`). Advances the four structure tick cursors; per structure
-    /// (skipping slabs/walls, as OpenDUNE does), when the **structure** cursor fires runs the build/repair
-    /// economy (`structureTickStructure`), and when the **script** cursor fires runs its EMC script
-    /// (3 opcodes) via `structureScript`. Degrade (campaign-degrade) + palace (special-weapon countdown)
-    /// advance their cursors but their bodies remain seams. See `Documentation/Algorithms/StructureScript.md`.
+    /// (skipping slabs/walls, as OpenDUNE does): the **palace** cursor counts the special-weapon countdown
+    /// down and fires an AI palace's house weapon (`structureActivateSpecial`); the **degrade** cursor applies
+    /// campaign degradation; the **structure** cursor runs the build/repair economy (`structureTickStructure`)
+    /// then the AI maintenance pass (`aiStructureMaintenance` — auto-place / auto-repair / auto-build); the
+    /// **script** cursor runs 3 EMC opcodes via `structureScript`. See `Documentation/Algorithms/StructureScript.md`.
     mutating func gameLoopStructure() {
         let g = state.timerGame
 
@@ -363,17 +364,32 @@ extension Simulation {
             tickScript = true
             state.structureTick.script = g &+ 5
         }
-        if state.structureTick.palace <= g {            // palace special weapon — SEAM
+        var tickPalace = false
+        if state.structureTick.palace <= g {
+            tickPalace = true
             state.structureTick.palace = g &+ 60
         }
 
-        guard tickStructure || tickScript || tickDegrade else { return }
+        guard tickStructure || tickScript || tickDegrade || tickPalace else { return }
 
         var find = PoolFind()
         while let slot = state.structureFind(&find) {
             let t = state.structures[slot].o.type
             if t == UInt8(StructureType.slab1x1.rawValue) || t == UInt8(StructureType.slab2x2.rawValue)
                 || t == UInt8(StructureType.wall.rawValue) { continue }
+
+            // Palace special weapon (`structure.c:106`): every palace tick, count the special-weapon
+            // countdown down; when it hits zero an AI palace fires its house weapon (the player's launch is a
+            // Phase-6 GUI seam, so a human palace only ticks). A fresh palace starts at countDown 0 → an AI
+            // one fires on its first palace tick, then every `specialCountDown` palace ticks after.
+            if tickPalace, t == UInt8(StructureType.palace.rawValue) {
+                if state.structures[slot].countDown != 0 { state.structures[slot].countDown &-= 1 }
+                let house = Int(state.structures[slot].o.houseID)
+                if state.structures[slot].countDown == 0, !state.houses[house].flags.contains(.human),
+                   state.houses[house].flags.contains(.isAIActive) {
+                    structureActivateSpecial(slot)
+                }
+            }
 
             // Campaign degrade (`structure.c:121`): a `degrades` structure above half its *base* hitpoints
             // takes its house's `degradingAmount` each degrade tick. (Palace countdown body is still a SEAM.)
@@ -386,6 +402,7 @@ extension Simulation {
 
             if tickStructure {
                 state.structureTickStructure(slot)
+                aiStructureMaintenance(slot)
             }
 
             if tickScript {

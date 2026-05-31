@@ -183,9 +183,9 @@ public extension GameState {
 
     /// `Structure_Remove` (`structure.c:1305`): tear a structure off the map and free its slot — clear the
     /// `hasStructure` occupancy on each of its layout tiles, free the slot (`Structure_Free`), and scrub
-    /// references (`Structure_UntargetMe`). The destruction animation (`Animation_Start` /
-    /// `Animation_Stop_ByTile`) and the House AI rebuild queue (`ai_structureRebuild`) are seams —
-    /// render / AI bookkeeping with no headless consumer yet.
+    /// references (`Structure_UntargetMe`), and record the loss in the house's `aiStructureRebuild` queue so
+    /// the AI can rebuild it. The destruction animation (`Animation_Start` / `Animation_Stop_ByTile`) is a
+    /// render seam.
     mutating func structureRemove(_ slot: Int) {
         guard let st = StructureType(rawValue: Int(structures[slot].o.type)) else { return }
         let layout = StructureLayoutInfo[StructureInfo[st].layout]
@@ -207,7 +207,16 @@ public extension GameState {
                        tileLayout: UInt16(si.layout.rawValue), houseID: structures[slot].o.houseID,
                        iconGroup: UInt8(truncatingIfNeeded: Int(si.iconGroup)))
         mapDirty = true
-        // SEAM: House.ai_structureRebuild[] — AI rebuild queue (no headless AI consumer yet).
+
+        // Remember the lost structure's type + position in the house's AI rebuild queue (`structure.c:1336`),
+        // first free of 5 slots. The AI construction-yard maintenance pass (`aiStructureMaintenance`) rebuilds
+        // it and re-places it here. RNG-free bookkeeping.
+        let houseID = Int(structures[slot].o.houseID)
+        let lostType = UInt16(structures[slot].o.type)
+        for i in 0 ..< 5 where houses[houseID].aiStructureRebuild[i][0] == 0 {
+            houses[houseID].aiStructureRebuild[i] = [lostType, UInt16(truncatingIfNeeded: packed)]
+            break
+        }
 
         structureFree(slot)
         structureUntargetMe(slot)
@@ -521,10 +530,10 @@ public extension GameState {
     ///     `linkedID != 0xFF`) advances its build by `buildSpeed` (HP-scaled), billing `buildCost` credits;
     ///     completing → `STRUCTURE_STATE_READY`. Out of money puts the player's build on hold. The repair
     ///     pad (`STRUCTURE_REPAIR`) additionally advances a linked unit's repair countdown.
-    /// SEAMs: the upgrade branch; the player completion GUI text + sound; the AI auto-place of a finished
-    /// construction-yard structure; and the whole AI-maintenance block (`isAIActive`: auto-repair below 50%
-    /// HP + `Structure_AI_PickNextToBuild`/`Structure_BuildObject`) — all of which belong to the Team/AI
-    /// slice. Degrade + palace are separate cursors handled by the caller.
+    /// Seams here are the player completion GUI text + sound. The AI auto-place of a finished construction-yard
+    /// structure and the AI-maintenance block (auto-repair + `Structure_AI_PickNextToBuild`/`BuildObject`) live
+    /// in the Simulation layer (`aiStructureMaintenance`), which the caller runs right after this; degrade +
+    /// palace are separate cursors also handled by the caller.
     mutating func structureTickStructure(_ slot: Int) {
         guard let st = StructureType(rawValue: Int(structures[slot].o.type)) else { return }
         let si = StructureInfo[st]
@@ -607,7 +616,7 @@ public extension GameState {
                         structures[slot].buildCostRemainder = 0
                         structureSetState(slot, .ready)
                         // SEAM: player completion GUI text + Sound_Output_Feedback.
-                        // SEAM: AI construction-yard auto-place (Structure_Place into ai_structureRebuild).
+                        // (AI construction-yard auto-place runs in the Simulation's `aiStructureMaintenance`.)
                     }
                 } else if structures[slot].o.houseID == playerHouseID {
                     structures[slot].o.flags.insert(.onHold)   // out of money → hold (+ GUI text SEAM)
@@ -639,8 +648,6 @@ public extension GameState {
                     structures[slot].o.flags.remove(.onHold)   // money is back → auto-resume
                 }
             }
-
-            // SEAM: the AI-maintenance block (isAIActive auto-repair + AI_PickNextToBuild/BuildObject).
         }
     }
 
