@@ -1,9 +1,11 @@
 import DuneIIFormats
+import DuneIIInput
 import DuneIISimulation
 import DuneIIWorld
 import Foundation
 
-/// View model: owns the asset store + the scene, loads a scenario into a `Simulation`, and applies zoom.
+/// View model: owns the asset store + the scene, loads a scenario into a `Simulation`, applies zoom, and
+/// mirrors the scene's player-input state (the selected unit/structure + any armed order) for the inspector.
 @MainActor
 @Observable
 final class MapModel {
@@ -13,12 +15,26 @@ final class MapModel {
     var scale: Int = 2 { didSet { scene.setZoom(CGFloat(scale)) } }
     var showFog: Bool = false { didSet { scene.showFog = showFog } }
 
+    /// The selected entity's live properties (nil = nothing selected) + any armed order — published by the
+    /// scene whenever they change. The inspector panel renders these.
+    private(set) var selection: SelectionInfo?
+    private(set) var pendingOrder: OrderKind?
+
     init(assets: AssetStore) {
         self.assets = assets
         scene.configure()
         scene.setZoom(CGFloat(scale))
+        scene.onStateChange = { [weak self] info, pending in
+            self?.selection = info
+            self?.pendingOrder = pending
+        }
         if let first = assets.scenarioNames.first { load(first) }
     }
+
+    // Inspector actions → the scene's input controller.
+    func arm(_ kind: OrderKind) { scene.beginOrder(kind) }
+    func stopSelected() { scene.stopSelected() }
+    func deselect() { scene.deselect() }
 
     func load(_ scenarioName: String) {
         guard let ini = assets.scenarioINI(scenarioName), let iconMap = assets.iconMap else { return }

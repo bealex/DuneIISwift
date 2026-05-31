@@ -7,4 +7,6 @@ public enum Command: Sendable, Equatable {
     case move(unit: UInt16, tile: UInt16)
     /// Order the unit to attack whatever is at/around `tile`.
     case attack(unit: UInt16, tile: UInt16)
+    /// Order the unit to stop — hold position and guard (clear its move/attack targets).
+    case stop(unit: UInt16)
 }

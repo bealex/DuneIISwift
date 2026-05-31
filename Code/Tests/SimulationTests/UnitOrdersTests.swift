@@ -76,6 +76,19 @@ struct UnitOrdersTests {
         #expect(s.units[mover].targetMove == enc)
     }
 
+    @Test("stop order clears the unit's targets/route and sets it to GUARD")
+    func stopOrder() {
+        var s = makeState()
+        let slot = place(&s, .tank, house: 0, packed: 1300)
+        orders.apply(.move(unit: UInt16(slot), tile: 2000), in: &s)   // give it a move first
+        #expect(s.units[slot].targetMove != 0)
+        orders.apply(.stop(unit: UInt16(slot)), in: &s)
+        #expect(s.units[slot].actionID == UInt8(ActionType.guard_.rawValue))
+        #expect(s.units[slot].targetMove == 0)
+        #expect(s.units[slot].targetAttack == 0)
+        #expect(s.units[slot].route[0] == 0xFF)
+    }
+
     @Test("findTargetAround returns an adjacent unit's tile, else the tile itself")
     func findTargetAround() {
         var s = makeState()

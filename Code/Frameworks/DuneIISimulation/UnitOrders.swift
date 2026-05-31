@@ -28,7 +28,19 @@ public struct UnitOrders: Sendable {
         switch command {
             case let .move(unit, tile):   order(slot: Int(unit), action: .move, targetPacked: tile, in: &state)
             case let .attack(unit, tile): order(slot: Int(unit), action: .attack, targetPacked: tile, in: &state)
+            case let .stop(unit):         stop(slot: Int(unit), in: &state)
         }
+    }
+
+    /// Stop the unit: clear its move/attack targets + route and set it to GUARD in place (the original's
+    /// viewport "stop"/deselect-to-guard behaviour).
+    public func stop(slot: Int, in state: inout GameState) {
+        guard slot >= 0, slot < state.units.count else { return }
+        state.objectScriptVariable4Clear(.unit(slot))
+        state.units[slot].targetAttack = 0
+        state.units[slot].targetMove = 0
+        state.units[slot].route[0] = 0xFF
+        actions.setAction(slot: slot, action: UInt8(ActionType.guard_.rawValue), scriptInfo: scriptInfo, in: &state)
     }
 
     /// The viewport-click order: clear the unit's existing targets, resolve the target tile (for an

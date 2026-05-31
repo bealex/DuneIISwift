@@ -5,6 +5,7 @@ import SwiftUI
 /// and set the 1×–16× scale.
 struct ContentView: View {
     @State var model: MapModel
+    @State private var showInspector = true
 
     private let scales = [1, 2, 4, 8, 16]
 
@@ -12,6 +13,10 @@ struct ContentView: View {
         SpriteView(scene: model.scene, options: [.ignoresSiblingOrder])
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.black)
+            .inspector(isPresented: $showInspector) {
+                InspectorView(model: model)
+                    .inspectorColumnWidth(min: 220, ideal: 260, max: 360)
+            }
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Menu(model.currentScenario ?? "Scenario") {
@@ -29,6 +34,10 @@ struct ContentView: View {
                 }
                 ToolbarItem(placement: .automatic) {
                     Toggle("Fog", isOn: $model.showFog)
+                }
+                ToolbarItem(placement: .automatic) {
+                    Button { showInspector.toggle() } label: { Image(systemName: "sidebar.right") }
+                        .help("Toggle the properties panel")
                 }
             }
             .overlay(alignment: .top) {
