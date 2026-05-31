@@ -151,7 +151,10 @@ public extension GameState {
             if units[idx].o.flags.contains(.used) { return nil }
         }
 
-        houses[Int(houseID)].unitCount += 1
+        // Wrapping, to match OpenDUNE's `h->unitCount++` (a plain uint16 that wraps, never traps). The
+        // decrement (`unitFree`) already wraps; a long game can drift the count past its live-unit total
+        // via transient units, and an unsigned wrap there must not crash on the next allocate.
+        houses[Int(houseID)].unitCount &+= 1
 
         var u = Unit()
         u.o.index = UInt16(idx)
@@ -303,7 +306,7 @@ public extension GameState {
         for i in houseFindArray { houses[Int(i)].unitCount = 0 }
         unitFindArray.removeAll(keepingCapacity: true)
         for index in 0..<Pool.unitIndexMax where units[index].o.flags.contains(.used) {
-            houses[Int(units[index].o.houseID)].unitCount += 1
+            houses[Int(units[index].o.houseID)].unitCount &+= 1
             unitFindArray.append(UInt16(index))
         }
     }

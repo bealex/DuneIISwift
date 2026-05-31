@@ -28,6 +28,18 @@ struct GameStateTests {
         #expect(s.unitFindArray.count == 2)
     }
 
+    @Test("unitCount allocation wraps like OpenDUNE's uint16 instead of trapping at the boundary")
+    func unitCountWraps() {
+        var s = GameState()
+        s.houses[0].unitCountMax = 1000
+        // A long game can drift the count to its uint16 max (a wrapped-from-underflow value); the next
+        // allocate must wrap to 0, not crash on overflow (`&+= 1`, matching `h->unitCount++`).
+        s.houses[0].unitCount = .max                 // 65535
+        let slot = s.unitAllocate(index: 0, type: u(.carryall), houseID: 0)   // winger bypasses the cap
+        #expect(slot != nil)
+        #expect(s.houses[0].unitCount == 0)          // wrapped, no trap
+    }
+
     @Test("house unit cap blocks ground units but not wingers/slitherers")
     func unitCap() {
         var s = GameState()
