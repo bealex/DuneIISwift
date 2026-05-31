@@ -55,7 +55,8 @@ public extension Simulation {
                 positionX: Int(u.o.position.x), positionY: Int(u.o.position.y),
                 body: sprites.body, turret: sprites.turret, overlay: sprites.overlay, isSmoking: isSmoking,
                 isAirUnit: UnitInfo[type].movementType == .winger,
-                hitpoints: Int(u.o.hitpoints), hitpointsMax: Int(UnitInfo[type].o.hitpoints)))
+                hitpoints: Int(u.o.hitpoints), hitpointsMax: Int(UnitInfo[type].o.hitpoints),
+                activity: Self.activity(forActionID: u.actionID)))
 
             // Smoke cloud over a damaged-but-alive vehicle, 14px above the unit centre
             // (`viewport.c:615`): frame `180 + (spriteOffset & 3)`, with 183 folded back to 181.
@@ -106,6 +107,17 @@ public extension Simulation {
     /// 1 = E, 2 = S, 3 = W (`g_table_mapDiff = {-64, 1, 64, -1}`): a bit is set when that neighbour is
     /// off-map or still veiled. Mirrors `Map_UnveilTile_Neighbour` (`map.c:1311`); the result indexes the
     /// 16 fog-edge sprites (`TileIDs.fogEdges`). Mask 0 = fully surrounded by revealed tiles ⇒ no edge.
+    /// Collapse a unit's `ActionType` (`actionID`) to the UI activity category for the state chip.
+    static func activity(forActionID actionID: UInt8) -> FrameInfo.UnitActivity {
+        switch ActionType(rawValue: Int(actionID)) {
+            case .attack, .hunt, .ambush, .sabotage: return .attacking
+            case .move, .retreat:                    return .moving
+            case .guard_, .areaGuard:                return .guarding
+            case .harvest, .return:                  return .harvesting
+            default:                                  return .idle   // stop / deploy / die / destruct / none
+        }
+    }
+
     static func fogEdgeMask(packed: Int, width: Int, height: Int, isUnveiled: (Int) -> Bool) -> Int {
         let x = packed % width, y = packed / width
         var mask = 0

@@ -20,6 +20,7 @@ final class GameScene: SKScene {
     private let selectionNode = SKShapeNode()
     private let healthLayer = SKNode()
     private var healthBars: [SKSpriteNode] = []
+    private var stateChips: [SKSpriteNode] = []   // a small colour-coded action chip per health bar
 
     init(model: GameModel) {
         self.model = model
@@ -85,30 +86,59 @@ final class GameScene: SKScene {
     // MARK: - Health/state overlay (debug)
 
     private func updateHealth(_ frame: FrameInfo, show: Bool) {
-        guard show else { for bar in healthBars { bar.isHidden = true }; return }
+        guard show else {
+            for bar in healthBars { bar.isHidden = true }
+            for chip in stateChips { chip.isHidden = true }
+            return
+        }
         var used = 0
         for unit in frame.units {
             let frac = unit.hitpointsMax > 0 ? Double(unit.hitpoints) / Double(unit.hitpointsMax) : 1
             let cx = unit.positionX * Self.tileSize / 256
-            let cy = unit.positionY * Self.tileSize / 256
-            let bar = pooledBar(used); used += 1
-            let width = 14.0
-            bar.size = CGSize(width: width, height: 2)
-            bar.position = CGPoint(x: Double(cx), y: Double(Self.worldSidePx - cy + 10))   // above the sprite
+            let barY = Double(Self.worldSidePx - unit.positionY * Self.tileSize / 256 + 10)   // above the sprite
+
+            let bar = pooledBar(used)
+            bar.size = CGSize(width: 14, height: 2)
+            bar.position = CGPoint(x: Double(cx), y: barY)
             bar.color = frac > 0.66 ? .green : (frac > 0.33 ? .yellow : .red)
             bar.xScale = max(0.05, CGFloat(frac))
             bar.isHidden = false
+
+            // A small state chip just in front of (left of) the bar; idle shows none.
+            let chip = stateChips[used]
+            if let colour = Self.activityColour(unit.activity) {
+                chip.color = colour
+                chip.position = CGPoint(x: Double(cx) - 4, y: barY)
+                chip.isHidden = false
+            } else {
+                chip.isHidden = true
+            }
+            used += 1
         }
         for i in used ..< healthBars.count { healthBars[i].isHidden = true }
+        for i in used ..< stateChips.count { stateChips[i].isHidden = true }
+    }
+
+    /// idle → no chip; otherwise a colour per the user's scheme.
+    private static func activityColour(_ activity: FrameInfo.UnitActivity) -> NSColor? {
+        switch activity {
+            case .idle:       return nil
+            case .attacking:  return .systemRed
+            case .guarding:   return .systemBlue
+            case .moving:     return .systemGreen
+            case .harvesting: return .systemOrange
+        }
     }
 
     private func pooledBar(_ i: Int) -> SKSpriteNode {
-        if i < healthBars.count { return healthBars[i] }
-        let bar = SKSpriteNode(color: .green, size: CGSize(width: 14, height: 2))
-        bar.anchorPoint = CGPoint(x: 0, y: 0.5)
-        healthBars.append(bar)
-        healthLayer.addChild(bar)
-        return bar
+        while i >= healthBars.count {
+            let bar = SKSpriteNode(color: .green, size: CGSize(width: 14, height: 2))
+            bar.anchorPoint = CGPoint(x: 0, y: 0.5)
+            healthBars.append(bar); healthLayer.addChild(bar)
+            let chip = SKSpriteNode(color: .systemBlue, size: CGSize(width: 4, height: 4))
+            stateChips.append(chip); healthLayer.addChild(chip)
+        }
+        return healthBars[i]
     }
 
     // MARK: - Input

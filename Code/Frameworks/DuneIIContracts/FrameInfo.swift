@@ -99,10 +99,13 @@ public struct FrameInfo: Sendable, Equatable {
         public var isAirUnit: Bool
         public var hitpoints: Int
         public var hitpointsMax: Int
+        /// What the unit is doing (its `ActionType`, collapsed to a UI category) — for the debug
+        /// state chip drawn beside its health bar. Defaults to `.idle`.
+        public var activity: UnitActivity
 
         public init(id: UInt16, type: UnitType, house: HouseID, positionX: Int, positionY: Int,
                     body: SpriteLayer, turret: SpriteLayer?, overlay: SpriteLayer? = nil, isSmoking: Bool,
-                    isAirUnit: Bool = false, hitpoints: Int, hitpointsMax: Int) {
+                    isAirUnit: Bool = false, hitpoints: Int, hitpointsMax: Int, activity: UnitActivity = .idle) {
             self.id = id
             self.type = type
             self.house = house
@@ -115,7 +118,14 @@ public struct FrameInfo: Sendable, Equatable {
             self.isAirUnit = isAirUnit
             self.hitpoints = hitpoints
             self.hitpointsMax = hitpointsMax
+            self.activity = activity
         }
+    }
+
+    /// A unit's current action collapsed to a UI category (the debug state chip + a future selection HUD).
+    /// `idle` shows no chip.
+    public enum UnitActivity: Sendable, Equatable {
+        case idle, moving, attacking, guarding, harvesting
     }
 
     public struct Structure: Sendable, Equatable {

@@ -109,6 +109,16 @@ struct FrameInfoTests {
         #expect(edge(11, 11) == 500 + 0b0110)  // bottom-right corner: E and S veiled ⇒ mask 6
     }
 
+    @Test("a unit's actionID collapses to the right UI activity (for the state chip)")
+    func activityMapping() {
+        func a(_ t: ActionType) -> FrameInfo.UnitActivity { Simulation.activity(forActionID: UInt8(t.rawValue)) }
+        #expect(a(.attack) == .attacking && a(.hunt) == .attacking && a(.ambush) == .attacking)
+        #expect(a(.move) == .moving && a(.retreat) == .moving)
+        #expect(a(.guard_) == .guarding && a(.areaGuard) == .guarding)
+        #expect(a(.harvest) == .harvesting && a(.return) == .harvesting)
+        #expect(a(.stop) == .idle && a(.die) == .idle && a(.deploy) == .idle)
+    }
+
     @Test("a sandworm is emitted as a blur (terrain displacement), not a unit sprite")
     func sandwormBlur() throws {
         var sim = scene()

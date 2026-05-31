@@ -104,9 +104,24 @@ struct DebugPanel: View {
             Toggle("Fog of war", isOn: Binding(get: { model.showFog }, set: { model.showFog = $0 }))
             Toggle("Show all economies", isOn: Binding(get: { model.showAllEconomies }, set: { model.showAllEconomies = $0 }))
             Toggle("Health bars over units", isOn: Binding(get: { model.showHealthOverlay }, set: { model.showHealthOverlay = $0 }))
+            if model.showHealthOverlay {
+                LabeledContent("State chip") {
+                    HStack(spacing: 8) {
+                        chip(.green, "Move"); chip(.red, "Attack"); chip(.blue, "Guard"); chip(.orange, "Harvest")
+                    }
+                }
+                Text("Idle units show no chip.").font(.caption).foregroundStyle(.secondary)
+            }
             LabeledContent("Player house", value: model.playerHouse.displayName)
             LabeledContent("Scenario", value: model.currentScenario ?? "—")
         }
         .formStyle(.grouped)
+    }
+
+    private func chip(_ color: Color, _ label: String) -> some View {
+        HStack(spacing: 3) {
+            RoundedRectangle(cornerRadius: 1).fill(color).frame(width: 8, height: 8)
+            Text(label).font(.caption2)
+        }
     }
 }
