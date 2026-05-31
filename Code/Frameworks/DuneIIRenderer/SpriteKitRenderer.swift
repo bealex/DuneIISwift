@@ -26,6 +26,7 @@ public final class SpriteKitRenderer {
 
     private let terrainNode = SKSpriteNode()      // the static landscape, drawn once
     private let overlayLayer = SKNode()           // dynamic terrain cells (animations + wind light)
+    private let blurLayer = SKNode()              // sandworm shimmer patches (terrain displacement)
     private let spritesLayer = SKNode()           // units + effects (pooled nodes)
 
     // Caches (kept for the renderer's whole life — memory is cheap, recolorizing isn't).
@@ -49,6 +50,12 @@ public final class SpriteKitRenderer {
     private var windCells: Set<Int> = []          // cells whose tile uses the wind-trap colour (223)
     private var overlayNodes: [Int: SKSpriteNode] = [:]
     private var initialized = false
+
+    // Sandworm shimmer: the static indexed terrain (sampled per worm) + a pool of displacement nodes, and
+    // the per-frame blur offset cursor (`s_blurIndex`, cycling `ShimmerEffect.blurOffsets`).
+    private var terrainIndices: [UInt8] = []
+    private var blurPool: [SKSpriteNode] = []
+    private var blurIndex = 0
 
     // Palette cycling, advanced incrementally (O(1) per tick).
     private var colours: [Palette.Color]
@@ -115,8 +122,9 @@ public final class SpriteKitRenderer {
     public func attach(to scene: SKScene) {
         terrainNode.zPosition = 0
         overlayLayer.zPosition = 1
+        blurLayer.zPosition = 2          // worm shimmer sits on the terrain, under the unit sprites
         spritesLayer.zPosition = 10
-        for node in [terrainNode as SKNode, overlayLayer, spritesLayer] where node.parent == nil {
+        for node in [terrainNode as SKNode, overlayLayer, blurLayer, spritesLayer] where node.parent == nil {
             scene.addChild(node)
         }
     }
@@ -146,6 +154,7 @@ public final class SpriteKitRenderer {
         }
         updateDynamicTerrain(frame, palette: palette, windColour: windColour)
         updateSprites(frame, palette: palette)
+        updateBlurs(frame, palette: palette)
         lastWindColour = windColour
     }
 
@@ -164,6 +173,7 @@ public final class SpriteKitRenderer {
             terrainNode.size = CGSize(width: side, height: side)
             terrainNode.position = CGPoint(x: side / 2, y: side / 2)
         }
+        terrainIndices = buffer                 // kept for the worm-shimmer terrain displacement
         baseline = frame.tiles.map(appearance)
         displayed = baseline
         windCells = []
@@ -287,6 +297,43 @@ public final class SpriteKitRenderer {
         let node = SKSpriteNode()
         spritePool.append(node)
         spritesLayer.addChild(node)
+        return node
+    }
+
+    // MARK: - Sandworm shimmer
+
+    /// Lay one displacement patch per sandworm: sample the static terrain under the worm's silhouette,
+    /// displaced horizontally by the cycling blur offset (`ShimmerEffect`), and place it on the blur layer.
+    private func updateBlurs(_ frame: FrameInfo, palette: Palette) {
+        let side = tileSize * frame.mapWidth
+        blurIndex = (blurIndex + 1) % ShimmerEffect.blurOffsets.count   // advance the heat-haze each frame
+        let offset = ShimmerEffect.blurOffsets[blurIndex]
+        var used = 0
+        for blur in frame.blurs {
+            guard let frameSprite = source.unitFrame(globalIndex: blur.sprite.spriteIndex) else { continue }
+            let mask = Self.mirror(frameSprite.pixels, width: frameSprite.width, height: frameSprite.height,
+                                   horizontal: blur.sprite.flipped, vertical: blur.sprite.flippedV)
+            let cx = blur.positionX * tileSize / 256 + blur.sprite.offsetX
+            let cy = blur.positionY * tileSize / 256 + blur.sprite.offsetY
+            let left = cx - frameSprite.width / 2, top = cy - frameSprite.height / 2   // DRAWSPRITE_FLAG_CENTER
+            guard let patch = ShimmerEffect.patch(
+                terrain: terrainIndices, terrainWidth: side, terrainHeight: side,
+                left: left, top: top, mask: mask, wormWidth: frameSprite.width, wormHeight: frameSprite.height,
+                offset: offset, palette: palette) else { continue }
+            let node = pooledBlur(used); used += 1
+            node.texture = nearest(patch)
+            node.size = CGSize(width: frameSprite.width, height: frameSprite.height)
+            node.position = CGPoint(x: CGFloat(cx), y: CGFloat(side - cy))
+            node.isHidden = false
+        }
+        for i in used ..< blurPool.count { blurPool[i].isHidden = true }
+    }
+
+    private func pooledBlur(_ i: Int) -> SKSpriteNode {
+        if i < blurPool.count { return blurPool[i] }
+        let node = SKSpriteNode()
+        blurPool.append(node)
+        blurLayer.addChild(node)
         return node
     }
 

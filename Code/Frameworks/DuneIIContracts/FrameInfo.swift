@@ -24,6 +24,8 @@ public struct FrameInfo: Sendable, Equatable {
     public var structures: [Structure]
     /// Transient overlays: active explosions + smoke over damaged vehicles.
     public var effects: [Effect]
+    /// Sandworm shimmers (`blurTile` units) — rendered as a terrain displacement, not sprites.
+    public var blurs: [Blur]
     public var houses: [House]
 
     /// The viewport's top-left in world sub-tile units (same space as entity positions).
@@ -36,7 +38,7 @@ public struct FrameInfo: Sendable, Equatable {
 
     public init(tick: UInt32, mapWidth: Int, mapHeight: Int, tiles: [Tile], units: [Unit],
                 structures: [Structure], effects: [Effect], houses: [House],
-                viewportX: Int, viewportY: Int, veiledTileIndex: Int = 0) {
+                viewportX: Int, viewportY: Int, veiledTileIndex: Int = 0, blurs: [Blur] = []) {
         self.tick = tick
         self.mapWidth = mapWidth
         self.mapHeight = mapHeight
@@ -44,6 +46,7 @@ public struct FrameInfo: Sendable, Equatable {
         self.units = units
         self.structures = structures
         self.effects = effects
+        self.blurs = blurs
         self.houses = houses
         self.viewportX = viewportX
         self.viewportY = viewportY
@@ -134,6 +137,22 @@ public struct FrameInfo: Sendable, Equatable {
             self.positionY = positionY
             self.hitpoints = hitpoints
             self.hitpointsMax = hitpointsMax
+        }
+    }
+
+    /// A sandworm "shimmer" (`DRAWSPRITE_FLAG_BLUR`). The worm body is not a normal SHP draw — within its
+    /// silhouette the terrain underneath is displaced, an animated heat-haze (`gui.c:1289`). Carried apart
+    /// from `units` because the renderer realizes it with a CoreGraphics displacement of the terrain, not a
+    /// sprite blit. `sprite` is the worm's silhouette frame (its shape = where to displace) at `positionX/Y`.
+    public struct Blur: Sendable, Equatable {
+        public var positionX: Int
+        public var positionY: Int
+        public var sprite: SpriteLayer
+
+        public init(positionX: Int, positionY: Int, sprite: SpriteLayer) {
+            self.positionX = positionX
+            self.positionY = positionY
+            self.sprite = sprite
         }
     }
 

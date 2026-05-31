@@ -58,6 +58,19 @@ enum RenderCap {
             state.unitUpdateMap(1, slot)
         }
 
+        // Debug: drop a stationary sandworm at a tile to exercise the shimmer (`--worm tx,ty`). Injected
+        // after unit setup + with no script, so it sits still (use with `--tick 0`).
+        if let w = args.value("--worm").flatMap(parsePair), let slot = state.units.firstIndex(where: { !$0.o.flags.contains(.used) }) {
+            var worm = Unit()
+            worm.o.index = UInt16(slot)
+            worm.o.type = UInt8(UnitType.sandworm.rawValue)
+            worm.o.flags = [.used, .allocated, .isUnit]
+            worm.o.houseID = 6
+            worm.o.position = Tile32(x: UInt16(w.x) * 256 + 0x80, y: UInt16(w.y) * 256 + 0x80)
+            worm.o.hitpoints = 1000
+            state.units[slot] = worm
+        }
+
         var sim = Simulation(state: state, scriptInfo: unitScript,
                              structureScriptInfo: ScriptInfo(assets.buildProgram),
                              tickExplosions: true, tickAnimations: true)
@@ -71,7 +84,12 @@ enum RenderCap {
         let ts = assets.spriteSource.terrainTileSize
         let cropRect = crop.map { CGRect(x: $0.x * ts, y: $0.y * ts, width: $0.w * ts, height: $0.h * ts) }
 
-        guard let image = renderer.snapshot(sim.makeFrameInfo(), crop: cropRect) else {
+        let frameInfo = sim.makeFrameInfo()
+        for b in frameInfo.blurs {
+            note("blur at world (\(b.positionX),\(b.positionY)) sprite #\(b.sprite.spriteIndex) "
+                 + "resolves=\(assets.spriteSource.unitFrame(globalIndex: b.sprite.spriteIndex) != nil)")
+        }
+        guard let image = renderer.snapshot(frameInfo, crop: cropRect) else {
             fail("snapshot returned nil — no off-screen GPU/graphics context available here")
         }
 
@@ -88,6 +106,12 @@ enum RenderCap {
         let p = s.split(separator: ",").compactMap { Int($0) }
         guard p.count == 4 else { return nil }
         return (p[0], p[1], p[2], p[3])
+    }
+
+    static func parsePair(_ s: String) -> (x: Int, y: Int)? {
+        let p = s.split(separator: ",").compactMap { Int($0) }
+        guard p.count == 2 else { return nil }
+        return (p[0], p[1])
     }
 
     static func fail(_ message: String) -> Never {
@@ -112,7 +136,7 @@ private struct Args {
         var values: [String: String] = [:]
         var flags: Set<String> = []
         var i = 1
-        let known = Set(["--scenario", "--tick", "--rect", "--out"])
+        let known = Set(["--scenario", "--tick", "--rect", "--out", "--worm"])
         while i < argv.count {
             let a = argv[i]
             if known.contains(a), i + 1 < argv.count { values[a] = argv[i + 1]; i += 2 }

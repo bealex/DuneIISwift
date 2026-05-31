@@ -109,6 +109,28 @@ struct FrameInfoTests {
         #expect(edge(11, 11) == 500 + 0b0110)  // bottom-right corner: E and S veiled ⇒ mask 6
     }
 
+    @Test("a sandworm is emitted as a blur (terrain displacement), not a unit sprite")
+    func sandwormBlur() throws {
+        var sim = scene()
+        var worm = Unit()
+        worm.o.index = 5
+        worm.o.type = UInt8(UnitType.sandworm.rawValue)
+        worm.o.flags = [.used, .allocated, .isUnit]
+        worm.o.houseID = 6
+        worm.o.position = Tile32(x: 30 * 256 + 0x80, y: 40 * 256 + 0x80)
+        worm.o.hitpoints = 1000
+        sim.state.units[5] = worm
+
+        let f = sim.makeFrameInfo()
+        // The worm is carried in `blurs`, never in `units` (it isn't a normal SHP draw).
+        #expect(f.blurs.count == 1)
+        #expect(!f.units.contains { $0.type == .sandworm })
+        let blur = try #require(f.blurs.first)
+        #expect(blur.positionX == 30 * 256 + 0x80)
+        #expect(blur.positionY == 40 * 256 + 0x80)
+        #expect(blur.sprite.spriteIndex > 0)      // resolves to the worm silhouette frame
+    }
+
     @Test("terrain tile surfaces ground + overlay + fog")
     func terrain() {
         let f = scene().makeFrameInfo()

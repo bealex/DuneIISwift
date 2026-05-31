@@ -20,6 +20,7 @@ It lives in `DuneIIContracts` (Foundation-only, depends on nothing). The simulat
 | `units` | `state.units` (`.used`, non-`blurTile`) | renderer + inspector |
 | `structures` | `state.structures` (`.used`) | inspector/selection (the renderer draws them from `tiles`) |
 | `effects` | `state.explosions` (active) + smoke over `.isSmoking` units | renderer transient layer |
+| `blurs` | `state.units` (`.used`, `blurTile` = sandworms) | renderer shimmer layer (terrain displacement) |
 | `houses` | `state.houses` (`.used`) | game-info |
 | `viewportX`/`viewportY` | `state.viewportPosition` (packed tile → sub-tile units) | renderer scroll origin |
 
@@ -27,7 +28,7 @@ It lives in `DuneIIContracts` (Foundation-only, depends on nothing). The simulat
 `groundSpriteIndex` (`groundTileID`), `overlaySpriteIndex` (`overlayTileID`, 0 = none — a wall, or the full veil), `isUnveiled` (false = under fog in the player's view), `fogEdgeSpriteIndex` (a partial fog-of-war edge sprite for a revealed tile bordering the unknown — derived by `makeFrameInfo` from the binary `isUnveiled` neighbours via `Simulation.fogEdgeMask`; `0` = none; kept separate from `overlaySpriteIndex` because walls always show while fog edges are gated by the renderer's `showFog`). See `Architecture/Renderer.md` → "Fog of war + overlay compositing".
 
 ### Per-unit (`FrameInfo.Unit`)
-`id` (pool index), `type` (`UnitType`), `house` (effective), `positionX/Y`, `body` + optional `turret` `SpriteLayer` (from `UnitSprites`, the `viewport.c` port), `isSmoking`, `hitpoints`/`hitpointsMax`. Sandworms (`blurTile`, the shimmer) are omitted — they are not a normal SHP draw.
+`id` (pool index), `type` (`UnitType`), `house` (effective), `positionX/Y`, `body` + optional `turret` `SpriteLayer` (from `UnitSprites`, the `viewport.c` port), `isSmoking`, `hitpoints`/`hitpointsMax`. Sandworms (`blurTile`) are **not** here — they carry no normal SHP draw and are emitted to `blurs` instead (the renderer displaces the terrain under their silhouette; see `Architecture/Renderer.md` → sandworm shimmer).
 
 ### Per-structure (`FrameInfo.Structure`)
 `id`, `type` (`StructureType`), `house`, `positionX/Y` (the tile **corner**, per `Structure_Place: position &= 0xFF00`), `hitpoints`/`hitpointsMax`, `state` is not surfaced (the assembled icon already reflects it via the tile layer). Carried for the inspector/selection; the renderer draws structures from `tiles`.

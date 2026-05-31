@@ -1,0 +1,9 @@
+# The sandworm is a terrain displacement, not a sprite
+
+**Finding:** `DRAWSPRITE_FLAG_BLUR` (`gui/gui.c:1289`) draws no worm pixels — for each *opaque* pixel of the worm sprite it writes `*buf = buf[blurOffset]`, i.e. it replaces the terrain under the worm's silhouette with the pixel a few columns to the right. The worm is visible only as a **horizontal displacement of the sand**, animated by cycling `blurOffsets = {1,3,2,5,4,3,2,1}` (1–5 px) per frame. The worm sprite's role is purely the **mask** (its shape = where to displace).
+
+**Why it matters:** treating a sandworm like a normal unit (resolve its SHP frame, draw it) is wrong — it has no body to draw. It also can't live in the pure indexed compositor, which caches terrain and sprites as separate textures and so can't read "the terrain under the worm." It must be a graphics-layer (CoreGraphics) effect in the renderer leaf, carried apart from `units`. And the effect is **subtle in a still** (a 3-px shift of dithered sand looks like equivalent dithered sand) — it reads as a shimmer only in motion, so don't judge it from one screenshot; verify the displacement at the pixel level instead.
+
+**Evidence:** `Frameworks/DuneIIRenderer/ShimmerEffect.swift` (`patchRGBA` samples `terrain[left + x + offset]` within the worm mask), `SpriteKitRenderer.updateBlurs`; `FrameInfo.blurs` + `makeFrameInfo` emit `blurTile` units there. Tests: `ShimmerEffectTests.displacement`, `FrameInfoTests.sandwormBlur`, the `scena001-worm-t0` render-golden. OpenDUNE: `gui/gui.c:935` (`blurOffsets`), `gui/gui.c:1289` (the blur write).
+
+**How to apply:** any "blur"/distortion-flagged sprite (sandworm, sonic blast) is a displacement of what's behind it, not a draw — give it the framebuffer/terrain to sample and a mask, and realize it in the graphics leaf. To verify a subtle visual effect, diff the rendered pixels (worm vs no-worm), don't eyeball a single frame.

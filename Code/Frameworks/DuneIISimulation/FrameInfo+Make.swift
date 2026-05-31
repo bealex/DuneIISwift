@@ -30,18 +30,24 @@ public extension Simulation {
 
         var units = [FrameInfo.Unit]()
         var effects = [FrameInfo.Effect]()
+        var blurs = [FrameInfo.Blur]()
         for u in state.units where u.o.flags.contains(.used) {
             // Hidden units (in transport, inside a structure, off-map) are never drawn by `viewport.c`;
             // drawing them leaves a phantom at the unit's stale position (e.g. a harvester frozen at its
             // pickup spot while the carryall flies off, or a carried harvester showing before the drop).
             if u.o.flags.contains(.isNotOnMap) { continue }
             guard let type = UnitType(rawValue: Int(u.o.type)) else { continue }
-            // Sandworm shimmer (`blurTile`) is not a normal SHP draw — omit it.
-            if UnitInfo[type].o.flags.contains(.blurTile) { continue }
             // The harvesting overlay is gated on the harvester standing on a spice tile.
             let landscape = mapPrimitives.landscapeType(state.map[Int(u.o.position.packed)], tileIDs: state.tileIDs)
             let onSpice = landscape == .spice || landscape == .thickSpice
             guard let sprites = UnitSprites.info(for: u, onSpice: onSpice) else { continue }
+            // A sandworm (`blurTile`) is not a normal SHP draw: the renderer displaces the terrain under
+            // its silhouette (`DRAWSPRITE_FLAG_BLUR`). Carry it as a Blur — its body frame is the mask.
+            if UnitInfo[type].o.flags.contains(.blurTile) {
+                blurs.append(FrameInfo.Blur(positionX: Int(u.o.position.x), positionY: Int(u.o.position.y),
+                                            sprite: sprites.body))
+                continue
+            }
             let house = HouseID(rawValue: Int(state.unitHouseID(u))) ?? .harkonnen
             let isSmoking = u.o.flags.contains(.isSmoking)
             units.append(FrameInfo.Unit(
@@ -93,7 +99,7 @@ public extension Simulation {
             tiles: tiles, units: units, structures: structures, effects: effects, houses: houses,
             viewportX: Int(Tile32.packedX(state.viewportPosition)) * 256,
             viewportY: Int(Tile32.packedY(state.viewportPosition)) * 256,
-            veiledTileIndex: Int(state.tileIDs.veiled))
+            veiledTileIndex: Int(state.tileIDs.veiled), blurs: blurs)
     }
 
     /// The 4-neighbour fog-of-war veil bitmask for tile `packed` on a `width × height` grid — bit 0 = N,

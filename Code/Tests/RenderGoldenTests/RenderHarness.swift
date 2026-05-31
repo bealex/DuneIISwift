@@ -35,14 +35,17 @@ enum RenderHarness {
         let tick: Int
         let rect: (x: Int, y: Int, w: Int, h: Int)?
         let fog: Bool
+        /// Drop a stationary sandworm at this tile before rendering (to exercise the shimmer); `nil` = none.
+        let worm: (x: Int, y: Int)?
 
         init(_ name: String, scenario: String, tick: Int,
-             rect: (x: Int, y: Int, w: Int, h: Int)? = nil, fog: Bool = false) {
+             rect: (x: Int, y: Int, w: Int, h: Int)? = nil, fog: Bool = false, worm: (x: Int, y: Int)? = nil) {
             self.name = name
             self.scenario = scenario
             self.tick = tick
             self.rect = rect
             self.fog = fog
+            self.worm = worm
         }
     }
 
@@ -64,6 +67,18 @@ enum RenderHarness {
         for slot in state.units.indices where state.units[slot].o.flags.contains(.used) {
             setup.setAction(slot: slot, action: state.units[slot].actionID, scriptInfo: unitScript, in: &state)
             state.unitUpdateMap(1, slot)
+        }
+
+        // Optionally drop a stationary sandworm (no script → it sits) to exercise the shimmer.
+        if let w = c.worm, let slot = state.units.firstIndex(where: { !$0.o.flags.contains(.used) }) {
+            var worm = Unit()
+            worm.o.index = UInt16(slot)
+            worm.o.type = UInt8(UnitType.sandworm.rawValue)
+            worm.o.flags = [.used, .allocated, .isUnit]
+            worm.o.houseID = 6
+            worm.o.position = Tile32(x: UInt16(w.x) * 256 + 0x80, y: UInt16(w.y) * 256 + 0x80)
+            worm.o.hitpoints = 1000
+            state.units[slot] = worm
         }
 
         var sim = Simulation(state: state, scriptInfo: unitScript,

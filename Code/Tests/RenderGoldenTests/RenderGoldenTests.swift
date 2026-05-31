@@ -21,6 +21,9 @@ struct RenderGoldenTests {
         // A richer multi-structure enemy base: house-recoloured structures (red Harkonnen vs blue Atreides
         // player), concrete slabs, walls (the transparent overlay composite), infantry + vehicles.
         .init("scena005-base-t40", scenario: "SCENA005.INI", tick: 40, rect: (38, 40, 18, 14)),
+        // A sandworm straddling the rock/sand boundary — the shimmer displaces the high-contrast terrain
+        // under its silhouette (CoreGraphics blur). A still capture is subtle (the in-game shimmer animates).
+        .init("scena001-worm-t0", scenario: "SCENA001.INI", tick: 0, rect: (32, 19, 7, 7), worm: (35, 22)),
     ]
 
     static var recording: Bool { ProcessInfo.processInfo.environment["DUNEII_RENDER_RECORD"] != nil }
