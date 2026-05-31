@@ -93,6 +93,7 @@ struct ScenarioGoldenTests {
         var team: Bool = false  // bridge TEAM.EMC + the team-script offsets (the [TEAMS] AI golden)
         var cmd2Unit: UInt16? = nil  // an optional second attack order (the mutual missile duel)
         var cmd2Tile: UInt16 = 0
+        var tickExplosions: Bool = false  // tick the GUI-clocked explosion VM ([BASIC] TickExplosions=1)
         var testDescription: String { name }
     }
 
@@ -108,7 +109,7 @@ struct ScenarioGoldenTests {
         Spec(name: "teams", ini: "teams.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false, team: true),  // TEAM-AI golden: an Ordos `Normal`-brain team recruits its tanks via GameLoop_Team. Unit-state + (decisively) the RNG draw stream match the oracle full 400 ticks — proving the team loop + brain run identically cross-engine (recruiting isn't in the dump; the RNG stream is the proof). Targeting is fog-gated off (seenByHouses 0), matching the oracle.
         Spec(name: "missile-duel", ini: "missile-duel.ini", attack: true, cmdUnit: 22, tile: 1045, compared: 0, cmd2Unit: 23, cmd2Tile: 1040),
         Spec(name: "wall-destruction", ini: "wall-destruction.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0),  // MAP-TILE golden: a tank's bullet impacts an Ordos wall; the 25-dmg hit's Random_256 roll (this seed) destroys the 50-HP wall at tick 67 — the [DUMPTILES] cell's ground reverts to terrain + overlay becomes the destroyed-wall marker (Map_MakeExplosion's wall branch + Map_UpdateWall). Rides the RNG-stream golden (the destroy draws Random_256).
-        Spec(name: "slab-indestructible", ini: "slab-indestructible.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0),  // MAP-TILE golden: a tank fires at an Ordos concrete slab. Slabs have no destruction mechanic in 1.07 (Map_MakeExplosion only special-cases LST_WALL), so the [DUMPTILES] cell stays a slab the whole run — verifying our explosion-on-slab matches the oracle (the slab is left alone).  // BULLET-ACCOUNTING golden: an Atreides + an Ordos Launcher each ordered to attack the other, trading notAccurate rockets. Each rocket is a unit (Unit_Allocate → the firing house's unitCount++) freed on impact (unitCount--), so the per-tick house unitCount oscillates as bullets spawn + land — asserting the projectile allocate/free accounting matches the oracle tick-for-tick (the accounting whose uint16 wrap crashed a long mapview run). Non-player houses avoid the player-house House_CalculatePowerAndCredit GUI path the headless oracle lacks (turrets can't fire headless — no sprite-rotation GFX — so a missile duel exercises the identical bullet path).
+        Spec(name: "slab-indestructible", ini: "slab-indestructible.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0, tickExplosions: true),  // MAP-TILE golden, explosion VM TICKED: a tank's EXPLOSION_IMPACT_SMALL has no TILE_DAMAGE, so the [DUMPTILES] slab cell stays a slab even with explosions ticking. (Concrete IS destructible — by a TILE_DAMAGE explosion (IMPACT_LARGE/EXPLODE), verified RNG-free in ExplosionTests; a scattering rocket can't reliably hit an exact tile, so the destruction isn't a scenario golden.)  // BULLET-ACCOUNTING golden: an Atreides + an Ordos Launcher each ordered to attack the other, trading notAccurate rockets. Each rocket is a unit (Unit_Allocate → the firing house's unitCount++) freed on impact (unitCount--), so the per-tick house unitCount oscillates as bullets spawn + land — asserting the projectile allocate/free accounting matches the oracle tick-for-tick (the accounting whose uint16 wrap crashed a long mapview run). Non-player houses avoid the player-house House_CalculatePowerAndCredit GUI path the headless oracle lacks (turrets can't fire headless — no sprite-rotation GFX — so a missile duel exercises the identical bullet path).
     ]
 
     /// Sorted by `index` so the comparison is independent of pool/find-array enumeration order: our engine
@@ -202,7 +203,7 @@ struct ScenarioGoldenTests {
 
         // Run our engine for the whole trajectory, capturing a frame per tick (frame 0 = post-command).
         var sim = Simulation(state: state, scriptInfo: scriptInfo, structureScriptInfo: structureScriptInfo,
-                             teamScriptInfo: teamScriptInfo)
+                             teamScriptInfo: teamScriptInfo, tickExplosions: spec.tickExplosions)
         // Record our per-tick RNG draws (post-setup, like the oracle's trace) for the draw-stream assertion.
         let rngSink = RngTraceSink()
         sim.state.random256.traceSink = rngSink

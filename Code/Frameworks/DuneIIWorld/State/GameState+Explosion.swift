@@ -66,7 +66,7 @@ public extension GameState {
                     case .moveYPosition:
                         explosions[i].position.y = UInt16(truncatingIfNeeded: Int(explosions[i].position.y) + Int(parameter))
                     case .tileDamage:
-                        break   // SEAM: crater overlay + Map_ChangeSpiceAmount + bloom (+ Random_256); cosmetic, gated off for goldens
+                        explosionTileDamage(explosions[i].position.packed)
                     case .playVoice:
                         break   // SEAM: audio (Voice_PlayAtTile)
                     case .screenShake:
@@ -80,6 +80,34 @@ public extension GameState {
             }
             if explosions[i].timeOut <= explosionTimer { explosionTimer = explosions[i].timeOut }
         }
+    }
+
+    /// The landscape-changing part of `Explosion_Func_TileDamage` (`explosion.c:49`): a concrete **slab**
+    /// under an explosion is blasted back to the seed base landscape tile (`g_mapTileID[packed]`) — built
+    /// concrete plates ARE destructible. A structure tile (`LST_STRUCTURE`) or an already-destroyed wall
+    /// (`LST_DESTROYED_WALL`) is left alone, and a veiled tile is untouched (`Map_IsPositionUnveiled`). The
+    /// crater **overlay** + `Map_ChangeSpiceAmount` + bloom-explode (`Tools_Random_256`) on sand/rock are a
+    /// SEAM — they need `Map_GetLandscapeType`'s full classification (a Simulation primitive) and only fire
+    /// off-slab, so they are gated out of the slab-destruction path here.
+    mutating func explosionTileDamage(_ packed: UInt16) {
+        let pos = Int(packed)
+        guard pos >= 0, pos < map.count, mapIsPositionUnveiled(pos) else { return }
+        // Skip a structure tile (LST_STRUCTURE) or an already-destroyed wall (LST_DESTROYED_WALL).
+        if map[pos].hasStructure { return }
+        if UInt16(map[pos].overlayTileID) == tileIDs.wall { return }
+        // A concrete slab is blasted back to the base landscape tile.
+        if map[pos].groundTileID == tileIDs.builtSlab {
+            map[pos].groundTileID = mapBaseTileID[pos]
+            mapDirty = true
+        }
+        // SEAM: the crater overlay (+ Random_256), Map_ChangeSpiceAmount, and bloom-explode on sand/rock.
+    }
+
+    /// `Map_IsPositionUnveiled` (`map.c`): the tile is revealed and its overlay isn't the fog veil.
+    private func mapIsPositionUnveiled(_ pos: Int) -> Bool {
+        guard map[pos].isUnveiled else { return false }
+        let o = UInt16(map[pos].overlayTileID)
+        return o > tileIDs.veiled || o < tileIDs.veiled &- 15   // Tile_IsUnveiled
     }
 
     /// `Explosion_Func_Stop` (`explosion.c:205`): clear the tile's `hasExplosion` and free the slot.

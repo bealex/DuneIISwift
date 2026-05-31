@@ -85,6 +85,49 @@ struct ExplosionTests {
         #expect(!state.explosions[slot].active)
     }
 
+    @Test("TILE_DAMAGE blasts a built concrete slab back to the base landscape tile (slabs are destructible)")
+    func slabDestruction() {
+        var state = GameState()
+        state.tileIDs.builtSlab = 100; state.tileIDs.wall = 50; state.tileIDs.veiled = 200
+        let p = Int(Tile32.packXY(x: 9, y: 9))
+        func makeSlab() {
+            state.map[p].groundTileID = 100       // a built concrete slab
+            state.map[p].isUnveiled = true
+            state.map[p].overlayTileID = 0        // revealed (0 < veiled − 15)
+            state.map[p].hasStructure = false
+            state.mapBaseTileID[p] = 30           // the seed base landscape tile under it
+        }
+        // The slab is blasted back to the base tile (Explosion_Func_TileDamage's LST_CONCRETE_SLAB branch).
+        makeSlab(); state.explosionTileDamage(UInt16(p))
+        #expect(state.map[p].groundTileID == 30)
+        // A veiled tile is untouched (Map_IsPositionUnveiled false).
+        makeSlab(); state.map[p].isUnveiled = false; state.explosionTileDamage(UInt16(p))
+        #expect(state.map[p].groundTileID == 100)
+        // A structure tile (LST_STRUCTURE) is skipped.
+        makeSlab(); state.map[p].hasStructure = true; state.explosionTileDamage(UInt16(p))
+        #expect(state.map[p].groundTileID == 100)
+        // An already-destroyed wall (overlay == wall id, LST_DESTROYED_WALL) is skipped.
+        makeSlab(); state.map[p].overlayTileID = 50; state.explosionTileDamage(UInt16(p))
+        #expect(state.map[p].groundTileID == 100)
+        // A non-slab tile (sand) gets no slab revert here (its crater overlay is the documented SEAM).
+        makeSlab(); state.map[p].groundTileID = 77; state.explosionTileDamage(UInt16(p))
+        #expect(state.map[p].groundTileID == 77)
+    }
+
+    @Test("the IMPACT_EXPLODE sequence reaches TILE_DAMAGE and destroys the slab in the VM")
+    func slabDestructionViaVM() {
+        var state = GameState()
+        state.tileIDs.builtSlab = 100; state.tileIDs.wall = 50; state.tileIDs.veiled = 200
+        let pos = Tile32.unpack(Tile32.packXY(x: 7, y: 7))
+        let p = Int(pos.packed)
+        state.map[p].groundTileID = 100; state.map[p].isUnveiled = true; state.map[p].overlayTileID = 0
+        state.mapBaseTileID[p] = 30
+        // A Launcher rocket impact is EXPLOSION_IMPACT_EXPLODE; its TILE_DAMAGE command reverts the slab.
+        state.explosionStart(type: ExplosionType.impactExplode.rawValue, position: pos)
+        for _ in 0 ..< 8 where state.map[p].groundTileID != 30 { step(&state) }
+        #expect(state.map[p].groundTileID == 30)
+    }
+
     @Test("a second explosion on the same tile stops the first")
     func stopAtPosition() {
         var state = GameState()
