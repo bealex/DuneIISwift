@@ -26,9 +26,11 @@ public struct UnitOrders: Sendable {
     /// Apply a `Command` (the input seam) to the unit / factory it names.
     public func apply(_ command: Command, in state: inout GameState) {
         switch command {
-            case let .move(unit, tile):   order(slot: Int(unit), action: .move, targetPacked: tile, in: &state)
-            case let .attack(unit, tile): order(slot: Int(unit), action: .attack, targetPacked: tile, in: &state)
-            case let .stop(unit):         stop(slot: Int(unit), in: &state)
+            case let .move(unit, tile):    order(slot: Int(unit), action: .move, targetPacked: tile, in: &state)
+            case let .attack(unit, tile):  order(slot: Int(unit), action: .attack, targetPacked: tile, in: &state)
+            case let .harvest(unit, tile): order(slot: Int(unit), action: .harvest, targetPacked: tile, in: &state)
+            case let .retreat(unit, tile): order(slot: Int(unit), action: .retreat, targetPacked: tile, in: &state)
+            case let .stop(unit):          stop(slot: Int(unit), in: &state)
             case let .build(structure, objectType):
                 _ = combat.structureBuildObject(slot: Int(structure), objectType: objectType, in: &state)
             case let .cancelBuild(structure):

@@ -18,8 +18,9 @@ public enum Selection: Sendable, Equatable {
     public var isEmpty: Bool { self == .none }
 }
 
-/// The two map-targeted orders the inspector's buttons arm (then the next map click supplies the tile).
-public enum OrderKind: Sendable, Hashable { case move, attack }
+/// The map-targeted orders a keyboard shortcut / inspector button arms (then the next map click supplies
+/// the tile): `m`ove, `a`ttack, `h`arvest, `r`etreat. (`s`top is immediate — no target — via `stopSelected`.)
+public enum OrderKind: Sendable, Hashable { case move, attack, harvest, retreat }
 
 /// A source of player `Command`s, drained by the host once per tick.
 public protocol InputSource: Sendable {
@@ -86,8 +87,10 @@ public struct InputController: InputSource {
     private func order(_ kind: OrderKind, slot: Int, tileX x: Int, tileY y: Int) -> Command {
         let tile = UInt16(y * mapWidth + x)
         switch kind {
-            case .move:   return .move(unit: UInt16(slot), tile: tile)
-            case .attack: return .attack(unit: UInt16(slot), tile: tile)
+            case .move:    return .move(unit: UInt16(slot), tile: tile)
+            case .attack:  return .attack(unit: UInt16(slot), tile: tile)
+            case .harvest: return .harvest(unit: UInt16(slot), tile: tile)
+            case .retreat: return .retreat(unit: UInt16(slot), tile: tile)
         }
     }
 }

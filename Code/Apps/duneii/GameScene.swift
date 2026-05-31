@@ -38,6 +38,7 @@ final class GameScene: SKScene {
     private var middleDragLastWindow: CGPoint?
     private var middleDidDrag = false
     private var middleDownScene: CGPoint?
+    private var lastTargetingActive = false   // last cursor state, so we only `.set()` the cursor on change
     private let healthLayer = SKNode()
     private var healthBars: [SKSpriteNode] = []
     private var stateChips: [SKShapeNode] = []   // a small shape+colour action chip per unit health bar
@@ -70,7 +71,9 @@ final class GameScene: SKScene {
     override func didMove(to view: SKView) {
         view.window?.acceptsMouseMovedEvents = true
         if trackingArea == nil {
-            let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
+            let area = NSTrackingArea(rect: .zero,
+                                      options: [.mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                      owner: self)
             view.addTrackingArea(area)
             trackingArea = area
         }
@@ -109,6 +112,7 @@ final class GameScene: SKScene {
         updateSelection()
         updateHealth(frame, show: model.showHealthOverlay)
         updatePlacement()
+        refreshCursor()
     }
 
     // MARK: - Placement preview
@@ -315,8 +319,35 @@ final class GameScene: SKScene {
             case 126: model?.scroll(dx: 0, dy: -64)   // ↑ (up = toward smaller image-y)
             case 125: model?.scroll(dx: 0, dy: 64)    // ↓
             case 53:  if model?.placement != nil { model?.cancelPlacement() } else { model?.deselect() }   // Esc
-            default:  super.keyDown(with: event)
+            default:
+                // Order shortcuts on the selected unit: a/m/h/r arm a target-needing order (the cursor turns
+                // into a crosshair; the next left-click supplies the target), s stops immediately.
+                switch event.charactersIgnoringModifiers?.lowercased() {
+                    case "a": model?.arm(.attack)
+                    case "m": model?.arm(.move)
+                    case "h": model?.arm(.harvest)
+                    case "r": model?.arm(.retreat)
+                    case "s": model?.stopSelected()
+                    default:  super.keyDown(with: event)
+                }
         }
+    }
+
+    // MARK: - Targeting cursor
+
+    /// True while the next left-click supplies a target: an armed unit order or structure placement.
+    private var targetingActive: Bool { (model?.pendingOrder != nil) || (model?.placement != nil) }
+
+    /// Set the crosshair while targeting, the arrow otherwise — only when the state changes (cheap each frame).
+    private func refreshCursor() {
+        guard targetingActive != lastTargetingActive else { return }
+        lastTargetingActive = targetingActive
+        (targetingActive ? NSCursor.crosshair : NSCursor.arrow).set()
+    }
+
+    /// AppKit's authoritative cursor hook (fires as the mouse moves over the view), so the crosshair sticks.
+    override func cursorUpdate(with event: NSEvent) {
+        (targetingActive ? NSCursor.crosshair : NSCursor.arrow).set()
     }
 
     private func tile(at event: NSEvent) -> (Int, Int)? {

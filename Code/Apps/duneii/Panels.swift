@@ -33,17 +33,17 @@ struct InspectorPanel: View {
                         Text("Commands").font(.headline)
                         ForEach(s.commands, id: \.self) { kind in
                             Button { model.arm(kind) } label: {
-                                Label(kind == .move ? "Move" : "Attack", systemImage: kind == .move ? "arrow.up.right" : "target")
+                                Label("\(kind.label) (\(kind.shortcut))", systemImage: kind.systemImage)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .buttonStyle(.bordered).tint(model.pendingOrder == kind ? .accentColor : nil)
                         }
                         if s.canStop {
-                            Button { model.stopSelected() } label: { Label("Stop", systemImage: "stop.fill").frame(maxWidth: .infinity, alignment: .leading) }
+                            Button { model.stopSelected() } label: { Label("Stop (S)", systemImage: "stop.fill").frame(maxWidth: .infinity, alignment: .leading) }
                                 .buttonStyle(.bordered)
                         }
                         if let p = model.pendingOrder {
-                            Label("Click a target to \(p == .move ? "move" : "attack")…", systemImage: "scope").font(.caption).foregroundStyle(.secondary)
+                            Label("Click a target to \(p.verb)…", systemImage: "scope").font(.caption).foregroundStyle(.secondary)
                         }
                         Button("Deselect", role: .cancel) { model.deselect() }.controlSize(.small)
                     }
@@ -202,5 +202,15 @@ struct Diamond: Shape {
         p.move(to: CGPoint(x: r.midX, y: r.minY)); p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
         p.addLine(to: CGPoint(x: r.midX, y: r.maxY)); p.addLine(to: CGPoint(x: r.minX, y: r.midY)); p.closeSubpath()
         return p
+    }
+}
+
+/// Presentation labels for the unit orders (the keyboard shortcuts are `m`/`a`/`h`/`r`, plus `s` for stop).
+extension OrderKind {
+    var label: String { switch self { case .move: "Move"; case .attack: "Attack"; case .harvest: "Harvest"; case .retreat: "Retreat" } }
+    var verb: String { switch self { case .move: "move"; case .attack: "attack"; case .harvest: "harvest"; case .retreat: "retreat" } }
+    var shortcut: String { switch self { case .move: "M"; case .attack: "A"; case .harvest: "H"; case .retreat: "R" } }
+    var systemImage: String {
+        switch self { case .move: "arrow.up.right"; case .attack: "target"; case .harvest: "leaf"; case .retreat: "arrow.uturn.left" }
     }
 }

@@ -89,6 +89,25 @@ struct UnitOrdersTests {
         #expect(s.units[slot].route[0] == 0xFF)
     }
 
+    @Test("harvest order sets the harvest action + targetMove to the tile")
+    func harvestOrder() {
+        var s = makeState()
+        let slot = place(&s, .harvester, house: 0, packed: 1300)
+        orders.apply(.harvest(unit: UInt16(slot), tile: 2000), in: &s)
+        #expect(s.units[slot].actionID == UInt8(ActionType.harvest.rawValue))
+        #expect(s.units[slot].targetMove == s.indexEncode(2000, type: .tile))
+        #expect(s.units[slot].targetAttack == 0)
+    }
+
+    @Test("retreat order sets the retreat action + a target")
+    func retreatOrder() {
+        var s = makeState()
+        let slot = place(&s, .tank, house: 0, packed: 1300)
+        orders.apply(.retreat(unit: UInt16(slot), tile: 2000), in: &s)
+        #expect(s.units[slot].actionID == UInt8(ActionType.retreat.rawValue))
+        #expect(s.units[slot].targetAttack != 0)
+    }
+
     @Test("findTargetAround returns an adjacent unit's tile, else the tile itself")
     func findTargetAround() {
         var s = makeState()

@@ -52,6 +52,19 @@ struct InputControllerTests {
         #expect(c.selection == .unit(slot: 7))   // selection unchanged by the targeting click
     }
 
+    @Test("harvest/retreat orders arm + target like attack/move (the h/r shortcuts)")
+    func harvestRetreatOrders() {
+        var c = InputController(mapWidth: 64)
+        c.leftClick(tileX: 0, tileY: 0, hit: .unit(slot: 7))
+        c.beginOrder(.harvest)
+        #expect(c.pendingOrder == .harvest)
+        c.leftClick(tileX: 3, tileY: 4, hit: .none)
+        #expect(c.drainCommands() == [.harvest(unit: 7, tile: 4 * 64 + 3)])
+        c.beginOrder(.retreat)
+        c.leftClick(tileX: 5, tileY: 6, hit: .none)
+        #expect(c.drainCommands() == [.retreat(unit: 7, tile: 6 * 64 + 5)])
+    }
+
     @Test("beginOrder is a no-op without a selected unit; stop + deselect")
     func armingGuardsAndStop() {
         var c = InputController()
