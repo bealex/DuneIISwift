@@ -29,6 +29,7 @@ let package = Package(
         .executable(name: "duneii-headless", targets: [ "duneii-headless" ]),
         .executable(name: "rendertest", targets: [ "rendertest" ]),
         .executable(name: "mapview", targets: [ "mapview" ]),
+        .executable(name: "duneii", targets: [ "duneii" ]),
         .executable(name: "rendercap", targets: [ "rendercap" ]),
         .executable(name: "scenariolab", targets: [ "scenariolab" ]),
     ],
@@ -103,6 +104,13 @@ let package = Package(
             name: "mapview",
             dependencies: [ "DuneIISimulation", "DuneIIWorld", "DuneIIFormats", "DuneIIRenderer", "DuneIIContracts", "DuneIIInput", "DuneIIAudio" ],
             path: "Apps/mapview"
+        ),
+        // The native macOS game client (Phase 6 host) — a SwiftUI main map window + floating AppKit tool
+        // windows (minimap, inspector, economy, debug). Non-Catalyst (pivoted from Catalyst).
+        .executableTarget(
+            name: "duneii",
+            dependencies: [ "DuneIISimulation", "DuneIIWorld", "DuneIIFormats", "DuneIIRenderer", "DuneIIContracts", "DuneIIInput", "DuneIIAudio" ],
+            path: "Apps/duneii"
         ),
         .executableTarget(
             name: "rendertest",

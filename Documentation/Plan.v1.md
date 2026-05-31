@@ -20,7 +20,7 @@ We are building a **Swift core game engine for Dune II 1.07**, not a full reprod
 **Out of scope (explicitly)**
 - Menus, intros, cutscenes, mentat animations, the briefing/score screens.
 - Reproducing the original's exact UI / HUD layout. We build our own **multi-window verification UI** instead (§4.6). The game *world* must be render-parity-faithful (§5); the surrounding UI need not match the original.
-- Cross-platform abstractions. macOS 26 (Apple Silicon), Mac Catalyst, only.
+- Cross-platform abstractions. macOS 26 (Apple Silicon), native AppKit + SwiftUI, only.
 
 **Non-negotiable tension, resolved:** "faithful to 1.07" and "extensible" conflict at the script-VM layer. We resolve it by targeting *behavioral* parity (not byte-exact), porting the deterministic primitives bit-exactly, and re-expressing behavior as hand-written state machines. See §3 and §5.
 
@@ -45,7 +45,7 @@ We are building a **Swift core game engine for Dune II 1.07**, not a full reprod
 | 1 | Parity target | **Behavioral parity** | Validate against OpenDUNE as oracle; internal RNG order may differ; enables extensible state machines. |
 | 2 | Original save compatibility | **Both + converter** | Support our own save format *and* read original `SAVE*.DAT` via a converter that maps the original's *semantic* state into our model. |
 | 3 | Behavior implementation | **State machines = exact EMC transcription** | Per type, an exact logical port of the disassembled EMC bytecode, calling faithfully-ported primitives. No shipping EMC VM; an EMC disassembler is a dev tool, and per-object decision traces verify the transcription (§5, Tier 2a). |
-| 4 | Renderer technology | **SpriteKit + Mac Catalyst** | But still behind a `Renderer` protocol with a `NullRenderer` for tests. |
+| 4 | Renderer + host technology | **SpriteKit + native macOS (AppKit + SwiftUI)** | *Pivoted from Mac Catalyst, 2026-05-31* — the host is a native AppKit/SwiftUI app (SwiftUI main map window + floating `NSPanel` tool windows that stay over the fullscreened map via `.fullScreenAuxiliary`), which Catalyst couldn't do cleanly. Still behind the `Renderer` protocol + `NullRenderer` for tests. |
 
 **Save-converter nuance (important).** We do *not* resume the original's mid-opcode EMC VM state byte-for-byte. The converter reads the original save's semantic state (unit positions/types/HP/`actionID`, houses, credits, structures, map tiles, scenario) and instantiates *our* model + seeds *our* state machines into the equivalent state. **Accepted limitation:** a converted save continues *behaviorally faithfully* (a harvesting unit keeps harvesting) but not *bit-identically* to how OpenDUNE would have continued that exact save. This is consistent with the behavioral-parity choice.
 
@@ -64,9 +64,9 @@ One SwiftPM package, multiple targets (each can be built and tested separately; 
 | `DuneIIContracts` | library | The seam: `FrameInfo` (sim→render), `Command` (input→sim), `SoundEvent` (sim→audio), plus shared IDs/enums. Self-contained value types. |
 | `DuneIISimulation` | library | Logic **and** loop (combined — see §4.5). Native primitives, per-type state machines, the four-phase `tick()`, the two-clock + speed/pause model. Applies `Command`s; emits `FrameInfo` + `SoundEvent`s. Headless, deterministic, sped-up testable. |
 | `DuneIIRenderer` | library | `Renderer` protocol + `NullRenderer` (tests) + `SpriteKitRenderer`. Renders pixel-faithful world *content* from `FrameInfo`, **upscaled (nearest-neighbor) into a resizable, scalable window** (not a fixed 320×200 framebuffer). Also exposes reusable **sprite/animation drawing services** (draw frame N of sprite S in house H's palette) used by the UI panels (§4.6) and the render-test app (§4.7). Depends on Contracts + Formats only. |
-| `DuneIIInput` | library | `InputSource` protocol + `ScriptedInput` (mock) + `CatalystInput`. Depends on Contracts only. |
+| `DuneIIInput` | library | `InputSource` protocol + `ScriptedInput` (mock) + the interactive `InputController` (selection/order state machine). The native macOS host wires `NSEvent`s to it. Depends on Contracts only. |
 | `DuneIIAudio` | library | **Postponed.** `AudioSink` protocol + `NullAudio` now; Core Audio implementation later. The `SoundEvent` seam is built early so it slots in cleanly. |
-| `duneii` | executable | Mac Catalyst app host. Hosts the **multi-window verification UI** (§4.6): map window (embeds `DuneIIRenderer`), inspector window, game-info window, build dialog. Wires Simulation + Renderer + Input + Audio. |
+| `duneii` | executable | **Native macOS (AppKit + SwiftUI) app host.** Hosts the **multi-window UI** (§4.6): a SwiftUI main **map window** + floating AppKit `NSPanel` **tool windows** (minimap, selection, economy, debug) that stay over the fullscreened map. Wires Simulation + Renderer + Input + Audio. |
 | `duneii-headless` | executable | Test/oracle driver: Simulation + NullRenderer + ScriptedInput + fast loop. Runs scenarios for parity checks. |
 | `rendertest` | executable | **Renderer test app** (§4.7): browse and display any sprite at any frame/phase, play any animation, for any house palette. Verifies rendering parity in isolation. Depends on Formats + Renderer. |
 | `assetgen` | executable | Extracts/regenerates `Resources/` from the install (kept — the engine needs the data). Also hosts the **`emc-disasm`** subcommand that disassembles `UNIT/BUILD/TEAM.EMC` to readable form for deriving exact state machines. |
@@ -136,7 +136,7 @@ The v1 window set:
 - **Game-info window** — global state: credits, power, spice, per-house unit/structure counts, tick/clock, game speed.
 - **Extensible** — further tool windows ("and so on") follow the same `FrameInfo`-in / `Command`-out pattern.
 
-This multi-window UI is also a **human-facing behavior-verification instrument** (the complement to the automated parity harness in §5): watch the map + inspector + game-info and confirm the engine plays like 1.07. Platform tech (Mac Catalyst `UIScene` multi-window vs AppKit windows) is an open item (§8).
+This multi-window UI is also a **human-facing behavior-verification instrument** (the complement to the automated parity harness in §5): watch the map + inspector + game-info and confirm the engine plays like 1.07. Platform tech is **decided: native macOS (AppKit + SwiftUI)** — a SwiftUI map window + floating `NSPanel` tool windows (`.fullScreenAuxiliary`, so they stay over the fullscreened map). (Pivoted from Mac Catalyst.)
 
 ### 4.7 Renderer test app (`rendertest`)
 
@@ -200,7 +200,7 @@ Per-phase **done-bar** is what makes the phase complete. Parallelism is noted.
 
 **Phases 4–5 — `DuneIIRenderer`, `rendertest`, and `DuneIIInput` (parallel with Phase 3 once Contracts is stable).** Renderer: `Renderer` protocol + `NullRenderer` + `SpriteKitRenderer` rendering **pixel-faithful world content from `FrameInfo`, upscaled (nearest-neighbor) into a resizable, scalable window**, plus reusable sprite/animation drawing services. Build the **`rendertest`** app (§4.7): browse any sprite frame/phase, play any animation, for any house. Input: `InputSource` + `ScriptedInput` (unlocks scripted Phase-3 test scenarios) + `CatalystInput`. *Done:* `rendertest` displays every sprite/animation for every house, and a sampled sprite frame diffs pixel-exact against a reference PNG; the renderer reproduces a recorded `FrameInfo` correctly; scripted input drives a headless scenario.
 
-**Phase 6 — Hosts + multi-window UI.** `duneii` (Catalyst app) hosts the **multi-window verification UI** (§4.6): map window, inspector window, game-info window, and the build dialog — each a Contracts-bound panel consuming `FrameInfo` and emitting `Command`s. `duneii-headless` (oracle/test driver) wires the headless path. *Done:* a scenario is playable and observable across the windows (a human can verify it plays like 1.07); the headless driver runs the parity corpus.
+**Phase 6 — Hosts + multi-window UI.** `duneii` (**native macOS** AppKit + SwiftUI app) hosts the **multi-window UI** (§4.6): a SwiftUI map window + floating `NSPanel` tool windows (minimap, selection, economy, debug), each consuming `FrameInfo` / the live state and emitting `Command`s. `duneii-headless` (oracle/test driver) wires the headless path. *First version done (2026-05-31):* the map window (pixel-perfect pan/zoom, click-select/order) + all four tool windows + scenario loading. *Remaining:* the build dialog/factory window, richer selection (drag-group), wiring the sim's sound/voice events.
 
 **Phase 7 — `DuneIIAudio` (postponed).** `AudioSink` + `NullAudio` exists from Phase 0; add a Core Audio implementation consuming `SoundEvent`s when prioritized.
 
@@ -222,7 +222,7 @@ Documented so they are never mistaken for bugs:
 2. Confirm the **package names** and the single-package-multi-target layout (vs. truly separate packages) before scaffolding.
 3. Decide whether `assetgen` + committed `Resources/` are regenerated fresh in Phase 1 or carried forward.
 4. Stand up the **OpenDUNE oracle tooling** (extend the existing parity hooks to dump Tier-1/2/3 fixtures, including per-object decision traces for Tier 2a) early in Phase 1–2 so fixtures exist before Phase 3 needs them.
-5. Decide the **multi-window UI tech** (Mac Catalyst `UIScene` multi-window vs AppKit windows) and whether the UI panels become a `DuneIIUI` library or stay in the `duneii` host.
+5. ~~Decide the multi-window UI tech.~~ **Resolved (2026-05-31): native macOS (AppKit + SwiftUI), non-Catalyst** — SwiftUI map window + floating `NSPanel` tool windows. The UI panels live in the `duneii` host for now (factorable into a `DuneIIUI` library if they grow).
 6. Confirm the **v1 window set** (map, inspector, game-info, build dialog) and which additional tool windows are wanted.
 
 ---

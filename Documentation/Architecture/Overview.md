@@ -9,7 +9,7 @@ The **simulation** is the center; **renderer / input / audio** are mockable leav
 ## Targets and dependencies (downward only)
 
 ```
- Hosts:  duneii (Catalyst app)               duneii-headless (tests/oracle)
+ Hosts:  duneii (native macOS app)           duneii-headless (tests/oracle)
             └───────── wire the pieces together ──────────┘
    ┌───────────┬───────────┬───────────┬────────────────────────────┐
    │ Renderer  │  Input    │  Audio    │  Simulation (logic + loop)  │
@@ -29,7 +29,7 @@ The **simulation** is the center; **renderer / input / audio** are mockable leav
                  └────────────────────┘  Format80/40 (pure Data→Data)
 ```
 
-`DuneIIRenderer`/`Input`/`Audio` ship a protocol + a Foundation-only Null/Mock implementation now; the SpriteKit/Catalyst/Core-Audio implementations arrive in their phases (via Xcode integration / `#if canImport`).
+`DuneIIRenderer`/`Input`/`Audio` ship a protocol + a Foundation-only Null/Mock implementation plus the real one: `SpriteKitRenderer`, the `InputController`, and `EngineAudioSink` (AVAudioEngine). The `duneii` host is a **native macOS** (AppKit + SwiftUI, non-Catalyst) app — a SwiftUI map window + floating `NSPanel` tool windows.
 
 ## What mirrors OpenDUNE, what departs
 
