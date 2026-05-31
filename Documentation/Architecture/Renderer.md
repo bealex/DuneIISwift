@@ -36,12 +36,29 @@ FrameInfo ──► FrameComposer ──► (terrain index buffer, [ComposedSpri
   capture (a node has one parent, so a capture renderer must not also be `attach`ed to a live scene).
   Capture is **GPU-backed** — it runs under `swift test` / a tool on a real Mac (which has a GPU), and
   returns `nil` on a no-GPU box. The per-pixel composition it captures is itself covered headlessly by the
-  `FrameComposer`/`FrameInfo` tests (no GPU needed).
+  `FrameComposer`/`FrameInfo` tests (no GPU needed). **Backing scale:** `texture(from:)` rasterizes at the
+  host's backing scale (2× on a Retina display), so the returned `CGImage` is larger than the logical world
+  (`worldSidePx`); `snapshot` scales the logical-point `crop` rect to pixels by the measured ratio before
+  `cropping(to:)`, so a crop captures the requested tile region at any backing scale (the un-cropped image
+  is returned at native resolution).
 
 - **`DecodedSpriteSource`** — a reusable value-type `WorldSpriteSource` over decoded assets (`Icn.TileSet`
   + the UNITS `Shp.FrameSet`s keyed by file, addressed via `GlobalSprite`). `mapview`'s `MapSpriteSource`
   now just adapts its `@MainActor` `AssetStore` into one; a headless capture / test constructs it from
   whatever loader it has.
+
+- **Render-golden harness (`RenderGoldenTests`).** The auto-test payoff of `snapshot` and the Phase-4 DoD
+  *"diff a rendered frame pixel-exact against a reference PNG."* Each case (`RenderHarness.Case`: scenario +
+  tick + optional tile-space crop + fog) runs the scenario through the **real** `Simulation`, captures the
+  region through the **real** `SpriteKitRenderer.snapshot`, and diffs it byte-for-byte against a committed
+  reference (`Tests/RenderGoldenTests/Fixtures/<name>.png`) via `PngImage` (RGBA8 decode + per-channel diff,
+  reporting mismatch count / first-pixel / max Δ). **One capture path** records and diffs: with
+  `DUNEII_RENDER_RECORD=1` a case *writes* its reference (so the reference is exactly what the renderer
+  produces), without it the case *diffs* a fresh capture — `Scripts/gen-render-goldens.sh` records. Adding a
+  case is one line in the `cases` table + a re-record. It short-circuits (passes) when the install or an
+  off-screen GPU context is absent. Pixel-exactness holds run-to-run on a given host; the references are
+  captured at the host backing scale, so the harness is a same-host (dev Mac / consistent CI) regression
+  guard, not a cross-GPU oracle.
 
 ## Conventions
 

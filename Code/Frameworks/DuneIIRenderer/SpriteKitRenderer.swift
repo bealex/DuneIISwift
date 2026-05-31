@@ -102,7 +102,13 @@ public final class SpriteKitRenderer {
         guard let texture = view.texture(from: scene) else { return nil }
         let full = texture.cgImage()
         guard let crop else { return full }
-        return full.cropping(to: crop)
+        // `texture(from:)` rasterizes at the host backing scale (2× on a Retina display), so the CGImage is
+        // larger than the logical `side`. `crop` is in logical points (image-space, y-down) — scale it to
+        // pixels by the measured ratio so the requested tile region is captured at any backing scale.
+        let scale = CGFloat(full.width) / side
+        let pixels = CGRect(x: crop.minX * scale, y: crop.minY * scale,
+                            width: crop.width * scale, height: crop.height * scale)
+        return full.cropping(to: pixels)
     }
 
     /// Add the renderer's nodes to a scene once (static terrain at z 0, dynamic overlay above it, sprites on top).
