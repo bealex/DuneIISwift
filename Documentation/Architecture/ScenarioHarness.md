@@ -63,6 +63,12 @@ renders terrain + units for visual assessment — the same scenario the golden v
 - [x] (interim) synthetic terrain/builder + app + foundation `DuneIIScenarios` + `scenariolab`.
 - [x] Bootstrap `.INI` + our `loadScenario` (`BootstrapScenarioTests`).
 - [x] Command pipeline — `Command` (Contracts) + `UnitOrders` (sim) + the oracle's `Scen_Order` replay.
+- [x] Structure-placement command — `--parity-place=<cyIndex>,<objectType>,<tile>` (oracle `Scen_BuildPlace`)
+  + the `place:` specs (Swift `structureBuildObject` + `structurePlaceReady`). A CY builds + the player places
+  a structure; exercises the per-refinery harvester spawn (`refinery-harvester` golden). Headless caveats:
+  the build is force-completed (no countdown); the oracle replicates only the headless state-setup (the full
+  `Structure_BuildObject`/`House_CalculatePowerAndCredit` player-house `GUI_DisplayText` needs strings the
+  harness doesn't load — keep the player **powered** so the underpowered-warning text never fires).
 - [x] Oracle scenario parity mode (`--parity-scenario` in `parity.c`, self-contained: pools + ICON.MAP +
   `UNIT.EMC` + `Map_CreateLandscape` + `[UNITS]` + command replay + per-tick dump) + golden test
   (`ScenarioGoldenTests`, frame-0 parity for the moving scenario).

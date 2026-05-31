@@ -199,7 +199,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | …missing-slab HP penalty (`−neededSlabs`) | ✅ | same |
 | `Structure_Place` (corner, HP penalty, degrade, map stamp) | ✅ | `UnitCombat.structurePlace` — incl. the wall/slab special cases (`structure.c:456`/`:476`): paint the tile(s) + `Structure_Free`, so player-built concrete becomes `builtSlab` tiles, not a selectable sprite-baked structure (`StructureBuildTests.placeConcrete`) |
 | `Structure_Create` (allocate, init, place, AI full-upgrade) | ✅ | `UnitCombat.structureCreate` |
-| Construction-yard place-flow + factory reset | ✅ | `UnitCombat.structurePlaceReady` — **each** placed refinery spawns its own harvester (`viewport.c:210`), so a 2nd/3rd refinery each get one (`StructureBuildTests.refineryHarvesterPerPlacement`) |
+| Construction-yard place-flow + factory reset | ✅ | `UnitCombat.structurePlaceReady` — **each** placed refinery spawns its own harvester (`viewport.c:210`), so a 2nd/3rd refinery each get one (`StructureBuildTests.refineryHarvesterPerPlacement`; cross-engine `refinery-harvester` scenario golden — 2 refineries + `unitCount==4` match the oracle) |
 | Slab placement (`placeSlab`) | ✅ | `GameState+WallSlab` |
 | Wall placement + `structureConnectWall` | ✅ | `GameState+WallSlab` |
 | Unit-factory auto-deploy (BUILD.EMC unload + free-position) | ✅ | natives 0x07/0x03 |

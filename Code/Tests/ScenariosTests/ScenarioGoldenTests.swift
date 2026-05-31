@@ -46,6 +46,16 @@ import DuneIISimulation
 /// fire regardless. With the cursor draw made unconditional the streams align and the guard's twitch
 /// matches tick-for-tick. (The "render-only wobble / don't-chase-RNG-order" diagnosis was wrong — same
 /// logic ⇒ same draw count; the gap was a real one-draw transcription miss, now fixed.)
+///
+/// **`refinery-harvester` — a STRUCTURE-PLACEMENT golden** (the `place:` specs + the oracle's
+/// `--parity-place`/`Scen_BuildPlace`). A Harkonnen construction yard builds + places two refineries on a
+/// concrete pad; **each** placement spawns its own ferried harvester (`viewport.c:210`, the per-refinery
+/// spawn this golden locks). Frame 0 (no ticks) matches the oracle on the CY + windtrap + 2 refineries
+/// (structures, incl. the refinery's incoming-`BUSY` state) and the 2 spawned carryalls (units — the
+/// in-transport harvesters are skipped by `Unit_Find` in both engines, but the house `unitCount==4` proves
+/// all 4 units exist). The carryalls' spawn positions come from `Unit_CreateWrapper`'s RNG, so a position
+/// match proves that RNG aligned cross-engine. A windtrap powers the base (else the oracle's underpowered
+/// `House_CalculatePowerAndCredit` GUI text crashes headless).
 @Suite("Scenario golden vs OpenDUNE")
 struct ScenarioGoldenTests {
     struct Frame: Decodable { let tick: Int; let units: [UnitState]; let structures: [StructureGolden]?; let houses: [HouseGolden]?; let tiles: [TileGolden]? }
@@ -94,8 +104,13 @@ struct ScenarioGoldenTests {
         var cmd2Unit: UInt16? = nil  // an optional second attack order (the mutual missile duel)
         var cmd2Tile: UInt16 = 0
         var tickExplosions: Bool = false  // tick the GUI-clocked explosion VM ([BASIC] TickExplosions=1)
+        var place: [PlaceCmd] = []   // build+place commands (a CY builds + the player places a structure)
         var testDescription: String { name }
     }
+
+    /// A build+place command: construction yard `cy` builds `objectType` (a `StructureType.rawValue`) and the
+    /// player places it at `tile` — mirrors the oracle's `--parity-place` (exercises the per-refinery harvester).
+    struct PlaceCmd: Sendable { let cy: UInt16; let objectType: UInt16; let tile: UInt16 }
 
     static let specs: [Spec] = [
         Spec(name: "moving",       ini: "bootstrap.ini",    attack: false, cmdUnit: 22, tile: 2600, compared: 0),  // tank, full match
@@ -109,6 +124,8 @@ struct ScenarioGoldenTests {
         Spec(name: "teams", ini: "teams.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false, team: true),  // TEAM-AI golden: an Ordos `Normal`-brain team recruits its tanks via GameLoop_Team. Unit-state + (decisively) the RNG draw stream match the oracle full 400 ticks — proving the team loop + brain run identically cross-engine (recruiting isn't in the dump; the RNG stream is the proof). Targeting is fog-gated off (seenByHouses 0), matching the oracle.
         Spec(name: "missile-duel", ini: "missile-duel.ini", attack: true, cmdUnit: 22, tile: 1045, compared: 0, cmd2Unit: 23, cmd2Tile: 1040),
         Spec(name: "wall-destruction", ini: "wall-destruction.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0),  // MAP-TILE golden: a tank's bullet impacts an Ordos wall; the 25-dmg hit's Random_256 roll (this seed) destroys the 50-HP wall at tick 67 — the [DUMPTILES] cell's ground reverts to terrain + overlay becomes the destroyed-wall marker (Map_MakeExplosion's wall branch + Map_UpdateWall). Rides the RNG-stream golden (the destroy draws Random_256).
+        Spec(name: "refinery-harvester", ini: "refinery-harvester.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false,
+             place: [PlaceCmd(cy: 0, objectType: 12, tile: 1168), PlaceCmd(cy: 0, objectType: 12, tile: 1296)]),  // a CY builds + places 2 refineries on a concrete pad; EACH placement spawns its own ferried harvester (the per-refinery spawn, viewport.c:210). Frame 0: CY + windtrap + 2 refineries (structures) + 2 spawned carryalls (the in-transport harvesters are skipped, but houses.unitCount==4 proves all 4 units exist). The carryall spawn positions prove Unit_CreateWrapper's RNG aligned cross-engine.
         Spec(name: "slab-indestructible", ini: "slab-indestructible.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0, tickExplosions: true),  // MAP-TILE golden, explosion VM TICKED: a tank's EXPLOSION_IMPACT_SMALL has no TILE_DAMAGE, so the [DUMPTILES] slab cell stays a slab even with explosions ticking. (Concrete IS destructible — by a TILE_DAMAGE explosion (IMPACT_LARGE/EXPLODE), verified RNG-free in ExplosionTests; a scattering rocket can't reliably hit an exact tile, so the destruction isn't a scenario golden.)  // BULLET-ACCOUNTING golden: an Atreides + an Ordos Launcher each ordered to attack the other, trading notAccurate rockets. Each rocket is a unit (Unit_Allocate → the firing house's unitCount++) freed on impact (unitCount--), so the per-tick house unitCount oscillates as bullets spawn + land — asserting the projectile allocate/free accounting matches the oracle tick-for-tick (the accounting whose uint16 wrap crashed a long mapview run). Non-player houses avoid the player-house House_CalculatePowerAndCredit GUI path the headless oracle lacks (turrets can't fire headless — no sprite-rotation GFX — so a missile duel exercises the identical bullet path).
     ]
 
@@ -116,7 +133,9 @@ struct ScenarioGoldenTests {
     /// dumps in slot order, the oracle in allocation (find-array) order, which differ once a unit is
     /// spawned mid-run (e.g. a bullet lands in a low slot but is allocated last). `index` is unique.
     private func snapshot(_ s: GameState) -> [UnitState] {
-        s.units.indices.filter { s.units[$0].o.flags.contains(.used) }.map { i in
+        // Skip in-transport (off-map) units — the oracle's `Unit_Find` skips them at the dump point
+        // (`g_validateStrictIfZero == 0`), so a ferried (riding) harvester appears in neither dump.
+        s.units.indices.filter { s.units[$0].o.flags.contains(.used) && !s.units[$0].o.flags.contains(.isNotOnMap) }.map { i in
             let u = s.units[i]
             return UnitState(index: u.o.index, type: u.o.type, houseID: u.o.houseID,
                              packed: u.o.position.packed, orient: Int16(u.orientation[0].current),
@@ -198,6 +217,20 @@ struct ScenarioGoldenTests {
             UnitOrders(scriptInfo: scriptInfo).apply(order, in: &state)
             if let u2 = spec.cmd2Unit {   // the mutual missile duel: a second launcher attacks back
                 UnitOrders(scriptInfo: scriptInfo).apply(.attack(unit: u2, tile: spec.cmd2Tile), in: &state)
+            }
+        }
+
+        // Build+place commands (the refinery-harvester golden): the real structureBuildObject +
+        // structurePlaceReady path (force-completing the build, as the oracle's Scen_BuildPlace does), so each
+        // placed refinery spawns its own ferried harvester.
+        if !spec.place.isEmpty {
+            let combat = UnitCombat(movement: UnitMovement(scriptInfo: scriptInfo))
+            for p in spec.place {
+                let cy = Int(p.cy)
+                _ = combat.structureBuildObject(slot: cy, objectType: p.objectType, in: &state)
+                state.structures[cy].countDown = 0
+                state.structures[cy].state = .ready
+                _ = combat.structurePlaceReady(factory: cy, position: p.tile, in: &state)
             }
         }
 

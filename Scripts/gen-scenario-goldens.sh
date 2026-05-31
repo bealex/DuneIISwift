@@ -45,7 +45,9 @@ echo "Staging data dir ($DATADIR = install + scenario INIs)…"
 rm -rf "$DATADIR"; mkdir -p "$DATADIR"
 for f in "$INSTALL"/*; do ln -sf "$f" "$DATADIR/"; done
 
-# run <name> <scenarioId> <iniFile> <ticks> <cmd...>   (cmd = move|attack,<unitIndex>,<packedTile>)
+# run <name> <scenarioId> <iniFile> <ticks> <cmd...>
+#   cmd = move|attack,<unitIndex>,<packedTile>  →  --parity-cmd
+#         place,<cyIndex>,<objectType>,<tile>   →  --parity-place (build+place a structure on a CY)
 run() {
   local name="$1" id="$2" ini="$3" ticks="$4"; shift 4
   [ -n "$ONLY" ] && [ "$ONLY" != "$name" ] && return 0
@@ -53,7 +55,9 @@ run() {
   local args=(--parity-scenario="$id" --parity-ticks="$ticks"
               --parity-data-dir="$DATADIR" --parity-dump="$FIX/$name-golden.jsonl"
               --parity-random-trace="$FIX/$name-r256.txt" --parity-lcg-trace="$FIX/$name-lcg.txt")
-  local c; for c in "$@"; do args+=(--parity-cmd="$c"); done
+  local c; for c in "$@"; do
+    if [[ "$c" == place,* ]]; then args+=(--parity-place="${c#place,}"); else args+=(--parity-cmd="$c"); fi
+  done
   echo "  $name  (scenario $id, $ticks ticks, cmds: $*)"
   "$ORACLE/bin/opendune" "${args[@]}"
 }
@@ -73,6 +77,11 @@ run  teams        91   teams.ini         "$TICKS"
 run  missile-duel 90   missile-duel.ini  "$TICKS"  attack,22,1045  attack,23,1040
 run  wall-destruction 89 wall-destruction.ini "$TICKS" attack,22,1042
 run  slab-indestructible 88 slab-indestructible.ini "$TICKS" attack,22,1042
+# refinery-harvester: a CY builds + places two refineries on a concrete pad; EACH placement spawns its own
+# ferried harvester (viewport.c:210). Frame 0 only (0 ticks) — compares the CY + 2 refineries, the 2 spawned
+# carryalls (positions prove the Unit_CreateWrapper spawn RNG aligned), and houses' unitCount==4 +
+# harvestersIncoming==0. The in-transport harvesters are skipped by Unit_Find (both engines).
+run  refinery-harvester 87 refinery-harvester.ini 0 place,0,12,1168 place,0,12,1296
 # Multi-unit attack/guard match the deterministic prefix (setup + movement + the guard sitting); the
 # Swift side gates `compared` before combat RNG (target acquisition / fire), which parity doesn't chase.
 # attack-structure dumps structures + houses too (Scen_DumpState): a tank drains + destroys a windtrap.
