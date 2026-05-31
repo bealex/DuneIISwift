@@ -139,6 +139,34 @@ struct StructureBuildTests {
         }
     }
 
+    @Test("carryall/cargo fix: a placed refinery's harvester carries that refinery as its originEncoded")
+    func refineryHarvesterOriginEncoded() throws {
+        var s = GameState(random256Seed: 0x55, randomLCGSeed: 0x55)
+        s.playerHouseID = 0
+        _ = s.houseAllocate(index: 0); s.houses[0].unitCountMax = 100
+        s.houses[0].structuresBuilt = 0xFFFFFF; s.houses[0].credits = 5000; s.campaignID = 9
+        let combat = UnitCombat(movement: UnitMovement(scriptInfo: info))
+
+        let cy = addFactory(&s, .constructionYard)
+        #expect(combat.structureBuildObject(slot: cy, objectType: UInt16(StructureType.refinery.rawValue), in: &s))
+        s.structures[cy].countDown = 0; s.structures[cy].state = .ready
+        let corner = Tile32.packXY(x: 10, y: 10)
+        s.map[Int(corner) - 64].houseID = 0
+        #expect(combat.structurePlaceReady(factory: cy, position: corner, in: &s))
+
+        let refinery = try #require((0 ..< s.structures.count).first {
+            s.structures[$0].o.flags.contains(.used) && s.structures[$0].o.type == UInt8(StructureType.refinery.rawValue)
+        })
+        let harvester = try #require(s.unitFindArray.map { Int($0) }.first {
+            s.units[$0].o.type == UInt8(UnitType.harvester.rawValue)
+        })
+        // Before the fix, `unitCreateWrapper` returned the carryall, so `structurePlaceReady` stamped the
+        // carryall's originEncoded and the harvester's stayed 0. Now the wrapper returns the cargo (the
+        // harvester), so the harvester points to its home refinery — matching OpenDUNE's `Unit_CreateWrapper`.
+        #expect(s.units[harvester].originEncoded == s.indexEncode(s.structures[refinery].o.index, type: .structure))
+        #expect(s.units[harvester].originEncoded != 0)
+    }
+
     @Test("placeReady refuses when the factory isn't ready")
     func placeNotReady() {
         var simulation = self.sim()
