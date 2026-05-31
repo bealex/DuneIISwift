@@ -123,4 +123,23 @@ struct ScenarioLoaderTests {
         #expect(state.starportAvailable[UnitType.trike.rawValue] == 5)
         #expect(state.starportAvailable[UnitType.quad.rawValue] == 3)
     }
+
+    @Test("[MAP] Field tiles are stashed in scenario.spiceFields (the sim fills them)")
+    func loadMapField() throws {
+        var root = URL(fileURLWithPath: #filePath)
+        for _ in 0 ..< 4 { root.deleteLastPathComponent() }
+        let iconMap = try IconMap(Data(contentsOf: root.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
+        let text = """
+        [BASIC]
+        MapScale=1
+        [MAP]
+        Seed=353
+        Field=1234,2500
+        """
+        let ini = try Ini(Data(text.utf8))
+
+        var state = GameState()
+        state.loadScenario(ini: ini, iconMap: iconMap)
+        #expect(state.scenario.spiceFields == [1234, 2500])
+    }
 }

@@ -334,7 +334,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | `[BASIC]` MapScale | ✅ | `ScenarioLoader` |
 | `[MAP]` Seed → procedural terrain + spice | ✅ | `MapGenerator.createLandscape` |
 | `[MAP]` **Bloom** / **Special** (explicit spice-bloom tiles) | ✅ | `loadMapBlooms` stamps `tileIDs.bloom` |
-| `[MAP]` **Field** (explicit spice-field tiles) | ✗ gameplay | parsed-but-dropped — needs the sim-layer `Map_Bloom_ExplodeSpice` radius-5 circle-fill (a post-load Simulation hook + `Map_ChangeSpiceAmount`) |
+| `[MAP]` **Field** (explicit spice-field tiles) | ✅ | `ScenarioLoader` stashes the tiles in `scenario.spiceFields`; `Simulation.applyScenarioSpiceFields` detonates each (`Map_Bloom_ExplodeSpice`, radius-5) before the first tick (`SpiceFieldTests`, `ScenarioLoaderTests.loadMapField`) |
 | `[<House>]` Brain/Credits/Quota/MaxUnit | ✅ | `loadHouses` |
 | `[UNITS]` | ✅ | `loadUnit` |
 | `[STRUCTURES]` (`ID`, `GEN` slabs/walls) | ✅ | `loadStructure` |
@@ -362,5 +362,5 @@ Everything in the four-phase battle simulation is done and cross-engine-verified
 5. ~~Palace super-weapons~~ ✅ (§P, 2026-05-31) — `structureActivateSpecial`: AI death-hand launch / Fremen call / saboteur deploy. The human launch UI stays a Phase-6 seam.
 6. ~~AI base expansion~~ ✅ (§O, 2026-05-31) — `aiStructureMaintenance` + `structureAIPickNextToBuild` + the `aiStructureRebuild` queue: auto-repair, auto-build, rebuild-and-auto-place.
 7. ~~Starport ordering~~ ✅ (§J, 2026-05-31) — `structureStarportOrder` chains an order onto the delivery list; the factory-window GUI + CHOAM pricing stays a Phase-6 seam.
-8. **Save / load + original-save converter** ✗ (§T) — Phase-2 tail.
-9. **Scenario `[MAP] Field` not filled** ✗ (§U) — hand-placed spice fields are parsed-but-dropped (needs a sim-layer post-load circle-fill); procedural seed spice still generates.
+8. **Save / load + original-save converter** ✗ (§T) — Phase-2 tail. **The only remaining gameplay gap** — every other feature in the four-phase battle simulation is done and cross-engine-verified.
+9. ~~Scenario `[MAP] Field` not filled~~ ✅ (§U, 2026-05-31) — `applyScenarioSpiceFields` detonates each hand-placed field (radius-5 spice circle) before the first tick.

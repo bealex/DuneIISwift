@@ -123,8 +123,9 @@ public extension GameState {
 
     /// `[MAP] Bloom` / `Special` — place the scenario's spice blooms (`Scenario_Load_Map_Bloom/_Special`,
     /// `scenario.c:96`) by stamping `tileIDs.bloom` (+1 for a "special" bloom) onto each listed packed tile,
-    /// after the seed landscape is generated + converted to real tile ids. (`[MAP] Field` — a `Map_Bloom_
-    /// ExplodeSpice` spice-circle per tile — is a Simulation-layer fill and is loaded separately.)
+    /// after the seed landscape is generated + converted to real tile ids. `[MAP] Field` is a `Map_Bloom_
+    /// ExplodeSpice` spice-circle per tile (`scenario.c:328`) — a Simulation-layer fill — so its tiles are
+    /// stashed in `scenario.spiceFields` for `Simulation.applyScenarioSpiceFields` to detonate before tick 0.
     private mutating func loadMapBlooms(ini: Ini) {
         for packed in packedList(ini.string(section: "MAP", key: "Bloom")) where Int(packed) < map.count {
             map[Int(packed)].groundTileID = tileIDs.bloom
@@ -134,6 +135,7 @@ public extension GameState {
             map[Int(packed)].groundTileID = tileIDs.bloom &+ 1
             mapBaseTileID[Int(packed)] = tileIDs.bloom &+ 1
         }
+        scenario.spiceFields = packedList(ini.string(section: "MAP", key: "Field")).filter { Int($0) < map.count }
     }
 
     /// Parse a `[MAP]` comma-separated list of packed tile indices.

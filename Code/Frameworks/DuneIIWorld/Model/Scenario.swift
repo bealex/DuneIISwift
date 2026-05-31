@@ -25,6 +25,12 @@ public struct Scenario: Sendable, Equatable {
     /// `houseID` at `locationID`. See `Reinforcement`.
     public var reinforcements = [Reinforcement](repeating: Reinforcement(), count: 16)
 
+    /// `[MAP] Field` — explicit hand-placed spice-field tiles (packed). The original detonates a spice bloom
+    /// at each (`Scenario_Load_Map_Field` → `Map_Bloom_ExplodeSpice`) **at load**; we can't reach the sim's
+    /// `Map_Bloom_ExplodeSpice` from the World loader, so we stash the tiles here and the Simulation fills them
+    /// once, before its first tick (`Simulation.applyScenarioSpiceFields`). Consumed (cleared) on apply.
+    public var spiceFields: [UInt16] = []
+
     public init() {}
 }
 
