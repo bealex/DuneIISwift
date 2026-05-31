@@ -11,10 +11,21 @@ public extension Simulation {
 
         var tiles = [FrameInfo.Tile]()
         tiles.reserveCapacity(state.map.count)
-        for tile in state.map {
+        // Partial fog edges: for a revealed tile bordering the unknown, pick the fog-edge sprite for its
+        // 4-neighbour veil bitmask (computed from the binary `isUnveiled` grid — the sim models fog as
+        // binary, the renderer derives the soft edge). The renderer draws it only when `showFog` is on.
+        let fogEdges = state.tileIDs.fogEdges
+        for i in 0 ..< state.map.count {
+            let tile = state.map[i]
+            var fogEdge = 0
+            if tile.isUnveiled, !fogEdges.isEmpty {
+                let mask = Self.fogEdgeMask(packed: i, width: width, height: height) { state.map[$0].isUnveiled }
+                if mask != 0 { fogEdge = Int(fogEdges[mask]) }
+            }
             tiles.append(FrameInfo.Tile(groundSpriteIndex: Int(tile.groundTileID),
                                         overlaySpriteIndex: Int(tile.overlayTileID),
-                                        houseID: tile.houseID, isUnveiled: tile.isUnveiled))
+                                        houseID: tile.houseID, isUnveiled: tile.isUnveiled,
+                                        fogEdgeSpriteIndex: fogEdge))
         }
 
         var units = [FrameInfo.Unit]()
@@ -83,5 +94,19 @@ public extension Simulation {
             viewportX: Int(Tile32.packedX(state.viewportPosition)) * 256,
             viewportY: Int(Tile32.packedY(state.viewportPosition)) * 256,
             veiledTileIndex: Int(state.tileIDs.veiled))
+    }
+
+    /// The 4-neighbour fog-of-war veil bitmask for tile `packed` on a `width × height` grid — bit 0 = N,
+    /// 1 = E, 2 = S, 3 = W (`g_table_mapDiff = {-64, 1, 64, -1}`): a bit is set when that neighbour is
+    /// off-map or still veiled. Mirrors `Map_UnveilTile_Neighbour` (`map.c:1311`); the result indexes the
+    /// 16 fog-edge sprites (`TileIDs.fogEdges`). Mask 0 = fully surrounded by revealed tiles ⇒ no edge.
+    static func fogEdgeMask(packed: Int, width: Int, height: Int, isUnveiled: (Int) -> Bool) -> Int {
+        let x = packed % width, y = packed / width
+        var mask = 0
+        if y == 0 || !isUnveiled(packed - width) { mask |= 1 << 0 }          // N
+        if x == width - 1 || !isUnveiled(packed + 1) { mask |= 1 << 1 }      // E
+        if y == height - 1 || !isUnveiled(packed + width) { mask |= 1 << 2 } // S
+        if x == 0 || !isUnveiled(packed - 1) { mask |= 1 << 3 }              // W
+        return mask
     }
 }

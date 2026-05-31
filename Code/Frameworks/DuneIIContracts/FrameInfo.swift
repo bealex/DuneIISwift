@@ -61,12 +61,20 @@ public struct FrameInfo: Sendable, Equatable {
         public var houseID: UInt8
         /// `false` = under fog of war in the player's view.
         public var isUnveiled: Bool
+        /// A partial fog-of-war **edge** sprite (a global tile id) for a revealed tile that borders the
+        /// unknown — a soft fog gradient, drawn over the ground (transparently) only when the renderer's
+        /// `showFog` is on. `0` = none (interior-clear, or a fully-veiled tile, which the renderer blacks
+        /// out via `overlaySpriteIndex == veiledTileIndex` instead). Separate from `overlaySpriteIndex`
+        /// because that slot carries walls (always shown), while fog edges are gated by `showFog`.
+        public var fogEdgeSpriteIndex: Int
 
-        public init(groundSpriteIndex: Int, overlaySpriteIndex: Int, houseID: UInt8, isUnveiled: Bool) {
+        public init(groundSpriteIndex: Int, overlaySpriteIndex: Int, houseID: UInt8, isUnveiled: Bool,
+                    fogEdgeSpriteIndex: Int = 0) {
             self.groundSpriteIndex = groundSpriteIndex
             self.overlaySpriteIndex = overlaySpriteIndex
             self.houseID = houseID
             self.isUnveiled = isUnveiled
+            self.fogEdgeSpriteIndex = fogEdgeSpriteIndex
         }
     }
 

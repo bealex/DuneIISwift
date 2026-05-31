@@ -24,7 +24,7 @@ It lives in `DuneIIContracts` (Foundation-only, depends on nothing). The simulat
 | `viewportX`/`viewportY` | `state.viewportPosition` (packed tile → sub-tile units) | renderer scroll origin |
 
 ### Per-tile (`FrameInfo.Tile`)
-`groundSpriteIndex` (`groundTileID`), `overlaySpriteIndex` (`overlayTileID`, 0 = none), `isUnveiled` (false = under fog in the player's view).
+`groundSpriteIndex` (`groundTileID`), `overlaySpriteIndex` (`overlayTileID`, 0 = none — a wall, or the full veil), `isUnveiled` (false = under fog in the player's view), `fogEdgeSpriteIndex` (a partial fog-of-war edge sprite for a revealed tile bordering the unknown — derived by `makeFrameInfo` from the binary `isUnveiled` neighbours via `Simulation.fogEdgeMask`; `0` = none; kept separate from `overlaySpriteIndex` because walls always show while fog edges are gated by the renderer's `showFog`). See `Architecture/Renderer.md` → "Fog of war + overlay compositing".
 
 ### Per-unit (`FrameInfo.Unit`)
 `id` (pool index), `type` (`UnitType`), `house` (effective), `positionX/Y`, `body` + optional `turret` `SpriteLayer` (from `UnitSprites`, the `viewport.c` port), `isSmoking`, `hitpoints`/`hitpointsMax`. Sandworms (`blurTile`, the shimmer) are omitted — they are not a normal SHP draw.

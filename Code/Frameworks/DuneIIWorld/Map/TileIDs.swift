@@ -10,6 +10,11 @@ public struct TileIDs: Sendable, Equatable {
     public var builtSlab: UInt16 = 0    // CONCRETE_SLAB group, tile 2
     public var landscape: UInt16 = 0    // LANDSCAPE group, tile 0
     public var wall: UInt16 = 0         // WALLS group, tile 0
+    /// The 16 partial fog-of-war edge sprites (FOG_OF_WAR group, tiles 0–15), indexed by the 4-neighbour
+    /// veil bitmask (`Map_UnveilTile_Neighbour`, `map.c:1311`; bit 0 = N, 1 = E, 2 = S, 3 = W). Index 0 is
+    /// the "no edges" tile (unused — mask 0 draws no fog overlay). The renderer draws one over a revealed
+    /// tile bordering the unknown, for a soft fog edge. Empty when not derivable.
+    public var fogEdges: [UInt16] = []
 
     public init() {}
 
@@ -24,5 +29,7 @@ public struct TileIDs: Sendable, Equatable {
               let w = iconMap.tileID(group: 6, offset: 0)
         else { return nil }
         veiled = UInt16(v); bloom = UInt16(b); builtSlab = UInt16(s); landscape = UInt16(l); wall = UInt16(w)
+        fogEdges = (0 ..< 16).compactMap { iconMap.tileID(group: 7, offset: $0).map(UInt16.init) }
+        if fogEdges.count != 16 { fogEdges = [] }
     }
 }

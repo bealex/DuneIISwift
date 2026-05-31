@@ -79,6 +79,36 @@ struct FrameInfoTests {
         #expect(sim.makeFrameInfo().veiledTileIndex == 41)
     }
 
+    @Test("fogEdgeMask sets a bit per off-map / veiled neighbour (N,E,S,W)")
+    func fogEdgeMask() {
+        let w = 64, h = 64
+        // All neighbours revealed ⇒ no edges.
+        #expect(Simulation.fogEdgeMask(packed: Int(Tile32.packXY(x: 10, y: 10)), width: w, height: h) { _ in true } == 0)
+        // The (0,0) corner: N and W are off-map ⇒ bit 0 (N) | bit 3 (W) = 9, even with all tiles revealed.
+        #expect(Simulation.fogEdgeMask(packed: 0, width: w, height: h) { _ in true } == 0b1001)
+        // Only the north neighbour veiled ⇒ bit 0.
+        let centre = Int(Tile32.packXY(x: 10, y: 10))
+        #expect(Simulation.fogEdgeMask(packed: centre, width: w, height: h) { $0 != centre - w } == 0b0001)
+        // Only the west neighbour veiled ⇒ bit 3.
+        #expect(Simulation.fogEdgeMask(packed: centre, width: w, height: h) { $0 != centre - 1 } == 0b1000)
+    }
+
+    @Test("makeFrameInfo derives a fog-edge sprite for a revealed tile bordering the unknown")
+    func fogEdges() {
+        var sim = scene()
+        sim.state.tileIDs.fogEdges = (0 ..< 16).map { UInt16(500 + $0) }
+        // Reveal a 3×3 block around (10,10).
+        for dy in -1 ... 1 { for dx in -1 ... 1 {
+            sim.state.map[Int(Tile32.packXY(x: UInt16(10 + dx), y: UInt16(10 + dy)))].isUnveiled = true
+        } }
+        let f = sim.makeFrameInfo()
+        func edge(_ x: Int, _ y: Int) -> Int { f.tiles[Int(Tile32.packXY(x: UInt16(x), y: UInt16(y)))].fogEdgeSpriteIndex }
+        #expect(edge(10, 10) == 0)             // interior: all neighbours revealed ⇒ no edge
+        #expect(edge(10, 9) == 500 + 0b0001)   // top-middle: only N veiled ⇒ mask 1
+        #expect(edge(9, 9) == 500 + 0b1001)    // top-left corner: N and W veiled ⇒ mask 9
+        #expect(edge(11, 11) == 500 + 0b0110)  // bottom-right corner: E and S veiled ⇒ mask 6
+    }
+
     @Test("terrain tile surfaces ground + overlay + fog")
     func terrain() {
         let f = scene().makeFrameInfo()
