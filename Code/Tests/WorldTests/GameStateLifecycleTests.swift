@@ -144,6 +144,11 @@ struct GameStateLifecycleTests {
         for i in 0 ..< Int(layout.tileCount) {
             #expect(!s.map[packed + Int(layout.tiles[i])].hasStructure)   // occupancy cleared
         }
+        // The destruction/collapse animation is started so the building disappears instead of staying
+        // stamped on the map (#5) — `Animation_Start(g_table_animation_structure[0], …)`.
+        #expect(s.map[packed].hasAnimation)
+        let anim = s.animations.first { $0.active && $0.tile.packed == UInt16(packed) }
+        #expect(anim?.tableIndex == 0)
         #expect(s.units[unit].targetMove == 0)                            // references scrubbed
         #expect(s.units[unit].targetAttack == 0)
         #expect(!s.structures[victim].o.flags.contains(.used))            // slot freed

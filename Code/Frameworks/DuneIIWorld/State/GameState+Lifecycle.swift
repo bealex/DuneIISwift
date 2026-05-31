@@ -193,11 +193,20 @@ public extension GameState {
 
         for i in 0 ..< Int(layout.tileCount) {
             let curPacked = packed + Int(layout.tiles[i])
-            // SEAM: Animation_Stop_ByTile(curPacked) — the per-tile structure animation.
-            if curPacked >= 0 && curPacked < map.count { map[curPacked].hasStructure = false }
+            animationStopByTile(UInt16(truncatingIfNeeded: curPacked))   // stop the structure's idle anim
+            if curPacked >= 0, curPacked < map.count { map[curPacked].hasStructure = false }
         }
-        mapDirty = true   // the cleared tiles must re-blit (a destroyed building disappears)
-        // SEAM: Animation_Start(death) — the destruction animation (render).
+        // Start the destruction/collapse animation (`Structure_Remove`, `structure.c:1305`:
+        // `Animation_Start(g_table_animation_structure[0], …)`). It overwrites the building's stamped
+        // ground tiles with the rubble frames and `abort`s back to the base landscape — so the building
+        // disappears. Without it the building's `groundTileID` stays on the map and it never goes away.
+        // (Headless/golden runs don't tick animations, exactly as the oracle's parity harness doesn't —
+        // so the animation is queued but inert there, matching the oracle; the visual apps play it.)
+        let si = StructureInfo[st]
+        animationStart(tableIndex: 0, tile: structures[slot].o.position,
+                       tileLayout: UInt16(si.layout.rawValue), houseID: structures[slot].o.houseID,
+                       iconGroup: UInt8(truncatingIfNeeded: Int(si.iconGroup)))
+        mapDirty = true
         // SEAM: House.ai_structureRebuild[] — AI rebuild queue (no headless AI consumer yet).
 
         structureFree(slot)
