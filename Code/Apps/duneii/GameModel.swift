@@ -36,10 +36,24 @@ final class GameModel {
     var showAllEconomies = false
     var showHealthOverlay = true   // health/state bars over units + buildings are on by default (a normal HUD element)
 
+    /// Wall-clock speed multiplier (0.5×…4×). The scene paces sim ticks against real time × this — see
+    /// `GameScene.update`. 1× ≈ the base 60-ticks/second cadence (one tick per drawn frame at 60 fps).
+    var gameSpeed: Double = 1
+
     // Derived per-frame info for the tool windows.
     private(set) var selection: SelectionInfo?
     private(set) var pendingOrder: OrderKind?
     private(set) var economy: [HouseEconomy] = []
+
+    // Build-GUI derived state (refreshed for the selected player-owned factory).
+    private(set) var buildables: [Buildable] = []
+    private(set) var buildProgress: BuildState?
+    private(set) var isFactorySelected = false
+    private(set) var playerCredits = 0
+    /// Active structure-placement mode: a finished construction-yard product awaiting a map click.
+    private(set) var placement: PlacementState?
+    /// Build/place/cancel commands queued from the UI, applied next `advance()` (alongside unit orders).
+    @ObservationIgnored private var pendingCommands: [Command] = []
     /// The latest frame — observed, so the minimap redraws each tick (units/viewport move).
     private(set) var lastFrame: FrameInfo?
     @ObservationIgnored private(set) var minimapBase: CGImage?
@@ -103,20 +117,25 @@ final class GameModel {
 
     // MARK: - Per-frame loop (driven by the scene)
 
-    /// Apply queued commands, advance the sim one tick, and refresh the derived info; returns the frame.
-    func advance() -> FrameInfo? {
+    /// Apply queued commands, advance the sim `ticks` ticks, and refresh the derived info; returns the
+    /// latest frame. `ticks == 0` (slow-speed throttling between steps) re-publishes the current frame
+    /// without advancing, so the camera / selection / minimap keep tracking smoothly.
+    func advance(ticks: Int) -> FrameInfo? {
         guard var sim = simulation else { return nil }
+        guard ticks > 0 else { return lastFrame }
         if let unitScript {
-            let commands = controller.drainCommands()
+            let commands = controller.drainCommands() + drainPending()
             if !commands.isEmpty {
                 let orders = UnitOrders(scriptInfo: unitScript)
                 for c in commands { orders.apply(c, in: &sim.state) }
             }
         }
-        sim.tick()
-        // Play this tick's gameplay sounds (combat fire, explosions) — only those the VoiceTable resolved
-        // to a registered effect VOC; unmapped voice ids are silently no-ops in EngineAudioSink.
-        for event in sim.state.soundEvents { audio.play(event.sound) }
+        for _ in 0 ..< ticks {
+            sim.tick()
+            // Play this tick's gameplay sounds (combat fire, explosions) — only those the VoiceTable
+            // resolved to a registered effect VOC; unmapped voice ids are silent no-ops in EngineAudioSink.
+            for event in sim.state.soundEvents { audio.play(event.sound) }
+        }
         simulation = sim
         let frame = sim.makeFrameInfo()
         lastFrame = frame
@@ -137,6 +156,37 @@ final class GameModel {
                                 credits: $0.credits, storage: $0.creditsStorage,
                                 power: $0.powerProduction, powerUsed: $0.powerUsage) }
         if econ != economy { economy = econ }
+
+        let credits = frame.houses.first { $0.id == playerHouse }?.credits ?? 0
+        if credits != playerCredits { playerCredits = credits }
+        refreshBuild()
+    }
+
+    /// Recompute the selected factory's buildable list + in-progress build (cheap; published only on change
+    /// so the inspector doesn't churn each tick). Clears when the selection isn't a player-owned factory.
+    private func refreshBuild() {
+        guard let slot = selectedFactorySlot, let sim = simulation else {
+            if isFactorySelected { isFactorySelected = false }
+            if !buildables.isEmpty { buildables = [] }
+            if buildProgress != nil { buildProgress = nil }
+            if placement != nil { placement = nil }
+            return
+        }
+        if !isFactorySelected { isFactorySelected = true }
+        let b = sim.buildables(forStructure: slot)
+        if b != buildables { buildables = b }
+        let st = sim.buildState(structureSlot: slot)
+        if st != buildProgress { buildProgress = st }
+    }
+
+    /// The selected structure's pool slot, iff it's a **player-owned factory** (else `nil`).
+    private var selectedFactorySlot: Int? {
+        guard case let .structure(slot) = controller.selection, let state = simulation?.state,
+              slot < state.structures.count, state.structures[slot].o.flags.contains(.used),
+              let type = StructureType(rawValue: Int(state.structures[slot].o.type)),
+              StructureInfo[type].o.flags.contains(.factory),
+              state.structures[slot].o.houseID == UInt8(playerHouse.rawValue) else { return nil }
+        return slot
     }
 
     // MARK: - Input (forwarded from the scene's mouse handling)
@@ -163,6 +213,60 @@ final class GameModel {
     func arm(_ kind: OrderKind) { controller.beginOrder(kind); audio.play(.select); pendingOrder = controller.pendingOrder }
     func stopSelected() { controller.stopSelected(); audio.play(.acknowledge) }
     func deselect() { controller.deselect(); selection = nil; pendingOrder = nil }
+
+    // MARK: - Building
+
+    private func enqueue(_ command: Command) { pendingCommands.append(command) }
+    private func drainPending() -> [Command] { defer { pendingCommands.removeAll() }; return pendingCommands }
+
+    /// Start the selected factory building `objectType` (a `Buildable.objectType`).
+    func startBuild(_ objectType: UInt16) {
+        guard let slot = selectedFactorySlot else { return }
+        enqueue(.build(structure: UInt16(slot), objectType: objectType))
+        audio.play(.select)
+    }
+
+    /// Cancel the selected factory's in-progress build (refunds the remainder).
+    func cancelBuild() {
+        guard let slot = selectedFactorySlot else { return }
+        enqueue(.cancelBuild(structure: UInt16(slot)))
+        placement = nil
+        audio.play(.acknowledge)
+    }
+
+    /// Enter placement mode for the selected construction yard's finished structure.
+    func beginPlacement() {
+        guard let slot = selectedFactorySlot, let sim = simulation,
+              let bs = sim.buildState(structureSlot: slot), bs.isReady, bs.isStructure,
+              let type = StructureType(rawValue: Int(bs.objectType)) else { return }
+        let layout = StructureLayoutInfo[StructureInfo[type].layout]
+        placement = PlacementState(factorySlot: slot, type: type,
+                                   width: Int(layout.size.width), height: Int(layout.size.height))
+        audio.play(.select)
+    }
+
+    func cancelPlacement() { placement = nil }
+
+    /// Update the placement preview's hovered tile (from the map's mouse-move).
+    func placementHover(tileX: Int, tileY: Int) {
+        guard var p = placement, p.hoverTileX != tileX || p.hoverTileY != tileY else { return }
+        p.hoverTileX = tileX; p.hoverTileY = tileY
+        placement = p
+    }
+
+    /// `Structure_IsValidBuildLocation` at a tile for the current placement (≥1 ok, 0 blocked, <0 ok-with-penalty).
+    func placementValidity(tileX: Int, tileY: Int) -> Int16 {
+        guard let p = placement, let sim = simulation else { return 0 }
+        return sim.placementValidity(type: p.type, tile: UInt16(tileY * 64 + tileX)) ?? 0
+    }
+
+    /// Commit the placement at the clicked tile (no-op on a blocked spot, so the player can click again).
+    func placeAt(tileX: Int, tileY: Int) {
+        guard let p = placement, placementValidity(tileX: tileX, tileY: tileY) != 0 else { return }
+        enqueue(.placeStructure(structure: UInt16(p.factorySlot), tile: UInt16(tileY * 64 + tileX)))
+        placement = nil
+        audio.play(.acknowledge)
+    }
 
     private func pick(_ x: Int, _ y: Int) -> Selection {
         guard let state = simulation?.state else { return .none }
@@ -218,6 +322,20 @@ final class GameModel {
         }
     }
 
+    /// A readable "what it's doing" label for a structure: its build activity if it's producing/upgrading,
+    /// otherwise its runtime `StructureState`.
+    private static func structureState(_ s: Structure) -> String {
+        if s.upgradeTimeLeft != 0 && s.upgradeLevel != 0 { return "Upgrading" }
+        if s.objectType != 0 && s.countDown != 0 { return "Building" }
+        switch s.state {
+            case .justBuilt: return "Constructing"
+            case .busy:      return "Working"
+            case .ready:     return "Ready"
+            case .idle:      return "Idle"
+            case .detect:    return "—"
+        }
+    }
+
     private func currentInfo() -> SelectionInfo? {
         guard let state = simulation?.state else { return nil }
         switch controller.selection {
@@ -228,8 +346,9 @@ final class GameModel {
                 let u = state.units[slot]
                 let house = HouseID(rawValue: Int(state.unitHouseID(u))) ?? .harkonnen
                 let p = Int(u.o.position.packed)
+                let stateText = ActionType(rawValue: Int(u.actionID)).map { ActionInfo[$0].name } ?? "—"
                 return SelectionInfo(kind: .unit, name: type.displayName, house: house.displayName,
-                                     isPlayer: house == playerHouse, hitpoints: Int(u.o.hitpoints),
+                                     isPlayer: house == playerHouse, state: stateText, hitpoints: Int(u.o.hitpoints),
                                      hitpointsMax: Int(UnitInfo[type].o.hitpoints), tileX: p % 64, tileY: p / 64)
             case let .structure(slot):
                 guard slot < state.structures.count, state.structures[slot].o.flags.contains(.used),
@@ -238,10 +357,23 @@ final class GameModel {
                 let house = HouseID(rawValue: Int(s.o.houseID)) ?? .harkonnen
                 let p = Int(s.o.position.packed)
                 return SelectionInfo(kind: .structure, name: type.displayName, house: house.displayName,
-                                     isPlayer: house == playerHouse, hitpoints: Int(s.o.hitpoints),
-                                     hitpointsMax: Int(s.hitpointsMax), tileX: p % 64, tileY: p / 64)
+                                     isPlayer: house == playerHouse, state: Self.structureState(s),
+                                     hitpoints: Int(s.o.hitpoints),
+                                     // Base HP as the max (matching OpenDUNE's health bar), not the
+                                     // power-degraded `s.hitpointsMax` (which can read below current HP).
+                                     hitpointsMax: Int(StructureInfo[type].o.hitpoints), tileX: p % 64, tileY: p / 64)
         }
     }
+}
+
+/// Active structure-placement mode: a finished construction-yard product awaiting a valid map click.
+struct PlacementState: Equatable {
+    var factorySlot: Int
+    var type: StructureType
+    var width: Int
+    var height: Int
+    var hoverTileX: Int?
+    var hoverTileY: Int?
 }
 
 /// A house's economy for the Economy window.
@@ -258,6 +390,9 @@ struct SelectionInfo: Equatable {
     var kind: Kind
     var name: String, house: String
     var isPlayer: Bool
+    /// What the entity is currently doing — a unit's action ("Move", "Attack", "Guard", "Harvest", …) or a
+    /// structure's activity ("Building", "Working", "Idle", …).
+    var state: String
     var hitpoints: Int, hitpointsMax: Int
     var tileX: Int, tileY: Int
     var commands: [OrderKind] { kind == .unit && isPlayer ? [.move, .attack] : [] }

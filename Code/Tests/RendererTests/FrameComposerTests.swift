@@ -181,6 +181,41 @@ struct FrameComposerTests {
         #expect(turret.z > body.z)                                   // turret drawn over body
     }
 
+    @Test("a unit/effect on a still-veiled tile is omitted under fog, drawn with fog off")
+    func fogMasksEntities() {
+        // Two tiles on a 2×1 map: tile (0,0) revealed, tile (1,0) veiled.
+        let revealed = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 0, houseID: 0, isUnveiled: true)
+        let veiled = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 99, houseID: 0, isUnveiled: false)
+        func unit(tileX: Int) -> FrameInfo.Unit {
+            FrameInfo.Unit(id: UInt16(tileX), type: .tank, house: .harkonnen,
+                           positionX: tileX * 256 + 128, positionY: 128,
+                           body: SpriteLayer(spriteIndex: 113), turret: nil,
+                           isSmoking: false, hitpoints: 50, hitpointsMax: 100)
+        }
+        let frame = FrameInfo(tick: 0, mapWidth: 2, mapHeight: 1, tiles: [revealed, veiled],
+                              units: [unit(tileX: 0), unit(tileX: 1)], structures: [],
+                              effects: [FrameInfo.Effect(positionX: 256 + 128, positionY: 128,
+                                                         sprite: SpriteLayer(spriteIndex: 130))],
+                              houses: [], viewportX: 0, viewportY: 0)
+
+        // Fog off: both units + the effect resolve.
+        let lit = FrameComposer.sprites(frame, source: FakeSource(), showFog: false)
+        #expect(lit.filter { $0.z == FrameComposer.ZOrder.body }.count == 2)
+        #expect(lit.contains { $0.z == FrameComposer.ZOrder.effect })
+
+        // Fog on: only the unit on the revealed tile survives; the veiled unit + the veiled-tile effect drop.
+        let dim = FrameComposer.sprites(frame, source: FakeSource(), showFog: true)
+        let bodies = dim.filter { $0.z == FrameComposer.ZOrder.body }
+        #expect(bodies.count == 1)
+        #expect(bodies.first?.centerX == 2)                              // tile 0's centre (0.5·4), not veiled tile 1
+        #expect(!dim.contains { $0.z == FrameComposer.ZOrder.effect })   // effect was on the veiled tile
+
+        // The helper itself: veiled-only-under-fog, and off-map is treated as visible.
+        #expect(FrameComposer.isHiddenByFog(frame, worldX: 256 + 128, worldY: 128, showFog: true))
+        #expect(!FrameComposer.isHiddenByFog(frame, worldX: 256 + 128, worldY: 128, showFog: false))
+        #expect(!FrameComposer.isHiddenByFog(frame, worldX: 9 * 256, worldY: 128, showFog: true))
+    }
+
     @Test("mirror flips horizontally and/or vertically (the baked sprite flips)")
     func mirror() {
         // A 3×2 buffer: rows [1,2,3] and [4,5,6].

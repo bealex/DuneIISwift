@@ -237,9 +237,9 @@ public struct UnitCombat: Sendable {
     // MARK: - MCV deploy + structure placement (Structure_Create / Place / IsValidBuildLocation)
 
     /// `Structure_IsValidBuildLocation` (`structure.c:734`): 0 if the footprint can't hold `type`, 1 if it
-    /// can (all on slab), or −neededSlabs (buildable but missing N slabs → a later HP penalty). General
-    /// building case (the non-CY "must touch a friendly structure" rule + the wall/slab specials are seams;
-    /// MCV only deploys a construction yard, which is exempt from that rule).
+    /// can (all on slab), or −neededSlabs (buildable but missing N slabs → a later HP penalty). Validates
+    /// bounds, terrain (`isValidForStructure`), occupancy, **and** the non-CY adjacency rule (must touch a
+    /// player-house structure / slab / wall). The construction yard (MCV deploy) is exempt from adjacency.
     func structureIsValidBuildLocation(_ position: UInt16, type: StructureType, in state: GameState) -> Int16 {
         let si = StructureInfo[type]
         let layout = StructureLayoutInfo[si.layout]
@@ -255,6 +255,26 @@ public struct UnitCombat: Sendable {
                 if lst != .concreteSlab { neededSlabs &+= 1 }
             }
             if state.unitGetByPackedTile(curPos) != nil || state.structureGetByPackedTile(curPos) != nil { return 0 }
+        }
+        // Adjacency (`structure.c:786`): a non-CY structure must touch a **player-house** structure, or a
+        // player-owned concrete slab / wall, in the layout's surrounding ring. The construction yard (MCV
+        // deploy) is exempt; the whole check is skipped when validation is relaxed (`validateStrictIfZero`).
+        if state.validateStrictIfZero == 0 && type != .constructionYard {
+            var adjacent = false
+            for offset in layout.tilesAround {
+                if offset == 0 { break }
+                let curPos = Int(position) + Int(offset)
+                guard curPos >= 0, curPos < state.map.count else { continue }
+                if let s = state.structureGetByPackedTile(UInt16(curPos)) {
+                    if state.structures[s].o.houseID != state.playerHouseID { continue }
+                    adjacent = true; break
+                }
+                let lst = movement.map.landscapeType(state.map[curPos], tileIDs: state.tileIDs)
+                if lst != .concreteSlab && lst != .wall { continue }
+                if state.map[curPos].houseID != state.playerHouseID { continue }
+                adjacent = true; break
+            }
+            if !adjacent { return 0 }
         }
         return neededSlabs == 0 ? 1 : -Int16(bitPattern: neededSlabs)
     }
@@ -330,6 +350,34 @@ public struct UnitCombat: Sendable {
             return nil
         }
         return slot
+    }
+
+    /// Place the construction yard's READY structure at `position` and reset the factory, fusing the GUI's
+    /// two place steps — the STR_PLACE_IT release (`widget_click.c:101`: take the linked product, clear the
+    /// factory's `linkedID`) and the viewport place (`viewport.c:205`: `Structure_Place` it, spawn a
+    /// refinery's harvester). Returns false (leaving the factory `.ready`) if the spot is invalid, so the
+    /// caller can keep placement mode for another click. A placed refinery gets the house's first harvester
+    /// via `houseEnsureHarvesterAvailable` (the per-refinery `Unit_CreateWrapper` spawn is a minor seam).
+    @discardableResult
+    public func structurePlaceReady(factory slot: Int, position: UInt16, in state: inout GameState) -> Bool {
+        guard slot >= 0, slot < state.structures.count,
+              StructureType(rawValue: Int(state.structures[slot].o.type)) == .constructionYard,
+              state.structures[slot].state == .ready else { return false }
+        let product = Int(state.structures[slot].o.linkedID)
+        guard product != 0xFF, product < state.structures.count,
+              state.structures[product].o.flags.contains(.used) else { return false }
+        let placedType = StructureType(rawValue: Int(state.structures[product].o.type))
+        if !structurePlace(product, position: position, in: &state) { return false }
+        // The factory released the product and is free to build again (the `Structure_BuildObject(s, 0xFFFE)`
+        // menu reset is a seam — we reset to idle directly).
+        state.structures[slot].o.linkedID = 0xFF
+        state.structures[slot].objectType = 0xFFFF
+        state.structures[slot].countDown = 0
+        state.structureSetState(slot, .idle)
+        if placedType == .refinery && state.validateStrictIfZero == 0 {
+            houseEnsureHarvesterAvailable(houseID: state.structures[product].o.houseID, in: &state)
+        }
+        return true
     }
 
     /// `Structure_BuildObject` (`structure.c:1442`) — the **headless state-setup** path: start a factory

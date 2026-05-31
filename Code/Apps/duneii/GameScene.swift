@@ -21,10 +21,18 @@ final class GameScene: SKScene {
         .missileHouse, .missileRocket, .missileTurret, .missileDeviator, .missileTrooper, .bullet, .sonicBlast,
     ]
 
+    /// The base sim cadence: at `gameSpeed == 1` the scene advances ~60 sim ticks per real second (one per
+    /// drawn frame at 60 fps). The speed multiplier scales this against wall-clock time.
+    private static let baseTicksPerSecond = 60.0
+
     private weak var model: GameModel?
     private let cam = SKCameraNode()
     private var renderer: SpriteKitRenderer?
+    private var lastUpdateTime: TimeInterval = 0
+    private var tickAccumulator = 0.0
     private let selectionNode = SKShapeNode()
+    private let placementNode = SKShapeNode()      // structure-placement footprint preview
+    private var trackingArea: NSTrackingArea?
     private let healthLayer = SKNode()
     private var healthBars: [SKSpriteNode] = []
     private var stateChips: [SKShapeNode] = []   // a small shape+colour action chip per unit health bar
@@ -42,11 +50,26 @@ final class GameScene: SKScene {
         selectionNode.zPosition = 30
         selectionNode.isHidden = true
         addChild(selectionNode)
+        placementNode.lineWidth = 1.5
+        placementNode.zPosition = 35
+        placementNode.isHidden = true
+        addChild(placementNode)
         healthLayer.zPosition = 40
         addChild(healthLayer)
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// Track mouse-moved events so the placement preview can follow the cursor (the click-to-place path
+    /// works without this; the preview just won't follow until the next click).
+    override func didMove(to view: SKView) {
+        view.window?.acceptsMouseMovedEvents = true
+        if trackingArea == nil {
+            let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
+            view.addTrackingArea(area)
+            trackingArea = area
+        }
+    }
 
     func load(simulation: Simulation, assets: AssetStore) {
         for child in children where child !== cam && child !== selectionNode && child !== healthLayer { child.removeFromParent() }
@@ -64,12 +87,42 @@ final class GameScene: SKScene {
     }
 
     override func update(_ currentTime: TimeInterval) {
-        guard let model, let renderer, let frame = model.advance() else { return }
+        guard let model, let renderer else { return }
+        // Pace sim ticks against real elapsed time × the speed multiplier, so 0.5× runs half as fast and
+        // 4× four times. The accumulator carries fractional ticks across frames; the per-frame step count
+        // is capped so a hitch (or a tab-out) can't trigger a long catch-up spiral.
+        let dt = lastUpdateTime == 0 ? 0 : min(0.25, currentTime - lastUpdateTime)
+        lastUpdateTime = currentTime
+        tickAccumulator += dt * Self.baseTicksPerSecond * model.gameSpeed
+        var steps = Int(tickAccumulator)
+        if steps > 0 { tickAccumulator -= Double(steps) }
+        steps = min(steps, 16)
+        guard let frame = model.advance(ticks: steps) else { return }
         model.viewSize = size                         // keep the model's view size current for clamping
         renderer.render(frame)
         applyViewport()
         updateSelection()
         updateHealth(frame, show: model.showHealthOverlay)
+        updatePlacement()
+    }
+
+    // MARK: - Placement preview
+
+    /// Draw the structure-placement footprint at the hovered tile — green where valid, red where blocked.
+    private func updatePlacement() {
+        guard let model, let p = model.placement, let tx = p.hoverTileX, let ty = p.hoverTileY else {
+            placementNode.isHidden = true; return
+        }
+        let valid = model.placementValidity(tileX: tx, tileY: ty) != 0
+        let tile = Self.tileSize
+        let originX = Double(tx * tile)
+        let bottomY = Double(Self.worldSidePx - (ty + p.height) * tile)
+        let rect = CGRect(x: originX, y: bottomY, width: Double(p.width * tile), height: Double(p.height * tile))
+        placementNode.path = CGPath(rect: rect, transform: nil)
+        let colour: NSColor = valid ? .systemGreen : .systemRed
+        placementNode.strokeColor = colour
+        placementNode.fillColor = colour.withAlphaComponent(0.25)
+        placementNode.isHidden = false
     }
 
     /// Camera = the model's viewport: scale `1/zoom`, centred on the world point (image y-down → scene y-up).
@@ -92,15 +145,18 @@ final class GameScene: SKScene {
 
     // MARK: - Health/state overlay
 
-    /// Health bars (+ unit state chips) over real units and buildings — never over bullets/rockets/effects.
+    /// Health bars (+ unit state chips) over real units and buildings — never over bullets/rockets/effects,
+    /// and never over entities hidden in the fog (they aren't drawn, so neither is their bar).
     private func updateHealth(_ frame: FrameInfo, show: Bool) {
         guard show else { hideAllHealth(); return }
+        let fog = model?.showFog ?? false
         let side = Double(Self.worldSidePx)
         let tile = Double(Self.tileSize)
         var usedBars = 0, usedChips = 0
 
         // Real units (projectiles skipped). Smooth sub-tile position; bar a little above the sprite centre.
         for unit in frame.units where !Self.projectileTypes.contains(unit.type) {
+            if FrameComposer.isHiddenByFog(frame, worldX: unit.positionX, worldY: unit.positionY, showFog: fog) { continue }
             let frac = unit.hitpointsMax > 0 ? Double(unit.hitpoints) / Double(unit.hitpointsMax) : 1
             let cx = Double(unit.positionX) * tile / 256
             let cy = Double(unit.positionY) * tile / 256
@@ -117,8 +173,9 @@ final class GameScene: SKScene {
             }
         }
 
-        // Buildings: a footprint-width bar along the top edge.
+        // Buildings: a footprint-width bar along the top edge (hidden when the building sits in fog).
         for s in frame.structures {
+            if FrameComposer.isHiddenByFog(frame, worldX: s.positionX, worldY: s.positionY, showFog: fog) { continue }
             let frac = s.hitpointsMax > 0 ? Double(s.hitpoints) / Double(s.hitpointsMax) : 1
             let (w, _) = Self.structureFootprint(s.type)
             let widthPx = Double(w) * tile
@@ -138,8 +195,10 @@ final class GameScene: SKScene {
         bar.size = CGSize(width: width, height: Self.barHeight)
         bar.position = CGPoint(x: left, y: y)
         bar.color = frac > 0.66 ? .green : (frac > 0.33 ? .yellow : .red)
-        bar.xScale = max(0.05, CGFloat(frac))   // depletes from the right (left-anchored)
-        bar.isHidden = false
+        // Width tracks health exactly: full at 1.0, half at 0.5, zero (invisible) at 0 — left-anchored, so
+        // it depletes from the right.
+        bar.xScale = CGFloat(min(1, max(0, frac)))
+        bar.isHidden = frac <= 0
     }
 
     private func hideAllHealth() {
@@ -194,8 +253,20 @@ final class GameScene: SKScene {
 
     // MARK: - Input
 
-    override func mouseDown(with event: NSEvent) { if let (x, y) = tile(at: event) { model?.leftClickTile(x, y) } }
-    override func rightMouseDown(with event: NSEvent) { if let (x, y) = tile(at: event) { model?.rightClickTile(x, y) } }
+    override func mouseDown(with event: NSEvent) {
+        guard let (x, y) = tile(at: event) else { return }
+        if model?.placement != nil { model?.placeAt(tileX: x, tileY: y) } else { model?.leftClickTile(x, y) }
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        if model?.placement != nil { model?.cancelPlacement(); return }
+        if let (x, y) = tile(at: event) { model?.rightClickTile(x, y) }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard model?.placement != nil, let (x, y) = tile(at: event) else { return }
+        model?.placementHover(tileX: x, tileY: y)
+    }
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
@@ -205,7 +276,7 @@ final class GameScene: SKScene {
             case 124: model?.scroll(dx: 64, dy: 0)    // →
             case 126: model?.scroll(dx: 0, dy: -64)   // ↑ (up = toward smaller image-y)
             case 125: model?.scroll(dx: 0, dy: 64)    // ↓
-            case 53:  model?.deselect()               // Esc
+            case 53:  if model?.placement != nil { model?.cancelPlacement() } else { model?.deselect() }   // Esc
             default:  super.keyDown(with: event)
         }
     }

@@ -30,10 +30,14 @@ public final class SpriteKitRenderer {
     private let spritesLayer = SKNode()           // units + effects (pooled nodes)
 
     // Caches (kept for the renderer's whole life — memory is cheap, recolorizing isn't).
-    private struct TileKey: Hashable { let tileId: Int; let overlayId: Int; let houseID: UInt8; let windColour: Int; let fog: Bool }
+    private struct TileKey: Hashable { let tileId: Int; let overlayId: Int; let fogEdge: Int; let houseID: UInt8; let windColour: Int; let fog: Bool }
     private struct SpriteKey: Hashable { let index: Int; let house: Int; let flipped: Bool; let flippedV: Bool }
     private var tileCache: [TileKey: SKTexture] = [:]
     private var tileUsesWindCache: [Int: Bool] = [:]
+
+    /// The number of distinct cached per-cell tile textures — a test seam for verifying the cache key
+    /// distinguishes cells that should render differently (e.g. by fog edge).
+    var cachedTileTextureCount: Int { tileCache.count }
     private var spriteCache: [SpriteKey: SKTexture] = [:]
     private var spritePool: [SKSpriteNode] = []
 
@@ -231,7 +235,12 @@ public final class SpriteKitRenderer {
 
     private func tileTexture(_ tile: FrameInfo.Tile, palette: Palette) -> SKTexture? {
         let usesWind = tileUsesWind(tile.groundSpriteIndex)
+        // The fog **edge** sprite must be in the key: `FrameComposer.cell` composites it, so two cells with
+        // the same ground/overlay/house but different edge masks need different textures — otherwise a
+        // re-textured dirty cell gets a stale cached edge and the fog frontier looks wrong as units reveal
+        // neighbours (the full-rebuild path doesn't hit this cache, hence toggling fog "fixes" it).
         let key = TileKey(tileId: tile.groundSpriteIndex, overlayId: tile.overlaySpriteIndex,
+                          fogEdge: showFog ? tile.fogEdgeSpriteIndex : 0,
                           houseID: tile.houseID, windColour: usesWind ? packedWindColour() : 0, fog: showFog)
         if let cached = tileCache[key] { return cached }
         // The cell pixels — ground + overlay (walls) or a black fog cell — exactly as the static buffer.
@@ -253,7 +262,7 @@ public final class SpriteKitRenderer {
     // MARK: - Sprites
 
     private func updateSprites(_ frame: FrameInfo, palette: Palette) {
-        let sprites = FrameComposer.sprites(frame, source: source)
+        let sprites = FrameComposer.sprites(frame, source: source, showFog: showFog)
         let side = tileSize * frame.mapWidth
         var used = 0
         for sprite in sprites {
@@ -321,6 +330,9 @@ public final class SpriteKitRenderer {
         let offset = ShimmerEffect.blurOffsets[blurIndex]
         var used = 0
         for blur in frame.blurs {
+            // A sandworm in the fog is hidden, like any other unit (`viewport.c`'s sandworm pass masks by
+            // `isUnveiled`).
+            if FrameComposer.isHiddenByFog(frame, worldX: blur.positionX, worldY: blur.positionY, showFog: showFog) { continue }
             guard let frameSprite = source.unitFrame(globalIndex: blur.sprite.spriteIndex) else { continue }
             let mask = Self.mirror(frameSprite.pixels, width: frameSprite.width, height: frameSprite.height,
                                    horizontal: blur.sprite.flipped, vertical: blur.sprite.flippedV)

@@ -11,7 +11,7 @@ After that: `Documentation/Plan.v1.md` is the authoritative plan (goals, locked 
 - `CurrentState.md` (repo root) — operational state. Read first, update after every task.
 - `Documentation/`
   - `Plan.v1.md` — the authoritative plan of record.
-  - `Architecture/` — `Overview.md` (topology + dependency rules + OpenDUNE constraints), `Testing.md`, `ParityHarness.md`.
+  - `Architecture/` — `Overview.md` (topology + dependency rules + OpenDUNE constraints), `Testing.md`, `ParityHarness.md`, `FeatureParity.md` (the living gameplay done/not-done table vs OpenDUNE — **keep current**, see Feature workflow step 7).
   - `Formats/` — one markdown per on-disk format (PAK, SHP, WSA, EMC, SAVE, …): own-words description + pointer to the reference C source.
   - `Algorithms/` — Format80 decode, pathfinding, EMC opcode semantics, etc.
   - `History/` — dated changelog, **one file per active day** (`YYYY-MM-DD.md`); `README.md` is the newest-first day index. Append-only.
@@ -64,7 +64,7 @@ Steps 0, 1, 4, 5, 6, 7 are mandatory. Tests are written **after** the feature (s
 4. Run the full suite — `cd Code && swift test`. Green before "done." Every previously-green test stays green.
 5. Zero warnings after a clean rebuild — `swift package clean && swift build`. Every `warning:` is a failure; fix the root cause. Read the **full** build output (warnings surface early, during target scanning) — never a `tail`ed/grepped subset, or you will miss them.
 6. Log the change — `Scripts/log-history.sh "<bullet>"` appends to today's `Documentation/History/YYYY-MM-DD.md` (creating the day file + its index link if new). One sentence, imperative, with file references.
-7. Update `CurrentState.md` — move the finished item to "Recently completed" (with test count + History pointer), set the next "Active task" with its immediate next step, refresh "Test status."
+7. Update `CurrentState.md` — move the finished item to "Recently completed" (with test count + History pointer), set the next "Active task" with its immediate next step, refresh "Test status." **And update `Documentation/Architecture/FeatureParity.md` whenever the change moves a gameplay feature's status** (✗ Missing / ⊘ Seam → ◐ Partial → ✅ Done, or a newly-ported behaviour): flip the row's status + evidence (`file:line` + test) and reconcile the "remaining gaps" summary. It is the living done/not-done table vs OpenDUNE; a parity-relevant change that doesn't touch it is incomplete. (Presentation-only seams — render/audio/menus — are out of its scope; skip those.)
 8. If you learned something non-obvious, capture it as an insight under `Documentation/Insights/` and index it in `Insights/README.md`. Cross-link the code `file:line` and the test.
 
 **Commit cadence.** Commit after every **2–3 blocks** are done (a block = one logical work-unit; see below), or after each phase. End commit messages with the `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` trailer. Work happens on a feature branch off `main`.

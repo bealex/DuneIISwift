@@ -55,13 +55,7 @@ public extension GameState {
         validateStrictIfZero = 1
         defer { validateStrictIfZero = savedStrict }
 
-        // `[HOUSES]` = "<HouseName>=<startingCredits>" — activate the house (so GameLoop_House runs it) and
-        // seed its credits. Optional: scenarios without the section run with no active houses.
-        for key in ini.keys(section: "HOUSES") {
-            guard let house = HouseID.named(key) else { continue }
-            let h = houseAllocate(index: UInt8(house.rawValue)) ?? Int(house.rawValue)
-            houses[h].credits = UInt16(clamping: Int(ini.string(section: "HOUSES", key: key) ?? "") ?? 0)
-        }
+        loadHouses(ini: ini)
 
         for key in ini.keys(section: "UNITS") { loadUnit(ini.string(section: "UNITS", key: key)) }
         for key in ini.keys(section: "STRUCTURES") {
@@ -80,6 +74,37 @@ public extension GameState {
         // Seed each active house's power/storage from its structures (the oracle's tick-0 baseline).
         var find = PoolFind()
         while let h = houseFind(&find) { houseCalculatePowerAndCredit(houses[h].index) }
+    }
+
+    /// Activate the scenario's houses + seed their economy. Two formats are accepted:
+    ///
+    /// 1. **Per-house sections** (the real install format, `Scenario_Load_House` `scenario.c:50`): each
+    ///    `[<HouseName>]` section carries `Brain` (HUMAN / CPU — absent/NONE ⇒ the house isn't in this
+    ///    scenario), `Credits`, `Quota`, `MaxUnit` (default 39). The `Brain=Human` house becomes the player
+    ///    and its starting credits seed `playerCreditsNoSilo` (so the house tick's credit clamp keeps them
+    ///    without a silo — otherwise the player is clamped to near-zero storage and can't build).
+    /// 2. **A flat `[HOUSES]` section** (`<HouseName>=<startingCredits>`) — the synthetic parity fixtures.
+    ///
+    /// Scenarios without either run with no active houses.
+    private mutating func loadHouses(ini: Ini) {
+        for house in HouseID.allCases {
+            let name = HouseInfo[house].name
+            guard let brain = ini.string(section: name, key: "Brain")?.uppercased(),
+                  brain == "HUMAN" || brain == "CPU" else { continue }
+            let h = houseAllocate(index: UInt8(house.rawValue)) ?? Int(house.rawValue)
+            houses[h].credits = UInt16(clamping: ini.integer(section: name, key: "Credits"))
+            houses[h].creditsQuota = UInt16(clamping: ini.integer(section: name, key: "Quota"))
+            houses[h].unitCountMax = UInt16(clamping: ini.integer(section: name, key: "MaxUnit", default: 39))
+            if brain == "HUMAN" {
+                playerHouseID = UInt8(house.rawValue)
+                playerCreditsNoSilo = houses[h].credits
+            }
+        }
+        for key in ini.keys(section: "HOUSES") {
+            guard let house = HouseID.named(key) else { continue }
+            let h = houseAllocate(index: UInt8(house.rawValue)) ?? Int(house.rawValue)
+            houses[h].credits = UInt16(clamping: Int(ini.string(section: "HOUSES", key: key) ?? "") ?? 0)
+        }
     }
 
     /// `House,UnitType,HP%,packedPosition,orientation,actionState`.

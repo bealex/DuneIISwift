@@ -34,7 +34,7 @@ struct FrameInfoTests {
         wt.o.houseID = UInt8(HouseID.ordos.rawValue)
         wt.o.position = Tile32(x: 20 * 256, y: 8 * 256)
         wt.o.hitpoints = 175
-        wt.hitpointsMax = 200
+        wt.hitpointsMax = 120        // power-degraded *below* the 200 base (and below current HP)
         sim.state.structures[0] = wt
 
         // An active Ordos house with credits + power.
@@ -188,6 +188,9 @@ struct FrameInfoTests {
         #expect(s.type == .windtrap)
         #expect(s.house == .ordos)
         #expect(s.positionX == 20 * 256 && s.positionY == 8 * 256)
+        // hitpointsMax is the **base** HP (200), not the power-degraded `s.hitpointsMax` (120) — the health
+        // bar divides by the base, like OpenDUNE (`widget_draw.c:725`), so an under-powered structure isn't
+        // shown over-full. Current HP (175) is reported as-is, even above the degraded cap.
         #expect(s.hitpoints == 175 && s.hitpointsMax == 200)
     }
 

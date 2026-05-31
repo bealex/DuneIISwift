@@ -9,4 +9,12 @@ public enum Command: Sendable, Equatable {
     case attack(unit: UInt16, tile: UInt16)
     /// Order the unit to stop — hold position and guard (clear its move/attack targets).
     case stop(unit: UInt16)
+    /// Start the factory `structure` (a structure pool index) building `objectType` — a `UnitType.rawValue`
+    /// for a unit factory, or a `StructureType.rawValue` for the construction yard (`Structure_BuildObject`).
+    case build(structure: UInt16, objectType: UInt16)
+    /// Cancel the factory `structure`'s in-progress build (`Structure_CancelBuild`; refunds the remainder).
+    case cancelBuild(structure: UInt16)
+    /// Place the construction yard `structure`'s finished (ready) structure at `tile` (a packed map
+    /// position), then reset the factory (`Structure_Place` + the GUI place-flow reset).
+    case placeStructure(structure: UInt16, tile: UInt16)
 }

@@ -135,8 +135,22 @@ public enum FrameComposer {
         return buffer
     }
 
+    /// Whether the cell at a world position is hidden under fog — `showFog` on **and** the underlying tile
+    /// is still veiled (`!isUnveiled`). Mirrors `viewport.c`: every entity pass (units, explosions, smoke,
+    /// sandworms) does `if (!g_map[curPos].isUnveiled && !g_debugScenario) continue` — so an enemy sitting
+    /// in the fog isn't drawn at all (only revealed tiles black-fill via the terrain pass). Off-map / out
+    /// of range is treated as visible (no spurious hide).
+    public static func isHiddenByFog(_ frame: FrameInfo, worldX: Int, worldY: Int, showFog: Bool) -> Bool {
+        guard showFog else { return false }
+        let tx = worldX / 256, ty = worldY / 256
+        guard (0 ..< frame.mapWidth).contains(tx), (0 ..< frame.mapHeight).contains(ty) else { return false }
+        return !frame.tiles[ty * frame.mapWidth + tx].isUnveiled
+    }
+
     /// The unit (body + turret) and effect (explosion / smoke) sprites, resolved + placed in image space.
-    public static func sprites(_ frame: FrameInfo, source: WorldSpriteSource) -> [ComposedSprite] {
+    /// When `showFog` is on, units/effects on a still-veiled tile are omitted (`viewport.c` masks each
+    /// entity pass by the tile's `isUnveiled` — enemies in the fog aren't drawn).
+    public static func sprites(_ frame: FrameInfo, source: WorldSpriteSource, showFog: Bool = false) -> [ComposedSprite] {
         let ts = source.terrainTileSize
         var result: [ComposedSprite] = []
 
@@ -144,6 +158,7 @@ public enum FrameComposer {
         func imageY(_ worldY: Int) -> Int { worldY * ts / 256 }
 
         for u in frame.units {
+            if isHiddenByFog(frame, worldX: u.positionX, worldY: u.positionY, showFog: showFog) { continue }
             let house = House(rawValue: u.house.rawValue)
             let cx = imageX(u.positionX), cy = imageY(u.positionY)
             // Air units (wingers) draw on top of ground units + explosions (a separate `viewport.c` pass).
@@ -172,6 +187,7 @@ public enum FrameComposer {
         }
 
         for e in frame.effects {
+            if isHiddenByFog(frame, worldX: e.positionX, worldY: e.positionY, showFog: showFog) { continue }
             guard let f = source.unitFrame(globalIndex: e.sprite.spriteIndex) else { continue }
             result.append(ComposedSprite(spriteIndex: e.sprite.spriteIndex, frame: f,
                                          centerX: imageX(e.positionX) + e.sprite.offsetX,

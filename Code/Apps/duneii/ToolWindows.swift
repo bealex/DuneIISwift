@@ -39,31 +39,54 @@ enum ToolKind: String, CaseIterable, Identifiable {
 final class ToolWindowManager: NSObject, NSWindowDelegate {
     private let model: GameModel
     private var panels: [ToolKind: NSPanel] = [:]
+    /// The main map window — the tool panels are added as **child windows** of it (so they sit above it
+    /// always, yet drop behind other applications when ours is inactive, rather than floating system-wide).
+    private weak var mainWindow: NSWindow?
 
     init(model: GameModel) { self.model = model }
 
     func openDefaults() { for kind in ToolKind.allCases { open(kind) } }
 
+    /// Adopt the main window once SwiftUI has created it: remember it (for its own frame autosave) and
+    /// re-parent any already-open tool panels onto it as child windows. Idempotent — the `WindowAccessor`
+    /// may call it repeatedly with the same window.
+    func attachToMain(_ window: NSWindow) {
+        if window.frameAutosaveName != "DuneII.main" {
+            window.setFrameUsingName("DuneII.main")
+            window.setFrameAutosaveName("DuneII.main")
+        }
+        guard mainWindow !== window else { return }
+        mainWindow = window
+        for panel in panels.values where panel.parent !== window { window.addChildWindow(panel, ordered: .above) }
+    }
+
     func toggle(_ kind: ToolKind) { (panels[kind]?.isVisible == true) ? close(kind) : open(kind) }
 
     func open(_ kind: ToolKind) {
-        if let panel = panels[kind] { panel.orderFront(nil); model.openTools.insert(kind); return }
+        if let panel = panels[kind] {
+            if let mainWindow, panel.parent !== mainWindow { mainWindow.addChildWindow(panel, ordered: .above) }
+            panel.orderFront(nil); model.openTools.insert(kind); return
+        }
         let size = kind.defaultSize
         let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                             styleMask: [.titled, .closable, .resizable, .utilityWindow, .nonactivatingPanel],
                             backing: .buffered, defer: false)
         panel.title = kind.title
-        panel.isFloatingPanel = true
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // Normal level + parented to the map window (below): above the map, below other apps. Stays visible
+        // when the map is fullscreened via `.fullScreenAuxiliary`.
+        panel.isFloatingPanel = false
+        panel.level = .normal
+        panel.collectionBehavior = [.fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.delegate = self
         panel.contentView = NSHostingView(rootView: content(for: kind))
-        panel.center()
-        cascade(panel, kind: kind)
+        // Restore the saved frame; only place it (centre + cascade) the first time it's ever opened.
+        let autosaveName = "DuneII.tool.\(kind.rawValue)"
+        if !panel.setFrameUsingName(autosaveName) { panel.setContentSize(size); panel.center(); cascade(panel, kind: kind) }
+        panel.setFrameAutosaveName(autosaveName)
         panels[kind] = panel
-        panel.orderFront(nil)
+        if let mainWindow { mainWindow.addChildWindow(panel, ordered: .above) } else { panel.orderFront(nil) }
         model.openTools.insert(kind)
     }
 

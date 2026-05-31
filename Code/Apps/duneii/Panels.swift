@@ -1,4 +1,5 @@
 import DuneIIInput
+import DuneIISimulation
 import SwiftUI
 
 /// The selected unit/building's properties + the commands available to it (player-owned units only).
@@ -14,6 +15,10 @@ struct InspectorPanel: View {
                         Text(s.name).font(.title2.bold())
                         if s.isPlayer { Text("yours").font(.caption).foregroundStyle(.green) }
                     }
+                    // What it's doing right now (a unit's order / a structure's activity).
+                    Label(s.state, systemImage: "waveform.path.ecg")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.tint)
                     Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                         GridRow { Text("House").foregroundStyle(.secondary); Text(s.house) }
                         GridRow { Text("Tile").foregroundStyle(.secondary); Text("(\(s.tileX), \(s.tileY))") }
@@ -42,6 +47,7 @@ struct InspectorPanel: View {
                         }
                         Button("Deselect", role: .cancel) { model.deselect() }.controlSize(.small)
                     }
+                    buildSection()
                 } else {
                     ContentUnavailableView("No selection", systemImage: "cursorarrow.rays",
                                            description: Text("Left-click a unit or building.\nRight-click to move/attack."))
@@ -56,6 +62,58 @@ struct InspectorPanel: View {
     private func tint(_ hp: Int, _ max: Int) -> Color {
         let f = max > 0 ? Double(hp) / Double(max) : 1
         return f > 0.66 ? .green : (f > 0.33 ? .yellow : .red)
+    }
+
+    /// The factory build section: a buildable-item selector, or — once building — a progress bar with
+    /// Cancel and (a finished construction-yard structure) a "Place it" button. Shown for a player factory.
+    @ViewBuilder private func buildSection() -> some View {
+        if model.isFactorySelected {
+            Divider()
+            Text("Build").font(.headline)
+            if let bs = model.buildProgress {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(bs.displayName).bold()
+                        Spacer()
+                        if bs.isReady { Text("Ready").font(.caption).foregroundStyle(.green) }
+                        else if bs.onHold { Text("On hold").font(.caption).foregroundStyle(.orange) }
+                    }
+                    ProgressView(value: bs.progress).tint(bs.onHold ? .orange : .accentColor)
+                    HStack {
+                        if bs.isReady && bs.isStructure {
+                            Button { model.beginPlacement() } label: { Label("Place it", systemImage: "mappin.and.ellipse") }
+                                .buttonStyle(.borderedProminent)
+                        } else if bs.isReady {
+                            Label("Deploying…", systemImage: "arrow.down.circle").font(.caption).foregroundStyle(.green)
+                        }
+                        Button(role: .destructive) { model.cancelBuild() } label: { Label("Cancel", systemImage: "xmark") }
+                            .buttonStyle(.bordered)
+                    }
+                    if model.placement != nil {
+                        Label("Click a spot to place · Esc / right-click cancels", systemImage: "hand.tap")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            } else if model.buildables.isEmpty {
+                Text("Nothing available to build.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 4) {
+                    ForEach(model.buildables, id: \.objectType) { item in
+                        Button { model.startBuild(item.objectType) } label: {
+                            HStack {
+                                Text(item.displayName)
+                                Spacer()
+                                Text("\(item.cost) cr").monospacedDigit()
+                                    .foregroundStyle(item.cost > model.playerCredits ? Color.red : Color.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(item.cost > model.playerCredits)
+                    }
+                }
+            }
+        }
     }
 }
 

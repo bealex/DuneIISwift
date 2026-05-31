@@ -76,7 +76,12 @@ public extension Simulation {
             structures.append(FrameInfo.Structure(
                 id: s.o.index, type: type, house: house,
                 positionX: Int(s.o.position.x), positionY: Int(s.o.position.y),
-                hitpoints: Int(s.o.hitpoints), hitpointsMax: Int(s.hitpointsMax)))
+                // The health bar uses the **base** HP as the denominator, like OpenDUNE
+                // (`widget_draw.c:725` `GUI_DrawProgressbar(o->hitpoints, si->o.hitpoints)`), NOT the
+                // power-degraded `s.hitpointsMax` — an under-powered structure keeps full hitpoints until it
+                // bleeds down, so dividing by the degraded cap shows an over-full / wrong-length bar (e.g.
+                // an outpost at 400/250 instead of 400/500).
+                hitpoints: Int(s.o.hitpoints), hitpointsMax: Int(StructureInfo[type].o.hitpoints)))
         }
 
         // Active explosions (impacts / unit deaths / building destruction). `spriteID` is already a

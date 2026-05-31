@@ -1,3 +1,4 @@
+import AppKit
 import SpriteKit
 import SwiftUI
 
@@ -27,6 +28,16 @@ struct ContentView: View {
                     }
                     .disabled(model.assets.scenarioNames.isEmpty)
                 }
+                ToolbarItem(placement: .automatic) {
+                    Picker("Speed", selection: Binding(get: { model.gameSpeed }, set: { model.gameSpeed = $0 })) {
+                        Text("0.5×").tag(0.5)
+                        Text("1×").tag(1.0)
+                        Text("2×").tag(2.0)
+                        Text("4×").tag(4.0)
+                    }
+                    .pickerStyle(.menu)
+                    .help("Game speed")
+                }
                 ToolbarItemGroup(placement: .automatic) {
                     ForEach(ToolKind.allCases) { kind in
                         Button { tools.toggle(kind) } label: { Image(systemName: kind.symbol) }
@@ -35,11 +46,28 @@ struct ContentView: View {
                     }
                 }
             }
+            .background(WindowAccessor { window in tools.attachToMain(window) })
             .overlay(alignment: .top) {
                 if let error = model.assets.error, !error.isEmpty {
                     Text(error).font(.callout).padding(8).background(.red.opacity(0.85)).foregroundStyle(.white)
                 }
             }
             .onAppear { if !openedDefaults { tools.openDefaults(); openedDefaults = true } }
+    }
+}
+
+/// Reaches the SwiftUI window's backing `NSWindow` (for child-window parenting + frame autosave). Fires the
+/// callback once the view is in a window, and again on updates (the callback is idempotent).
+struct WindowAccessor: NSViewRepresentable {
+    let onResolve: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { if let window = view.window { onResolve(window) } }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { if let window = nsView.window { onResolve(window) } }
     }
 }

@@ -23,13 +23,26 @@ public struct UnitOrders: Sendable {
         self.map = map
     }
 
-    /// Apply a `Command` (the input seam) to the unit it names.
+    /// Apply a `Command` (the input seam) to the unit / factory it names.
     public func apply(_ command: Command, in state: inout GameState) {
         switch command {
             case let .move(unit, tile):   order(slot: Int(unit), action: .move, targetPacked: tile, in: &state)
             case let .attack(unit, tile): order(slot: Int(unit), action: .attack, targetPacked: tile, in: &state)
             case let .stop(unit):         stop(slot: Int(unit), in: &state)
+            case let .build(structure, objectType):
+                _ = combat.structureBuildObject(slot: Int(structure), objectType: objectType, in: &state)
+            case let .cancelBuild(structure):
+                state.structureCancelBuild(Int(structure))
+            case let .placeStructure(structure, tile):
+                combat.structurePlaceReady(factory: Int(structure), position: tile, in: &state)
         }
+    }
+
+    /// A `UnitCombat` over this applier's injected primitives — the home of the factory build/place natives.
+    /// Built on demand (build/place are infrequent player actions); the default interpreter suffices since
+    /// these paths run no unit script.
+    private var combat: UnitCombat {
+        UnitCombat(movement: UnitMovement(scriptInfo: scriptInfo, unitPrimitives: primitives, mapPrimitives: map))
     }
 
     /// Stop the unit: clear its move/attack targets + route and set it to GUARD in place (the original's

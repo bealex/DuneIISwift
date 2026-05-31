@@ -37,4 +37,27 @@ struct ScenarioLoaderTests {
         #expect(cy?.o.position == Tile32(x: Tile32.unpack(1630).x & 0xFF00, y: Tile32.unpack(1630).y & 0xFF00))
         #expect(cy?.o.position.packed == 1630)   // same packed tile either way
     }
+
+    @Test("SCENA001 seeds house credits + the player from the per-house sections")
+    func loadHouses() throws {
+        var root = URL(fileURLWithPath: #filePath)
+        for _ in 0 ..< 4 { root.deleteLastPathComponent() }
+        let iconMap = try IconMap(Data(contentsOf: root.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
+        let ini = try Ini(Data(contentsOf: root.appendingPathComponent("Resources/Scenarios/SCENA001.INI")))
+
+        var state = GameState()
+        state.loadScenario(ini: ini, iconMap: iconMap)
+
+        // [Atreides] Brain=Human Credits=1000 Quota=1000 MaxUnit=25 → the player house.
+        let atreides = Int(HouseID.atreides.rawValue)
+        #expect(state.houses[atreides].flags.contains(.used))
+        #expect(state.houses[atreides].credits == 1000)
+        #expect(state.houses[atreides].creditsQuota == 1000)
+        #expect(state.houses[atreides].unitCountMax == 25)
+        #expect(state.playerHouseID == UInt8(HouseID.atreides.rawValue))
+        // The no-silo allowance = the player's starting credits, so the house-tick clamp keeps them.
+        #expect(state.playerCreditsNoSilo == 1000)
+        // [Ordos] Brain=CPU is allocated too (so GameLoop_House runs it).
+        #expect(state.houses[Int(HouseID.ordos.rawValue)].flags.contains(.used))
+    }
 }
