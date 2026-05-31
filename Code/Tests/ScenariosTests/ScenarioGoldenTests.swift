@@ -48,7 +48,17 @@ import DuneIISimulation
 /// logic ⇒ same draw count; the gap was a real one-draw transcription miss, now fixed.)
 @Suite("Scenario golden vs OpenDUNE")
 struct ScenarioGoldenTests {
-    struct Frame: Decodable { let tick: Int; let units: [UnitState]; let structures: [StructureGolden]?; let houses: [HouseGolden]? }
+    struct Frame: Decodable { let tick: Int; let units: [UnitState]; let structures: [StructureGolden]?; let houses: [HouseGolden]?; let tiles: [TileGolden]? }
+    /// A dumped map cell (the `[DUMPTILES]` cells) — for the wall/slab goldens, where the destruction shows
+    /// in the map tile, not a structure record (walls/slabs aren't in the structure find-array). We compare
+    /// `ground` (the unambiguous observable: a destroyed wall reverts its ground sprite to the base terrain;
+    /// a slab's ground stays the concrete tile). The oracle also dumps `overlay` + `lst`; `overlay` is
+    /// **not** compared — it carries the fog veil, whose 7-bit-truncated tick-0 value has a latent off-by-one
+    /// vs ours (124 vs 123) unrelated to wall/slab destruction, and the destroyed-wall marker it later holds
+    /// is already implied by the ground revert.
+    struct TileGolden: Decodable, Equatable {
+        let packed: UInt16; let ground: UInt16
+    }
     /// The dynamic house-economy fields (`House_CalculatePowerAndCredit` + the House-loop clamp/upkeep). The
     /// oracle dumps more (unitCount/starport); `Decodable` ignores those.
     struct HouseGolden: Decodable, Equatable {
@@ -96,7 +106,9 @@ struct ScenarioGoldenTests {
         Spec(name: "trooper",     ini: "trooper.ini",     attack: false, cmdUnit: 22, tile: 1040, compared: 0),  // a foot trooper walks: verifies the walk animation (spriteOffset, tickUnknown5) + movement, full match
         Spec(name: "economy", ini: "economy.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false),  // HOUSE golden: an Ordos windtrap+silo base — full 60-tick match of the house aggregate (credits 2000→clamp 1000→power-maint 999, power 100/5, storage 1000) + structures. Validates House_CalculatePowerAndCredit + the credit clamp + power maintenance.
         Spec(name: "teams", ini: "teams.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false, team: true),  // TEAM-AI golden: an Ordos `Normal`-brain team recruits its tanks via GameLoop_Team. Unit-state + (decisively) the RNG draw stream match the oracle full 400 ticks — proving the team loop + brain run identically cross-engine (recruiting isn't in the dump; the RNG stream is the proof). Targeting is fog-gated off (seenByHouses 0), matching the oracle.
-        Spec(name: "missile-duel", ini: "missile-duel.ini", attack: true, cmdUnit: 22, tile: 1045, compared: 0, cmd2Unit: 23, cmd2Tile: 1040),  // BULLET-ACCOUNTING golden: an Atreides + an Ordos Launcher each ordered to attack the other, trading notAccurate rockets. Each rocket is a unit (Unit_Allocate → the firing house's unitCount++) freed on impact (unitCount--), so the per-tick house unitCount oscillates as bullets spawn + land — asserting the projectile allocate/free accounting matches the oracle tick-for-tick (the accounting whose uint16 wrap crashed a long mapview run). Non-player houses avoid the player-house House_CalculatePowerAndCredit GUI path the headless oracle lacks (turrets can't fire headless — no sprite-rotation GFX — so a missile duel exercises the identical bullet path).
+        Spec(name: "missile-duel", ini: "missile-duel.ini", attack: true, cmdUnit: 22, tile: 1045, compared: 0, cmd2Unit: 23, cmd2Tile: 1040),
+        Spec(name: "wall-destruction", ini: "wall-destruction.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0),  // MAP-TILE golden: a tank's bullet impacts an Ordos wall; the 25-dmg hit's Random_256 roll (this seed) destroys the 50-HP wall at tick 67 — the [DUMPTILES] cell's ground reverts to terrain + overlay becomes the destroyed-wall marker (Map_MakeExplosion's wall branch + Map_UpdateWall). Rides the RNG-stream golden (the destroy draws Random_256).
+        Spec(name: "slab-indestructible", ini: "slab-indestructible.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0),  // MAP-TILE golden: a tank fires at an Ordos concrete slab. Slabs have no destruction mechanic in 1.07 (Map_MakeExplosion only special-cases LST_WALL), so the [DUMPTILES] cell stays a slab the whole run — verifying our explosion-on-slab matches the oracle (the slab is left alone).  // BULLET-ACCOUNTING golden: an Atreides + an Ordos Launcher each ordered to attack the other, trading notAccurate rockets. Each rocket is a unit (Unit_Allocate → the firing house's unitCount++) freed on impact (unitCount--), so the per-tick house unitCount oscillates as bullets spawn + land — asserting the projectile allocate/free accounting matches the oracle tick-for-tick (the accounting whose uint16 wrap crashed a long mapview run). Non-player houses avoid the player-house House_CalculatePowerAndCredit GUI path the headless oracle lacks (turrets can't fire headless — no sprite-rotation GFX — so a missile duel exercises the identical bullet path).
     ]
 
     /// Sorted by `index` so the comparison is independent of pool/find-array enumeration order: our engine
@@ -122,6 +134,12 @@ struct ScenarioGoldenTests {
                                    hitpoints: st.o.hitpoints, state: st.state.rawValue, linkedID: st.o.linkedID)
         }
         .sorted { $0.index < $1.index }
+    }
+
+    /// The `[DUMPTILES]` map cells — ground/overlay tile ids straight from our `GameState.map`, matching
+    /// the oracle's per-tile dump. The driver for the wall/slab goldens.
+    private func tilesSnapshot(_ s: GameState, _ packed: [UInt16]) -> [TileGolden] {
+        packed.map { p in TileGolden(packed: p, ground: s.map[Int(p)].groundTileID) }
     }
 
     private func houseSnapshot(_ s: GameState) -> [HouseGolden] {
@@ -156,9 +174,13 @@ struct ScenarioGoldenTests {
             ? (try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/TEAM/TEAM.emc")))
                 .flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
             : nil
+        let parsedIni = Ini(ini)
         var state = GameState()
-        state.loadScenario(ini: Ini(ini), iconMap: try IconMap(icon), teamScriptOffsets: teamScriptInfo?.offsets ?? [])
+        state.loadScenario(ini: parsedIni, iconMap: try IconMap(icon), teamScriptOffsets: teamScriptInfo?.offsets ?? [])
         state.viewportPosition = Tile32.packXY(x: 12, y: 12)   // matches the oracle's pinned parity viewport
+        // The [DUMPTILES] cells (the wall/slab goldens) — the same packed tiles the oracle dumps.
+        let dumpTiles: [UInt16] = parsedIni.keys(section: "DUMPTILES")
+            .compactMap { parsedIni.string(section: "DUMPTILES", key: $0).flatMap { UInt16($0) } }
 
         // Scen-style prepare (mirrors the oracle's Scen_LoadUnit + Game_Prepare placement): load each
         // unit's action script and stamp it on the map, so multi-unit setup — target resolution
@@ -185,7 +207,7 @@ struct ScenarioGoldenTests {
         let rngSink = RngTraceSink()
         sim.state.random256.traceSink = rngSink
         sim.state.randomLCG.traceSink = rngSink
-        func frame() -> Frame { Frame(tick: 0, units: snapshot(sim.state), structures: structureSnapshot(sim.state), houses: houseSnapshot(sim.state)) }
+        func frame() -> Frame { Frame(tick: 0, units: snapshot(sim.state), structures: structureSnapshot(sim.state), houses: houseSnapshot(sim.state), tiles: tilesSnapshot(sim.state, dumpTiles)) }
         var ours: [Frame] = [frame()]
         for t in 1 ..< max(oracle.count, 1) {
             rngSink.setTick(UInt32(t))
@@ -201,11 +223,13 @@ struct ScenarioGoldenTests {
             if ours[t].units != oracle[t].units.sorted(by: { $0.index < $1.index }) { firstMismatch = t; what = "units"; break }
             if (ours[t].structures ?? []) != (oracle[t].structures ?? []).sorted(by: { $0.index < $1.index }) { firstMismatch = t; what = "structures"; break }
             if (ours[t].houses ?? []) != (oracle[t].houses ?? []).sorted(by: { $0.index < $1.index }) { firstMismatch = t; what = "houses"; break }
+            if (ours[t].tiles ?? []).sorted(by: { $0.packed < $1.packed }) != (oracle[t].tiles ?? []).sorted(by: { $0.packed < $1.packed }) { firstMismatch = t; what = "tiles"; break }
         }
         let msg: String = firstMismatch.map { t in
             switch what {
                 case "structures": return "\(spec.name): structures diverge at tick \(t): ours=\(ours[t].structures ?? []) oracle=\((oracle[t].structures ?? []).sorted(by: { $0.index < $1.index }))"
                 case "houses":     return "\(spec.name): houses diverge at tick \(t): ours=\(ours[t].houses ?? []) oracle=\((oracle[t].houses ?? []).sorted(by: { $0.index < $1.index }))"
+                case "tiles":      return "\(spec.name): tiles diverge at tick \(t): ours=\((ours[t].tiles ?? []).sorted(by: { $0.packed < $1.packed })) oracle=\((oracle[t].tiles ?? []).sorted(by: { $0.packed < $1.packed }))"
                 default:           return "\(spec.name): units diverge at tick \(t): ours=\(ours[t].units) oracle=\(oracle[t].units.sorted(by: { $0.index < $1.index }))"
             }
         } ?? "\(spec.name): no divergence"

@@ -239,7 +239,14 @@ extension UnitMovement {
         if hitpoints != 0, let sSlot = state.structureGetByPackedTile(positionPacked) {
             state.structureDamage(sSlot, damage: hitpoints, range: 0)
         }
-        // SEAM: wall destruction (Map_UpdateWall) when the impact tile is a wall.
+        // Wall destruction (`map.c:503`): a wall tile is destroyed if the blast HP is at least the wall's
+        // HP (deterministic — the `||` short-circuits, drawing no RNG) or a probabilistic Random_256 roll.
+        if hitpoints != 0, map.landscapeType(state.map[Int(positionPacked)], tileIDs: state.tileIDs) == .wall {
+            let wallHP = Int(StructureInfo[.wall].o.hitpoints)
+            if wallHP <= Int(hitpoints) || Int(state.random256.next()) <= Int(hitpoints) * 256 / wallHP {
+                state.mapUpdateWall(positionPacked)
+            }
+        }
 
         // The explosion animation (`Explosion_Start`, map.c:512). RNG-free, so this stays golden-neutral
         // and matches the oracle (which also starts — but, like us, doesn't tick — explosions in the

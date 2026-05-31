@@ -29,6 +29,28 @@ public extension GameState {
         mapDirty = true
     }
 
+    /// `Map_UpdateWall` (`map.c:376`, the explosion-destroy use): destroy the wall on `packed` — revert
+    /// its ground to the seed-generated base landscape tile, leave the **destroyed-wall** overlay marker
+    /// (`overlayTileID = wall`) when the tile is in the player's view, and re-connect the neighbouring
+    /// walls so the network redraws. No-op on a non-wall tile. Called from `Map_MakeExplosion`.
+    @discardableResult
+    mutating func mapUpdateWall(_ packed: UInt16) -> Bool {
+        let pos = Int(packed)
+        guard pos >= 0, pos < map.count, wallTileIsWall(pos) else { return false }
+        map[pos].groundTileID = mapBaseTileID[pos] & 0x1FF
+        if mapPositionUnveiled(pos) { map[pos].overlayTileID = UInt8(truncatingIfNeeded: tileIDs.wall) }
+        structureConnectWall(packed, recurse: true)
+        mapDirty = true
+        return true
+    }
+
+    /// `Map_IsPositionUnveiled` (`map.c`): the tile is revealed and its overlay isn't the fog veil.
+    private func mapPositionUnveiled(_ pos: Int) -> Bool {
+        guard map[pos].isUnveiled else { return false }
+        let o = UInt16(map[pos].overlayTileID)
+        return o > tileIDs.veiled || o < tileIDs.veiled &- 15   // Tile_IsUnveiled
+    }
+
     /// `Structure_ConnectWall` (`structure.c:1136`): pick the wall's ground tile from which of its four
     /// cardinal neighbours are walls (a 256-entry lookup), and — when `recurse` — re-connect those wall
     /// neighbours so the join stays consistent as a wall network is built up one tile at a time.
