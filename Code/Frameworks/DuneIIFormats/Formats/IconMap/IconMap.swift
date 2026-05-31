@@ -9,12 +9,12 @@ import Foundation
 /// at the count index is 0 (EOF). Group `i`'s tile IDs run from `values[values[i]]` up to (but not
 /// including) `values[values[i+1]]` (or end-of-array when the next offset is 0). Each tile ID indexes
 /// `ICON.ICN`'s tiles. See `Documentation/Formats/IconMap.md`.
-public struct IconMap: Sendable {
+public struct IconMap: Sendable, Codable {
     public enum DecodeError: Error, Equatable {
         case truncated
     }
 
-    public struct Group: Equatable, Sendable {
+    public struct Group: Equatable, Sendable, Codable {
         public let index: Int
         public let name: String
         public let tileIDs: [Int]

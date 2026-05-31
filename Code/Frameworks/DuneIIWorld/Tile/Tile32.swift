@@ -4,7 +4,7 @@
 /// "Packed" tiles are the 12-bit `(y << 6) | x` form used by the map and many script functions.
 ///
 /// Verified against an OpenDUNE golden dump — see `Documentation/Algorithms/Tile.md`.
-public struct Tile32: Equatable, Sendable {
+public struct Tile32: Equatable, Sendable, Codable {
     public var x: UInt16
     public var y: UInt16
 

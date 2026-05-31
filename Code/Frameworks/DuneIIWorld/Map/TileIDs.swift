@@ -4,7 +4,7 @@ import DuneIIFormats
 /// OpenDUNE's `Sprites_Init` (`src/sprites.c:274`). They anchor `Map_GetLandscapeType` and friends
 /// (a tile's `groundTileID` is classified by its offset from these bases). Each is the icon-group's
 /// tile at a fixed offset, via the `IconMap` (`g_iconMap[g_iconMap[ICM_ICONGROUP_X] + offset]`).
-public struct TileIDs: Sendable, Equatable {
+public struct TileIDs: Sendable, Equatable, Codable {
     public var veiled: UInt16 = 0       // FOG_OF_WAR group, tile 16
     public var bloom: UInt16 = 0        // SPICE_BLOOM group, tile 0
     public var builtSlab: UInt16 = 0    // CONCRETE_SLAB group, tile 2

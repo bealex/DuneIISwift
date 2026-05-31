@@ -1,5 +1,5 @@
 /// A single animation command. A port of OpenDUNE's `AnimationCommand` (`src/animation.h`).
-public enum AnimationCommand: UInt8, Sendable, Equatable {
+public enum AnimationCommand: UInt8, Sendable, Equatable, Codable {
     case stop = 0            // gracefully stop + clean up the tiles
     case abort = 1           // stop, leaving the tiles as they are
     case setOverlayTile = 2  // param: new overlay tile (icon-group offset)
@@ -12,7 +12,7 @@ public enum AnimationCommand: UInt8, Sendable, Equatable {
 }
 
 /// One `(command, parameter)` step. A port of `AnimationCommandStruct` (`src/animation.h`).
-public struct AnimationCommandStruct: Sendable, Equatable {
+public struct AnimationCommandStruct: Sendable, Equatable, Codable {
     public let command: AnimationCommand
     public let parameter: Int16
     public init(_ command: AnimationCommand, _ parameter: Int16) { self.command = command; self.parameter = parameter }
@@ -24,14 +24,14 @@ private func cmd(_ command: AnimationCommand, _ parameter: Int16) -> AnimationCo
 
 /// Which command table an animation runs: a structure's ground-cycle (`g_table_animation_structure`) or a
 /// dead unit's corpse overlay (`g_table_animation_unitScript1` for 3-frame infantry, `…unitScript2` else).
-public enum AnimationKind: UInt8, Sendable, Equatable {
+public enum AnimationKind: UInt8, Sendable, Equatable, Codable {
     case structure, unitScript1, unitScript2
 }
 
 /// An active animation instance. A port of OpenDUNE's `Animation` (`src/animation.c`); lives in the
 /// `GameState.animations` pool. `tableIndex` is the row of the `kind`'s command table it runs
 /// (`active == false` means a free slot).
-public struct Animation: Sendable, Equatable {
+public struct Animation: Sendable, Equatable, Codable {
     public var tickNext: UInt32 = 0
     public var tileLayout: UInt16 = 0
     public var houseID: UInt8 = 0

@@ -7,7 +7,7 @@
 /// sentinel `scriptPC == scriptNull` (`0xFFFF`); a C `NULL` pointer can't be confused with offset 0,
 /// but our offsets can, so we reserve the top value. The `scriptInfo` pointer itself is re-derived at
 /// runtime from the owner's type and is not stored.
-public struct ScriptEngine: Sendable, Equatable {
+public struct ScriptEngine: Sendable, Equatable, Codable {
     /// `scriptPC` value standing in for OpenDUNE's NULL `script` pointer (not loaded / errored).
     public static let scriptNull: UInt16 = 0xFFFF
 

@@ -1,5 +1,5 @@
 /// A single explosion command. A port of OpenDUNE's `ExplosionCommand` (`src/explosion.h`).
-public enum ExplosionCommand: UInt8, Sendable, Equatable {
+public enum ExplosionCommand: UInt8, Sendable, Equatable, Codable {
     case stop = 0             // stop the explosion + free the slot
     case setSprite = 1        // param: new sprite id
     case setTimeout = 2       // param: ticks until the next command
@@ -14,7 +14,7 @@ public enum ExplosionCommand: UInt8, Sendable, Equatable {
 
 /// One `(command, parameter)` step. A port of `ExplosionCommandStruct` (`src/explosion.h`). `parameter`
 /// is `Int16` so `MOVE_Y_POSITION -80` is natural.
-public struct ExplosionCommandStruct: Sendable, Equatable {
+public struct ExplosionCommandStruct: Sendable, Equatable, Codable {
     public let command: ExplosionCommand
     public let parameter: Int16
     public init(_ command: ExplosionCommand, _ parameter: Int16) { self.command = command; self.parameter = parameter }
@@ -22,7 +22,7 @@ public struct ExplosionCommandStruct: Sendable, Equatable {
 
 /// The explosion types. A port of OpenDUNE's `ExplosionType` (`src/explosion.h`); the raw value indexes
 /// `ExplosionTables.commands`. `structure` (14) is the building-destruction explosion.
-public enum ExplosionType: Int, Sendable, Equatable {
+public enum ExplosionType: Int, Sendable, Equatable, Codable {
     case impactSmall = 0
     case impactMedium = 1
     case impactLarge = 2
@@ -50,7 +50,7 @@ public enum ExplosionType: Int, Sendable, Equatable {
 /// An active explosion instance. A port of OpenDUNE's `Explosion` (`src/explosion.c`); lives in the
 /// `GameState.explosions` pool. `tableIndex` is the `ExplosionType.rawValue` whose command list it runs
 /// (`tableIndex < 0` / `active == false` means a free slot, mirroring C's `commands == NULL`).
-public struct Explosion: Sendable, Equatable {
+public struct Explosion: Sendable, Equatable, Codable {
     public var timeOut: UInt32 = 0
     public var houseID: UInt8 = 0
     public var current: UInt8 = 0      // cursor into the command list

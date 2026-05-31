@@ -1,5 +1,5 @@
 /// What a team is currently doing. A port of OpenDUNE's `TeamActionType` (`src/team.h`).
-public enum TeamActionType: Int, Sendable, Equatable, CaseIterable {
+public enum TeamActionType: Int, Sendable, Equatable, Codable, CaseIterable {
     case normal = 0
     case staging = 1
     case flee = 2
@@ -8,7 +8,7 @@ public enum TeamActionType: Int, Sendable, Equatable, CaseIterable {
 }
 
 /// General flags of a team. A port of OpenDUNE's `TeamFlags` (`src/team.h`); only `used` is defined.
-public struct TeamFlags: OptionSet, Sendable, Equatable {
+public struct TeamFlags: OptionSet, Sendable, Equatable, Codable {
     public let rawValue: UInt8
     public init(rawValue: UInt8) { self.rawValue = rawValue }
 
@@ -16,7 +16,7 @@ public struct TeamFlags: OptionSet, Sendable, Equatable {
 }
 
 /// A team of units. A port of OpenDUNE's `Team` struct (`src/team.h`); owns a `ScriptEngine`.
-public struct Team: Sendable, Equatable {
+public struct Team: Sendable, Equatable, Codable {
     public var index: UInt16 = 0
     public var flags: TeamFlags = []
     public var members: UInt16 = 0

@@ -3,7 +3,7 @@ import DuneIIFormats
 
 /// "Next-due" tick timestamps for each `GameLoop_Unit` sub-activity (OpenDUNE's `s_tickUnit*`).
 /// An activity fires when its cursor is `<= timerGame`, then advances by its interval.
-public struct UnitTickCursors: Sendable, Equatable {
+public struct UnitTickCursors: Sendable, Equatable, Codable {
     public var movement: UInt32 = 0
     public var rotation: UInt32 = 0
     public var blinking: UInt32 = 0
@@ -18,7 +18,7 @@ public struct UnitTickCursors: Sendable, Equatable {
 /// An activity fires when its cursor is `<= timerGame`, then advances by its interval. Only `script` drives
 /// logic today; `degrade`/`structure`/`palace` advance their cursors but their bodies are still seams
 /// (the campaign-degrade, BUILD/REPAIR/factory production, and palace special-weapon slices).
-public struct StructureTickCursors: Sendable, Equatable {
+public struct StructureTickCursors: Sendable, Equatable, Codable {
     public var degrade: UInt32 = 0
     public var structure: UInt32 = 0
     public var script: UInt32 = 0
@@ -30,7 +30,7 @@ public struct StructureTickCursors: Sendable, Equatable {
 /// bodies: `house` (economy + `House_EnsureHarvesterAvailable` + harvester-incoming spawn), `powerMaintenance`
 /// (upkeep), `starport` (frigate delivery), `starportAvailability` (stock bump). Still seams: `reinforcement`
 /// (needs `[REINFORCEMENTS]` scenario data) and `missileCountdown` (the palace house-missile, a slice-7 subsystem).
-public struct HouseTickCursors: Sendable, Equatable {
+public struct HouseTickCursors: Sendable, Equatable, Codable {
     public var house: UInt32 = 0
     public var powerMaintenance: UInt32 = 0
     public var starport: UInt32 = 0
@@ -46,7 +46,7 @@ public struct HouseTickCursors: Sendable, Equatable {
 ///
 /// It is a value type, so copying a `GameState` is a full snapshot. Code mutates objects in place via
 /// their pool index (e.g. `state.units[i].o.hitpoints = …`). See `Documentation/Architecture/DataModel.md`.
-public struct GameState: Sendable {
+public struct GameState: Sendable, Codable {
     // Object pools — fixed-size slot arrays sized to OpenDUNE's *_INDEX_MAX.
     public var units: [Unit]
     public var structures: [Structure]   // sized to MAX_HARD so the 3 special slots (79/80/81) exist

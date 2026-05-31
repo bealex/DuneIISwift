@@ -1,6 +1,6 @@
 /// The state of a structure. A port of OpenDUNE's `StructureState` (`src/structure.h`). Signed:
 /// `detect`/`justBuilt` are negative sentinels.
-public enum StructureState: Int16, Sendable, Equatable {
+public enum StructureState: Int16, Sendable, Equatable, Codable {
     case detect = -2        // when setting: detect the state from other properties
     case justBuilt = -1     // shows the building animation
     case idle = 0
@@ -10,7 +10,7 @@ public enum StructureState: Int16, Sendable, Equatable {
 
 /// A structure in the game. A port of OpenDUNE's `Structure` struct (`src/structure.h`); embeds an
 /// `Object` as `o`.
-public struct Structure: Sendable, Equatable {
+public struct Structure: Sendable, Equatable, Codable {
     public var o: Object = Object()
     public var creatorHouseID: UInt16 = 0       // house that created it (for take-overs)
     public var rotationSpriteDiff: UInt16 = 0   // sprite for the current turret rotation

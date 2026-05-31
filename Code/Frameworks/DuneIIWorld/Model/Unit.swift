@@ -1,5 +1,5 @@
 /// Directional state, one per orientation slot. A port of OpenDUNE's `dir24` (`src/unit.h`).
-public struct Dir24: Sendable, Equatable {
+public struct Dir24: Sendable, Equatable, Codable {
     public var speed: Int8 = 0      // speed of direction change
     public var target: Int8 = 0     // target direction
     public var current: Int8 = 0    // current direction
@@ -8,7 +8,7 @@ public struct Dir24: Sendable, Equatable {
 }
 
 /// A unit in the game. A port of OpenDUNE's `Unit` struct (`src/unit.h`); embeds an `Object` as `o`.
-public struct Unit: Sendable, Equatable {
+public struct Unit: Sendable, Equatable, Codable {
     public var o: Object = Object()
     public var currentDestination: Tile32 = Tile32(x: 0, y: 0)
     public var originEncoded: UInt16 = 0

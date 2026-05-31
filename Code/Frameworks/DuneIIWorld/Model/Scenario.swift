@@ -1,7 +1,7 @@
 /// The scenario-level mission state — a port of the win/lose + score fields of OpenDUNE's `g_scenario`
 /// (`src/scenario.h`). Loaded from the `[BASIC]` section; the score tallies are bumped as units/structures
 /// die and spice is refined.
-public struct Scenario: Sendable, Equatable {
+public struct Scenario: Sendable, Equatable, Codable {
     /// `[BASIC] WinFlags` — which conditions END the level (`GameLoop_IsLevelFinished`): bit 0 = no enemy
     /// structures remain, bit 1 = no friendly structures remain, bit 2 = the player reached the spice quota,
     /// bit 3 = timeout (unused in 1.07 — `s_tickGameTimeout` is never set).
@@ -38,7 +38,7 @@ public struct Scenario: Sendable, Equatable {
 /// we instead keep the *recipe* (`unitType`/`houseID`) and create the unit at deploy time — observably
 /// identical (the unit appears at `locationID` after `timeBetween` decrements), modulo pre-deploy pool
 /// occupancy. An empty slot has `unitType == 0xFF` (`UNIT_INVALID`).
-public struct Reinforcement: Sendable, Equatable {
+public struct Reinforcement: Sendable, Equatable, Codable {
     public var unitType: UInt8 = 0xFF
     public var houseID: UInt8 = 0xFF
     /// 0-3 = N/E/S/W map edge (`Unit_SetPosition`), 4-7 = AIR/VISIBLE/ENEMYBASE/HOMEBASE (carryall drop).
@@ -55,4 +55,4 @@ public struct Reinforcement: Sendable, Equatable {
 }
 
 /// Whether the human player's level is still in progress, won, or lost (`GameLoop_IsLevelFinished/Won`).
-public enum GameEndState: UInt8, Sendable, Equatable { case playing, won, lost }
+public enum GameEndState: UInt8, Sendable, Equatable, Codable { case playing, won, lost }

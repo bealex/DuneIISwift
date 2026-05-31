@@ -2,7 +2,7 @@ import DuneIIContracts
 
 /// General flags of a house. A port of OpenDUNE's `HouseFlags` (`src/house.h`), modelled as an
 /// `OptionSet<UInt8>` (5 bits used). Bit positions in C declaration order.
-public struct HouseFlags: OptionSet, Sendable, Equatable {
+public struct HouseFlags: OptionSet, Sendable, Equatable, Codable {
     public let rawValue: UInt8
     public init(rawValue: UInt8) { self.rawValue = rawValue }
 
@@ -15,7 +15,7 @@ public struct HouseFlags: OptionSet, Sendable, Equatable {
 
 /// A house in the game. A port of OpenDUNE's `House` struct (`src/house.h`). Keyed in the pool by
 /// `index` (a `HouseID`).
-public struct House: Sendable, Equatable {
+public struct House: Sendable, Equatable, Codable {
     public var index: UInt8 = 0
     public var harvestersIncoming: UInt16 = 0   // harvesters waiting to be delivered
     public var flags: HouseFlags = []

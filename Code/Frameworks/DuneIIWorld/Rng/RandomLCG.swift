@@ -45,3 +45,22 @@ public struct RandomLCG: Sendable {
         return result
     }
 }
+
+extension RandomLCG: Codable {
+    /// The full 32-bit LCG state — the serializable RNG state (`traceSink` is transient and excluded). The
+    /// 16-bit `reseed` would lose the advanced state, so we round-trip the whole `state`.
+    public var rawState: UInt32 {
+        get { state }
+        set { state = newValue }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(seed: 0)
+        rawState = try decoder.singleValueContainer().decode(UInt32.self)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(rawState)
+    }
+}

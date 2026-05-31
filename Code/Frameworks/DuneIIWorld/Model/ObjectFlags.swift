@@ -2,7 +2,7 @@
 /// (`src/object.h`); the union's `uint32 all` is the `rawValue`, with bit positions in C declaration
 /// order. Round-trips through `all` in the save format, so the layout is golden-pinned against the
 /// oracle — see `Documentation/Architecture/DataModel.md`.
-public struct ObjectFlags: OptionSet, Sendable, Equatable {
+public struct ObjectFlags: OptionSet, Sendable, Equatable, Codable {
     public let rawValue: UInt32
     public init(rawValue: UInt32) { self.rawValue = rawValue }
 

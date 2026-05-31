@@ -40,3 +40,23 @@ public struct Random256: Sendable {
         return result
     }
 }
+
+extension Random256: Codable {
+    /// The full 3-byte feedback state packed little-endian — the serializable RNG state (`traceSink` is
+    /// transient and excluded). Setting it restores an in-progress generator exactly. Same-file extension, so
+    /// it can read the `private` seed tuple.
+    public var rawState: UInt32 {
+        get { UInt32(seed.0) | (UInt32(seed.1) << 8) | (UInt32(seed.2) << 16) }
+        set { reseed(newValue) }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(seed: 0)
+        rawState = try decoder.singleValueContainer().decode(UInt32.self)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(rawState)
+    }
+}

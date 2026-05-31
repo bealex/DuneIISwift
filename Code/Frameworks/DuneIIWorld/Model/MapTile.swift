@@ -2,7 +2,7 @@
 /// (`assert_compile(sizeof(Tile) == 0x04)`). Modelled with stored properties plus a `packed`
 /// round-trip for save compatibility; the bit layout is the one documented in `map.h` and
 /// golden-pinned against the oracle — see `Documentation/Architecture/DataModel.md`.
-public struct MapTile: Sendable, Equatable {
+public struct MapTile: Sendable, Equatable, Codable {
     public var groundTileID: UInt16 = 0     // 9 bits: the icon drawn on this tile
     public var overlayTileID: UInt8 = 0     // 7 bits: overlay drawn over the tile
     public var houseID: UInt8 = 0           // 3 bits: owning house
@@ -44,7 +44,7 @@ public struct MapTile: Sendable, Equatable {
 
 /// The map size for a given map scale. A port of OpenDUNE's `MapInfo` (`src/map.h`); the three
 /// entries of `g_mapInfos`.
-public struct MapInfo: Sendable, Equatable {
+public struct MapInfo: Sendable, Equatable, Codable {
     public let minX: UInt16
     public let minY: UInt16
     public let sizeX: UInt16

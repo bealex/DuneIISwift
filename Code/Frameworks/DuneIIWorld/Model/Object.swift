@@ -1,6 +1,6 @@
 /// The data common to a `Unit` and a `Structure`. A port of OpenDUNE's `Object` struct
 /// (`src/object.h`), embedded by both as the field `o`.
-public struct Object: Sendable, Equatable {
+public struct Object: Sendable, Equatable, Codable {
     public var index: UInt16 = 0            // index in the owning pool
     public var type: UInt8 = 0              // UnitType / StructureType
     public var linkedID: UInt8 = 0xFF       // linked Structure/Unit, or 0xFF if none
