@@ -33,6 +33,11 @@ final class GameScene: SKScene {
     private let selectionNode = SKShapeNode()
     private let placementNode = SKShapeNode()      // structure-placement footprint preview
     private var trackingArea: NSTrackingArea?
+    // Middle-button pan/recentre state: the last cursor point (window coords, camera-independent), whether
+    // this gesture moved, and the down point (scene coords) for a click-recentre.
+    private var middleDragLastWindow: CGPoint?
+    private var middleDidDrag = false
+    private var middleDownScene: CGPoint?
     private let healthLayer = SKNode()
     private var healthBars: [SKSpriteNode] = []
     private var stateChips: [SKShapeNode] = []   // a small shape+colour action chip per unit health bar
@@ -267,11 +272,33 @@ final class GameScene: SKScene {
         if let (x, y) = tile(at: event) { model?.rightClickTile(x, y) }
     }
 
-    /// Middle mouse button: recentre the map on the clicked point (scene = world coords, y-up → image y-down).
+    /// Middle mouse button: drag to pan the map (a hand-tool — the content follows the cursor), or a plain
+    /// click (no drag) recentres on the clicked point. Tracked in window coords so the camera's own motion
+    /// during the drag doesn't feed back into the delta.
     override func otherMouseDown(with event: NSEvent) {
         guard event.buttonNumber == 2 else { return }
-        let p = event.location(in: self)
-        model?.centerOn(worldX: Double(p.x), worldY: Double(Self.worldSidePx) - Double(p.y))
+        middleDragLastWindow = event.locationInWindow
+        middleDidDrag = false
+        middleDownScene = event.location(in: self)
+    }
+
+    override func otherMouseDragged(with event: NSEvent) {
+        guard event.buttonNumber == 2, let last = middleDragLastWindow else { return }
+        let cur = event.locationInWindow
+        let dx = Double(cur.x - last.x), dy = Double(cur.y - last.y)
+        middleDragLastWindow = cur
+        if dx != 0 || dy != 0 { middleDidDrag = true }
+        // Hand-tool pan: drag right ⇒ content moves right (view pans left), drag up ⇒ content moves up.
+        // `scroll` moves the content by `-dx` screen px / `+dy`; window y-up already matches the scroll `dy`.
+        model?.scroll(dx: -dx, dy: dy)
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        guard event.buttonNumber == 2 else { return }
+        defer { middleDragLastWindow = nil; middleDownScene = nil }
+        if !middleDidDrag, let p = middleDownScene {
+            model?.centerOn(worldX: Double(p.x), worldY: Double(Self.worldSidePx) - Double(p.y))
+        }
     }
 
     override func mouseMoved(with event: NSEvent) {
