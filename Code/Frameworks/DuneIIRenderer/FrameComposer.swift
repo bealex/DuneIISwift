@@ -77,10 +77,16 @@ public enum FrameComposer {
                 let tile = frame.tiles[ty * frame.mapWidth + tx]
                 guard let pixels = source.terrainTile(tile.groundSpriteIndex), pixels.count >= ts * ts
                 else { continue }
+                // House-recolour owned (structure) tiles; terrain / Harkonnen (houseID 0) is identity.
+                let house = tile.houseID == 0 ? nil : House(rawValue: Int(tile.houseID))
                 let ox = tx * ts, oy = ty * ts
                 for py in 0 ..< ts {
                     let row = (oy + py) * side + ox
-                    for px in 0 ..< ts { buffer[row + px] = pixels[py * ts + px] }
+                    if let house {
+                        for px in 0 ..< ts { buffer[row + px] = HouseRemap.tile(pixels[py * ts + px], house: house) }
+                    } else {
+                        for px in 0 ..< ts { buffer[row + px] = pixels[py * ts + px] }
+                    }
                 }
             }
         }

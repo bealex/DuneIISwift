@@ -29,7 +29,7 @@ public final class SpriteKitRenderer {
     private let spritesLayer = SKNode()           // units + effects (pooled nodes)
 
     // Caches (kept for the renderer's whole life — memory is cheap, recolorizing isn't).
-    private struct TileKey: Hashable { let tileId: Int; let windColour: Int }
+    private struct TileKey: Hashable { let tileId: Int; let houseID: UInt8; let windColour: Int }
     private struct SpriteKey: Hashable { let index: Int; let house: Int; let flipped: Bool }
     private var tileCache: [TileKey: SKTexture] = [:]
     private var tileUsesWindCache: [Int: Bool] = [:]
@@ -38,7 +38,9 @@ public final class SpriteKitRenderer {
 
     // Dynamic-terrain bookkeeping.
     private var baselineGround: [Int] = []        // the tile id each cell shows in the static background
+    private var baselineHouse: [UInt8] = []       // the owning house each cell shows in the static background
     private var displayedGround: [Int] = []       // the tile id each cell currently shows (overlay or base)
+    private var displayedHouse: [UInt8] = []      // the owning house each cell currently shows
     private var windCells: Set<Int> = []          // cells whose tile uses the wind-trap colour (223)
     private var overlayNodes: [Int: SKSpriteNode] = [:]
     private var initialized = false
@@ -100,27 +102,32 @@ public final class SpriteKitRenderer {
             terrainNode.position = CGPoint(x: side / 2, y: side / 2)
         }
         baselineGround = frame.tiles.map { $0.groundSpriteIndex }
+        baselineHouse = frame.tiles.map { $0.houseID }
         displayedGround = baselineGround
+        displayedHouse = baselineHouse
         windCells = []
         for i in baselineGround.indices where tileUsesWind(baselineGround[i]) { windCells.insert(i) }
     }
 
     private func updateDynamicTerrain(_ frame: FrameInfo, palette: Palette, windColour: Int) {
-        // The cells to revisit this frame: any whose tile id changed, plus every wind cell when the
-        // wind-trap colour moved. Everything else is already correct on the static background.
+        // The cells to revisit this frame: any whose tile id or owning house changed, plus every wind cell
+        // when the wind-trap colour moved. Everything else is already correct on the static background.
         var dirty: Set<Int> = []
         let n = min(frame.tiles.count, displayedGround.count)
-        for i in 0 ..< n where frame.tiles[i].groundSpriteIndex != displayedGround[i] { dirty.insert(i) }
+        for i in 0 ..< n where frame.tiles[i].groundSpriteIndex != displayedGround[i]
+            || frame.tiles[i].houseID != displayedHouse[i] { dirty.insert(i) }
         if windColour != lastWindColour { dirty.formUnion(windCells) }
 
         for i in dirty {
             let tileId = frame.tiles[i].groundSpriteIndex
+            let houseID = frame.tiles[i].houseID
             displayedGround[i] = tileId
+            displayedHouse[i] = houseID
             if tileUsesWind(tileId) { windCells.insert(i) } else { windCells.remove(i) }
 
             // A cell needs an overlay when it differs from the static background or pulses with the wind.
-            if tileId != baselineGround[i] || windCells.contains(i) {
-                guard let texture = tileTexture(tileId, palette: palette) else { continue }
+            if tileId != baselineGround[i] || houseID != baselineHouse[i] || windCells.contains(i) {
+                guard let texture = tileTexture(tileId, houseID: houseID, palette: palette) else { continue }
                 let node = overlayNodes[i] ?? makeCellNode(i)
                 node.texture = texture
                 overlayNodes[i] = node
@@ -142,13 +149,16 @@ public final class SpriteKitRenderer {
         return node
     }
 
-    private func tileTexture(_ tileId: Int, palette: Palette) -> SKTexture? {
+    private func tileTexture(_ tileId: Int, houseID: UInt8, palette: Palette) -> SKTexture? {
         let usesWind = tileUsesWind(tileId)
-        let key = TileKey(tileId: tileId, windColour: usesWind ? packedWindColour() : 0)
+        let key = TileKey(tileId: tileId, houseID: houseID, windColour: usesWind ? packedWindColour() : 0)
         if let cached = tileCache[key] { return cached }
-        guard let pixels = source.terrainTile(tileId),
-              let image = IndexedImage.cgImage(indices: pixels, width: tileSize, height: tileSize,
-                                               palette: palette) else { return nil }
+        guard let pixels = source.terrainTile(tileId) else { return nil }
+        // House-recolour an owned (structure) tile; terrain / Harkonnen is identity.
+        let remap: (UInt8) -> UInt8 = houseID == 0 ? { $0 }
+            : House(rawValue: Int(houseID)).map { house in { HouseRemap.tile($0, house: house) } } ?? { $0 }
+        guard let image = IndexedImage.cgImage(indices: pixels.map(remap), width: tileSize,
+                                               height: tileSize, palette: palette) else { return nil }
         let texture = nearest(image)
         tileCache[key] = texture
         return texture

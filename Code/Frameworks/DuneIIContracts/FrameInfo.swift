@@ -50,12 +50,17 @@ public struct FrameInfo: Sendable, Equatable {
         public var groundSpriteIndex: Int
         /// 0 = no overlay.
         public var overlaySpriteIndex: Int
+        /// The tile's owning house (`map[tile].houseID`) — drives the house recolour of **structure**
+        /// tiles (the renderer applies the tile house-remap, identity for Harkonnen/terrain). Without it
+        /// a non-Harkonnen building (and the harvester docked on its refinery) draws in the base colour.
+        public var houseID: UInt8
         /// `false` = under fog of war in the player's view.
         public var isUnveiled: Bool
 
-        public init(groundSpriteIndex: Int, overlaySpriteIndex: Int, isUnveiled: Bool) {
+        public init(groundSpriteIndex: Int, overlaySpriteIndex: Int, houseID: UInt8, isUnveiled: Bool) {
             self.groundSpriteIndex = groundSpriteIndex
             self.overlaySpriteIndex = overlaySpriteIndex
+            self.houseID = houseID
             self.isUnveiled = isUnveiled
         }
     }

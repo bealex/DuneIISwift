@@ -22,7 +22,7 @@ struct FrameComposerTests {
 
     private func emptyFrame(units: [FrameInfo.Unit] = [], effects: [FrameInfo.Effect] = [],
                             tiles: [FrameInfo.Tile]? = nil, w: Int = 3, h: Int = 2) -> FrameInfo {
-        let blank = FrameInfo.Tile(groundSpriteIndex: 0, overlaySpriteIndex: 0, isUnveiled: false)
+        let blank = FrameInfo.Tile(groundSpriteIndex: 0, overlaySpriteIndex: 0, houseID: 0, isUnveiled: false)
         return FrameInfo(tick: 0, mapWidth: w, mapHeight: h,
                          tiles: tiles ?? [FrameInfo.Tile](repeating: blank, count: w * h),
                          units: units, structures: [], effects: effects, houses: [],
@@ -51,10 +51,10 @@ struct FrameComposerTests {
     @Test("terrain buffer composites ground tiles into a side×side indexed image")
     func terrainBuffer() {
         // A 3×2 map; tile (1,0) = id 5, tile (2,1) = id 9, rest 0 (→ left as index 0).
-        let blank = FrameInfo.Tile(groundSpriteIndex: 0, overlaySpriteIndex: 0, isUnveiled: false)
+        let blank = FrameInfo.Tile(groundSpriteIndex: 0, overlaySpriteIndex: 0, houseID: 0, isUnveiled: false)
         var tiles = [FrameInfo.Tile](repeating: blank, count: 6)
-        tiles[0 * 3 + 1] = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 0, isUnveiled: true)
-        tiles[1 * 3 + 2] = FrameInfo.Tile(groundSpriteIndex: 9, overlaySpriteIndex: 0, isUnveiled: true)
+        tiles[0 * 3 + 1] = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 0, houseID: 0, isUnveiled: true)
+        tiles[1 * 3 + 2] = FrameInfo.Tile(groundSpriteIndex: 9, overlaySpriteIndex: 0, houseID: 0, isUnveiled: true)
         let frame = emptyFrame(tiles: tiles)
 
         let buf = FrameComposer.terrainBuffer(frame, source: FakeSource())
@@ -66,6 +66,23 @@ struct FrameComposerTests {
         #expect(buf[4 * side + 8] == 9 && buf[7 * side + 11] == 9)
         // An untouched tile stays 0.
         #expect(buf[0] == 0)
+    }
+
+    @Test("terrain house-remaps an owned (structure) tile; Harkonnen/terrain is identity")
+    func terrainHouseRemap() {
+        // Tile id 0x91 (145) → pixels all 145 (in the 0x90 house-colour block). HouseRemap.tile for
+        // Atreides (1) shifts the 0x90 block by 1<<4 = 16 → 161; Harkonnen (0) leaves it 145.
+        let owned = FrameInfo.Tile(groundSpriteIndex: 0x91, overlaySpriteIndex: 0, houseID: 1, isUnveiled: true)
+        let neutral = FrameInfo.Tile(groundSpriteIndex: 0x91, overlaySpriteIndex: 0, houseID: 0, isUnveiled: true)
+        let blank = FrameInfo.Tile(groundSpriteIndex: 0, overlaySpriteIndex: 0, houseID: 0, isUnveiled: false)
+
+        var tilesO = [FrameInfo.Tile](repeating: blank, count: 6); tilesO[0] = owned
+        let bufO = FrameComposer.terrainBuffer(emptyFrame(tiles: tilesO), source: FakeSource())
+        #expect(bufO[0] == 161)   // recoloured to Atreides
+
+        var tilesN = [FrameInfo.Tile](repeating: blank, count: 6); tilesN[0] = neutral
+        let bufN = FrameComposer.terrainBuffer(emptyFrame(tiles: tilesN), source: FakeSource())
+        #expect(bufN[0] == 145)   // Harkonnen/terrain left as-is
     }
 
     @Test("unit body + turret resolve to placed, house-tinted, z-ordered sprites")

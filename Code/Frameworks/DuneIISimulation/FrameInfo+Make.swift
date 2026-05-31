@@ -14,7 +14,7 @@ public extension Simulation {
         for tile in state.map {
             tiles.append(FrameInfo.Tile(groundSpriteIndex: Int(tile.groundTileID),
                                         overlaySpriteIndex: Int(tile.overlayTileID),
-                                        isUnveiled: tile.isUnveiled))
+                                        houseID: tile.houseID, isUnveiled: tile.isUnveiled))
         }
 
         var units = [FrameInfo.Unit]()
