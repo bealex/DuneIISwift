@@ -70,6 +70,15 @@ public extension GameState {
         for key in ini.keys(section: "TEAMS") {
             loadTeam(ini.string(section: "TEAMS", key: key), offsets: teamScriptOffsets)
         }
+        // `[REINFORCEMENTS]` = "<index>=<House>,<UnitType>,<Location>,<timeBetween>[+]" → the timed-spawn table.
+        for key in ini.keys(section: "REINFORCEMENTS") {
+            loadReinforcement(key: key, value: ini.string(section: "REINFORCEMENTS", key: key))
+        }
+        // `[CHOAM]` = "<UnitType>=<stock>" → seed the starport stock (`Scenario_Load_Choam`, `scenario.c:300`).
+        for key in ini.keys(section: "CHOAM") {
+            guard let type = UnitType.named(key), type.rawValue < starportAvailable.count else { continue }
+            starportAvailable[type.rawValue] = Int16(clamping: ini.integer(section: "CHOAM", key: key))
+        }
 
         // Stamp each structure's tiles onto the map + start its idle animation.
         for index in structures.indices where structures[index].o.flags.contains(.used) {
@@ -218,6 +227,29 @@ public extension GameState {
         // Flag the team's house AI-active so `GameLoop_Team` runs it. In a real game the bit is set when the
         // AI first sees an enemy; scenario load pins it on (mirroring the parity harness's Scen_LoadTeam).
         houses[Int(house.rawValue)].flags.insert(.isAIActive)
+    }
+
+    /// `Scenario_Load_Reinforcement` (`scenario.c:280`): `<index>=<House>,<UnitType>,<Location>,<timeBetween>[+]`.
+    /// `Location` is NORTH/EAST/SOUTH/WEST (0-3) or AIR/VISIBLE/ENEMYBASE/HOMEBASE (4-7); `timeBetween`
+    /// is `atoi * 6 + 1`. The trailing `+` is parsed but pinned off (1.07 fires each reinforcement once —
+    /// see `Reinforcement.repeats`). We store the spawn *recipe*; the Simulation creates the unit at deploy.
+    private mutating func loadReinforcement(key: String, value: String?) {
+        guard let index = Int(key), index >= 0, index < scenario.reinforcements.count else { return }
+        let parts = fields(value)
+        guard parts.count >= 4,
+              let house = HouseID.named(parts[0]),
+              let type = UnitType.named(parts[1]) else { return }
+        let locations = ["NORTH", "EAST", "SOUTH", "WEST", "AIR", "VISIBLE", "ENEMYBASE", "HOMEBASE"]
+        guard let locationID = locations.firstIndex(of: parts[2].uppercased()) else { return }
+
+        var r = Reinforcement()
+        r.unitType = UInt8(type.rawValue)
+        r.houseID = UInt8(house.rawValue)
+        r.locationID = UInt8(locationID)
+        r.timeBetween = UInt16(clamping: (Int(parts[3].filter(\.isNumber)) ?? 0) * 6 + 1)
+        r.timeLeft = r.timeBetween
+        r.repeats = false   // 1.07 non-enhanced: the '+' is always dropped (`scenario.c` parse bug).
+        scenario.reinforcements[index] = r
     }
 
     private func fields(_ value: String?) -> [String] {

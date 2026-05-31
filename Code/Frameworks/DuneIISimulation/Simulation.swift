@@ -347,8 +347,10 @@ extension Simulation {
     mutating func gameLoopStructure() {
         let g = state.timerGame
 
-        // degrade (campaign>1 only) — advance the cursor; its body is a SEAM (AI/campaign degrade).
-        if state.structureTick.degrade <= g {
+        // degrade (campaign>1 only): periodically chip a degrading structure down to half hitpoints.
+        var tickDegrade = false
+        if state.structureTick.degrade <= g && state.campaignID > 1 {
+            tickDegrade = true
             state.structureTick.degrade = g &+ UInt32(adjustToGameSpeed(normal: 10800, minimum: 5400, maximum: 21600, inverse: true))
         }
         var tickStructure = false
@@ -365,14 +367,22 @@ extension Simulation {
             state.structureTick.palace = g &+ 60
         }
 
-        guard tickStructure || tickScript else { return }
+        guard tickStructure || tickScript || tickDegrade else { return }
 
         var find = PoolFind()
         while let slot = state.structureFind(&find) {
             let t = state.structures[slot].o.type
             if t == UInt8(StructureType.slab1x1.rawValue) || t == UInt8(StructureType.slab2x2.rawValue)
                 || t == UInt8(StructureType.wall.rawValue) { continue }
-            // SEAM: per-structure palace countdown + campaign degrade.
+
+            // Campaign degrade (`structure.c:121`): a `degrades` structure above half its *base* hitpoints
+            // takes its house's `degradingAmount` each degrade tick. (Palace countdown body is still a SEAM.)
+            if tickDegrade, state.structures[slot].o.flags.contains(.degrades),
+               let si = StructureType(rawValue: Int(t)).map({ StructureInfo[$0] }),
+               state.structures[slot].o.hitpoints > si.o.hitpoints / 2 {
+                let house = HouseID(rawValue: Int(state.structures[slot].o.houseID)) ?? .harkonnen
+                _ = state.structureDamage(slot, damage: HouseInfo[house].degradingAmount, range: 0)
+            }
 
             if tickStructure {
                 state.structureTickStructure(slot)
@@ -418,9 +428,13 @@ extension Simulation {
         if state.houseTick.house <= g { tickHouse = true; state.houseTick.house = g &+ 900 }
         if state.houseTick.powerMaintenance <= g { tickPowerMaintenance = true; state.houseTick.powerMaintenance = g &+ 10800 }
         if state.houseTick.starport <= g { tickStarport = true; state.houseTick.starport = g &+ 180 }
-        if state.houseTick.reinforcement <= g { state.houseTick.reinforcement = g &+ 600 }               // SEAM: reinforcements
+        var tickReinforcement = false
+        if state.houseTick.reinforcement <= g { tickReinforcement = true; state.houseTick.reinforcement = g &+ 600 }
         if state.houseTick.missileCountdown <= g { state.houseTick.missileCountdown = g &+ 60 }          // SEAM: palace house missile
         if state.houseTick.starportAvailability <= g { tickStarportAvailability = true; state.houseTick.starportAvailability = g &+ 1800 }
+
+        // Scenario reinforcements: count each loaded entry down; deploy at zero (once per loop, not per house).
+        if tickReinforcement { tickReinforcements() }
 
         // Starport stock: randomly bump one already-available unit type (≤ 10). Sold-out (−1) → 1.
         if tickStarportAvailability {

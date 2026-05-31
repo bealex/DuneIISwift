@@ -1,0 +1,9 @@
+# Scenario data that needs sim primitives can't be filled in the World-layer loader
+
+**Finding:** `GameState.loadScenario` is World-layer, but some `[...]` sections require Simulation-layer primitives to *realize* — `[REINFORCEMENTS]` needs `Unit_Create`/`Unit_CreateWrapper`, `[MAP] Field` needs `Map_Bloom_ExplodeSpice`/`Map_ChangeSpiceAmount`. The loader can only parse the *data*; it can't run the effect. The apps call `state.loadScenario` and *then* construct the `Simulation`, so there is no loader-time sim to call into.
+
+**Why it matters:** Trying to do the effect in the loader either pulls a sim dependency down into World (breaks the layer rule) or silently drops the section. For reinforcements we sidestepped it by storing the *recipe* (`Scenario.reinforcements[16]`: type/house/location/time) and creating the unit lazily at **deploy** time (`Simulation+Reinforcements.tickReinforcements`), which is observably identical to 1.07's create-at-load bar pre-deploy pool occupancy. `[MAP] Field` has no such deferral — its spice circle must exist at tick 0 — so it still needs a real post-load Simulation hook (the section is parsed-but-dropped until then).
+
+**Evidence:** `ScenarioLoader.loadReinforcement` (parse only) + `Simulation+Reinforcements.swift` (deploy-time creation); `ReinforcementTests`. The deferred case: `FeatureParity.md` §U `[MAP] Field` row. App load sites: `GameModel.swift`, `mapview/MapModel.swift`, `rendercap`.
+
+**How to apply:** When a scenario section's effect needs a sim primitive: parse the data into the `Scenario`/`GameState` model in the World loader, then either (a) defer the effect to a natural sim tick if its timing allows (reinforcements), or (b) add an explicit `Simulation` post-load hook the apps call after constructing the sim (required when the effect must be present at tick 0, like `[MAP] Field`). Never reach a sim primitive from the World loader.

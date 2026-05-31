@@ -296,7 +296,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | `campaignID` effects (build-speed cap, repair heal, upgrade gating) | ✅ | wired throughout |
 | Per-object `degrades` flag set (degradingChance RNG) | ✅ | `UnitCombat` / placement |
 | Per-move degrade damage application (`& 3` roll) | ✅ | `UnitMovement` |
-| **Campaign degrade tick body** (campaign>1 periodic degradation) | ⊘ gameplay | cursor advances, body deferred (slice 7) |
+| **Campaign degrade tick body** (campaign>1 periodic degradation) | ✅ | `gameLoopStructure` degrade body — a `degrades` structure above half base HP takes `degradingAmount` (`DegradeTests`) |
 
 ## R. Win / lose / mission / score — **the biggest gap**
 
@@ -313,10 +313,10 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 
 | Feature | Status | Evidence / note |
 |---|---|---|
-| Reinforcement cursor | ⊘ gameplay | `Simulation` cursor only |
-| **`[REINFORCEMENTS]` parsing** | ✗ gameplay | section not read |
-| **Reinforcement spawn** (timed unit/ally waves) | ✗ gameplay | no spawn |
-| Other scripted scenario events | ✗ gameplay | none |
+| Reinforcement cursor | ✅ | `gameLoopHouse` → `tickReinforcements` (every 600) |
+| **`[REINFORCEMENTS]` parsing** | ✅ | `ScenarioLoader.loadReinforcement` → `Scenario.reinforcements[16]` |
+| **Reinforcement spawn** (timed unit/ally waves) | ✅ | `Simulation+Reinforcements` — edge place / air carryall drop (`ReinforcementTests`); 1.07 fires once (no repeat) |
+| Other scripted scenario events | ✗ gameplay | none (1.07 has none beyond reinforcements) |
 
 ## T. Persistence
 
@@ -334,13 +334,13 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | `[BASIC]` MapScale | ✅ | `ScenarioLoader` |
 | `[MAP]` Seed → procedural terrain + spice | ✅ | `MapGenerator.createLandscape` |
 | `[MAP]` **Bloom** / **Special** (explicit spice-bloom tiles) | ✅ | `loadMapBlooms` stamps `tileIDs.bloom` |
-| `[MAP]` **Field** (explicit spice-field tiles) | ✗ gameplay | not parsed — needs the sim-layer `Map_Bloom_ExplodeSpice` circle-fill |
+| `[MAP]` **Field** (explicit spice-field tiles) | ✗ gameplay | parsed-but-dropped — needs the sim-layer `Map_Bloom_ExplodeSpice` radius-5 circle-fill (a post-load Simulation hook + `Map_ChangeSpiceAmount`) |
 | `[<House>]` Brain/Credits/Quota/MaxUnit | ✅ | `loadHouses` |
 | `[UNITS]` | ✅ | `loadUnit` |
 | `[STRUCTURES]` (`ID`, `GEN` slabs/walls) | ✅ | `loadStructure` |
 | `[TEAMS]` | ✅ | `loadTeam` |
-| `[CHOAM]` (starport stock seed) | ✗ gameplay | not parsed — starport stock isn't seeded from the scenario |
-| `[REINFORCEMENTS]` | ✗ gameplay | not read (§S) |
+| `[CHOAM]` (starport stock seed) | ✅ | `ScenarioLoader` seeds `starportAvailable[type]` (`ScenarioLoaderTests`) |
+| `[REINFORCEMENTS]` | ✅ | `loadReinforcement` (§S) |
 
 ## V. Audio seam (gameplay → sound)
 
@@ -356,10 +356,11 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 Everything in the four-phase battle simulation is done and cross-engine-verified. The open *gameplay* work (presentation seams excluded):
 
 1. ~~Win / lose conditions~~ ✅ (§R, 2026-05-31) — `WinFlags`/`LoseFlags` + structure-count/quota; `gameEndState` latched in `tick()`. Score/kill/harvested tallies also done.
-2. **Palace super-weapons** ⊘/✗ (§P) — death-hand launch, Fremen, saboteur deploy bodies (slice 7).
-3. **Scenario reinforcements** ✗ (§S) — `[REINFORCEMENTS]` parsing + timed spawns.
-4. **AI base expansion** ⊘ (§O) — `ai_structureRebuild` + auto-build/repair; the AI fights with its starting base.
-5. **Campaign degrade body** ⊘ (§Q) — slice-7 periodic degradation.
-6. **Starport ordering** ⊘ (§J) — the CHOAM buy flow returns early.
-7. **Save / load + original-save converter** ✗ (§T) — Phase-2 tail.
-8. **Scenario `[MAP] Bloom`/`Field` + `[CHOAM]` not parsed** ✗ (§U) — hand-placed spice blooms/fields and the starport stock seed are dropped (procedural seed spice still generates).
+2. ~~Scenario reinforcements~~ ✅ (§S, 2026-05-31) — `[REINFORCEMENTS]` parsing + timed edge/air spawns; 1.07 fires each once.
+3. ~~Campaign degrade body~~ ✅ (§Q, 2026-05-31) — campaign>1 periodic degradation to half HP.
+4. ~~`[CHOAM]` starport stock seed~~ ✅ (§U, 2026-05-31) — `starportAvailable` seeded from the scenario.
+5. **Palace super-weapons** ⊘/✗ (§P) — death-hand launch, Fremen, saboteur deploy bodies (slice 7).
+6. **AI base expansion** ⊘ (§O) — `ai_structureRebuild` + auto-build/repair; the AI fights with its starting base.
+7. **Starport ordering** ⊘ (§J) — the CHOAM buy flow returns early.
+8. **Save / load + original-save converter** ✗ (§T) — Phase-2 tail.
+9. **Scenario `[MAP] Field` not filled** ✗ (§U) — hand-placed spice fields are parsed-but-dropped (needs a sim-layer post-load circle-fill); procedural seed spice still generates.

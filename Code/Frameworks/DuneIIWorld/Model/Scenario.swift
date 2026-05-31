@@ -20,7 +20,32 @@ public struct Scenario: Sendable, Equatable {
     /// a friendly loss, by `max(buildCredits/100, 1)`.
     public var score: UInt16 = 0
 
+    /// `[REINFORCEMENTS]` — the timed-spawn table (`g_scenario.reinforcement[16]`). A loaded slot
+    /// counts down `timeLeft` (every 600 ticks, in the house loop); at zero it deploys `unitType` for
+    /// `houseID` at `locationID`. See `Reinforcement`.
+    public var reinforcements = [Reinforcement](repeating: Reinforcement(), count: 16)
+
     public init() {}
+}
+
+/// One `[REINFORCEMENTS]` entry (`Reinforcement`, `scenario.h`). 1.07 stores a created off-map `unitID`;
+/// we instead keep the *recipe* (`unitType`/`houseID`) and create the unit at deploy time — observably
+/// identical (the unit appears at `locationID` after `timeBetween` decrements), modulo pre-deploy pool
+/// occupancy. An empty slot has `unitType == 0xFF` (`UNIT_INVALID`).
+public struct Reinforcement: Sendable, Equatable {
+    public var unitType: UInt8 = 0xFF
+    public var houseID: UInt8 = 0xFF
+    /// 0-3 = N/E/S/W map edge (`Unit_SetPosition`), 4-7 = AIR/VISIBLE/ENEMYBASE/HOMEBASE (carryall drop).
+    public var locationID: UInt8 = 0
+    /// Decrements once per reinforcement cursor fire (600 ticks); deploys at 0. Seeded to `timeBetween`.
+    public var timeLeft: UInt16 = 0
+    public var timeBetween: UInt16 = 0
+    /// `[REINFORCEMENTS]` trailing `+`. **Pinned `false`** — 1.07 (non-enhanced, our oracle) has a
+    /// parse bug that always clears it, so every reinforcement fires exactly once.
+    public var repeats: Bool = false
+
+    public init() {}
+    public var isEmpty: Bool { unitType == 0xFF }
 }
 
 /// Whether the human player's level is still in progress, won, or lost (`GameLoop_IsLevelFinished/Won`).

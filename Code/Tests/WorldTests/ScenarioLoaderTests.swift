@@ -79,4 +79,48 @@ struct ScenarioLoaderTests {
         #expect(state.gameEndState == .playing)
         #expect(state.tickScenarioStart == 0)
     }
+
+    @Test("[REINFORCEMENTS] + [CHOAM] are parsed into the timed-spawn table + starport stock")
+    func loadReinforcementsAndChoam() throws {
+        var root = URL(fileURLWithPath: #filePath)
+        for _ in 0 ..< 4 { root.deleteLastPathComponent() }
+        let iconMap = try IconMap(Data(contentsOf: root.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
+        let text = """
+        [BASIC]
+        MapScale=0
+        [MAP]
+        Seed=353
+        [Atreides]
+        Brain=Human
+        Credits=1000
+        [REINFORCEMENTS]
+        0=Atreides,Trike,West,5
+        1=Ordos,Quad,Air,10+
+        [CHOAM]
+        Trike=5
+        Quad=3
+        """
+        let ini = try Ini(Data(text.utf8))
+
+        var state = GameState()
+        state.loadScenario(ini: ini, iconMap: iconMap)
+
+        // Entry 0: a West-edge Atreides Trike; timeBetween = atoi(5)*6+1 = 31; never repeats.
+        let r0 = state.scenario.reinforcements[0]
+        #expect(r0.unitType == UInt8(UnitType.trike.rawValue))
+        #expect(r0.houseID == UInt8(HouseID.atreides.rawValue))
+        #expect(r0.locationID == 3)              // WEST
+        #expect(r0.timeBetween == 31)
+        #expect(r0.timeLeft == 31)
+        #expect(r0.repeats == false)
+        // Entry 1: an Air Ordos Quad; the trailing '+' is dropped in 1.07 (no repeat).
+        let r1 = state.scenario.reinforcements[1]
+        #expect(r1.unitType == UInt8(UnitType.quad.rawValue))
+        #expect(r1.locationID == 4)              // AIR
+        #expect(r1.timeBetween == 61)
+        #expect(r1.repeats == false)
+        // [CHOAM] seeds the starport stock.
+        #expect(state.starportAvailable[UnitType.trike.rawValue] == 5)
+        #expect(state.starportAvailable[UnitType.quad.rawValue] == 3)
+    }
 }
