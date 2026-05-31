@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 #
-# log-history.sh — append a dated bullet to Documentation/History/YYYY-MM.md (workflow step 6), creating
-# the month file with its header if it's new. Saves hand-formatting the `- YYYY-MM-DD: …` prefix and
-# picking the right month file each turn.
+# log-history.sh — append a bullet to today's daily history file Documentation/History/YYYY-MM-DD.md
+# (workflow step 6), creating the day file (with its `# History — DATE` header) if it's new and adding a
+# link for the new day to the top of the History/README.md "Days" index. Saves hand-picking the day file
+# and formatting the bullet each turn. The day is encoded in the filename, so bullets carry no date prefix.
 #
 # Usage:
 #   Scripts/log-history.sh "Combat — ported Foo (file.swift); 244 tests green."   # text as one arg
 #   Scripts/log-history.sh Combat — ported Foo, 244 tests green.                  # text as the rest of argv
 #   echo "…long bullet with backticks…" | Scripts/log-history.sh                  # text on stdin (no args)
-#   Scripts/log-history.sh --date 2026-06-01 "New-month entry"                    # override the date
+#   Scripts/log-history.sh --date 2026-06-01 "Back-dated entry"                   # override the date
 #
 # One bullet = one line (the repo's no-hard-wrap rule); newlines in the text are flattened to spaces.
 # Prints the file it wrote and the appended line. Idempotency is NOT enforced — it appends every call.
+# When it creates a new day, it inserts `- [DATE](DATE.md) — ` atop README's Days list; fill the summary.
 #
 # ⚠️  MAINTAIN with Scripts/check.sh: this dir is the single source of truth for the regular per-turn
 #     actions. Fold in any new repeating step.
@@ -30,8 +32,8 @@ if [ "${1:-}" = "--date" ]; then
     *) echo "log-history.sh: --date must be YYYY-MM-DD (got '$DATE')"; exit 2 ;;
   esac
 fi
-MONTH="${DATE%-*}"                         # YYYY-MM
-FILE="$HISTDIR/$MONTH.md"
+FILE="$HISTDIR/$DATE.md"
+INDEX="$HISTDIR/README.md"
 
 # Gather the bullet text: the rest of argv, else stdin.
 if [ "$#" -gt 0 ]; then
@@ -47,13 +49,19 @@ if [ -z "$TEXT" ]; then echo "log-history.sh: empty bullet (pass text as args or
 
 if [ ! -f "$FILE" ]; then
   mkdir -p "$HISTDIR"
-  {
-    printf '# History — %s\n\n' "$MONTH"
-    printf 'Append-only changelog. One bullet per change, imperative mood, with file references.\n\n'
-  } > "$FILE"
+  printf '# History — %s\n\n' "$DATE" > "$FILE"
   echo "log-history.sh: created $FILE"
+  # Add a link for the new day to the top of README's Days list (newest first), if the index is present.
+  if [ -f "$INDEX" ] && grep -q '($DATE.md)' "$INDEX"; then :; elif [ -f "$INDEX" ] && grep -q '^## Days' "$INDEX"; then
+    # Insert the new day's link just before the first existing day link (newest first), keeping the list tight.
+    awk -v line="- [$DATE]($DATE.md) — " '
+      /^- \[[0-9]/ && !done { print line; done=1 }
+      { print }
+    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    echo "log-history.sh: indexed $DATE in $INDEX (add a one-line summary)"
+  fi
 fi
 
-printf -- '- %s: %s\n' "$DATE" "$TEXT" >> "$FILE"
+printf -- '- %s\n' "$TEXT" >> "$FILE"
 echo "appended → $FILE"
 tail -1 "$FILE"

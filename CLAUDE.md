@@ -14,7 +14,7 @@ After that: `Documentation/Plan.v1.md` is the authoritative plan (goals, locked 
   - `Architecture/` — `Overview.md` (topology + dependency rules + OpenDUNE constraints), `Testing.md`, `ParityHarness.md`.
   - `Formats/` — one markdown per on-disk format (PAK, SHP, WSA, EMC, SAVE, …): own-words description + pointer to the reference C source.
   - `Algorithms/` — Format80 decode, pathfinding, EMC opcode semantics, etc.
-  - `History/` — dated changelog, one file per month (`YYYY-MM.md`). Append-only.
+  - `History/` — dated changelog, **one file per active day** (`YYYY-MM-DD.md`); `README.md` is the newest-first day index. Append-only.
   - `Insights/` — distilled non-obvious findings, one file per fact; `README.md` indexes them and holds the template.
 - `Code/` — the SwiftPM package. Build/test with `cd Code && swift build` / `swift test`. Source trees are organized by kind; each target's directory is set explicitly in `Package.swift` (SPM's default `Sources/` discovery is not used), so adding a target is a new directory under the right tree plus one manifest entry:
   - `Frameworks/` — the `DuneII*` engine libraries, each with its own `CLAUDE.md`. Dependencies point **downward only**; the simulation depends on none of render/input/audio:
@@ -63,7 +63,7 @@ Steps 0, 1, 4, 5, 6, 7 are mandatory. Tests are written **after** the feature (s
 3. Write tests for the new behavior. Synthetic preferred; add a real-data / oracle test when one can exercise the path.
 4. Run the full suite — `cd Code && swift test`. Green before "done." Every previously-green test stays green.
 5. Zero warnings after a clean rebuild — `swift package clean && swift build`. Every `warning:` is a failure; fix the root cause. Read the **full** build output (warnings surface early, during target scanning) — never a `tail`ed/grepped subset, or you will miss them.
-6. Log the change — append a bullet to `Documentation/History/YYYY-MM.md` (create the file for a new month). One sentence, imperative, with file references.
+6. Log the change — `Scripts/log-history.sh "<bullet>"` appends to today's `Documentation/History/YYYY-MM-DD.md` (creating the day file + its index link if new). One sentence, imperative, with file references.
 7. Update `CurrentState.md` — move the finished item to "Recently completed" (with test count + History pointer), set the next "Active task" with its immediate next step, refresh "Test status."
 8. If you learned something non-obvious, capture it as an insight under `Documentation/Insights/` and index it in `Insights/README.md`. Cross-link the code `file:line` and the test.
 
@@ -73,7 +73,7 @@ Steps 0, 1, 4, 5, 6, 7 are mandatory. Tests are written **after** the feature (s
 
 ## Periodic self-review
 
-After each completed phase, **or** after every 32 commits (whichever comes first), reread `Documentation/History/` (at least the current and previous month) and `Documentation/Insights/`. Extract any **recurring problems** or **important lessons** into new standing instructions (add them to this file under the relevant section) or new insights. **If nothing recurrent or important emerges, add nothing — do not manufacture instructions.** Track the last review point in `CurrentState.md` (record the commit hash); commits since = `git rev-list --count <hash>..HEAD`.
+After each completed phase, **or** after every 32 commits (whichever comes first), reread `Documentation/History/` (at least the recent daily files — see its `README.md` index) and `Documentation/Insights/`. Extract any **recurring problems** or **important lessons** into new standing instructions (add them to this file under the relevant section) or new insights. **If nothing recurrent or important emerges, add nothing — do not manufacture instructions.** Track the last review point in `CurrentState.md` (record the commit hash); commits since = `git rev-list --count <hash>..HEAD`.
 
 ## What counts as "tested"
 
@@ -93,7 +93,7 @@ If something genuinely can't be tested (rare — usually visual correctness), sa
 Scripts/check.sh                    # incremental build + full test suite → concise BUILD/TESTS/VERDICT
 Scripts/check.sh --full             # `swift package clean` first — the zero-warnings audit (workflow step 5)
 Scripts/check.sh --filter <Suite>   # build + only matching tests (fast inner loop)
-Scripts/log-history.sh "<bullet>"   # append a dated bullet to History/YYYY-MM.md (workflow step 6; new-month aware)
+Scripts/log-history.sh "<bullet>"   # append a bullet to today's History/YYYY-MM-DD.md (workflow step 6; creates+indexes a new day)
 Scripts/build-oracle.sh             # rebuild + re-sign the OpenDUNE parity oracle (run with sandbox disabled)
 Scripts/gen-scenario-goldens.sh [--only <name>]   # regenerate the scenario goldens (one, with --only)
 ```
