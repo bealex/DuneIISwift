@@ -30,7 +30,7 @@ public final class SpriteKitRenderer {
 
     // Caches (kept for the renderer's whole life — memory is cheap, recolorizing isn't).
     private struct TileKey: Hashable { let tileId: Int; let houseID: UInt8; let windColour: Int }
-    private struct SpriteKey: Hashable { let index: Int; let house: Int; let flipped: Bool }
+    private struct SpriteKey: Hashable { let index: Int; let house: Int; let flipped: Bool; let flippedV: Bool }
     private var tileCache: [TileKey: SKTexture] = [:]
     private var tileUsesWindCache: [Int: Bool] = [:]
     private var spriteCache: [SpriteKey: SKTexture] = [:]
@@ -192,15 +192,14 @@ public final class SpriteKitRenderer {
 
     private func spriteTexture(_ sprite: ComposedSprite, palette: Palette) -> SKTexture? {
         let key = SpriteKey(index: sprite.spriteIndex, house: sprite.house?.rawValue ?? -1,
-                            flipped: sprite.flipped)
+                            flipped: sprite.flipped, flippedV: sprite.flippedV)
         if let cached = spriteCache[key] { return cached }
         let remap: (UInt8) -> UInt8 = sprite.house.map { house in { HouseRemap.sprite($0, house: house) } }
             ?? { $0 }
-        // Bake the horizontal mirror into the pixels (the W-half sprites are the E-half mirrored) rather
-        // than relying on a node `xScale = -1` transform — pre-rendered, and immune to any transform quirk.
-        let pixels = sprite.flipped
-            ? Self.mirrorRows(sprite.frame.pixels, width: sprite.frame.width, height: sprite.frame.height)
-            : sprite.frame.pixels
+        // Bake the mirror(s) into the pixels rather than relying on a node transform — pre-rendered, and
+        // immune to any transform quirk. Air units use a vertical mirror for their southern facings.
+        let pixels = Self.mirror(sprite.frame.pixels, width: sprite.frame.width, height: sprite.frame.height,
+                                 horizontal: sprite.flipped, vertical: sprite.flippedV)
         guard let image = IndexedImage.cgImage(indices: pixels, width: sprite.frame.width,
                                                height: sprite.frame.height, palette: palette,
                                                transparentIndex: 0, remap: remap) else { return nil }
@@ -209,13 +208,18 @@ public final class SpriteKitRenderer {
         return texture
     }
 
-    /// A row-major indexed buffer mirrored left↔right (each row reversed).
-    nonisolated static func mirrorRows(_ pixels: [UInt8], width: Int, height: Int) -> [UInt8] {
-        guard width > 0, height > 0, pixels.count >= width * height else { return pixels }
+    /// A row-major indexed buffer mirrored horizontally (each row reversed) and/or vertically (row order
+    /// reversed). `horizontal` is the W-half/RTL flip; `vertical` is the air units' southern-facing flip.
+    nonisolated static func mirror(_ pixels: [UInt8], width: Int, height: Int,
+                                   horizontal: Bool, vertical: Bool) -> [UInt8] {
+        guard width > 0, height > 0, pixels.count >= width * height, horizontal || vertical else { return pixels }
         var out = pixels
         for y in 0 ..< height {
-            let row = y * width
-            for x in 0 ..< width { out[row + x] = pixels[row + (width - 1 - x)] }
+            let sy = vertical ? (height - 1 - y) : y
+            for x in 0 ..< width {
+                let sx = horizontal ? (width - 1 - x) : x
+                out[y * width + x] = pixels[sy * width + sx]
+            }
         }
         return out
     }

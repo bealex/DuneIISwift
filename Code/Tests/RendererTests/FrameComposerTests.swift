@@ -110,16 +110,19 @@ struct FrameComposerTests {
         #expect(turret.z > body.z)                                   // turret drawn over body
     }
 
-    @Test("mirrorRows reverses each row (the baked horizontal flip for W-half sprites)")
-    func mirrorRows() {
-        // A 3×2 buffer: rows [1,2,3] and [4,5,6] mirror to [3,2,1] and [6,5,4].
+    @Test("mirror flips horizontally and/or vertically (the baked sprite flips)")
+    func mirror() {
+        // A 3×2 buffer: rows [1,2,3] and [4,5,6].
         let src: [UInt8] = [1, 2, 3, 4, 5, 6]
-        #expect(SpriteKitRenderer.mirrorRows(src, width: 3, height: 2) == [3, 2, 1, 6, 5, 4])
-        // Mirroring twice is the identity.
-        let once = SpriteKitRenderer.mirrorRows(src, width: 3, height: 2)
-        #expect(SpriteKitRenderer.mirrorRows(once, width: 3, height: 2) == src)
-        // Degenerate sizes are returned unchanged.
-        #expect(SpriteKitRenderer.mirrorRows([9], width: 0, height: 0) == [9])
+        // Horizontal: each row reversed.
+        #expect(SpriteKitRenderer.mirror(src, width: 3, height: 2, horizontal: true, vertical: false) == [3, 2, 1, 6, 5, 4])
+        // Vertical: row order reversed (air units' southern facings).
+        #expect(SpriteKitRenderer.mirror(src, width: 3, height: 2, horizontal: false, vertical: true) == [4, 5, 6, 1, 2, 3])
+        // Both.
+        #expect(SpriteKitRenderer.mirror(src, width: 3, height: 2, horizontal: true, vertical: true) == [6, 5, 4, 3, 2, 1])
+        // No flip is the identity; degenerate sizes are returned unchanged.
+        #expect(SpriteKitRenderer.mirror(src, width: 3, height: 2, horizontal: false, vertical: false) == src)
+        #expect(SpriteKitRenderer.mirror([9], width: 0, height: 0, horizontal: true, vertical: true) == [9])
     }
 
     @Test("effects compose house-neutral above units")

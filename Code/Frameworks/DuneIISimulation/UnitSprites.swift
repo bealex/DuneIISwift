@@ -26,6 +26,18 @@ public enum UnitSprites {
         [(0, false), (1, false), (1, false), (1, false), (2, false), (1, true), (1, true), (1, true)]
     /// `values_334A` — INFANTRY_3 animation sub-frame for `spriteOffset & 3`.
     static let infantry3Sub = [0, 1, 0, 2]
+    /// `values_32E4` — AIR UNIT / ornithopter directional (3 frames N,NE,E; `flag` bit 0 = H-flip, bit 1
+    /// = V-flip). The southern facings are northern frames flipped *vertically* — a separate layout from
+    /// the ground `values_32A4`, used in `viewport.c`'s air-unit draw pass (winger units).
+    static let airUnit: [(offset: Int, flag: Int)] =
+        [(0, 0), (1, 0), (2, 0), (1, 2), (0, 2), (1, 3), (2, 1), (1, 1)]
+    /// `values_3304` — AIR ROCKET, indexed by **16** orientations (missiles have a fine facing); the S
+    /// half is the N half flipped vertically (flag bit 1).
+    static let airRocket: [(offset: Int, flag: Int)] =
+        [(0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (3, 2), (2, 2), (1, 2),
+         (0, 2), (3, 3), (2, 3), (3, 3), (4, 1), (3, 1), (2, 1), (1, 1)]
+    /// `values_33AE` — ornithopter rotor sub-frame for `spriteOffset & 3`.
+    static let ornithopterRotor = [2, 1, 0, 1]
     /// `values_336E` — siege-tank turret pixel offset per orientation.
     static let siegeTurretOffset: [(Int, Int)] =
         [(0, -5), (0, -5), (2, -3), (2, -1), (-1, -3), (-2, -1), (-2, -3), (-1, -5)]
@@ -39,22 +51,50 @@ public enum UnitSprites {
 
         let bodyO8 = Int(Orientation.to8(UInt8(bitPattern: unit.orientation[0].current)))
         var bodyIndex = Int(info.groundSpriteID)
-        var bodyFlip = false
-        switch info.displayMode {
-            case .unit, .rocket:
-                if info.movementType == .slither { break }   // sandworm/sonic-blast: no directional frame
-                let (offset, flip) = directional[bodyO8]
-                bodyIndex += offset; bodyFlip = flip
-            case .infantry3Frames:
-                let (dir, flip) = infantry[bodyO8]
-                bodyIndex += dir * 3 + infantry3Sub[Int(unit.spriteOffset) & 3]; bodyFlip = flip
-            case .infantry4Frames:
-                let (dir, flip) = infantry[bodyO8]
-                bodyIndex += dir * 4 + (Int(unit.spriteOffset) & 3); bodyFlip = flip
-            case .singleFrame, .ornithopter:
-                break
+        var flipH = false, flipV = false
+
+        // Air units (`movementType == winger`: carryall, ornithopter, frigate, the missiles) are drawn by
+        // a SEPARATE pass in `viewport.c` with their own tables — NOT the ground `values_32A4`. Ground and
+        // air share `displayMode` but render completely differently.
+        if info.movementType == .winger {
+            switch info.displayMode {
+                case .singleFrame:                              // a bullet: 1 frame, +1 when "big"
+                    if unit.o.flags.contains(.bulletIsBig) { bodyIndex += 1 }
+                case .unit:                                     // carryall / frigate
+                    let (off, flag) = airUnit[bodyO8]; bodyIndex += off
+                    flipH = flag & 1 != 0; flipV = flag & 2 != 0
+                case .rocket:                                   // missiles: 16-orientation
+                    let o16 = Int(Orientation.to16(UInt8(bitPattern: unit.orientation[0].current)))
+                    let (off, flag) = airRocket[o16]; bodyIndex += off
+                    flipH = flag & 1 != 0; flipV = flag & 2 != 0
+                case .ornithopter:                              // 3 frames × rotor animation
+                    let (off, flag) = airUnit[bodyO8]
+                    bodyIndex += off * 3 + ornithopterRotor[Int(unit.spriteOffset) & 3]
+                    flipH = flag & 1 != 0; flipV = flag & 2 != 0
+                case .infantry3Frames, .infantry4Frames:
+                    break
+            }
+            // The wing-beat: `hasAnimationSet` units alternate a second 5-frame block via `animationFlip`.
+            if info.flags.contains(.hasAnimationSet) && unit.o.flags.contains(.animationFlip) { bodyIndex += 5 }
+            // A carryall carrying a unit shows its loaded body (+3).
+            if type == .carryall && unit.o.flags.contains(.inTransport) { bodyIndex += 3 }
+        } else {
+            switch info.displayMode {
+                case .unit, .rocket:
+                    if info.movementType == .slither { break }   // sandworm/sonic-blast: no directional frame
+                    let (offset, flip) = directional[bodyO8]
+                    bodyIndex += offset; flipH = flip
+                case .infantry3Frames:
+                    let (dir, flip) = infantry[bodyO8]
+                    bodyIndex += dir * 3 + infantry3Sub[Int(unit.spriteOffset) & 3]; flipH = flip
+                case .infantry4Frames:
+                    let (dir, flip) = infantry[bodyO8]
+                    bodyIndex += dir * 4 + (Int(unit.spriteOffset) & 3); flipH = flip
+                case .singleFrame, .ornithopter:
+                    break
+            }
         }
-        let body = UnitSpriteLayer(spriteIndex: bodyIndex, flipped: bodyFlip, offsetX: 0, offsetY: 0)
+        let body = UnitSpriteLayer(spriteIndex: bodyIndex, flipped: flipH, flippedV: flipV, offsetX: 0, offsetY: 0)
 
         var turret: UnitSpriteLayer?
         if info.turretSpriteID != 0xFFFF {

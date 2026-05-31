@@ -70,59 +70,85 @@ struct UnitSpriteTests {
         #expect(east.body.spriteIndex == 311 + 3)
     }
 
-    @Test("body sprite matches OpenDUNE's viewport.c formula for EVERY unit type × 8 directions")
+    @Test("body sprite matches OpenDUNE's viewport.c formula (ground + air pass) for EVERY unit × 8 dirs")
     func everyUnitEightDirections() throws {
-        // The exact viewport.c tables (`values_32A4`/`values_32C4`/`values_334A`) — re-derived here
-        // independently of `UnitSprites` so a divergence in our resolver is caught. o8 0..7 = N,NE,E,SE,
-        // S,SW,W,NW; the western half (5,6,7) is the eastern half mirrored.
+        // The exact viewport.c tables — re-derived here independently of `UnitSprites` so a divergence is
+        // caught. GROUND pass: values_32A4 / values_32C4. AIR pass (winger): values_32E4 / values_3304 (16
+        // orientations) / values_33AE. flag bit 0 = H-flip, bit 1 = V-flip.
         let v32A4: [(Int, Bool)] = [(0, false), (1, false), (2, false), (3, false),
                                     (4, false), (3, true), (2, true), (1, true)]
         let v32C4: [(Int, Bool)] = [(0, false), (1, false), (1, false), (1, false),
                                     (2, false), (1, true), (1, true), (1, true)]
+        let v32E4: [(Int, Int)] = [(0, 0), (1, 0), (2, 0), (1, 2), (0, 2), (1, 3), (2, 1), (1, 1)]
+        let v3304: [(Int, Int)] = [(0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (3, 2), (2, 2), (1, 2),
+                                   (0, 2), (3, 3), (2, 3), (3, 3), (4, 1), (3, 1), (2, 1), (1, 1)]
+        let v33AE = [2, 1, 0, 1]
         let v334A = [0, 1, 0, 2]
 
         for type in UnitType.allCases {
             let info = UnitInfo[type]
             let base = Int(info.groundSpriteID)
             for o8 in 0 ..< 8 {
-                var index = base
-                var flip = false
-                switch info.displayMode {
-                    case .unit, .rocket:
-                        if info.movementType != .slither { index = base + v32A4[o8].0; flip = v32A4[o8].1 }
-                    case .infantry3Frames:
-                        index = base + v32C4[o8].0 * 3 + v334A[0]; flip = v32C4[o8].1   // spriteOffset 0
-                    case .infantry4Frames:
-                        index = base + v32C4[o8].0 * 4; flip = v32C4[o8].1               // spriteOffset 0
-                    case .singleFrame, .ornithopter:
-                        break
+                let orient = o8 * 32
+                var index = base, fH = false, fV = false
+                if info.movementType == .winger {                       // air pass
+                    switch info.displayMode {
+                        case .singleFrame: break                        // bullet, not "big"
+                        case .unit:
+                            let (off, fl) = v32E4[o8]; index = base + off; fH = fl & 1 != 0; fV = fl & 2 != 0
+                        case .rocket:
+                            let o16 = ((orient + 8) / 16) & 0xF
+                            let (off, fl) = v3304[o16]; index = base + off; fH = fl & 1 != 0; fV = fl & 2 != 0
+                        case .ornithopter:
+                            let (off, fl) = v32E4[o8]; index = base + off * 3 + v33AE[0]; fH = fl & 1 != 0; fV = fl & 2 != 0
+                        case .infantry3Frames, .infantry4Frames: break
+                    }
+                } else {                                                // ground pass
+                    switch info.displayMode {
+                        case .unit, .rocket:
+                            if info.movementType != .slither { index = base + v32A4[o8].0; fH = v32A4[o8].1 }
+                        case .infantry3Frames: index = base + v32C4[o8].0 * 3 + v334A[0]; fH = v32C4[o8].1
+                        case .infantry4Frames: index = base + v32C4[o8].0 * 4; fH = v32C4[o8].1
+                        case .singleFrame, .ornithopter: break
+                    }
                 }
-                let u = unit(type, orientation: Int8(truncatingIfNeeded: o8 * 32))
+                let u = unit(type, orientation: Int8(truncatingIfNeeded: orient))
                 let r = try #require(UnitSprites.info(for: u), "\(type) o8 \(o8): nil")
                 #expect(r.body.spriteIndex == index, "\(type) o8 \(o8): frame \(r.body.spriteIndex) != \(index)")
-                #expect(r.body.flipped == flip, "\(type) o8 \(o8): flip \(r.body.flipped) != \(flip)")
+                #expect(r.body.flipped == fH, "\(type) o8 \(o8): H-flip \(r.body.flipped) != \(fH)")
+                #expect(r.body.flippedV == fV, "\(type) o8 \(o8): V-flip \(r.body.flippedV) != \(fV)")
             }
         }
     }
 
-    @Test("rocket body mirrors the western half (values_32A4), all 8 orientations")
+    @Test("missile (air winger) body uses the 16-orientation air-rocket table with V-flips, not values_32A4")
     func rocketDirections() throws {
-        // missileRocket = type 19 = "Rocket", DISPLAYMODE_ROCKET, groundSpriteID 278. Same rule as a
-        // tank body: index += values_32A4[o8][0], flip = values_32A4[o8][1] — the W half is the E half
-        // mirrored. orientation 0/32/64/.../224 = o8 0..7 (each step is 32/256).
-        let base = Int(UnitInfo[.missileRocket].groundSpriteID)            // 278
-        // (offset, flip) per o8: {0,0},{1,0},{2,0},{3,0},{4,0},{3,1},{2,1},{1,1}
-        let expected: [(Int, Bool)] = [(0, false), (1, false), (2, false), (3, false),
-                                       (4, false), (3, true), (2, true), (1, true)]
+        // A missile is MOVEMENT_WINGER → drawn by viewport.c's AIR pass: values_3304 indexed by the *16*
+        // orientation (`Orientation.to16`), where the southern half is the northern frame flipped
+        // VERTICALLY (flag bit 1) — NOT the ground values_32A4 horizontal mirror. Proven by the OpenDUNE
+        // bitmap draw tool: a south-flying rocket = the N frame (base) + vertical flip = points DOWN. This
+        // is the bug the user reported ("rockets travelling south drawn incorrectly").
+        let base = Int(UnitInfo[.missileRocket].groundSpriteID)
+        // (offset, flipH, flipV) per o8 0..7 — orient o8·32 → o16 = to16 = 0,2,4,6,8,10,12,14.
+        let expected: [(Int, Bool, Bool)] = [
+            (0, false, false),   // N
+            (2, false, false),   // NE
+            (4, false, false),   // E
+            (2, false, true),    // SE  (NE frame, V-flipped)
+            (0, false, true),    // S   (N frame, V-flipped → points down)
+            (2, true,  true),    // SW
+            (4, true,  false),   // W
+            (2, true,  false)]   // NW
         for o8 in 0 ..< 8 {
             let orient = Int8(truncatingIfNeeded: o8 * 32)
             let info = try #require(UnitSprites.info(for: unit(.missileRocket, orientation: orient)))
             #expect(info.body.spriteIndex == base + expected[o8].0, "o8 \(o8) wrong frame")
-            #expect(info.body.flipped == expected[o8].1, "o8 \(o8) wrong flip")
+            #expect(info.body.flipped == expected[o8].1, "o8 \(o8) wrong H-flip")
+            #expect(info.body.flippedV == expected[o8].2, "o8 \(o8) wrong V-flip")
             #expect(info.turret == nil)                                    // rockets have no turret
         }
-        // West (o8 6, orientation 192/-64): the East frame (base+2) mirrored.
-        let west = try #require(UnitSprites.info(for: unit(.missileRocket, orientation: Int8(truncatingIfNeeded: 192))))
-        #expect(west.body.spriteIndex == base + 2 && west.body.flipped)
+        // South (o8 4, orientation 128): the *north* frame, flipped vertically — the reported-bug case.
+        let south = try #require(UnitSprites.info(for: unit(.missileRocket, orientation: Int8(truncatingIfNeeded: 128))))
+        #expect(south.body.spriteIndex == base && south.body.flippedV && !south.body.flipped)
     }
 }

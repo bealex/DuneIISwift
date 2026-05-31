@@ -37,18 +37,20 @@ public struct ComposedSprite: Equatable, Sendable {
     /// Image-space centre in base pixels (tile size 16).
     public let centerX: Int
     public let centerY: Int
-    public let flipped: Bool
+    public let flipped: Bool      // horizontal mirror
+    public let flippedV: Bool     // vertical mirror (air units' southern facings)
     /// The house to recolour to, or `nil` for house-neutral sprites (explosions, smoke).
     public let house: House?
     public let z: Int
 
     public init(spriteIndex: Int, frame: SpriteFrame, centerX: Int, centerY: Int, flipped: Bool,
-                house: House?, z: Int) {
+                flippedV: Bool = false, house: House?, z: Int) {
         self.spriteIndex = spriteIndex
         self.frame = frame
         self.centerX = centerX
         self.centerY = centerY
         self.flipped = flipped
+        self.flippedV = flippedV
         self.house = house
         self.z = z
     }
@@ -107,12 +109,14 @@ public enum FrameComposer {
             if let body = source.unitFrame(globalIndex: u.body.spriteIndex) {
                 result.append(ComposedSprite(spriteIndex: u.body.spriteIndex, frame: body,
                                              centerX: cx + u.body.offsetX, centerY: cy + u.body.offsetY,
-                                             flipped: u.body.flipped, house: house, z: ZOrder.body))
+                                             flipped: u.body.flipped, flippedV: u.body.flippedV,
+                                             house: house, z: ZOrder.body))
             }
             if let turret = u.turret, let frame = source.unitFrame(globalIndex: turret.spriteIndex) {
                 result.append(ComposedSprite(spriteIndex: turret.spriteIndex, frame: frame,
                                              centerX: cx + turret.offsetX, centerY: cy + turret.offsetY,
-                                             flipped: turret.flipped, house: house, z: ZOrder.turret))
+                                             flipped: turret.flipped, flippedV: turret.flippedV,
+                                             house: house, z: ZOrder.turret))
             }
         }
 
