@@ -106,6 +106,9 @@ public extension GameState {
             units[i].actionID = UInt8(action.rawValue)
         }
         units[i].nextActionID = 0xFF
+        // Optional 7th field: a `seenByHouses` bitmask (so a turret can target a pre-seen enemy without
+        // fog reveal, which the headless harness doesn't run). Absent ⇒ 0 (existing scenarios unchanged).
+        if parts.count >= 7, let seen = UInt8(parts[6]) { units[i].o.seenByHouses = seen }
     }
 
     /// `GEN<packed>=House,StructureType` (slabs/walls) or `ID<n>=House,StructureType,HP%,packed`.

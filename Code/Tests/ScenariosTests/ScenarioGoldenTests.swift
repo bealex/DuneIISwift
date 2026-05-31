@@ -54,6 +54,7 @@ struct ScenarioGoldenTests {
     struct HouseGolden: Decodable, Equatable {
         let index: UInt16; let credits: UInt16; let creditsStorage: UInt16
         let powerProduction: UInt16; let powerUsage: UInt16
+        let unitCount: UInt16     // live units of the house — verifies the bullet allocate/free accounting
     }
     struct UnitState: Decodable, Equatable {
         let index: UInt16; let type: UInt8; let houseID: UInt8; let packed: UInt16; let orient: Int16
@@ -80,6 +81,8 @@ struct ScenarioGoldenTests {
         let compared: Int      // leading ticks asserted; 0 = full trajectory
         var cmd: Bool = true    // whether to issue the player command (false = structure/economy-only scenario)
         var team: Bool = false  // bridge TEAM.EMC + the team-script offsets (the [TEAMS] AI golden)
+        var cmd2Unit: UInt16? = nil  // an optional second attack order (the mutual missile duel)
+        var cmd2Tile: UInt16 = 0
         var testDescription: String { name }
     }
 
@@ -93,6 +96,7 @@ struct ScenarioGoldenTests {
         Spec(name: "trooper",     ini: "trooper.ini",     attack: false, cmdUnit: 22, tile: 1040, compared: 0),  // a foot trooper walks: verifies the walk animation (spriteOffset, tickUnknown5) + movement, full match
         Spec(name: "economy", ini: "economy.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false),  // HOUSE golden: an Ordos windtrap+silo base — full 60-tick match of the house aggregate (credits 2000→clamp 1000→power-maint 999, power 100/5, storage 1000) + structures. Validates House_CalculatePowerAndCredit + the credit clamp + power maintenance.
         Spec(name: "teams", ini: "teams.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false, team: true),  // TEAM-AI golden: an Ordos `Normal`-brain team recruits its tanks via GameLoop_Team. Unit-state + (decisively) the RNG draw stream match the oracle full 400 ticks — proving the team loop + brain run identically cross-engine (recruiting isn't in the dump; the RNG stream is the proof). Targeting is fog-gated off (seenByHouses 0), matching the oracle.
+        Spec(name: "missile-duel", ini: "missile-duel.ini", attack: true, cmdUnit: 22, tile: 1045, compared: 0, cmd2Unit: 23, cmd2Tile: 1040),  // BULLET-ACCOUNTING golden: an Atreides + an Ordos Launcher each ordered to attack the other, trading notAccurate rockets. Each rocket is a unit (Unit_Allocate → the firing house's unitCount++) freed on impact (unitCount--), so the per-tick house unitCount oscillates as bullets spawn + land — asserting the projectile allocate/free accounting matches the oracle tick-for-tick (the accounting whose uint16 wrap crashed a long mapview run). Non-player houses avoid the player-house House_CalculatePowerAndCredit GUI path the headless oracle lacks (turrets can't fire headless — no sprite-rotation GFX — so a missile duel exercises the identical bullet path).
     ]
 
     /// Sorted by `index` so the comparison is independent of pool/find-array enumeration order: our engine
@@ -124,7 +128,8 @@ struct ScenarioGoldenTests {
         s.houses.indices.filter { s.houses[$0].flags.contains(.used) }.map { i in
             let h = s.houses[i]
             return HouseGolden(index: UInt16(h.index), credits: h.credits, creditsStorage: h.creditsStorage,
-                               powerProduction: h.powerProduction, powerUsage: h.powerUsage)
+                               powerProduction: h.powerProduction, powerUsage: h.powerUsage,
+                               unitCount: h.unitCount)
         }
         .sorted { $0.index < $1.index }
     }
@@ -168,6 +173,9 @@ struct ScenarioGoldenTests {
             let order: Command = spec.attack ? .attack(unit: spec.cmdUnit, tile: spec.tile)
                                              : .move(unit: spec.cmdUnit, tile: spec.tile)
             UnitOrders(scriptInfo: scriptInfo).apply(order, in: &state)
+            if let u2 = spec.cmd2Unit {   // the mutual missile duel: a second launcher attacks back
+                UnitOrders(scriptInfo: scriptInfo).apply(.attack(unit: u2, tile: spec.cmd2Tile), in: &state)
+            }
         }
 
         // Run our engine for the whole trajectory, capturing a frame per tick (frame 0 = post-command).

@@ -70,6 +70,7 @@ run  attack-structure 94 attack-structure.ini "$TICKS" attack,22,1042
 run  trooper      92   trooper.ini       "$TICKS"  move,22,1040
 run  economy      93   economy.ini       60
 run  teams        91   teams.ini         "$TICKS"
+run  missile-duel 90   missile-duel.ini  "$TICKS"  attack,22,1045  attack,23,1040
 # Multi-unit attack/guard match the deterministic prefix (setup + movement + the guard sitting); the
 # Swift side gates `compared` before combat RNG (target acquisition / fire), which parity doesn't chase.
 # attack-structure dumps structures + houses too (Scen_DumpState): a tank drains + destroys a windtrap.
