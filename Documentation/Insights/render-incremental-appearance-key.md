@@ -1,0 +1,9 @@
+# The layered-terrain incremental repaint hinges on the CellAppearance key
+
+**Finding:** `SpriteKitRenderer` draws the whole landscape once into one static background texture, then per frame only repaints cells whose `CellAppearance` *changed* (adding a small per-cell overlay node). So **any** tile property that can vary over time MUST be part of `CellAppearance`, or that change never repaints. The fog **soft edges** (`fogEdgeSpriteIndex`) were missing from the key, so as units revealed neighbours the dithered edges went stale — looking like "fog recalculated incorrectly." (The binary veil→clear *did* update, but only because revealing also flips `overlayTileID` veiled→0, which was already in the key.)
+
+**Why it matters:** the static-vs-overlay split is a performance optimization that silently drops any time-varying visual not represented in the appearance key. The bug is invisible in a single-frame render-golden (those go through `buildStaticBackground`/`terrainBuffer`, which recomposite everything fresh) — it only shows in the *live, incremental* path. So a green render-golden does NOT prove incremental fog/animation updates work.
+
+**Evidence:** `Code/Frameworks/DuneIIRenderer/SpriteKitRenderer.swift` — `struct CellAppearance` + `appearance(_:)` now carry `fogEdge` (gated on `showFog`); `updateDynamicTerrain` diffs `appearance(...) != displayed[i]`. The fog edge itself is composited by `FrameComposer.cell`. Related: [[render-tile-overlay-transparency]], [[world-fog-veil-overlay-off-by-one]].
+
+**How to apply:** when adding a new time-varying terrain visual (fog, a build-up animation, a spice-bloom pulse, a damage scorch), add its discriminating field to `CellAppearance` and `appearance(_:)` — otherwise the static background wins and it never updates live. Verify on the *running* app or an incremental multi-frame test, not just a one-shot snapshot golden.

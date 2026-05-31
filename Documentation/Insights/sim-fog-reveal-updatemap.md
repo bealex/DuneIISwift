@@ -1,0 +1,9 @@
+# Continuous fog reveal lives in Unit_UpdateMap(1), not the unit script
+
+**Finding:** a unit lifts the player's fog **continuously** as it moves through `Unit_UpdateMap(type==1)` → `Tile_RemoveFogInRadius(position, 1)` (radius 1, every time it stamps a new tile), gated on `House_AreAllied(unitHouse, playerHouse) && !Map_IsPositionUnveiled(packed) && type != SANDWORM`. The `Script_Unit_RemoveFog` native (the bigger `fogUncoverRadius` disc) is a *separate*, discrete reveal the EMC script fires at action transitions. Porting only the script native made fog appear to update "only when the unit stops."
+
+**Why it matters:** the radius-1 `Unit_UpdateMap` reveal is easy to miss because it's buried in the occupancy-stamp function, not the obvious `Unit_RemoveFog`. Omitting it leaves a faithful-looking but wrong fog that lags the unit. Adding it is **observably neutral on the scenario goldens** — the oracle harness already runs it (`g_playerHouseID = HOUSE_HARKONNEN`, so Harkonnen units reveal), and `tileRemoveFogInRadius`/`mapUnveilTile` draw no RNG; if a golden were sensitive to the timing it would already be red against the oracle that does reveal.
+
+**Evidence:** `Code/Frameworks/DuneIIWorld/State/GameState+Lifecycle.swift` `unitUpdateMap(1)` (port of `unit.c:2498`); `tileRemoveFogInRadius` in `GameState+Fog.swift`; test `FogTests.updateMapContinuousReveal` (player reveals, enemy/sandworm don't). Reference: `Repositories/OpenDUNE/src/unit.c` `Unit_UpdateMap`. Related: [[parity-oracle-harness-untick-visual-subsystems]], [[render-incremental-appearance-key]].
+
+**How to apply:** when a behaviour "only happens at a stop/transition," check whether OpenDUNE also does it continuously inside `*_UpdateMap` or the GameLoop, separate from the script native — the per-tick site is easy to overlook. A non-RNG reveal that the oracle also performs is golden-safe to add.
