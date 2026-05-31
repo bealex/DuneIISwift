@@ -393,7 +393,7 @@ extension Simulation {
             }
 
             // Campaign degrade (`structure.c:121`): a `degrades` structure above half its *base* hitpoints
-            // takes its house's `degradingAmount` each degrade tick. (Palace countdown body is still a SEAM.)
+            // takes its house's `degradingAmount` each degrade tick.
             if tickDegrade, state.structures[slot].o.flags.contains(.degrades),
                let si = StructureType(rawValue: Int(t)).map({ StructureInfo[$0] }),
                state.structures[slot].o.hitpoints > si.o.hitpoints / 2 {
@@ -448,7 +448,9 @@ extension Simulation {
         if state.houseTick.starport <= g { tickStarport = true; state.houseTick.starport = g &+ 180 }
         var tickReinforcement = false
         if state.houseTick.reinforcement <= g { tickReinforcement = true; state.houseTick.reinforcement = g &+ 600 }
-        if state.houseTick.missileCountdown <= g { state.houseTick.missileCountdown = g &+ 60 }          // SEAM: palace house missile
+        // The AI palace missile launches directly (`structureActivateSpecial`); this cursor is only the
+        // human's 7-second `g_houseMissileCountdown` target-select window — a Phase-6 GUI seam.
+        if state.houseTick.missileCountdown <= g { state.houseTick.missileCountdown = g &+ 60 }
         if state.houseTick.starportAvailability <= g { tickStarportAvailability = true; state.houseTick.starportAvailability = g &+ 1800 }
 
         // Scenario reinforcements: count each loaded entry down; deploy at zero (once per loop, not per house).
