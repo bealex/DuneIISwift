@@ -112,6 +112,7 @@ public struct Simulation: Sendable {
         gameLoopUnit()
         gameLoopStructure()
         gameLoopHouse()
+        evaluateLevelEnd()   // latch won/lost when a WinFlags condition is met (RNG-free; doesn't halt)
         // Visual subsystems the oracle's parity harness doesn't tick (both draw RNG) — gated off the
         // golden/oracle-matched path, on for the visual apps. See `tickAnimations`/`tickExplosions`.
         if tickAnimations { state.animationTick() }   // structure animations (mutates the map ground tiles)

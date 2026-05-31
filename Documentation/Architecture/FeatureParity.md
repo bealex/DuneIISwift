@@ -166,7 +166,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | IMPACT crater classification (small/medium by damage) | ✅ | `UnitMovement` (crater **overlay** is presentation) |
 | Wall destruction (HP-vs-RNG) + `Map_UpdateWall` | ✅ | `UnitImpact`, `GameState+WallSlab` |
 | Explosion reactions: retaliate / team HUNT staging / harvester flee | ✅ | `UnitImpact` |
-| `g_scenario` kill/score tally on a kill | ⊘ gameplay | feeds quota/score (§R) — not modelled |
+| `g_scenario` kill/score tally on a kill | ✅ | `UnitImpact.die` |
 
 ## H. Unit lifecycle
 
@@ -303,11 +303,11 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | Feature | Status | Evidence / note |
 |---|---|---|
 | `Quota`/`creditsQuota` loaded | ✅ | `ScenarioLoader.loadHouses` |
-| **Quota win check** (credits ≥ quota) | ✗ gameplay | loaded, **never checked** |
-| **`WinFlags` / `LoseFlags`** load + evaluation | ✗ gameplay | not loaded, not checked |
-| **`House_AreAllDead` / elimination check** | ✗ gameplay | no implementation |
-| **Mission complete / failed signal** | ✗ gameplay | the game never ends |
-| Score / kill tallies (destroyed/harvested allied/enemy) | ⊘ gameplay | SEAMs — feeds the score screen *and* the quota check |
+| **Quota win check** (credits ≥ quota) | ✅ | `Simulation.evaluateLevelEnd` (`WinFlags` bit 2) |
+| **`WinFlags` / `LoseFlags`** load + evaluation | ✅ | `[BASIC]` → `Scenario`; `levelIsFinished`/`levelIsWon` |
+| structure-count elimination (no enemy / no friendly structures) | ✅ | `levelStructureCounts` (`WinFlags` 0x1/0x2) |
+| **Mission complete / failed signal** | ✅ | `GameState.gameEndState`, latched in `tick()` after the 7200-tick minimum |
+| Score / kill / harvested tallies (`g_scenario`) | ✅ | bumped in `Unit_Die` / `Structure_Damage` / `RefineSpice` |
 
 ## S. Reinforcements / scenario events
 
@@ -333,8 +333,8 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 |---|---|---|
 | `[BASIC]` MapScale | ✅ | `ScenarioLoader` |
 | `[MAP]` Seed → procedural terrain + spice | ✅ | `MapGenerator.createLandscape` |
-| `[MAP]` **Bloom** (explicit spice-bloom tiles) | ✗ gameplay | not parsed — hand-placed blooms don't appear (procedural spice still does) |
-| `[MAP]` **Field** (explicit spice-field tiles) | ✗ gameplay | not parsed |
+| `[MAP]` **Bloom** / **Special** (explicit spice-bloom tiles) | ✅ | `loadMapBlooms` stamps `tileIDs.bloom` |
+| `[MAP]` **Field** (explicit spice-field tiles) | ✗ gameplay | not parsed — needs the sim-layer `Map_Bloom_ExplodeSpice` circle-fill |
 | `[<House>]` Brain/Credits/Quota/MaxUnit | ✅ | `loadHouses` |
 | `[UNITS]` | ✅ | `loadUnit` |
 | `[STRUCTURES]` (`ID`, `GEN` slabs/walls) | ✅ | `loadStructure` |
@@ -355,7 +355,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 
 Everything in the four-phase battle simulation is done and cross-engine-verified. The open *gameplay* work (presentation seams excluded):
 
-1. **Win / lose conditions** ✗ (§R) — the single biggest gap; a match can't end. Needs quota/`WinFlags`/`LoseFlags` evaluation + `House_AreAllDead` at end of `tick()`. Pulls in the score/kill tallies.
+1. ~~Win / lose conditions~~ ✅ (§R, 2026-05-31) — `WinFlags`/`LoseFlags` + structure-count/quota; `gameEndState` latched in `tick()`. Score/kill/harvested tallies also done.
 2. **Palace super-weapons** ⊘/✗ (§P) — death-hand launch, Fremen, saboteur deploy bodies (slice 7).
 3. **Scenario reinforcements** ✗ (§S) — `[REINFORCEMENTS]` parsing + timed spawns.
 4. **AI base expansion** ⊘ (§O) — `ai_structureRebuild` + auto-build/repair; the AI fights with its starting base.

@@ -47,6 +47,10 @@ public extension GameState {
     mutating func loadScenario(ini: Ini, iconMap: IconMap, teamScriptOffsets: [UInt16] = []) {
         tileIDs = TileIDs(iconMap: iconMap) ?? TileIDs()
         mapScale = UInt8(clamping: ini.integer(section: "BASIC", key: "MapScale"))
+        scenario.winFlags = UInt16(clamping: ini.integer(section: "BASIC", key: "WinFlags"))
+        scenario.loseFlags = UInt16(clamping: ini.integer(section: "BASIC", key: "LoseFlags"))
+        tickScenarioStart = timerGame
+        gameEndState = .playing
         let seed = UInt32(bitPattern: Int32(truncatingIfNeeded: ini.integer(section: "MAP", key: "Seed")))
         createLandscape(seed: seed, iconMap: iconMap)
 
@@ -55,6 +59,7 @@ public extension GameState {
         validateStrictIfZero = 1
         defer { validateStrictIfZero = savedStrict }
 
+        loadMapBlooms(ini: ini)
         loadHouses(ini: ini)
 
         for key in ini.keys(section: "UNITS") { loadUnit(ini.string(section: "UNITS", key: key)) }
@@ -105,6 +110,27 @@ public extension GameState {
             let h = houseAllocate(index: UInt8(house.rawValue)) ?? Int(house.rawValue)
             houses[h].credits = UInt16(clamping: Int(ini.string(section: "HOUSES", key: key) ?? "") ?? 0)
         }
+    }
+
+    /// `[MAP] Bloom` / `Special` — place the scenario's spice blooms (`Scenario_Load_Map_Bloom/_Special`,
+    /// `scenario.c:96`) by stamping `tileIDs.bloom` (+1 for a "special" bloom) onto each listed packed tile,
+    /// after the seed landscape is generated + converted to real tile ids. (`[MAP] Field` — a `Map_Bloom_
+    /// ExplodeSpice` spice-circle per tile — is a Simulation-layer fill and is loaded separately.)
+    private mutating func loadMapBlooms(ini: Ini) {
+        for packed in packedList(ini.string(section: "MAP", key: "Bloom")) where Int(packed) < map.count {
+            map[Int(packed)].groundTileID = tileIDs.bloom
+            mapBaseTileID[Int(packed)] = tileIDs.bloom
+        }
+        for packed in packedList(ini.string(section: "MAP", key: "Special")) where Int(packed) < map.count {
+            map[Int(packed)].groundTileID = tileIDs.bloom &+ 1
+            mapBaseTileID[Int(packed)] = tileIDs.bloom &+ 1
+        }
+    }
+
+    /// Parse a `[MAP]` comma-separated list of packed tile indices.
+    private func packedList(_ value: String?) -> [UInt16] {
+        (value ?? "").split(whereSeparator: { $0 == "," || $0 == " " })
+            .compactMap { UInt16($0.trimmingCharacters(in: .whitespaces)) }
     }
 
     /// `House,UnitType,HP%,packedPosition,orientation,actionState`.

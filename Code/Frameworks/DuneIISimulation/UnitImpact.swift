@@ -268,10 +268,19 @@ extension UnitMovement {
     /// `Script_Unit_Die` (op 0x0F, `script/unit.c:490`): remove the unit; a saboteur leaves a big blast.
     /// `Unit_Remove` resets the running script in OpenDUNE (so `Script_Run` then stops), which we mirror by
     /// resetting the passed-in `engine` — otherwise the runner keeps executing the freed unit's script this
-    /// tick. The `g_scenario` kill/score bookkeeping is a SEAM (not modelled headlessly).
+    /// tick. Updates the `g_scenario` kill/score tally (a non-winger kill is worth `max(buildCredits/100, 1)`).
     public func die(slot: Int, engine: inout ScriptEngine, in state: inout GameState) -> UInt16 {
         let position = state.units[slot].o.position
         let isSaboteur = state.units[slot].o.type == UInt8(UnitType.saboteur.rawValue)
+        // Kill tally (`script/unit.c:502`): non-winger only; the player's losses subtract from the score.
+        if let ut = UnitType(rawValue: Int(state.units[slot].o.type)), UnitInfo[ut].movementType != .winger {
+            let credits = max(UnitInfo[ut].o.buildCredits / 100, 1)
+            if state.units[slot].o.houseID == state.playerHouseID {
+                state.scenario.killedAllied &+= 1; state.scenario.score &-= credits
+            } else {
+                state.scenario.killedEnemy &+= 1; state.scenario.score &+= credits
+            }
+        }
         state.unitRemove(slot)   // includes Unit_UntargetMe + Unit_HouseUnitCount_Remove + Script_Reset
         engine.reset()
         if isSaboteur {

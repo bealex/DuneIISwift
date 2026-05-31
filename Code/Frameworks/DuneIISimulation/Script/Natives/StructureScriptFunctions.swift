@@ -283,7 +283,12 @@ struct StructureScriptFunctions: Sendable {
             creditsStep = UInt16(truncatingIfNeeded: 7 + (Int(state.random256.next() % 4) - 1))   // 6…9
         }
         creditsStep = creditsStep &* harvesterStep
-        // SEAM: g_scenario.harvestedAllied / harvestedEnemy tally.
+        // Harvested-spice tally (`script/structure.c:138`), capped at 65000.
+        if House.areAllied(state.playerHouseID, state.structures[slot].o.houseID, playerHouseID: state.playerHouseID) {
+            state.scenario.harvestedAllied = min(65000, state.scenario.harvestedAllied &+ UInt32(creditsStep))
+        } else {
+            state.scenario.harvestedEnemy = min(65000, state.scenario.harvestedEnemy &+ UInt32(creditsStep))
+        }
 
         let h = Int(state.structures[slot].o.houseID)
         state.houses[h].credits = state.houses[h].credits &+ creditsStep

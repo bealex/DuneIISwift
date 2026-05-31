@@ -113,6 +113,13 @@ public struct GameState: Sendable {
     /// the first campaign; scenario loading will set it. (Replaces the earlier "campaigns aren't modeled" pins.)
     public var campaignID: UInt8 = 1
 
+    /// The mission's win/lose flags + score tallies (`g_scenario`), loaded from `[BASIC]`.
+    public var scenario = Scenario()
+    /// Whether the human player's level is in progress, won, or lost (`GameLoop_IsLevelFinished/Won`).
+    public var gameEndState: GameEndState = .playing
+    /// `g_tickScenarioStart`: the `timerGame` the scenario began at (the win check needs ≥7200 ticks played).
+    public var tickScenarioStart: UInt32 = 0
+
     /// The map viewport's top-left packed tile (OpenDUNE's `g_viewportPosition`). Render state, but it
     /// feeds the deterministic sim: `GameLoop_Unit` throttles an off-viewport unit's script to 3
     /// opcodes/tick (`Map_IsPositionInViewport`). Set by the host (camera) / the parity harness.

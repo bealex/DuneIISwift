@@ -282,7 +282,16 @@ public extension GameState {
         }
 
         if structures[slot].o.hitpoints == 0 {
-            // SEAM: g_scenario score (destroyedAllied/Enemy + score delta).
+            // Destroy tally (`structure.c:1055`): a friendly loss subtracts, an enemy loss adds, by
+            // `max(buildCredits/100, 1)`.
+            if let st = StructureType(rawValue: Int(structures[slot].o.type)) {
+                let score = max(StructureInfo[st].o.buildCredits / 100, 1)
+                if House.areAllied(playerHouseID, structures[slot].o.houseID, playerHouseID: playerHouseID) {
+                    scenario.destroyedAllied &+= 1; scenario.score &-= score
+                } else {
+                    scenario.destroyedEnemy &+= 1; scenario.score &+= score
+                }
+            }
             structureDestroy(slot)
             // SEAM: Sound_Output_Feedback (audio).
             structureUntargetMe(slot)

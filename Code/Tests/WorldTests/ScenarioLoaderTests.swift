@@ -60,4 +60,23 @@ struct ScenarioLoaderTests {
         // [Ordos] Brain=CPU is allocated too (so GameLoop_House runs it).
         #expect(state.houses[Int(HouseID.ordos.rawValue)].flags.contains(.used))
     }
+
+    @Test("SCENA001 places its [MAP] Bloom spice bloom + loads the WinFlags/LoseFlags")
+    func loadMapBloomAndFlags() throws {
+        var root = URL(fileURLWithPath: #filePath)
+        for _ in 0 ..< 4 { root.deleteLastPathComponent() }
+        let iconMap = try IconMap(Data(contentsOf: root.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
+        let ini = try Ini(Data(contentsOf: root.appendingPathComponent("Resources/Scenarios/SCENA001.INI")))
+
+        var state = GameState()
+        state.loadScenario(ini: ini, iconMap: iconMap)
+
+        // [MAP] Bloom=2409 → that tile becomes the spice-bloom sprite.
+        #expect(state.tileIDs.bloom != 0)
+        #expect(state.map[2409].groundTileID == state.tileIDs.bloom)
+        // [BASIC] WinFlags/LoseFlags loaded; the level starts in progress.
+        #expect(state.scenario.winFlags != 0)
+        #expect(state.gameEndState == .playing)
+        #expect(state.tickScenarioStart == 0)
+    }
 }
