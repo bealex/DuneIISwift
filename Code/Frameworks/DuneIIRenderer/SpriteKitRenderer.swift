@@ -30,7 +30,7 @@ public final class SpriteKitRenderer {
 
     // Caches (kept for the renderer's whole life — memory is cheap, recolorizing isn't).
     private struct TileKey: Hashable { let tileId: Int; let windColour: Int }
-    private struct SpriteKey: Hashable { let index: Int; let house: Int }
+    private struct SpriteKey: Hashable { let index: Int; let house: Int; let flipped: Bool }
     private var tileCache: [TileKey: SKTexture] = [:]
     private var tileUsesWindCache: [Int: Bool] = [:]
     private var spriteCache: [SpriteKey: SKTexture] = [:]
@@ -174,23 +174,40 @@ public final class SpriteKitRenderer {
             node.size = texture.size()
             node.position = CGPoint(x: CGFloat(sprite.centerX), y: CGFloat(side - sprite.centerY))
             node.zPosition = CGFloat(sprite.z)
-            node.xScale = sprite.flipped ? -1 : 1            // W-half sprites are the E-half mirrored
+            node.xScale = 1                                  // the mirror is baked into the texture, not a transform
             node.isHidden = false
         }
         for i in used ..< spritePool.count { spritePool[i].isHidden = true }
     }
 
     private func spriteTexture(_ sprite: ComposedSprite, palette: Palette) -> SKTexture? {
-        let key = SpriteKey(index: sprite.spriteIndex, house: sprite.house?.rawValue ?? -1)
+        let key = SpriteKey(index: sprite.spriteIndex, house: sprite.house?.rawValue ?? -1,
+                            flipped: sprite.flipped)
         if let cached = spriteCache[key] { return cached }
         let remap: (UInt8) -> UInt8 = sprite.house.map { house in { HouseRemap.sprite($0, house: house) } }
             ?? { $0 }
-        guard let image = IndexedImage.cgImage(indices: sprite.frame.pixels, width: sprite.frame.width,
+        // Bake the horizontal mirror into the pixels (the W-half sprites are the E-half mirrored) rather
+        // than relying on a node `xScale = -1` transform — pre-rendered, and immune to any transform quirk.
+        let pixels = sprite.flipped
+            ? Self.mirrorRows(sprite.frame.pixels, width: sprite.frame.width, height: sprite.frame.height)
+            : sprite.frame.pixels
+        guard let image = IndexedImage.cgImage(indices: pixels, width: sprite.frame.width,
                                                height: sprite.frame.height, palette: palette,
                                                transparentIndex: 0, remap: remap) else { return nil }
         let texture = nearest(image)
         spriteCache[key] = texture
         return texture
+    }
+
+    /// A row-major indexed buffer mirrored left↔right (each row reversed).
+    nonisolated static func mirrorRows(_ pixels: [UInt8], width: Int, height: Int) -> [UInt8] {
+        guard width > 0, height > 0, pixels.count >= width * height else { return pixels }
+        var out = pixels
+        for y in 0 ..< height {
+            let row = y * width
+            for x in 0 ..< width { out[row + x] = pixels[row + (width - 1 - x)] }
+        }
+        return out
     }
 
     private func pooledSprite(_ i: Int) -> SKSpriteNode {

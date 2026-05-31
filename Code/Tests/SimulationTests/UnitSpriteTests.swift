@@ -69,4 +69,25 @@ struct UnitSpriteTests {
         let east = try #require(UnitSprites.info(for: unit(.soldier, orientation: 64)))
         #expect(east.body.spriteIndex == 311 + 3)
     }
+
+    @Test("rocket body mirrors the western half (values_32A4), all 8 orientations")
+    func rocketDirections() throws {
+        // missileRocket = type 19 = "Rocket", DISPLAYMODE_ROCKET, groundSpriteID 278. Same rule as a
+        // tank body: index += values_32A4[o8][0], flip = values_32A4[o8][1] — the W half is the E half
+        // mirrored. orientation 0/32/64/.../224 = o8 0..7 (each step is 32/256).
+        let base = Int(UnitInfo[.missileRocket].groundSpriteID)            // 278
+        // (offset, flip) per o8: {0,0},{1,0},{2,0},{3,0},{4,0},{3,1},{2,1},{1,1}
+        let expected: [(Int, Bool)] = [(0, false), (1, false), (2, false), (3, false),
+                                       (4, false), (3, true), (2, true), (1, true)]
+        for o8 in 0 ..< 8 {
+            let orient = Int8(truncatingIfNeeded: o8 * 32)
+            let info = try #require(UnitSprites.info(for: unit(.missileRocket, orientation: orient)))
+            #expect(info.body.spriteIndex == base + expected[o8].0, "o8 \(o8) wrong frame")
+            #expect(info.body.flipped == expected[o8].1, "o8 \(o8) wrong flip")
+            #expect(info.turret == nil)                                    // rockets have no turret
+        }
+        // West (o8 6, orientation 192/-64): the East frame (base+2) mirrored.
+        let west = try #require(UnitSprites.info(for: unit(.missileRocket, orientation: Int8(truncatingIfNeeded: 192))))
+        #expect(west.body.spriteIndex == base + 2 && west.body.flipped)
+    }
 }
