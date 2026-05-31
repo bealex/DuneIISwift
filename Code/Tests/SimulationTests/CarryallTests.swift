@@ -115,6 +115,58 @@ struct CarryallTests {
         _ = flipBefore
     }
 
+    @Test("a winger advances in sub-tile steps, never snapping a whole tile at once (#1)")
+    func wingerMovesSubTile() {
+        var (s, _) = base()
+        let move = UnitMovement(scriptInfo: info)
+        let carry = addUnit(&s, .carryall, at: Tile32.packXY(x: 10, y: 20))
+        s.units[carry].currentDestination = Tile32.unpack(Tile32.packXY(x: 50, y: 20))
+        let dir = Tile32.direction(from: s.units[carry].o.position, to: s.units[carry].currentDestination)
+        move.unit.setOrientation(&s.units[carry], orientation: dir, rotateInstantly: true, level: 0)
+        move.unit.setSpeed(&s.units[carry], speed: 255, gameSpeed: s.gameSpeed)
+
+        // Record the position after each movement tick over a long flight; the per-step delta must stay
+        // within one tile (256 sub-units). A tile-by-tile teleport would be >= 256.
+        var maxStep = 0
+        var prev = Int(s.units[carry].o.position.x)
+        var moved = false
+        for _ in 0 ..< 120 {
+            move.movementTick(slot: carry, in: &s)
+            let now = Int(s.units[carry].o.position.x)
+            let step = abs(now - prev)
+            if step > 0 { moved = true }
+            maxStep = max(maxStep, step)
+            prev = now
+        }
+        #expect(moved)                      // it actually flew
+        #expect(maxStep < 256, "a movement tick jumped \(maxStep) sub-units (>= a full tile)")
+    }
+
+    @Test("a winger rotates the shortest way in BOTH directions (#2)")
+    func wingerRotatesShortestPath() {
+        var (s, _) = base()
+        let move = UnitMovement(scriptInfo: info)
+        let carry = addUnit(&s, .carryall, at: Tile32.packXY(x: 20, y: 20))
+
+        // From North (0) to East (+64): current should climb 0 -> 64 (positive steps).
+        s.units[carry].orientation[0].current = 0
+        move.unit.setOrientation(&s.units[carry], orientation: 64, rotateInstantly: false, level: 0)
+        #expect(s.units[carry].orientation[0].speed > 0)            // turning clockwise (increasing)
+        var guardCount = 0
+        while s.units[carry].orientation[0].speed != 0 && guardCount < 100 {
+            move.unit.rotate(&s.units[carry], level: 0); guardCount += 1
+        }
+        #expect(s.units[carry].orientation[0].current == 64)
+
+        // From North (0) to West (192 == -64): current should go the SHORT way (down through 255),
+        // i.e. a negative turn — not the long way up. This is the "always one direction" check.
+        s.units[carry].orientation[0].current = 0
+        move.unit.setOrientation(&s.units[carry], orientation: -64, rotateInstantly: false, level: 0)
+        #expect(s.units[carry].orientation[0].speed < 0)           // turning counter-clockwise
+        move.unit.rotate(&s.units[carry], level: 0)
+        #expect(s.units[carry].orientation[0].current < 0)         // stepped DOWN (toward 192/-64), not up
+    }
+
     @Test("transportDeliver into an idle refinery hands the cargo over (Unit_EnterStructure)")
     func deliverToRefinery() {
         var (s, combat) = base()
