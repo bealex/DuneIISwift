@@ -161,19 +161,21 @@ final class GameScene: SKScene {
             let cx = Double(unit.positionX) * tile / 256
             let cy = Double(unit.positionY) * tile / 256
             let barLeft = cx - Self.barWidth / 2
-            let barY = side - (cy - 10)
+            // Just above the sprite (closer than before): the sprite half-height is ~8 px, so a 7 px offset
+            // sits right at its top edge.
+            let barY = side - (cy - 7)
             placeBar(usedBars, left: barLeft, y: barY, width: Self.barWidth, frac: frac); usedBars += 1
 
             // A state chip (distinct shape + colour) just left of the bar; idle shows none.
             if let (path, colour) = Self.chipStyle(unit.activity) {
                 let chip = pooledChip(usedChips); usedChips += 1
                 chip.path = path; chip.fillColor = colour; chip.strokeColor = colour
-                chip.position = CGPoint(x: barLeft - 4, y: barY)
+                chip.position = CGPoint(x: barLeft - 2.5, y: barY)
                 chip.isHidden = false
             }
         }
 
-        // Buildings: a footprint-width bar along the top edge (hidden when the building sits in fog).
+        // Buildings: a footprint-width bar drawn over the building's top row of pixels (hidden in fog).
         for s in frame.structures {
             if FrameComposer.isHiddenByFog(frame, worldX: s.positionX, worldY: s.positionY, showFog: fog) { continue }
             let frac = s.hitpointsMax > 0 ? Double(s.hitpoints) / Double(s.hitpointsMax) : 1
@@ -182,7 +184,8 @@ final class GameScene: SKScene {
             let cornerX = Double(s.positionX) * tile / 256
             let cornerY = Double(s.positionY) * tile / 256
             let barW = max(8, widthPx - 4)
-            placeBar(usedBars, left: cornerX + (widthPx - barW) / 2, y: side - (cornerY - 3), width: barW, frac: frac)
+            // `cornerY` is the building's top edge (image space); +1 puts the bar on its first row of pixels.
+            placeBar(usedBars, left: cornerX + (widthPx - barW) / 2, y: side - (cornerY + 1), width: barW, frac: frac)
             usedBars += 1
         }
 
@@ -192,12 +195,13 @@ final class GameScene: SKScene {
 
     private func placeBar(_ i: Int, left: Double, y: Double, width: Double, frac: Double) {
         let bar = pooledBar(i)
-        bar.size = CGSize(width: width, height: Self.barHeight)
+        // The bar's drawn width *is* the health fraction of the full width: full → 100% length, half → 50%,
+        // dead → 0. Left-anchored (anchorPoint x=0), so it depletes from the right. Colour is the additional
+        // cue. (Width set directly rather than via `xScale`, so the depletion is unambiguous.)
+        let clamped = min(1, max(0, frac))
+        bar.size = CGSize(width: width * clamped, height: Self.barHeight)
         bar.position = CGPoint(x: left, y: y)
         bar.color = frac > 0.66 ? .green : (frac > 0.33 ? .yellow : .red)
-        // Width tracks health exactly: full at 1.0, half at 0.5, zero (invisible) at 0 — left-anchored, so
-        // it depletes from the right.
-        bar.xScale = CGFloat(min(1, max(0, frac)))
         bar.isHidden = frac <= 0
     }
 
@@ -209,7 +213,7 @@ final class GameScene: SKScene {
     /// idle → no chip; otherwise a distinct **shape + colour** per state (centred on the node origin):
     /// move = green ▶ triangle, attack = red ◆ diamond, guard = blue ■ square, harvest = orange ● circle.
     private static func chipStyle(_ activity: FrameInfo.UnitActivity) -> (CGPath, NSColor)? {
-        let r = 2.5
+        let r = 1.25   // half the old 2.5 — the state icons are 2× smaller
         switch activity {
             case .idle: return nil
             case .moving:
@@ -261,6 +265,13 @@ final class GameScene: SKScene {
     override func rightMouseDown(with event: NSEvent) {
         if model?.placement != nil { model?.cancelPlacement(); return }
         if let (x, y) = tile(at: event) { model?.rightClickTile(x, y) }
+    }
+
+    /// Middle mouse button: recentre the map on the clicked point (scene = world coords, y-up → image y-down).
+    override func otherMouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 2 else { return }
+        let p = event.location(in: self)
+        model?.centerOn(worldX: Double(p.x), worldY: Double(Self.worldSidePx) - Double(p.y))
     }
 
     override func mouseMoved(with event: NSEvent) {

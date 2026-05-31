@@ -122,18 +122,20 @@ public extension GameState {
     }
 
     /// `[MAP] Bloom` / `Special` — place the scenario's spice blooms (`Scenario_Load_Map_Bloom/_Special`,
-    /// `scenario.c:96`) by stamping `tileIDs.bloom` (+1 for a "special" bloom) onto each listed packed tile,
-    /// after the seed landscape is generated + converted to real tile ids. `[MAP] Field` is a `Map_Bloom_
-    /// ExplodeSpice` spice-circle per tile (`scenario.c:328`) — a Simulation-layer fill — so its tiles are
-    /// stashed in `scenario.spiceFields` for `Simulation.applyScenarioSpiceFields` to detonate before tick 0.
+    /// `scenario.c:96`) by stamping `tileIDs.bloom` (+1 for a "special" bloom) as the **displayed** ground tile
+    /// on each listed packed tile, after the seed landscape is generated + converted to real tile ids. We do
+    /// **not** touch `mapBaseTileID` — OpenDUNE only sets `t->groundTileID` and ORs the dirty bit, leaving the
+    /// base as the generated sand. That matters: when a unit detonates the bloom, `Map_Bloom_ExplodeSpice`
+    /// reverts `groundTileID = mapBaseTileID & 0x1FF`, so the base must stay sand or the bloom reverts to
+    /// *itself* and never disappears. `[MAP] Field` is a `Map_Bloom_ExplodeSpice` spice-circle per tile
+    /// (`scenario.c:328`) — a Simulation-layer fill — stashed in `scenario.spiceFields` for
+    /// `Simulation.applyScenarioSpiceFields` to detonate before tick 0.
     private mutating func loadMapBlooms(ini: Ini) {
         for packed in packedList(ini.string(section: "MAP", key: "Bloom")) where Int(packed) < map.count {
             map[Int(packed)].groundTileID = tileIDs.bloom
-            mapBaseTileID[Int(packed)] = tileIDs.bloom
         }
         for packed in packedList(ini.string(section: "MAP", key: "Special")) where Int(packed) < map.count {
             map[Int(packed)].groundTileID = tileIDs.bloom &+ 1
-            mapBaseTileID[Int(packed)] = tileIDs.bloom &+ 1
         }
         scenario.spiceFields = packedList(ini.string(section: "MAP", key: "Field")).filter { Int($0) < map.count }
     }

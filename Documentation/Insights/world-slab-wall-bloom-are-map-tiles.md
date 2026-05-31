@@ -1,0 +1,9 @@
+# Concrete, walls, and blooms live as map tiles — and the displayed tile is separate from its revert base
+
+**Finding:** Concrete slabs (`SLAB_1x1`/`SLAB_2x2`) and walls are **not** persistent pool structures — `Structure_Place` paints their ground tile(s) and immediately `Structure_Free`s the structure (`structure.c:456`/`:476`). And a tile's *displayed* `groundTileID` is distinct from `mapBaseTileID` (the "what it reverts to" base): blooms set only `groundTileID` (the base stays sand), so `Map_Bloom_ExplodeSpice`'s revert (`groundTileID = mapBaseTileID & 0x1FF`) removes the bloom.
+
+**Why it matters:** Two user-visible bugs came from missing each half. (1) `structurePlace` had no slab/wall case, so player-built concrete kept a slab *structure* — selectable (bogus "Constructing" state) with the slab's **structure sprite** baked into the ground (dark grid lines) instead of the `builtSlab` tile. (2) The loader overwrote `mapBaseTileID` with the bloom sprite, so detonating a bloom reverted it to *itself* — the bloom never disappeared.
+
+**Evidence:** `UnitCombat.structurePlace` (the `.wall`/`.slab1x1`/`.slab2x2` dispatch → `placeWall`/`placeSlab` + `structureFree`), `StructureBuildTests.placeConcrete`; `ScenarioLoader.loadMapBlooms` (sets `groundTileID` only, leaves `mapBaseTileID`), `BloomInteractionTests`; OpenDUNE `structure.c:442` (`Structure_Place`), `scenario.c:322` (`Scenario_Load_Map_Bloom` sets `t->groundTileID`, ORs the dirty bit, never the base), `map.c:669` (`Map_Bloom_ExplodeSpice`).
+
+**How to apply:** When porting anything that "places" a slab/wall, paint tiles + free the structure — never leave it in the pool. When setting a *display* tile (bloom, animation, temporary overlay), set `groundTileID` only and leave `mapBaseTileID` as the generated landscape; the base is the revert target, not the current look.

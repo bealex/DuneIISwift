@@ -286,10 +286,29 @@ public struct UnitCombat: Sendable {
     func structurePlace(_ slot: Int, position: UInt16, in state: inout GameState) -> Bool {
         guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return false }
         let si = StructureInfo[st]
-        let valid = structureIsValidBuildLocation(position, type: st, in: state)
-        if valid == 0 && state.structures[slot].o.houseID == state.playerHouseID && state.validateStrictIfZero == 0 { return false }
-
         let houseID = state.structures[slot].o.houseID
+
+        // Walls and concrete slabs live as map *tiles*, not pool objects (`Structure_Place`, `structure.c:456`
+        // / `:476`): paint the wall/concrete ground tile(s) with the owner, then `Structure_Free` the
+        // structure so it isn't a selectable, sprite-baked building. Without this, player-placed concrete kept
+        // a slab *structure* — baking the slab's structure sprite (dark grid lines) into the ground and showing
+        // a bogus "Constructing" state when selected — instead of the `builtSlab` concrete tile.
+        if st == .wall {
+            if structureIsValidBuildLocation(position, type: .wall, in: state) == 0 { return false }
+            state.placeWall(houseID: houseID, at: position)
+            state.structureFree(slot)
+            return true
+        }
+        if st == .slab1x1 || st == .slab2x2 {
+            if structureIsValidBuildLocation(position, type: st, in: state) == 0 { return false }
+            state.placeSlab(st, houseID: houseID, at: position)
+            state.structureFree(slot)
+            return true
+        }
+
+        let valid = structureIsValidBuildLocation(position, type: st, in: state)
+        if valid == 0 && houseID == state.playerHouseID && state.validateStrictIfZero == 0 { return false }
+
         state.structures[slot].o.seenByHouses |= UInt8(1 << houseID)
         if houseID == state.playerHouseID { state.structures[slot].o.seenByHouses = 0xFF }
         state.structures[slot].o.flags.remove(.isNotOnMap)

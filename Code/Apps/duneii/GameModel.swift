@@ -240,8 +240,13 @@ final class GameModel {
               let bs = sim.buildState(structureSlot: slot), bs.isReady, bs.isStructure,
               let type = StructureType(rawValue: Int(bs.objectType)) else { return }
         let layout = StructureLayoutInfo[StructureInfo[type].layout]
+        // Seed the hover tile to the viewport centre so the footprint projection shows immediately on the
+        // button click (before the mouse moves over the map), then follows the cursor.
+        let cx = max(0, min(63, Int(viewport.centerX / Viewport.tilePx)))
+        let cy = max(0, min(63, Int(viewport.centerY / Viewport.tilePx)))
         placement = PlacementState(factorySlot: slot, type: type,
-                                   width: Int(layout.size.width), height: Int(layout.size.height))
+                                   width: Int(layout.size.width), height: Int(layout.size.height),
+                                   hoverTileX: cx, hoverTileY: cy)
         audio.play(.select)
     }
 

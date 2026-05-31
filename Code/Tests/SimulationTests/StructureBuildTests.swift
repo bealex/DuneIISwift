@@ -134,6 +134,32 @@ struct StructureBuildTests {
         // concrete-slab test tiles.)
     }
 
+    @Test("placing concrete paints the slab tiles and frees the structure (not a selectable building)")
+    func placeConcrete() {
+        var state = GameState(); state.playerHouseID = 1
+        state.validateStrictIfZero = 1   // bypass terrain/adjacency (covered by placementAdjacency); isolate paint+free
+        state.tileIDs.builtSlab = 50
+        _ = state.houseAllocate(index: 1)
+        let combat = UnitCombat(movement: UnitMovement(scriptInfo: info))
+
+        let corner = Tile32.packXY(x: 10, y: 10)
+        let slot = state.structureAllocate(index: Pool.structureIndexInvalid,
+                                           type: UInt8(StructureType.slab2x2.rawValue))!
+        state.structures[slot].o.houseID = 1
+        state.structures[slot].o.flags.insert(.isNotOnMap)
+
+        #expect(combat.structurePlace(slot, position: corner, in: &state))
+        #expect(!state.structures[slot].o.flags.contains(.used))      // the structure was freed
+        #expect(state.structureGetByPackedTile(corner) == nil)        // ⇒ nothing selectable there
+        // The 2×2 footprint is painted as the owner's concrete (builtSlab) tiles — not a baked structure sprite.
+        let layout = StructureLayoutInfo[StructureInfo[.slab2x2].layout]
+        for i in 0 ..< Int(layout.tileCount) {
+            let p = Int(corner) + Int(layout.tiles[i])
+            #expect(state.map[p].groundTileID == 50)
+            #expect(state.map[p].houseID == 1)
+        }
+    }
+
     @Test("the Command seam routes build/cancel through UnitOrders")
     func commandSeam() {
         var simulation = self.sim()

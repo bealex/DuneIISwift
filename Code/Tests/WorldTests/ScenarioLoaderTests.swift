@@ -71,9 +71,13 @@ struct ScenarioLoaderTests {
         var state = GameState()
         state.loadScenario(ini: ini, iconMap: iconMap)
 
-        // [MAP] Bloom=2409 → that tile becomes the spice-bloom sprite.
+        // [MAP] Bloom=2409 → that tile shows the spice-bloom sprite…
         #expect(state.tileIDs.bloom != 0)
         #expect(state.map[2409].groundTileID == state.tileIDs.bloom)
+        // …but its BASE tile stays the generated sand, not the bloom — otherwise `Map_Bloom_ExplodeSpice`
+        // (which reverts groundTileID to `mapBaseTileID & 0x1FF`) would restore the bloom and it would never
+        // disappear when a unit detonates it.
+        #expect(state.mapBaseTileID[2409] & 0x1FF != state.tileIDs.bloom)
         // [BASIC] WinFlags/LoseFlags loaded; the level starts in progress.
         #expect(state.scenario.winFlags != 0)
         #expect(state.gameEndState == .playing)
