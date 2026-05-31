@@ -103,11 +103,12 @@ struct DebugPanel: View {
         Form {
             Toggle("Fog of war", isOn: Binding(get: { model.showFog }, set: { model.showFog = $0 }))
             Toggle("Show all economies", isOn: Binding(get: { model.showAllEconomies }, set: { model.showAllEconomies = $0 }))
-            Toggle("Health bars over units", isOn: Binding(get: { model.showHealthOverlay }, set: { model.showHealthOverlay = $0 }))
+            Toggle("Health bars (units + buildings)", isOn: Binding(get: { model.showHealthOverlay }, set: { model.showHealthOverlay = $0 }))
             if model.showHealthOverlay {
                 LabeledContent("State chip") {
                     HStack(spacing: 8) {
-                        chip(.green, "Move"); chip(.red, "Attack"); chip(.blue, "Guard"); chip(.orange, "Harvest")
+                        legend(RightTriangle(), .green, "Move"); legend(Diamond(), .red, "Attack")
+                        legend(Rectangle(), .blue, "Guard"); legend(Circle(), .orange, "Harvest")
                     }
                 }
                 Text("Idle units show no chip.").font(.caption).foregroundStyle(.secondary)
@@ -118,10 +119,30 @@ struct DebugPanel: View {
         .formStyle(.grouped)
     }
 
-    private func chip(_ color: Color, _ label: String) -> some View {
+    private func legend(_ shape: some Shape, _ color: Color, _ label: String) -> some View {
         HStack(spacing: 3) {
-            RoundedRectangle(cornerRadius: 1).fill(color).frame(width: 8, height: 8)
+            shape.fill(color).frame(width: 8, height: 8)
             Text(label).font(.caption2)
         }
+    }
+}
+
+/// A right-pointing triangle (the "move" state chip), matching `GameScene.chipStyle`.
+struct RightTriangle: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.minY)); p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
+        p.addLine(to: CGPoint(x: r.minX, y: r.maxY)); p.closeSubpath()
+        return p
+    }
+}
+
+/// A diamond (the "attack" state chip).
+struct Diamond: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.midX, y: r.minY)); p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
+        p.addLine(to: CGPoint(x: r.midX, y: r.maxY)); p.addLine(to: CGPoint(x: r.minX, y: r.midY)); p.closeSubpath()
+        return p
     }
 }

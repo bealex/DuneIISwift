@@ -34,7 +34,7 @@ final class GameModel {
     // Debug toggles (the Debug window binds these; the scene/economy/fog read them).
     var showFog = false { didSet { scene?.applyFog() } }
     var showAllEconomies = false
-    var showHealthOverlay = false
+    var showHealthOverlay = true   // health/state bars over units + buildings are on by default (a normal HUD element)
 
     // Derived per-frame info for the tool windows.
     private(set) var selection: SelectionInfo?
@@ -199,13 +199,21 @@ final class GameModel {
         return (Int(layout.size.width), Int(layout.size.height))
     }
 
-    func selectionTile() -> (Int, Int)? {
+    /// The selected entity's centre + size in **world pixels** (16 px/tile) for the selection outline. A
+    /// **unit** follows smoothly via its sub-tile `position` (no tile-to-tile jumping); a **structure** uses
+    /// its tile corner + footprint. `nil` when nothing live is selected.
+    func selectionBox() -> (centerX: Double, centerY: Double, width: Double, height: Double)? {
         guard let state = simulation?.state else { return nil }
+        let tile = 16.0
         switch controller.selection {
             case let .unit(slot) where slot < state.units.count && state.units[slot].o.flags.contains(.used):
-                let p = Int(state.units[slot].o.position.packed); return (p % 64, p / 64)
+                let p = state.units[slot].o.position
+                return (Double(p.x) * tile / 256, Double(p.y) * tile / 256, tile, tile)
             case let .structure(slot) where slot < state.structures.count && state.structures[slot].o.flags.contains(.used):
-                let p = Int(state.structures[slot].o.position.packed); return (p % 64, p / 64)
+                let (w, h) = selectionFootprint()
+                let cornerX = Double(state.structures[slot].o.position.x) * tile / 256
+                let cornerY = Double(state.structures[slot].o.position.y) * tile / 256
+                return (cornerX + Double(w) * tile / 2, cornerY + Double(h) * tile / 2, Double(w) * tile, Double(h) * tile)
             default: return nil
         }
     }

@@ -812,7 +812,14 @@ public extension GameState {
         }
 
         if type == 1 {
-            // SEAM: Tile_RemoveFogInRadius — the fog-unveil radius port is still pending.
+            // `Unit_UpdateMap` (`unit.c:2498`): a player-allied, non-sandworm unit lifts the player's fog
+            // (radius 1) on the tile it now occupies. This is the **continuous** reveal — it fires every
+            // time the unit steps onto a new tile (each move step re-stamps via `unitUpdateMap(1)`), not
+            // only when the unit's script happens to call `Script_Unit_RemoveFog`.
+            if House.areAllied(unitHouseID(u), playerHouseID, playerHouseID: playerHouseID),
+               u.o.type != UInt8(UnitType.sandworm.rawValue), !map[Int(packed)].isUnveiled {
+                tileRemoveFogInRadius(u.o.position, radius: 1)
+            }
             let occupied = map[Int(packed)].hasUnit || map[Int(packed)].hasStructure
             if !occupied {
                 map[Int(packed)].index = UInt8(truncatingIfNeeded: slot + 1)

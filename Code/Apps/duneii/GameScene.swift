@@ -13,6 +13,13 @@ import SpriteKit
 final class GameScene: SKScene {
     static let worldSidePx = Int(Viewport.worldSize)   // 1024
     private static let tileSize = 16
+    private static let barWidth = 7.0     // half the old 14 (user: "width 2x smaller")
+    private static let barHeight = 1.0    // half the old 2 (user: "height 2x smaller")
+
+    /// Temporary / projectile unit types that never get a health bar (bullets, rockets, sonic blasts).
+    private static let projectileTypes: Set<UnitType> = [
+        .missileHouse, .missileRocket, .missileTurret, .missileDeviator, .missileTrooper, .bullet, .sonicBlast,
+    ]
 
     private weak var model: GameModel?
     private let cam = SKCameraNode()
@@ -20,7 +27,7 @@ final class GameScene: SKScene {
     private let selectionNode = SKShapeNode()
     private let healthLayer = SKNode()
     private var healthBars: [SKSpriteNode] = []
-    private var stateChips: [SKSpriteNode] = []   // a small colour-coded action chip per health bar
+    private var stateChips: [SKShapeNode] = []   // a small shape+colour action chip per unit health bar
 
     init(model: GameModel) {
         self.model = model
@@ -75,70 +82,114 @@ final class GameScene: SKScene {
     // MARK: - Selection outline
 
     private func updateSelection() {
-        guard let model, let (tx, ty) = model.selectionTile() else { selectionNode.isHidden = true; return }
-        let (w, h) = model.selectionFootprint()
-        let originX = tx * Self.tileSize
-        let topY = Self.worldSidePx - (ty + h) * Self.tileSize
-        selectionNode.path = CGPath(rect: CGRect(x: originX, y: topY, width: w * Self.tileSize, height: h * Self.tileSize), transform: nil)
+        guard let model, let box = model.selectionBox() else { selectionNode.isHidden = true; return }
+        // Image space (y-down) → scene (y-up): the rect's bottom-left in scene coords.
+        let originX = box.centerX - box.width / 2
+        let bottomY = Double(Self.worldSidePx) - (box.centerY + box.height / 2)
+        selectionNode.path = CGPath(rect: CGRect(x: originX, y: bottomY, width: box.width, height: box.height), transform: nil)
         selectionNode.isHidden = false
     }
 
-    // MARK: - Health/state overlay (debug)
+    // MARK: - Health/state overlay
 
+    /// Health bars (+ unit state chips) over real units and buildings — never over bullets/rockets/effects.
     private func updateHealth(_ frame: FrameInfo, show: Bool) {
-        guard show else {
-            for bar in healthBars { bar.isHidden = true }
-            for chip in stateChips { chip.isHidden = true }
-            return
-        }
-        var used = 0
-        for unit in frame.units {
+        guard show else { hideAllHealth(); return }
+        let side = Double(Self.worldSidePx)
+        let tile = Double(Self.tileSize)
+        var usedBars = 0, usedChips = 0
+
+        // Real units (projectiles skipped). Smooth sub-tile position; bar a little above the sprite centre.
+        for unit in frame.units where !Self.projectileTypes.contains(unit.type) {
             let frac = unit.hitpointsMax > 0 ? Double(unit.hitpoints) / Double(unit.hitpointsMax) : 1
-            let cx = unit.positionX * Self.tileSize / 256
-            let barY = Double(Self.worldSidePx - unit.positionY * Self.tileSize / 256 + 10)   // above the sprite
+            let cx = Double(unit.positionX) * tile / 256
+            let cy = Double(unit.positionY) * tile / 256
+            let barLeft = cx - Self.barWidth / 2
+            let barY = side - (cy - 10)
+            placeBar(usedBars, left: barLeft, y: barY, width: Self.barWidth, frac: frac); usedBars += 1
 
-            let bar = pooledBar(used)
-            bar.size = CGSize(width: 14, height: 2)
-            bar.position = CGPoint(x: Double(cx), y: barY)
-            bar.color = frac > 0.66 ? .green : (frac > 0.33 ? .yellow : .red)
-            bar.xScale = max(0.05, CGFloat(frac))
-            bar.isHidden = false
-
-            // A small state chip just in front of (left of) the bar; idle shows none.
-            let chip = stateChips[used]
-            if let colour = Self.activityColour(unit.activity) {
-                chip.color = colour
-                chip.position = CGPoint(x: Double(cx) - 4, y: barY)
+            // A state chip (distinct shape + colour) just left of the bar; idle shows none.
+            if let (path, colour) = Self.chipStyle(unit.activity) {
+                let chip = pooledChip(usedChips); usedChips += 1
+                chip.path = path; chip.fillColor = colour; chip.strokeColor = colour
+                chip.position = CGPoint(x: barLeft - 4, y: barY)
                 chip.isHidden = false
-            } else {
-                chip.isHidden = true
             }
-            used += 1
         }
-        for i in used ..< healthBars.count { healthBars[i].isHidden = true }
-        for i in used ..< stateChips.count { stateChips[i].isHidden = true }
+
+        // Buildings: a footprint-width bar along the top edge.
+        for s in frame.structures {
+            let frac = s.hitpointsMax > 0 ? Double(s.hitpoints) / Double(s.hitpointsMax) : 1
+            let (w, _) = Self.structureFootprint(s.type)
+            let widthPx = Double(w) * tile
+            let cornerX = Double(s.positionX) * tile / 256
+            let cornerY = Double(s.positionY) * tile / 256
+            let barW = max(8, widthPx - 4)
+            placeBar(usedBars, left: cornerX + (widthPx - barW) / 2, y: side - (cornerY - 3), width: barW, frac: frac)
+            usedBars += 1
+        }
+
+        for i in usedBars ..< healthBars.count { healthBars[i].isHidden = true }
+        for i in usedChips ..< stateChips.count { stateChips[i].isHidden = true }
     }
 
-    /// idle → no chip; otherwise a colour per the user's scheme.
-    private static func activityColour(_ activity: FrameInfo.UnitActivity) -> NSColor? {
+    private func placeBar(_ i: Int, left: Double, y: Double, width: Double, frac: Double) {
+        let bar = pooledBar(i)
+        bar.size = CGSize(width: width, height: Self.barHeight)
+        bar.position = CGPoint(x: left, y: y)
+        bar.color = frac > 0.66 ? .green : (frac > 0.33 ? .yellow : .red)
+        bar.xScale = max(0.05, CGFloat(frac))   // depletes from the right (left-anchored)
+        bar.isHidden = false
+    }
+
+    private func hideAllHealth() {
+        for bar in healthBars { bar.isHidden = true }
+        for chip in stateChips { chip.isHidden = true }
+    }
+
+    /// idle → no chip; otherwise a distinct **shape + colour** per state (centred on the node origin):
+    /// move = green ▶ triangle, attack = red ◆ diamond, guard = blue ■ square, harvest = orange ● circle.
+    private static func chipStyle(_ activity: FrameInfo.UnitActivity) -> (CGPath, NSColor)? {
+        let r = 2.5
         switch activity {
-            case .idle:       return nil
-            case .attacking:  return .systemRed
-            case .guarding:   return .systemBlue
-            case .moving:     return .systemGreen
-            case .harvesting: return .systemOrange
+            case .idle: return nil
+            case .moving:
+                let p = CGMutablePath()
+                p.move(to: CGPoint(x: -r, y: -r)); p.addLine(to: CGPoint(x: r, y: 0)); p.addLine(to: CGPoint(x: -r, y: r)); p.closeSubpath()
+                return (p, .systemGreen)
+            case .attacking:
+                let p = CGMutablePath()
+                p.move(to: CGPoint(x: 0, y: r)); p.addLine(to: CGPoint(x: r, y: 0))
+                p.addLine(to: CGPoint(x: 0, y: -r)); p.addLine(to: CGPoint(x: -r, y: 0)); p.closeSubpath()
+                return (p, .systemRed)
+            case .guarding:
+                return (CGPath(rect: CGRect(x: -r, y: -r, width: 2 * r, height: 2 * r), transform: nil), .systemBlue)
+            case .harvesting:
+                return (CGPath(ellipseIn: CGRect(x: -r, y: -r, width: 2 * r, height: 2 * r), transform: nil), .systemOrange)
         }
+    }
+
+    private static func structureFootprint(_ type: StructureType) -> (Int, Int) {
+        let layout = StructureLayoutInfo[StructureInfo[type].layout]
+        return (Int(layout.size.width), Int(layout.size.height))
     }
 
     private func pooledBar(_ i: Int) -> SKSpriteNode {
         while i >= healthBars.count {
-            let bar = SKSpriteNode(color: .green, size: CGSize(width: 14, height: 2))
+            let bar = SKSpriteNode(color: .green, size: CGSize(width: Self.barWidth, height: Self.barHeight))
             bar.anchorPoint = CGPoint(x: 0, y: 0.5)
             healthBars.append(bar); healthLayer.addChild(bar)
-            let chip = SKSpriteNode(color: .systemBlue, size: CGSize(width: 4, height: 4))
-            stateChips.append(chip); healthLayer.addChild(chip)
         }
         return healthBars[i]
+    }
+
+    private func pooledChip(_ i: Int) -> SKShapeNode {
+        while i >= stateChips.count {
+            let chip = SKShapeNode()
+            chip.lineWidth = 0
+            stateChips.append(chip); healthLayer.addChild(chip)
+        }
+        return stateChips[i]
     }
 
     // MARK: - Input

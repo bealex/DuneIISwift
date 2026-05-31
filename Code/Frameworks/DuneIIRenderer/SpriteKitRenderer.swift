@@ -44,7 +44,7 @@ public final class SpriteKitRenderer {
 
     // Dynamic-terrain bookkeeping. Each cell's appearance is (ground, overlay, house); a cell gets a small
     // overlay node when it differs from the static background or pulses with the wind.
-    private struct CellAppearance: Equatable { var ground: Int; var overlay: Int; var house: UInt8 }
+    private struct CellAppearance: Equatable { var ground: Int; var overlay: Int; var house: UInt8; var fogEdge: Int }
     private var baseline: [CellAppearance] = []   // what each cell shows in the static background
     private var displayed: [CellAppearance] = []  // what each cell currently shows (overlay node or base)
     private var windCells: Set<Int> = []          // cells whose tile uses the wind-trap colour (223)
@@ -161,7 +161,16 @@ public final class SpriteKitRenderer {
     // MARK: - Terrain
 
     private func appearance(_ tile: FrameInfo.Tile) -> CellAppearance {
-        CellAppearance(ground: tile.groundSpriteIndex, overlay: tile.overlaySpriteIndex, house: tile.houseID)
+        // A cell's appearance for incremental repaint. The fog **edge** (the dithered soft boundary on a
+        // revealed tile bordering the unknown) must be tracked so a tile repaints when a *neighbour* is
+        // revealed and its edge changes — without it the soft edges go stale as units move. Only when
+        // `showFog`; off, the edge isn't drawn so it's pinned to 0.
+        // The binary veil (`overlay == veiledTileIndex`, a black cell) is already tracked via `overlay`; but
+        // with fog OFF a veiled overlay renders as plain ground (`cell()` skips it), so normalise it to 0 so
+        // a continuous fog reveal doesn't needlessly dirty every tile a unit drives past in the no-fog view.
+        let overlay = (!showFog && tile.overlaySpriteIndex == veiledTileIndex) ? 0 : tile.overlaySpriteIndex
+        return CellAppearance(ground: tile.groundSpriteIndex, overlay: overlay, house: tile.houseID,
+                              fogEdge: showFog ? tile.fogEdgeSpriteIndex : 0)
     }
 
     private func buildStaticBackground(_ frame: FrameInfo, palette: Palette) {
@@ -195,14 +204,16 @@ public final class SpriteKitRenderer {
             if tileUsesWind(app.ground) { windCells.insert(i) } else { windCells.remove(i) }
 
             // A cell needs an overlay node when it differs from the static background or pulses with the wind.
-            if app != baseline[i] || windCells.contains(i) {
-                guard let texture = tileTexture(frame.tiles[i], palette: palette) else { continue }
-                let node = overlayNodes[i] ?? makeCellNode(i)
-                node.texture = texture
-                overlayNodes[i] = node
-            } else if let node = overlayNodes.removeValue(forKey: i) {
-                node.removeFromParent()
-            }
+            // Once a cell has *ever* been dynamic we LATCH its overlay node — when it cycles back to the
+            // baseline appearance we keep the node (re-textured to the baseline tile) instead of removing it.
+            // Removing it hands the cell back to the big static-terrain texture, and the two render paths
+            // (per-cell 16px node vs. the map-sized background) don't land on exactly the same pixels under a
+            // fractional camera at zoom, so toggling between them made an animating tile (e.g. the
+            // construction yard's corner) jitter by a pixel frame-to-frame.
+            guard let texture = tileTexture(frame.tiles[i], palette: palette) else { continue }
+            let node = overlayNodes[i] ?? makeCellNode(i)
+            node.texture = texture
+            overlayNodes[i] = node
         }
     }
 
