@@ -37,7 +37,9 @@ public final class SpriteKitRenderer {
     public init(source: WorldSpriteSource, basePalette: Palette) {
         self.source = source
         self.basePalette = basePalette
-        self.colors = basePalette.colors
+        var seeded = basePalette.colors
+        PaletteAnimator.seedAnimatedColours(&seeded)    // no magenta windtrap-light flash at tick 0 (#4)
+        self.colors = seeded
     }
 
     /// The base side length in pixels of the composed world image (`terrainTileSize · 64`).
@@ -98,6 +100,7 @@ public final class SpriteKitRenderer {
         guard colors.count > PaletteAnimator.selectionIndex else { return false }
         if tick < lastTick {
             colors = basePalette.colors
+            PaletteAnimator.seedAnimatedColours(&colors)
             cycle = PaletteAnimator.CycleState()
             lastTick = 0
         }

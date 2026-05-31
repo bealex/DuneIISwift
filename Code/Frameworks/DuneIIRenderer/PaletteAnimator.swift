@@ -26,6 +26,19 @@ public enum PaletteAnimator {
         public init() {}
     }
 
+    /// Seed the animated indices to their cycle's initial reference colour, so they never show the raw
+    /// `IBM.PAL` magenta placeholder before cycling has run. OpenDUNE runs `GUI_PaletteAnimate` during the
+    /// load/fade before the map appears, so by the time the windtrap is visible index 223 has shifted
+    /// toward colour 12 — a from-scratch renderer must seed it instead, or the windtrap light starts
+    /// purple. 223 → entry 12 (windtrap `toggleColour`), 255 → entry 15 (selection), 239 → entry 15
+    /// (repair) — the initial reference colours in `GUI_PaletteAnimate` (`gui/gui.c:643`).
+    public static func seedAnimatedColours(_ colors: inout [Palette.Color]) {
+        guard colors.count > selectionIndex else { return }
+        colors[windTrapIndex] = colors[12]
+        colors[selectionIndex] = colors[15]
+        colors[repairIndex] = colors[15]
+    }
+
     /// The palette as it appears `tick` GUI ticks (1/60 s each) after `base`. A pure function: it
     /// replays the cycling from tick 0, so callers can drive it straight from elapsed time. **O(tick)** —
     /// fine for a one-off lookup (a single asset preview), but a per-frame world renderer should instead

@@ -57,6 +57,25 @@ struct RendererTests {
         #expect(PaletteAnimator.animatedPalette(base: base, tick: 5).colors[223] == Palette.Color(red: 9, green: 9, blue: 9))
     }
 
+    @Test("seedAnimatedColours replaces the magenta windtrap placeholder with its cycle reference (#4)")
+    func paletteSeed() throws {
+        var bytes = [UInt8](repeating: 0, count: 768)
+        bytes[12 * 3] = 9; bytes[12 * 3 + 1] = 9; bytes[12 * 3 + 2] = 9     // windtrap reference (entry 12)
+        bytes[15 * 3] = 30; bytes[15 * 3 + 1] = 30; bytes[15 * 3 + 2] = 30  // selection/repair reference
+        bytes[223 * 3] = 63; bytes[223 * 3 + 2] = 63                        // entry 223 = magenta placeholder
+        bytes[255 * 3] = 63; bytes[255 * 3 + 2] = 63
+        let base = try Palette(bytes: bytes)
+
+        // Raw: the windtrap light index is the magenta placeholder (the "purple start" bug).
+        #expect(base.colors[223] == Palette.Color(red: 63, green: 0, blue: 63))
+
+        var seeded = base.colors
+        PaletteAnimator.seedAnimatedColours(&seeded)
+        #expect(seeded[223] == base.colors[12])     // windtrap light seeded to entry 12, not magenta
+        #expect(seeded[255] == base.colors[15])
+        #expect(seeded[239] == base.colors[15])
+    }
+
     @Test("incremental stepTick reproduces animatedPalette exactly")
     func paletteIncremental() throws {
         var bytes = [UInt8](repeating: 0, count: 768)
