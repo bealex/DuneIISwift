@@ -135,7 +135,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 
 | Unit / behaviour | Status | Evidence / note |
 |---|---|---|
-| Harvester: harvest → return → dock → refine → redeploy | ✅ | natives 0x2A/0x29/0x33 + refinery dock (`GameState+Lifecycle.unitEnterStructure`) |
+| Harvester: harvest → return → dock → refine → redeploy | ◐ | harvest/return/dock/**refine**/**deploy** all work (the script-VM engine-copy fix, 2026-05-31); the deployed *empty* harvester then goes STOP instead of resuming HARVEST — `HarvesterCycleTests` + insight `sim-script-vm-engine-copy` |
 | Harvester death → spice spill (radius-5) | ✅ | `UnitMovement.damage` |
 | Carryall: pickup / transport / deliver / summon | ✅ | natives 0x22/0x14/0x1E/0x23 (`UnitCombat`) |
 | Carryall: harvester ferry (full→refinery, empty→spice) | ✅ | `UnitCombat` transport paths |

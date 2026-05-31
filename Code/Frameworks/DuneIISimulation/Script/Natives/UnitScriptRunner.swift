@@ -119,12 +119,25 @@ public struct UnitScriptRunner: Sendable {
         var executed = 0
         while executed < budget && engine.delay == 0 && interpreter.isLoaded(engine) {
             let ok = interpreter.run(&engine, info: scriptInfo) { index, eng in
-                dispatch(index, engine: &eng, state: &state, slot: slot)
+                // The VM runs on a *copy* of the engine, but some natives mutate this unit's **live** script
+                // through `state` — `Unit_SetAction` reloads it (new PC/variables), `Object_Script_Variable4_*`
+                // clears var-4. Without reconciling, the copy clobbers those on write-back (OpenDUNE shares
+                // one pointer). Sync VM→state before the call; if a native rewrote the live script, adopt it
+                // back into the VM — else keep the VM engine (eng-param natives like `moveToTarget` set
+                // delay/PC on `eng`, never on `state`). This is what unstuck the harvester's post-deploy
+                // HARVEST transition (see insight `sim-script-vm-engine-copy`).
+                let before = eng
+                state.units[slot].o.script = eng
+                let result = dispatch(index, engine: &eng, state: &state, slot: slot)
+                if state.units[slot].o.flags.contains(.used), state.units[slot].o.script != before {
+                    eng = state.units[slot].o.script
+                }
+                return result
             }
             executed += 1
             if !ok { break }
         }
-        state.units[slot].o.script = engine
+        if state.units[slot].o.flags.contains(.used) { state.units[slot].o.script = engine }
         return executed
     }
 }

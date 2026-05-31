@@ -75,7 +75,19 @@ public struct StructureScriptRunner: Sendable {
                 tracer.record(line.oracleFormat)
             }
             let ok = interpreter.run(&engine, info: scriptInfo) { index, eng in
-                dispatch(index, engine: &eng, state: &state, slot: slot)
+                // The VM runs on a *copy* of the engine, but a native may mutate this structure's **live**
+                // script through `state` (e.g. `Object_Script_Variable4_Clear` in the refinery's deploy
+                // path). Sync VM→state before the call; if a native rewrote the live script, adopt it back —
+                // else keep the VM engine (the delay native sets `eng.delay`, never `state`). Without this
+                // the copy clobbers the native's change on write-back and the refinery never deploys its
+                // harvester. OpenDUNE shares one pointer. See insight `sim-script-vm-engine-copy`.
+                let before = eng
+                state.structures[slot].o.script = eng
+                let result = dispatch(index, engine: &eng, state: &state, slot: slot)
+                if state.structures[slot].o.flags.contains(.used), state.structures[slot].o.script != before {
+                    eng = state.structures[slot].o.script
+                }
+                return result
             }
             executed += 1
             if !ok { break }
