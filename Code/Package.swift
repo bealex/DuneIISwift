@@ -101,7 +101,7 @@ let package = Package(
         // Native macOS SwiftUI asset inspector (render-test app). Builds via `swift run rendertest`.
         .executableTarget(
             name: "mapview",
-            dependencies: [ "DuneIISimulation", "DuneIIWorld", "DuneIIFormats", "DuneIIRenderer", "DuneIIContracts", "DuneIIInput" ],
+            dependencies: [ "DuneIISimulation", "DuneIIWorld", "DuneIIFormats", "DuneIIRenderer", "DuneIIContracts", "DuneIIInput", "DuneIIAudio" ],
             path: "Apps/mapview"
         ),
         .executableTarget(
@@ -126,6 +126,7 @@ let package = Package(
         // Tests (one per tested target; the DuneII prefix is dropped).
         .testTarget(name: "ContractsTests", dependencies: [ "DuneIIContracts" ], path: "Tests/ContractsTests"),
         .testTarget(name: "InputTests", dependencies: [ "DuneIIInput", "DuneIIContracts" ], path: "Tests/InputTests"),
+        .testTarget(name: "AudioTests", dependencies: [ "DuneIIAudio", "DuneIIContracts" ], path: "Tests/AudioTests"),
         .testTarget(name: "FormatsTests", dependencies: [ "DuneIIFormats" ], path: "Tests/FormatsTests"),
         .testTarget(name: "WorldTests", dependencies: [ "DuneIIWorld" ], path: "Tests/WorldTests", exclude: [ "Fixtures" ]),
         .testTarget(name: "SimulationTests", dependencies: [ "DuneIISimulation" ], path: "Tests/SimulationTests"),

@@ -28,6 +28,9 @@ final class MapScene: SKScene {
     /// Published whenever the selection / armed order / selected entity's stats change (the inspector reads it).
     var onStateChange: ((SelectionInfo?, OrderKind?) -> Void)?
     private var lastPublished: (SelectionInfo?, OrderKind?)?
+    /// Play a sound (instantly) — the model wires this to the audio sink. Demonstrates the low-latency,
+    /// multi-playable audio: a click feedback on select, an acknowledgement on an order.
+    var onSound: ((SoundID) -> Void)?
 
     func configure() {
         let side = CGFloat(Self.worldSidePx)
@@ -89,13 +92,19 @@ final class MapScene: SKScene {
 
     override func mouseDown(with event: NSEvent) {
         guard let (x, y) = tile(at: event) else { return }
-        controller.leftClick(tileX: x, tileY: y, hit: pick(tileX: x, tileY: y))
+        let hit = pick(tileX: x, tileY: y)
+        let wasArmedOrder = controller.pendingOrder != nil && controller.selection.unitSlot != nil
+        controller.leftClick(tileX: x, tileY: y, hit: hit)
+        if wasArmedOrder { onSound?(.acknowledge) }       // an inspector-armed order's target click
+        else if !hit.isEmpty { onSound?(.select) }        // selected something
         publishState()
     }
 
     override func rightMouseDown(with event: NSEvent) {
         guard let (x, y) = tile(at: event) else { return }
+        let willOrder = controller.selection.unitSlot != nil
         controller.rightClick(tileX: x, tileY: y, enemyTarget: isEnemyOfSelected(tileX: x, tileY: y))
+        if willOrder { onSound?(.acknowledge) }
         publishState()
     }
 
@@ -139,8 +148,8 @@ final class MapScene: SKScene {
 
     // MARK: - Inspector actions (forwarded from the model)
 
-    func beginOrder(_ kind: OrderKind) { controller.beginOrder(kind); publishState() }
-    func stopSelected() { controller.stopSelected(); publishState() }
+    func beginOrder(_ kind: OrderKind) { controller.beginOrder(kind); onSound?(.select); publishState() }
+    func stopSelected() { controller.stopSelected(); onSound?(.acknowledge); publishState() }
     func deselect() { controller.deselect(); publishState() }
 
     // MARK: - Selection highlight + publishing

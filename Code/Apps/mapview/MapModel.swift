@@ -1,3 +1,5 @@
+import DuneIIAudio
+import DuneIIContracts
 import DuneIIFormats
 import DuneIIInput
 import DuneIISimulation
@@ -20,6 +22,10 @@ final class MapModel {
     private(set) var selection: SelectionInfo?
     private(set) var pendingOrder: OrderKind?
 
+    /// Low-latency, polyphonic audio: feedback sounds play instantly on the player's clicks (and mix when
+    /// they overlap). Degrades to silent on a box with no audio device.
+    private let audio = EngineAudioSink()
+
     init(assets: AssetStore) {
         self.assets = assets
         scene.configure()
@@ -28,7 +34,22 @@ final class MapModel {
             self?.selection = info
             self?.pendingOrder = pending
         }
+        setupAudio()
         if let first = assets.scenarioNames.first { load(first) }
+    }
+
+    /// Pre-decode the feedback VOCs into the sink (no load latency at play time), start the engine, and
+    /// route the scene's `onSound` to it.
+    private func setupAudio() {
+        register("CLICK.VOC", as: .select)
+        register("AFFIRM.VOC", as: .acknowledge)
+        audio.start()
+        scene.onSound = { [weak self] id in self?.audio.play(SoundEvent(sound: id)) }
+    }
+
+    private func register(_ voc: String, as id: SoundID) {
+        guard let sound = assets.data(voc).flatMap({ try? Voc.decode($0) }) else { return }
+        audio.register(id, sampleRate: sound.sampleRate, pcm8: sound.samples)
     }
 
     // Inspector actions → the scene's input controller.
