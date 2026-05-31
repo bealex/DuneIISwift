@@ -1,0 +1,9 @@
+# A tile's overlay (wall / fog) is composited over the ground with index-0 transparency, and shares one slot
+
+**Finding:** `GFX_DrawTile` (`gfx.c:210`) draws a tile **opaquely for ground** but **transparently for overlays** — when the tile's icon palette entry 0 is 0 (true for walls and fog sprites), it skips colour-0 pixels (`if (left != 0) *wptr = left`), so the ground shows through. The viewport draws each cell as `GFX_DrawTile(groundTileID)` then `GFX_DrawTile(overlayTileID)` (`viewport.c:395-398`). The single `overlayTileID` slot holds **either** a wall (`g_wallTileID`, `map.c:386`) **or** the fog veil / a partial-fog edge sprite (`Map_UnveilTile_Neighbour`, `map.c:1293`) **or** 0.
+
+**Why it matters:** compositing an overlay by *replacing* the cell (opaque blit of the overlay tile) is wrong — a wall's transparent pixels would paint colour 0 instead of revealing the ground, and it blocks any future fog-edge rendering (fog sprites are mostly transparent). The shared slot also means partial-fog edges can't simply reuse `overlayTileID`: walls always render but fog edges must be gated by the renderer's `showFog` toggle, so faithful fog edges need a *separate* `FrameInfo` fog field, not the wall overlay.
+
+**Evidence:** `FrameComposer.cell` (`Frameworks/DuneIIRenderer/FrameComposer.swift`) composites the overlay over the ground, skipping index-0; `FrameComposerTests` "cell composes ground, overlay (walls), and fog" proves a half-transparent wall tile shows the ground through its transparent half. OpenDUNE: `gfx.c:210` (`GFX_DrawTile`), `gui/viewport.c:389-398`, `map.c:386` (wall in overlay), `map.c:1293` (`Map_UnveilTile_Neighbour`).
+
+**How to apply:** when compositing indexed tiles, treat index 0 as transparent for *overlay* tiles (walls, fog) and opaque for *ground* tiles, exactly like `GFX_DrawTile`'s `icon_palette[0] == 0` branch. Don't overload the wall overlay slot for fog edges — add a dedicated fog field to the render seam.

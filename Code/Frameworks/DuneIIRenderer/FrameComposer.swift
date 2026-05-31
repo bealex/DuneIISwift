@@ -78,11 +78,12 @@ public enum FrameComposer {
     public static let fogColourIndex: UInt8 = 12
 
     /// The composed `terrainTileSize²` indexed pixels for one map cell: the ground tile (house-recoloured
-    /// for an owned/structure tile; identity for terrain / Harkonnen), with the overlay tile drawn fully
-    /// on top when present (`GFX_DrawTile` is an opaque tile blit, so an overlay — walls — replaces the
-    /// cell), or — when the overlay is the **veil** and `showFog` is on — a solid black fog cell. A
-    /// veiled cell with `showFog` off shows its ground (the verification "debug scenario" view). Returns
-    /// `nil` if the ground tile id is unknown.
+    /// for an owned/structure tile; identity for terrain / Harkonnen), then any **non-veil overlay** (a
+    /// wall) drawn on top **with index-0 transparency** so the ground shows through the overlay's
+    /// transparent pixels (`GFX_DrawTile`, `gfx.c:210` — overlay/wall tiles skip colour 0). When the
+    /// overlay is the **veil** and `showFog` is on, the cell is a solid black fog square; with `showFog`
+    /// off a veiled cell shows its ground (the verification "debug scenario" view). Returns `nil` if the
+    /// ground tile id is unknown.
     public static func cell(_ tile: FrameInfo.Tile, veiledTileIndex: Int, showFog: Bool,
                             source: WorldSpriteSource) -> [UInt8]? {
         let ts = source.terrainTileSize
@@ -90,13 +91,20 @@ public enum FrameComposer {
         if showFog && tile.overlaySpriteIndex != 0 && tile.overlaySpriteIndex == veiledTileIndex {
             return [UInt8](repeating: fogColourIndex, count: ts * ts)
         }
-        // A non-veil overlay (walls) replaces the cell; otherwise the ground tile.
-        let isOverlay = tile.overlaySpriteIndex != 0 && tile.overlaySpriteIndex != veiledTileIndex
-        let tileId = isOverlay ? tile.overlaySpriteIndex : tile.groundSpriteIndex
-        guard let pixels = source.terrainTile(tileId), pixels.count >= ts * ts else { return nil }
+        guard let ground = source.terrainTile(tile.groundSpriteIndex), ground.count >= ts * ts else { return nil }
         // House-recolour owned (structure / house-coloured wall) tiles; terrain / Harkonnen is identity.
-        guard let house = tile.houseID == 0 ? nil : House(rawValue: Int(tile.houseID)) else { return pixels }
-        return pixels.map { HouseRemap.tile($0, house: house) }
+        let house = tile.houseID == 0 ? nil : House(rawValue: Int(tile.houseID))
+        func recolour(_ p: UInt8) -> UInt8 { house.map { HouseRemap.tile(p, house: $0) } ?? p }
+
+        var out = house == nil ? ground : ground.map(recolour)
+        // Composite a non-veil overlay (a wall) over the ground: GFX_DrawTile blits the overlay tile with
+        // colour-0 transparency, so only its non-zero pixels overwrite the ground (the rest shows through).
+        let overlayId = tile.overlaySpriteIndex
+        if overlayId != 0, overlayId != veiledTileIndex,
+           let overlay = source.terrainTile(overlayId), overlay.count >= ts * ts {
+            for i in 0 ..< (ts * ts) where overlay[i] != 0 { out[i] = recolour(overlay[i]) }
+        }
+        return out
     }
 
     /// The full-map ground layer as a `side × side` indexed buffer (`side = terrainTileSize · mapWidth`,

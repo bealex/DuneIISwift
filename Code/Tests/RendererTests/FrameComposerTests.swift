@@ -12,7 +12,11 @@ struct FrameComposerTests {
     private struct FakeSource: WorldSpriteSource {
         var terrainTileSize: Int { 4 }
         func terrainTile(_ id: Int) -> [UInt8]? {
-            id == 0 ? nil : [UInt8](repeating: UInt8(truncatingIfNeeded: id), count: 16)
+            if id == 0 { return nil }
+            // Tile 7 is a "wall": its top half is opaque (id 7), its bottom half transparent (index 0),
+            // so the overlay-composite test can see the ground show through the transparent pixels.
+            if id == 7 { return [UInt8](repeating: 7, count: 8) + [UInt8](repeating: 0, count: 8) }
+            return [UInt8](repeating: UInt8(truncatingIfNeeded: id), count: 16)
         }
         func unitFrame(globalIndex: Int) -> SpriteFrame? {
             globalIndex < 111 ? nil
@@ -88,9 +92,12 @@ struct FrameComposerTests {
         let ground = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 0, houseID: 0, isUnveiled: true)
         #expect(FrameComposer.cell(ground, veiledTileIndex: 99, showFog: false, source: src)?.allSatisfy { $0 == 5 } == true)
 
-        // A non-veil overlay (id 7, a wall) replaces the cell.
+        // A non-veil overlay (id 7, a wall) composites over the ground with index-0 transparency: the
+        // wall's opaque top half overwrites with 7, its transparent bottom half shows the ground (5).
         let walled = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 7, houseID: 0, isUnveiled: true)
-        #expect(FrameComposer.cell(walled, veiledTileIndex: 99, showFog: false, source: src)?.allSatisfy { $0 == 7 } == true)
+        let composed = try #require(FrameComposer.cell(walled, veiledTileIndex: 99, showFog: false, source: src))
+        #expect(composed.prefix(8).allSatisfy { $0 == 7 })
+        #expect(composed.suffix(8).allSatisfy { $0 == 5 })
 
         // A veiled cell (overlay == veil id) → black (index 12) with fog on, ground with fog off.
         let veiled = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 99, houseID: 0, isUnveiled: false)

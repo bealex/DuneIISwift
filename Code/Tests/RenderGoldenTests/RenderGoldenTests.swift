@@ -18,6 +18,9 @@ struct RenderGoldenTests {
         .init("scena001-base-t0", scenario: "SCENA001.INI", tick: 0, rect: (26, 21, 14, 12)),
         .init("scena001-base-t60", scenario: "SCENA001.INI", tick: 60, rect: (26, 21, 14, 12)),
         .init("scena001-base-fog-t60", scenario: "SCENA001.INI", tick: 60, rect: (26, 21, 14, 12), fog: true),
+        // A richer multi-structure enemy base: house-recoloured structures (red Harkonnen vs blue Atreides
+        // player), concrete slabs, walls (the transparent overlay composite), infantry + vehicles.
+        .init("scena005-base-t40", scenario: "SCENA005.INI", tick: 40, rect: (38, 40, 18, 14)),
     ]
 
     static var recording: Bool { ProcessInfo.processInfo.environment["DUNEII_RENDER_RECORD"] != nil }
