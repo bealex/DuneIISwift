@@ -127,6 +127,14 @@ public extension GameState {
             packed = UInt16(clamping: Int(parts[3]) ?? 0)
         }
 
+        // Slabs and walls aren't persistent structures — `Structure_Place` stamps them into the map and
+        // frees the object (they have no script, so nothing would ever stamp them later). Place + return.
+        switch type {
+            case .slab1x1, .slab2x2: placeSlab(type, houseID: UInt8(house.rawValue), at: packed); return
+            case .wall:              placeWall(houseID: UInt8(house.rawValue), at: packed); return
+            default: break
+        }
+
         guard let i = structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(type.rawValue))
         else { return }
         structures[i].o.houseID = UInt8(house.rawValue)
