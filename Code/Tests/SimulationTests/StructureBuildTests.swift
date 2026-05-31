@@ -101,6 +101,36 @@ struct StructureBuildTests {
         #expect(simulation.state.structures[cy].objectType == 0xFFFF)
     }
 
+    @Test("each placed refinery spawns its own harvester (a 2nd refinery ⇒ a 2nd harvester)")
+    func refineryHarvesterPerPlacement() {
+        var s = GameState(random256Seed: 0x55, randomLCGSeed: 0x55)
+        s.playerHouseID = 0
+        _ = s.houseAllocate(index: 0); s.houses[0].unitCountMax = 100
+        s.houses[0].structuresBuilt = 0xFFFFFF; s.houses[0].credits = 5000; s.campaignID = 9
+        let combat = UnitCombat(movement: UnitMovement(scriptInfo: info))
+
+        func placeRefinery(at corner: UInt16) {
+            let cy = addFactory(&s, .constructionYard)
+            #expect(combat.structureBuildObject(slot: cy, objectType: UInt16(StructureType.refinery.rawValue), in: &s))
+            s.structures[cy].countDown = 0; s.structures[cy].state = .ready
+            // Default map tiles are concrete (groundTileID 0 == builtSlab 0) ⇒ terrain valid; mark the north
+            // ring tile player-owned so the adjacency rule passes.
+            s.map[Int(corner) - 64].houseID = 0
+            #expect(combat.structurePlaceReady(factory: cy, position: corner, in: &s))
+        }
+
+        // Count via the find array (not `unitFind`, which skips in-transport units) — the fresh harvester
+        // rides its carryall toward the refinery, so it's off-map (`isNotOnMap`).
+        func harvesterCount() -> Int {
+            s.unitFindArray.filter { s.units[Int($0)].o.type == UInt8(UnitType.harvester.rawValue) }.count
+        }
+
+        placeRefinery(at: Tile32.packXY(x: 10, y: 10))
+        #expect(harvesterCount() == 1)
+        placeRefinery(at: Tile32.packXY(x: 30, y: 30))
+        #expect(harvesterCount() == 2)   // the fix: the 2nd refinery gets its own harvester (not gated on the 1st)
+    }
+
     @Test("placeReady refuses when the factory isn't ready")
     func placeNotReady() {
         var simulation = self.sim()

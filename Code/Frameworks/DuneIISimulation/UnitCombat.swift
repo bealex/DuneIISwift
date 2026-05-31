@@ -375,8 +375,8 @@ public struct UnitCombat: Sendable {
     /// two place steps — the STR_PLACE_IT release (`widget_click.c:101`: take the linked product, clear the
     /// factory's `linkedID`) and the viewport place (`viewport.c:205`: `Structure_Place` it, spawn a
     /// refinery's harvester). Returns false (leaving the factory `.ready`) if the spot is invalid, so the
-    /// caller can keep placement mode for another click. A placed refinery gets the house's first harvester
-    /// via `houseEnsureHarvesterAvailable` (the per-refinery `Unit_CreateWrapper` spawn is a minor seam).
+    /// caller can keep placement mode for another click. **Each** placed refinery spawns its own harvester,
+    /// ferried to it (`viewport.c:210`), so a 2nd/3rd refinery each get one.
     @discardableResult
     public func structurePlaceReady(factory slot: Int, position: UInt16, in state: inout GameState) -> Bool {
         guard slot >= 0, slot < state.structures.count,
@@ -393,8 +393,21 @@ public struct UnitCombat: Sendable {
         state.structures[slot].objectType = 0xFFFF
         state.structures[slot].countDown = 0
         state.structureSetState(slot, .idle)
+        // A placed refinery spawns its OWN harvester, ferried to it — per refinery, NOT gated on the house
+        // already having one (`viewport.c:210`: `Unit_CreateWrapper(playerHouse, HARVESTER, encode(refinery))`).
+        // Pool-full ⇒ queue it as `harvestersIncoming` (the house tick retries). The placement bypasses strict
+        // validation (`g_validateStrictIfZero++`), and the harvester remembers its origin refinery.
         if placedType == .refinery && state.validateStrictIfZero == 0 {
-            houseEnsureHarvesterAvailable(houseID: state.structures[product].o.houseID, in: &state)
+            let houseID = state.structures[product].o.houseID
+            let encoded = state.indexEncode(state.structures[product].o.index, type: .structure)
+            state.validateStrictIfZero &+= 1
+            let harvester = unitCreateWrapper(houseID: houseID, type: .harvester, destination: encoded, in: &state)
+            state.validateStrictIfZero &-= 1
+            if let harvester {
+                state.units[harvester].originEncoded = encoded
+            } else {
+                state.houses[Int(houseID)].harvestersIncoming &+= 1
+            }
         }
         return true
     }
