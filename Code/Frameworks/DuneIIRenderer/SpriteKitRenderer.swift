@@ -29,18 +29,23 @@ public final class SpriteKitRenderer {
     private let spritesLayer = SKNode()           // units + effects (pooled nodes)
 
     // Caches (kept for the renderer's whole life — memory is cheap, recolorizing isn't).
-    private struct TileKey: Hashable { let tileId: Int; let houseID: UInt8; let windColour: Int }
+    private struct TileKey: Hashable { let tileId: Int; let overlayId: Int; let houseID: UInt8; let windColour: Int; let fog: Bool }
     private struct SpriteKey: Hashable { let index: Int; let house: Int; let flipped: Bool; let flippedV: Bool }
     private var tileCache: [TileKey: SKTexture] = [:]
     private var tileUsesWindCache: [Int: Bool] = [:]
     private var spriteCache: [SpriteKey: SKTexture] = [:]
     private var spritePool: [SKSpriteNode] = []
 
-    // Dynamic-terrain bookkeeping.
-    private var baselineGround: [Int] = []        // the tile id each cell shows in the static background
-    private var baselineHouse: [UInt8] = []       // the owning house each cell shows in the static background
-    private var displayedGround: [Int] = []       // the tile id each cell currently shows (overlay or base)
-    private var displayedHouse: [UInt8] = []      // the owning house each cell currently shows
+    /// Whether to render fog of war (black out veiled cells). Off by default — the verification UI shows
+    /// the whole landscape (OpenDUNE's "debug scenario" view); flip on to verify fog-reveal behaviour.
+    public var showFog: Bool
+    private var veiledTileIndex = 0
+
+    // Dynamic-terrain bookkeeping. Each cell's appearance is (ground, overlay, house); a cell gets a small
+    // overlay node when it differs from the static background or pulses with the wind.
+    private struct CellAppearance: Equatable { var ground: Int; var overlay: Int; var house: UInt8 }
+    private var baseline: [CellAppearance] = []   // what each cell shows in the static background
+    private var displayed: [CellAppearance] = []  // what each cell currently shows (overlay node or base)
     private var windCells: Set<Int> = []          // cells whose tile uses the wind-trap colour (223)
     private var overlayNodes: [Int: SKSpriteNode] = [:]
     private var initialized = false
@@ -53,15 +58,52 @@ public final class SpriteKitRenderer {
     private var tileSize = 16
     private var mapWidth = 64
 
-    public init(source: WorldSpriteSource, basePalette: Palette) {
+    public init(source: WorldSpriteSource, basePalette: Palette, showFog: Bool = false) {
         self.source = source
         self.basePalette = basePalette
+        self.showFog = showFog
         var seeded = basePalette.colors
         PaletteAnimator.seedAnimatedColours(&seeded)    // no magenta windtrap-light flash at tick 0 (#4)
         self.colours = seeded
     }
 
     public var worldSidePx: Int { source.terrainTileSize * 64 }
+
+    /// A lazily-built off-screen scene the renderer's nodes are attached to for `snapshot(_:crop:)`. A node
+    /// has one parent, so once a renderer is used for capture it must not also be `attach`ed to a live app
+    /// scene (and vice versa) — capture renderers are dedicated.
+    private var captureScene: SKScene?
+
+    /// Render `frame` through the real pipeline and capture the result as a `CGImage` — the whole 64×64
+    /// world at base scale (`worldSidePx` square), optionally cropped to an **image-space** rect (origin
+    /// top-left, y-down; e.g. tile `(tx,ty)` of size `(w,h)` is `CGRect(tx·ts, ty·ts, w·ts, h·ts)` with
+    /// `ts = terrainTileSize`). This drives the *same* nodes/textures/z-order/palette/fog as the on-screen
+    /// renderer (it is the real renderer, not a parallel rasterizer), so a headless run can pause at any
+    /// tick and snapshot any region for a rendering test or a reference PNG. Returns `nil` if the platform
+    /// can't provide an off-screen GPU context (e.g. a no-GPU CI box) — SpriteKit-backed, so it runs on a
+    /// real Mac. The typical headless flow keeps a `NullRenderer` for the run and swaps in a dedicated
+    /// `SpriteKitRenderer` only to capture.
+    public func snapshot(_ frame: FrameInfo, crop: CGRect? = nil) -> CGImage? {
+        let side = CGFloat(worldSidePx)
+        let scene: SKScene
+        if let captureScene {
+            scene = captureScene
+        } else {
+            let s = SKScene(size: CGSize(width: side, height: side))
+            s.anchorPoint = .zero
+            s.scaleMode = .fill
+            s.backgroundColor = .black
+            attach(to: s)
+            captureScene = s
+            scene = s
+        }
+        render(frame)
+        let view = SKView(frame: CGRect(x: 0, y: 0, width: side, height: side))
+        guard let texture = view.texture(from: scene) else { return nil }
+        let full = texture.cgImage()
+        guard let crop else { return full }
+        return full.cropping(to: crop)
+    }
 
     /// Add the renderer's nodes to a scene once (static terrain at z 0, dynamic overlay above it, sprites on top).
     public func attach(to scene: SKScene) {
@@ -71,6 +113,16 @@ public final class SpriteKitRenderer {
         for node in [terrainNode as SKNode, overlayLayer, spritesLayer] where node.parent == nil {
             scene.addChild(node)
         }
+    }
+
+    /// Force the static terrain layer to recomposite on the next render — call after changing `showFog`
+    /// (or any map-wide render setting) so the change takes effect. Drops the dynamic overlay nodes (they
+    /// rebuild from the fresh baseline) and redraws immediately.
+    public func rebuildTerrain(_ frame: FrameInfo) {
+        for node in overlayNodes.values { node.removeFromParent() }
+        overlayNodes.removeAll()
+        initialized = false
+        render(frame)
     }
 
     /// Draw one frame: advance the palette, build the static background + dynamic-cell set once, then per
@@ -93,41 +145,42 @@ public final class SpriteKitRenderer {
 
     // MARK: - Terrain
 
+    private func appearance(_ tile: FrameInfo.Tile) -> CellAppearance {
+        CellAppearance(ground: tile.groundSpriteIndex, overlay: tile.overlaySpriteIndex, house: tile.houseID)
+    }
+
     private func buildStaticBackground(_ frame: FrameInfo, palette: Palette) {
+        veiledTileIndex = frame.veiledTileIndex
         let side = tileSize * frame.mapWidth
-        let buffer = FrameComposer.terrainBuffer(frame, source: source)
+        let buffer = FrameComposer.terrainBuffer(frame, source: source, showFog: showFog)
         if let image = IndexedImage.cgImage(indices: buffer, width: side, height: side, palette: palette) {
             terrainNode.texture = nearest(image)
             terrainNode.size = CGSize(width: side, height: side)
             terrainNode.position = CGPoint(x: side / 2, y: side / 2)
         }
-        baselineGround = frame.tiles.map { $0.groundSpriteIndex }
-        baselineHouse = frame.tiles.map { $0.houseID }
-        displayedGround = baselineGround
-        displayedHouse = baselineHouse
+        baseline = frame.tiles.map(appearance)
+        displayed = baseline
         windCells = []
-        for i in baselineGround.indices where tileUsesWind(baselineGround[i]) { windCells.insert(i) }
+        for i in baseline.indices where tileUsesWind(baseline[i].ground) { windCells.insert(i) }
     }
 
     private func updateDynamicTerrain(_ frame: FrameInfo, palette: Palette, windColour: Int) {
-        // The cells to revisit this frame: any whose tile id or owning house changed, plus every wind cell
-        // when the wind-trap colour moved. Everything else is already correct on the static background.
+        // The cells to revisit this frame: any whose appearance (ground / overlay / house) changed, plus
+        // every wind cell when the wind-trap colour moved. Everything else is already correct on the static
+        // background.
         var dirty: Set<Int> = []
-        let n = min(frame.tiles.count, displayedGround.count)
-        for i in 0 ..< n where frame.tiles[i].groundSpriteIndex != displayedGround[i]
-            || frame.tiles[i].houseID != displayedHouse[i] { dirty.insert(i) }
+        let n = min(frame.tiles.count, displayed.count)
+        for i in 0 ..< n where appearance(frame.tiles[i]) != displayed[i] { dirty.insert(i) }
         if windColour != lastWindColour { dirty.formUnion(windCells) }
 
         for i in dirty {
-            let tileId = frame.tiles[i].groundSpriteIndex
-            let houseID = frame.tiles[i].houseID
-            displayedGround[i] = tileId
-            displayedHouse[i] = houseID
-            if tileUsesWind(tileId) { windCells.insert(i) } else { windCells.remove(i) }
+            let app = appearance(frame.tiles[i])
+            displayed[i] = app
+            if tileUsesWind(app.ground) { windCells.insert(i) } else { windCells.remove(i) }
 
-            // A cell needs an overlay when it differs from the static background or pulses with the wind.
-            if tileId != baselineGround[i] || houseID != baselineHouse[i] || windCells.contains(i) {
-                guard let texture = tileTexture(tileId, houseID: houseID, palette: palette) else { continue }
+            // A cell needs an overlay node when it differs from the static background or pulses with the wind.
+            if app != baseline[i] || windCells.contains(i) {
+                guard let texture = tileTexture(frame.tiles[i], palette: palette) else { continue }
                 let node = overlayNodes[i] ?? makeCellNode(i)
                 node.texture = texture
                 overlayNodes[i] = node
@@ -149,16 +202,15 @@ public final class SpriteKitRenderer {
         return node
     }
 
-    private func tileTexture(_ tileId: Int, houseID: UInt8, palette: Palette) -> SKTexture? {
-        let usesWind = tileUsesWind(tileId)
-        let key = TileKey(tileId: tileId, houseID: houseID, windColour: usesWind ? packedWindColour() : 0)
+    private func tileTexture(_ tile: FrameInfo.Tile, palette: Palette) -> SKTexture? {
+        let usesWind = tileUsesWind(tile.groundSpriteIndex)
+        let key = TileKey(tileId: tile.groundSpriteIndex, overlayId: tile.overlaySpriteIndex,
+                          houseID: tile.houseID, windColour: usesWind ? packedWindColour() : 0, fog: showFog)
         if let cached = tileCache[key] { return cached }
-        guard let pixels = source.terrainTile(tileId) else { return nil }
-        // House-recolour an owned (structure) tile; terrain / Harkonnen is identity.
-        let remap: (UInt8) -> UInt8 = houseID == 0 ? { $0 }
-            : House(rawValue: Int(houseID)).map { house in { HouseRemap.tile($0, house: house) } } ?? { $0 }
-        guard let image = IndexedImage.cgImage(indices: pixels.map(remap), width: tileSize,
-                                               height: tileSize, palette: palette) else { return nil }
+        // The cell pixels — ground + overlay (walls) or a black fog cell — exactly as the static buffer.
+        guard let pixels = FrameComposer.cell(tile, veiledTileIndex: veiledTileIndex, showFog: showFog, source: source),
+              let image = IndexedImage.cgImage(indices: pixels, width: tileSize, height: tileSize, palette: palette)
+        else { return nil }
         let texture = nearest(image)
         tileCache[key] = texture
         return texture

@@ -82,4 +82,20 @@ public enum PngWriter {
         )
         try data.write(to: url)
     }
+
+    /// Encode an already-rendered `CGImage` (e.g. a `SpriteKitRenderer.snapshot`) to PNG data.
+    public static func encode(image: CGImage) throws -> Data {
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output as CFMutableData, UTType.png.identifier as CFString, 1, nil
+        ) else { throw WriteError.encodeFailed }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { throw WriteError.encodeFailed }
+        return output as Data
+    }
+
+    /// Write an already-rendered `CGImage` to `url` as PNG.
+    public static func write(image: CGImage, to url: URL) throws {
+        try encode(image: image).write(to: url)
+    }
 }

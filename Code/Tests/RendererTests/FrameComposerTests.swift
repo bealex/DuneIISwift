@@ -29,6 +29,19 @@ struct FrameComposerTests {
                          viewportX: 0, viewportY: 0)
     }
 
+    @Test("DecodedSpriteSource resolves through GlobalSprite; empty source is safely nil")
+    func decodedSpriteSource() {
+        // No assets: a sprite-only stub. terrainTileSize falls back to 16; every lookup is nil rather than
+        // a crash — the headless/test path can construct a source incrementally.
+        let empty = DecodedSpriteSource(tileSet: nil, sheets: [:])
+        #expect(empty.terrainTileSize == 16)
+        #expect(empty.terrainTile(0) == nil)
+        #expect(empty.terrainTile(238) == nil)
+        // A global index with no backing sheet resolves to nil (GlobalSprite maps it, the sheet is absent).
+        #expect(empty.unitFrame(globalIndex: 238) == nil)
+        #expect(empty.unitFrame(globalIndex: 0) == nil)        // below the unit base → GlobalSprite nil
+    }
+
     @Test("GlobalSprite maps a global index to its sheet + frame via the Sprites_Init bases")
     func globalSprite() {
         #expect(GlobalSprite.unit(110) == nil)                       // below the unit base
@@ -66,6 +79,40 @@ struct FrameComposerTests {
         #expect(buf[4 * side + 8] == 9 && buf[7 * side + 11] == 9)
         // An untouched tile stays 0.
         #expect(buf[0] == 0)
+    }
+
+    @Test("cell composes ground, overlay (walls), and fog")
+    func cellComposition() throws {
+        let src = FakeSource()
+        // No overlay → ground tile id 5 (terrain, no remap).
+        let ground = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 0, houseID: 0, isUnveiled: true)
+        #expect(FrameComposer.cell(ground, veiledTileIndex: 99, showFog: false, source: src)?.allSatisfy { $0 == 5 } == true)
+
+        // A non-veil overlay (id 7, a wall) replaces the cell.
+        let walled = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 7, houseID: 0, isUnveiled: true)
+        #expect(FrameComposer.cell(walled, veiledTileIndex: 99, showFog: false, source: src)?.allSatisfy { $0 == 7 } == true)
+
+        // A veiled cell (overlay == veil id) → black (index 12) with fog on, ground with fog off.
+        let veiled = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 99, houseID: 0, isUnveiled: false)
+        #expect(FrameComposer.cell(veiled, veiledTileIndex: 99, showFog: true, source: src)?
+            .allSatisfy { $0 == FrameComposer.fogColourIndex } == true)
+        #expect(FrameComposer.cell(veiled, veiledTileIndex: 99, showFog: false, source: src)?.allSatisfy { $0 == 5 } == true)
+
+        // An owned overlay is house-remapped (tile 0x91 → +16 for Atreides).
+        let ownedWall = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 0x91, houseID: 1, isUnveiled: true)
+        #expect(FrameComposer.cell(ownedWall, veiledTileIndex: 99, showFog: false, source: src)?.first == 161)
+    }
+
+    @Test("terrainBuffer blacks out veiled cells only when fog is on")
+    func terrainBufferFog() {
+        let blank = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 99, houseID: 0, isUnveiled: false)
+        let frame = FrameInfo(tick: 0, mapWidth: 3, mapHeight: 2,
+                              tiles: [FrameInfo.Tile](repeating: blank, count: 6), units: [], structures: [],
+                              effects: [], houses: [], viewportX: 0, viewportY: 0, veiledTileIndex: 99)
+        // Fog off → ground (5) everywhere.
+        #expect(FrameComposer.terrainBuffer(frame, source: FakeSource(), showFog: false).allSatisfy { $0 == 5 })
+        // Fog on → black (12) everywhere.
+        #expect(FrameComposer.terrainBuffer(frame, source: FakeSource(), showFog: true).allSatisfy { $0 == FrameComposer.fogColourIndex })
     }
 
     @Test("terrain house-remaps an owned (structure) tile; Harkonnen/terrain is identity")
@@ -123,6 +170,43 @@ struct FrameComposerTests {
         // No flip is the identity; degenerate sizes are returned unchanged.
         #expect(SpriteKitRenderer.mirror(src, width: 3, height: 2, horizontal: false, vertical: false) == src)
         #expect(SpriteKitRenderer.mirror([9], width: 0, height: 0, horizontal: true, vertical: true) == [9])
+    }
+
+    @Test("air units (wingers) draw on top of ground units and effects")
+    func airUnitZOrder() throws {
+        let ground = FrameInfo.Unit(
+            id: 0, type: .tank, house: .atreides, positionX: 256, positionY: 256,
+            body: SpriteLayer(spriteIndex: 113), turret: nil, isSmoking: false,
+            isAirUnit: false, hitpoints: 50, hitpointsMax: 100)
+        let air = FrameInfo.Unit(
+            id: 1, type: .carryall, house: .atreides, positionX: 256, positionY: 256,
+            body: SpriteLayer(spriteIndex: 120), turret: nil, isSmoking: false,
+            isAirUnit: true, hitpoints: 50, hitpointsMax: 100)
+        let smoke = FrameInfo.Effect(positionX: 256, positionY: 256, sprite: SpriteLayer(spriteIndex: 182))
+        let sprites = FrameComposer.sprites(emptyFrame(units: [ground, air], effects: [smoke]), source: FakeSource())
+
+        let groundBody = try #require(sprites.first { $0.spriteIndex == 113 })
+        let airBody = try #require(sprites.first { $0.spriteIndex == 120 })
+        let fx = try #require(sprites.first { $0.spriteIndex == 182 })
+        #expect(airBody.z == FrameComposer.ZOrder.airBody)
+        #expect(airBody.z > fx.z)                    // air above explosions/smoke
+        #expect(airBody.z > groundBody.z)            // air above ground units
+        #expect(fx.z > groundBody.z)                 // explosions above ground units
+    }
+
+    @Test("harvester overlay composes house-neutral, between body and turret")
+    func harvestOverlay() throws {
+        let harvester = FrameInfo.Unit(
+            id: 0, type: .harvester, house: .ordos, positionX: 256, positionY: 256,
+            body: SpriteLayer(spriteIndex: 120),
+            turret: nil, overlay: SpriteLayer(spriteIndex: 0xDF, offsetX: 0, offsetY: 7),
+            isSmoking: false, isAirUnit: false, hitpoints: 50, hitpointsMax: 100)
+        let sprites = FrameComposer.sprites(emptyFrame(units: [harvester]), source: FakeSource())
+        let overlay = try #require(sprites.first { $0.z == FrameComposer.ZOrder.overlay })
+        #expect(overlay.spriteIndex == 0xDF)
+        #expect(overlay.house == nil)                                 // drawn without the house palette
+        #expect(overlay.centerY == 4 + 7)                             // 1 tile = 4px, + the y offset
+        #expect(overlay.z > FrameComposer.ZOrder.body && overlay.z < FrameComposer.ZOrder.turret)
     }
 
     @Test("effects compose house-neutral above units")

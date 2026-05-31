@@ -20,16 +20,24 @@ public extension Simulation {
         var units = [FrameInfo.Unit]()
         var effects = [FrameInfo.Effect]()
         for u in state.units where u.o.flags.contains(.used) {
+            // Hidden units (in transport, inside a structure, off-map) are never drawn by `viewport.c`;
+            // drawing them leaves a phantom at the unit's stale position (e.g. a harvester frozen at its
+            // pickup spot while the carryall flies off, or a carried harvester showing before the drop).
+            if u.o.flags.contains(.isNotOnMap) { continue }
             guard let type = UnitType(rawValue: Int(u.o.type)) else { continue }
             // Sandworm shimmer (`blurTile`) is not a normal SHP draw — omit it.
             if UnitInfo[type].o.flags.contains(.blurTile) { continue }
-            guard let sprites = UnitSprites.info(for: u) else { continue }
+            // The harvesting overlay is gated on the harvester standing on a spice tile.
+            let landscape = mapPrimitives.landscapeType(state.map[Int(u.o.position.packed)], tileIDs: state.tileIDs)
+            let onSpice = landscape == .spice || landscape == .thickSpice
+            guard let sprites = UnitSprites.info(for: u, onSpice: onSpice) else { continue }
             let house = HouseID(rawValue: Int(state.unitHouseID(u))) ?? .harkonnen
             let isSmoking = u.o.flags.contains(.isSmoking)
             units.append(FrameInfo.Unit(
                 id: u.o.index, type: type, house: house,
                 positionX: Int(u.o.position.x), positionY: Int(u.o.position.y),
-                body: sprites.body, turret: sprites.turret, isSmoking: isSmoking,
+                body: sprites.body, turret: sprites.turret, overlay: sprites.overlay, isSmoking: isSmoking,
+                isAirUnit: UnitInfo[type].movementType == .winger,
                 hitpoints: Int(u.o.hitpoints), hitpointsMax: Int(UnitInfo[type].o.hitpoints)))
 
             // Smoke cloud over a damaged-but-alive vehicle, 14px above the unit centre
@@ -73,6 +81,7 @@ public extension Simulation {
             tick: state.timerGame, mapWidth: width, mapHeight: height,
             tiles: tiles, units: units, structures: structures, effects: effects, houses: houses,
             viewportX: Int(Tile32.packedX(state.viewportPosition)) * 256,
-            viewportY: Int(Tile32.packedY(state.viewportPosition)) * 256)
+            viewportY: Int(Tile32.packedY(state.viewportPosition)) * 256,
+            veiledTileIndex: Int(state.tileIDs.veiled))
     }
 }

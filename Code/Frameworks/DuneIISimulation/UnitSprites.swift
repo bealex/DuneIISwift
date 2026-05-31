@@ -6,10 +6,19 @@ import DuneIIWorld
 /// is the global value OpenDUNE's `viewport.c` computes.
 public typealias UnitSpriteLayer = SpriteLayer
 
-/// The body (+ optional turret) sprite layers for a unit.
+/// The body (+ optional turret + optional harvesting overlay) sprite layers for a unit.
 public struct UnitSpriteInfo: Equatable, Sendable {
     public let body: UnitSpriteLayer
     public let turret: UnitSpriteLayer?
+    /// The harvester "harvesting" overlay (`viewport.c:546`); non-nil only for a harvester actively
+    /// harvesting on a spice tile.
+    public let overlay: UnitSpriteLayer?
+
+    public init(body: UnitSpriteLayer, turret: UnitSpriteLayer?, overlay: UnitSpriteLayer? = nil) {
+        self.body = body
+        self.turret = turret
+        self.overlay = overlay
+    }
 }
 
 /// Resolves the sprite layers to draw for a unit — a port of the per-unit drawing in OpenDUNE's
@@ -38,6 +47,9 @@ public enum UnitSprites {
          (0, 2), (3, 3), (2, 3), (3, 3), (4, 1), (3, 1), (2, 1), (1, 1)]
     /// `values_33AE` — ornithopter rotor sub-frame for `spriteOffset & 3`.
     static let ornithopterRotor = [2, 1, 0, 1]
+    /// `values_334E` — the harvesting-overlay pixel offset per orientation (`viewport.c:546`).
+    static let harvestOverlayOffset: [(Int, Int)] =
+        [(0, 7), (-7, 6), (-14, 1), (-9, -6), (0, -9), (9, -6), (14, 1), (7, 6)]
     /// `values_336E` — siege-tank turret pixel offset per orientation.
     static let siegeTurretOffset: [(Int, Int)] =
         [(0, -5), (0, -5), (2, -3), (2, -1), (-1, -3), (-2, -1), (-2, -3), (-1, -5)]
@@ -45,7 +57,10 @@ public enum UnitSprites {
     static let devastatorTurretOffset: [(Int, Int)] =
         [(0, -4), (-1, -3), (2, -4), (0, -3), (-1, -3), (0, -3), (-2, -4), (1, -3)]
 
-    public static func info(for unit: Unit) -> UnitSpriteInfo? {
+    /// `onSpice` tells the resolver the harvester is standing on a spice / thick-spice tile — the
+    /// landscape gate for the harvesting overlay (`viewport.c:546`). The caller resolves the landscape
+    /// type (`UnitSprites` has no map); it is ignored for non-harvesters.
+    public static func info(for unit: Unit, onSpice: Bool = false) -> UnitSpriteInfo? {
         guard let type = UnitType(rawValue: Int(unit.o.type)) else { return nil }
         let info = UnitInfo[type]
 
@@ -104,7 +119,20 @@ public enum UnitSprites {
             let (dx, dy) = turretOffset(info.turretSpriteID, turretO8)
             turret = UnitSpriteLayer(spriteIndex: Int(info.turretSpriteID) + offset, flipped: flip, offsetX: dx, offsetY: dy)
         }
-        return UnitSpriteInfo(body: body, turret: turret)
+
+        // Harvesting overlay (`viewport.c:546`): a harvester actively harvesting (`actionID == HARVEST`,
+        // `spriteOffset >= 0`) on a spice tile draws a third layer above its body — sprite
+        // `(spriteOffset % 3) + 0xDF + values_32A4[o8].offset * 3`, offset by `values_334E[o8]`, with the
+        // body's horizontal flip. `spriteOffset % 3` animates the gather; the caller advances `spriteOffset`.
+        var overlay: UnitSpriteLayer?
+        if onSpice && type == .harvester && unit.spriteOffset >= 0
+            && unit.actionID == UInt8(ActionType.harvest.rawValue) {
+            let (dirOffset, dirFlip) = directional[bodyO8]
+            let (ox, oy) = harvestOverlayOffset[bodyO8]
+            overlay = UnitSpriteLayer(spriteIndex: (Int(unit.spriteOffset) % 3) + 0xDF + dirOffset * 3,
+                                      flipped: dirFlip, offsetX: ox, offsetY: oy)
+        }
+        return UnitSpriteInfo(body: body, turret: turret, overlay: overlay)
     }
 
     /// The per-type turret pixel offset (`viewport.c`'s switch on `turretSpriteID`).

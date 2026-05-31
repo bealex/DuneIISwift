@@ -70,6 +70,37 @@ struct UnitSpriteTests {
         #expect(east.body.spriteIndex == 311 + 3)
     }
 
+    @Test("harvester harvesting overlay (viewport.c:546): on spice + ACTION_HARVEST only")
+    func harvestingOverlay() throws {
+        func harvester(orientation: Int8, action: ActionType, spriteOffset: Int8) -> Unit {
+            var u = unit(.harvester, orientation: orientation)
+            u.actionID = UInt8(action.rawValue)
+            u.spriteOffset = spriteOffset
+            return u
+        }
+        // Harvesting on spice, North (o8 0): overlay index = (spriteOffset % 3) + 0xDF + values_32A4[0]*3,
+        // offset values_334E[0] = (0, 7), the body's H-flip (none for North).
+        let north = try #require(UnitSprites.info(for: harvester(orientation: 0, action: .harvest, spriteOffset: 2),
+                                                  onSpice: true)?.overlay)
+        #expect(north == UnitSpriteLayer(spriteIndex: (2 % 3) + 0xDF, flipped: false, offsetX: 0, offsetY: 7))
+        // The frame animates with spriteOffset % 3 (0,1,2,0,…).
+        for offset in Int8(0) ... 5 {
+            let ov = try #require(UnitSprites.info(for: harvester(orientation: 0, action: .harvest, spriteOffset: offset),
+                                                   onSpice: true)?.overlay)
+            #expect(ov.spriteIndex == 0xDF + Int(offset) % 3)
+        }
+        // East (o8 2): values_32A4[2] = (2, false) → +2*3 = +6; offset values_334E[2] = (-14, 1).
+        let east = try #require(UnitSprites.info(for: harvester(orientation: 64, action: .harvest, spriteOffset: 0),
+                                                 onSpice: true)?.overlay)
+        #expect(east == UnitSpriteLayer(spriteIndex: 0xDF + 6, flipped: false, offsetX: -14, offsetY: 1))
+        // No overlay off spice, nor while not harvesting, nor with a negative (death) spriteOffset.
+        #expect(UnitSprites.info(for: harvester(orientation: 0, action: .harvest, spriteOffset: 0), onSpice: false)?.overlay == nil)
+        #expect(UnitSprites.info(for: harvester(orientation: 0, action: .move, spriteOffset: 0), onSpice: true)?.overlay == nil)
+        #expect(UnitSprites.info(for: harvester(orientation: 0, action: .harvest, spriteOffset: -1), onSpice: true)?.overlay == nil)
+        // A non-harvester on spice never gets the overlay.
+        #expect(UnitSprites.info(for: unit(.tank), onSpice: true)?.overlay == nil)
+    }
+
     @Test("body sprite matches OpenDUNE's viewport.c formula (ground + air pass) for EVERY unit × 8 dirs")
     func everyUnitEightDirections() throws {
         // The exact viewport.c tables — re-derived here independently of `UnitSprites` so a divergence is

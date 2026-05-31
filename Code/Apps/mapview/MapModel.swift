@@ -11,6 +11,7 @@ final class MapModel {
     let scene = MapScene()
     private(set) var currentScenario: String?
     var scale: Int = 2 { didSet { scene.setZoom(CGFloat(scale)) } }
+    var showFog: Bool = false { didSet { scene.showFog = showFog } }
 
     init(assets: AssetStore) {
         self.assets = assets

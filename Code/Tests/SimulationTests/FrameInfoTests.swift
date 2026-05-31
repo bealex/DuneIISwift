@@ -72,6 +72,13 @@ struct FrameInfoTests {
         #expect(f.viewportX == 3 * 256 && f.viewportY == 4 * 256)
     }
 
+    @Test("the veil tile id is carried for the renderer's fog test")
+    func veiledTileIndex() {
+        var sim = scene()
+        sim.state.tileIDs.veiled = 41
+        #expect(sim.makeFrameInfo().veiledTileIndex == 41)
+    }
+
     @Test("terrain tile surfaces ground + overlay + fog")
     func terrain() {
         let f = scene().makeFrameInfo()
@@ -153,6 +160,47 @@ struct FrameInfoTests {
         // Folding: spriteOffset 3 → frame 183 → 181.
         sim.state.units[0].spriteOffset = 3
         #expect(sim.makeFrameInfo().effects.contains { $0.sprite.spriteIndex == 181 })
+    }
+
+    @Test("hidden (isNotOnMap) units are omitted — no phantom at a stale position")
+    func hiddenUnitOmitted() {
+        var sim = scene()
+        sim.state.units[0].o.flags.insert(.isNotOnMap)     // e.g. a harvester carried in a carryall
+        #expect(sim.makeFrameInfo().units.isEmpty)
+    }
+
+    @Test("a carryall is flagged as an air unit for the renderer's z-order")
+    func airUnitFlag() throws {
+        var sim = scene()
+        sim.state.units[0].o.type = UInt8(UnitType.carryall.rawValue)
+        let u = try #require(sim.makeFrameInfo().units.first)
+        #expect(u.isAirUnit)
+        #expect(try #require(sim.makeFrameInfo().units.first { $0.type == .carryall }).isAirUnit)
+    }
+
+    @Test("a harvester harvesting on spice surfaces the overlay layer; off spice it does not")
+    func harvesterOverlay() throws {
+        var sim = scene()
+        // Synthetic tile ids so the harvester's tile resolves to LST_SPICE: landscape base 100, the spice
+        // sprite offset is 49 (`landscapeSpriteMap[49] == 8`), wall/slab/bloom kept out of range.
+        sim.state.tileIDs.landscape = 100
+        sim.state.tileIDs.wall = 1000
+        sim.state.tileIDs.builtSlab = 0xFFFE
+        sim.state.tileIDs.bloom = 0xFFFD
+        sim.state.tileIDs.veiled = 0xFFFC
+        let packed = Int(sim.state.units[0].o.position.packed)
+        sim.state.map[packed].groundTileID = 149          // 100 + 49 → spice
+        sim.state.units[0].o.type = UInt8(UnitType.harvester.rawValue)
+        sim.state.units[0].orientation[0].current = 0
+        sim.state.units[0].actionID = UInt8(ActionType.harvest.rawValue)
+        sim.state.units[0].spriteOffset = 1
+
+        let overlay = try #require(sim.makeFrameInfo().units.first?.overlay)
+        #expect(overlay.spriteIndex == 0xDF + 1)          // (spriteOffset % 3) + 0xDF, North
+
+        // Move it onto rock (offset 0 → normalSand is 0; use a tile far outside the landscape range → rock).
+        sim.state.map[packed].groundTileID = 50           // offset -50 → entirelyRock, not spice
+        #expect(sim.makeFrameInfo().units.first?.overlay == nil)
     }
 
     @Test("sandworm shimmer (blurTile) is omitted from the unit list")

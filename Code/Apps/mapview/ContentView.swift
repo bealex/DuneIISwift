@@ -27,6 +27,9 @@ struct ContentView: View {
                     }
                     .pickerStyle(.segmented)
                 }
+                ToolbarItem(placement: .automatic) {
+                    Toggle("Fog", isOn: $model.showFog)
+                }
             }
             .overlay(alignment: .top) {
                 if let error = model.assets.error, !error.isEmpty {

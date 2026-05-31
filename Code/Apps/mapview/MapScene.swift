@@ -29,11 +29,21 @@ final class MapScene: SKScene {
 
     func setZoom(_ factor: CGFloat) { cam.setScale(1 / max(factor, 1)) }
 
+    /// Toggle fog of war. Off (default) shows the whole landscape (the verification "debug" view); on blacks
+    /// out veiled cells, so you can verify the sim's fog-reveal behaviour. Forces a terrain recomposite.
+    var showFog: Bool = false {
+        didSet {
+            guard let renderer, let simulation, showFog != oldValue else { return }
+            renderer.showFog = showFog
+            renderer.rebuildTerrain(simulation.makeFrameInfo())
+        }
+    }
+
     func load(simulation: Simulation, assets: AssetStore) {
         self.simulation = simulation
         for child in children where child !== cam { child.removeFromParent() }
 
-        let renderer = SpriteKitRenderer(source: MapSpriteSource(assets: assets), basePalette: assets.palette)
+        let renderer = SpriteKitRenderer(source: MapSpriteSource.make(assets: assets), basePalette: assets.palette)
         renderer.attach(to: self)
         renderer.render(simulation.makeFrameInfo())
         self.renderer = renderer

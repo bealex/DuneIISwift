@@ -30,9 +30,13 @@ public struct FrameInfo: Sendable, Equatable {
     public var viewportX: Int
     public var viewportY: Int
 
+    /// The tile id that means "fully veiled" (`g_veiledTileID`). A tile whose `overlaySpriteIndex` equals
+    /// this is under full fog; the renderer fills it black when fog display is enabled. 0 = no fog model.
+    public var veiledTileIndex: Int
+
     public init(tick: UInt32, mapWidth: Int, mapHeight: Int, tiles: [Tile], units: [Unit],
                 structures: [Structure], effects: [Effect], houses: [House],
-                viewportX: Int, viewportY: Int) {
+                viewportX: Int, viewportY: Int, veiledTileIndex: Int = 0) {
         self.tick = tick
         self.mapWidth = mapWidth
         self.mapHeight = mapHeight
@@ -43,6 +47,7 @@ public struct FrameInfo: Sendable, Equatable {
         self.houses = houses
         self.viewportX = viewportX
         self.viewportY = viewportY
+        self.veiledTileIndex = veiledTileIndex
     }
 
     /// One map cell: the ground icon, an optional overlay (spice/walls), and the player-fog state.
@@ -73,13 +78,20 @@ public struct FrameInfo: Sendable, Equatable {
         public var positionY: Int
         public var body: SpriteLayer
         public var turret: SpriteLayer?
+        /// The harvester "harvesting" overlay layer (`viewport.c:546`), drawn above the body while a
+        /// harvester is actively harvesting on a spice tile; `nil` for every other unit/state.
+        public var overlay: SpriteLayer?
         public var isSmoking: Bool
+        /// An air unit (`movementType == winger`: carryall, ornithopter, frigate, the missiles). Air units
+        /// are drawn in a separate pass **on top of** ground units + explosions (`viewport.c`), so the
+        /// renderer z-orders them above everything else.
+        public var isAirUnit: Bool
         public var hitpoints: Int
         public var hitpointsMax: Int
 
         public init(id: UInt16, type: UnitType, house: HouseID, positionX: Int, positionY: Int,
-                    body: SpriteLayer, turret: SpriteLayer?, isSmoking: Bool,
-                    hitpoints: Int, hitpointsMax: Int) {
+                    body: SpriteLayer, turret: SpriteLayer?, overlay: SpriteLayer? = nil, isSmoking: Bool,
+                    isAirUnit: Bool = false, hitpoints: Int, hitpointsMax: Int) {
             self.id = id
             self.type = type
             self.house = house
@@ -87,7 +99,9 @@ public struct FrameInfo: Sendable, Equatable {
             self.positionY = positionY
             self.body = body
             self.turret = turret
+            self.overlay = overlay
             self.isSmoking = isSmoking
+            self.isAirUnit = isAirUnit
             self.hitpoints = hitpoints
             self.hitpointsMax = hitpointsMax
         }

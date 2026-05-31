@@ -29,6 +29,7 @@ let package = Package(
         .executable(name: "duneii-headless", targets: [ "duneii-headless" ]),
         .executable(name: "rendertest", targets: [ "rendertest" ]),
         .executable(name: "mapview", targets: [ "mapview" ]),
+        .executable(name: "rendercap", targets: [ "rendercap" ]),
         .executable(name: "scenariolab", targets: [ "scenariolab" ]),
     ],
     targets: [
@@ -107,6 +108,13 @@ let package = Package(
             name: "rendertest",
             dependencies: [ "DuneIIFormats", "DuneIIRenderer", "DuneIIExport" ],
             path: "Apps/rendertest"
+        ),
+        // Headless render-capture tool: run a scenario to a tick, snapshot a region via the real renderer → PNG.
+        .executableTarget(
+            name: "rendercap",
+            dependencies: [ "DuneIIContracts", "DuneIIFormats", "DuneIIWorld", "DuneIISimulation",
+                            "DuneIIRenderer", "DuneIIExport" ],
+            path: "Apps/rendercap"
         ),
         // Behavioural scenario lab — pick a terrain/units/scenario, run it, assess visually (1×–16×).
         .executableTarget(

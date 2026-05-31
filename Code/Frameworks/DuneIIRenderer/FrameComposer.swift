@@ -60,35 +60,61 @@ public struct ComposedSprite: Equatable, Sendable {
 /// indexed buffer (buildings are baked into the ground tiles); units + effects become `ComposedSprite`s.
 /// No CoreGraphics, no palette — fully headless-testable. See `Documentation/Architecture/Renderer.md`.
 public enum FrameComposer {
-    /// Image-space draw orders (smaller = drawn first / further back).
+    /// Image-space draw orders (smaller = drawn first / further back). Mirrors `viewport.c`'s draw passes:
+    /// terrain → ground units (body, harvest overlay, turret) → explosions/smoke → air units, drawn last
+    /// on top of everything.
     public enum ZOrder {
         public static let terrain = 0
         public static let body = 1
-        public static let turret = 2
-        public static let effect = 3
+        public static let overlay = 2     // harvester "harvesting" layer, above the body
+        public static let turret = 3
+        public static let effect = 4      // explosions + smoke, above ground units
+        public static let airBody = 5     // winger units (carryall/ornithopter/frigate/missiles) on top
+        public static let airTurret = 6
+    }
+
+    /// The palette index OpenDUNE fills a fully-veiled tile with (`GUI_DrawFilledRectangle(..., 12)`,
+    /// `viewport.c:390`).
+    public static let fogColourIndex: UInt8 = 12
+
+    /// The composed `terrainTileSize²` indexed pixels for one map cell: the ground tile (house-recoloured
+    /// for an owned/structure tile; identity for terrain / Harkonnen), with the overlay tile drawn fully
+    /// on top when present (`GFX_DrawTile` is an opaque tile blit, so an overlay — walls — replaces the
+    /// cell), or — when the overlay is the **veil** and `showFog` is on — a solid black fog cell. A
+    /// veiled cell with `showFog` off shows its ground (the verification "debug scenario" view). Returns
+    /// `nil` if the ground tile id is unknown.
+    public static func cell(_ tile: FrameInfo.Tile, veiledTileIndex: Int, showFog: Bool,
+                            source: WorldSpriteSource) -> [UInt8]? {
+        let ts = source.terrainTileSize
+        // Fully-veiled cell: a black square (OpenDUNE never draws the veil sprite, it fills colour 12).
+        if showFog && tile.overlaySpriteIndex != 0 && tile.overlaySpriteIndex == veiledTileIndex {
+            return [UInt8](repeating: fogColourIndex, count: ts * ts)
+        }
+        // A non-veil overlay (walls) replaces the cell; otherwise the ground tile.
+        let isOverlay = tile.overlaySpriteIndex != 0 && tile.overlaySpriteIndex != veiledTileIndex
+        let tileId = isOverlay ? tile.overlaySpriteIndex : tile.groundSpriteIndex
+        guard let pixels = source.terrainTile(tileId), pixels.count >= ts * ts else { return nil }
+        // House-recolour owned (structure / house-coloured wall) tiles; terrain / Harkonnen is identity.
+        guard let house = tile.houseID == 0 ? nil : House(rawValue: Int(tile.houseID)) else { return pixels }
+        return pixels.map { HouseRemap.tile($0, house: house) }
     }
 
     /// The full-map ground layer as a `side × side` indexed buffer (`side = terrainTileSize · mapWidth`,
-    /// row-major, y-down). Out-of-range tile ids are left as index 0.
-    public static func terrainBuffer(_ frame: FrameInfo, source: WorldSpriteSource) -> [UInt8] {
+    /// row-major, y-down). Composes ground + overlay + fog per cell (see `cell`). Out-of-range / unknown
+    /// tile ids are left as index 0. `showFog` blacks out veiled cells; off (default) shows the landscape.
+    public static func terrainBuffer(_ frame: FrameInfo, source: WorldSpriteSource, showFog: Bool = false) -> [UInt8] {
         let ts = source.terrainTileSize
         let side = ts * frame.mapWidth
         var buffer = [UInt8](repeating: 0, count: side * (ts * frame.mapHeight))
         for ty in 0 ..< frame.mapHeight {
             for tx in 0 ..< frame.mapWidth {
                 let tile = frame.tiles[ty * frame.mapWidth + tx]
-                guard let pixels = source.terrainTile(tile.groundSpriteIndex), pixels.count >= ts * ts
+                guard let pixels = cell(tile, veiledTileIndex: frame.veiledTileIndex, showFog: showFog, source: source)
                 else { continue }
-                // House-recolour owned (structure) tiles; terrain / Harkonnen (houseID 0) is identity.
-                let house = tile.houseID == 0 ? nil : House(rawValue: Int(tile.houseID))
                 let ox = tx * ts, oy = ty * ts
                 for py in 0 ..< ts {
                     let row = (oy + py) * side + ox
-                    if let house {
-                        for px in 0 ..< ts { buffer[row + px] = HouseRemap.tile(pixels[py * ts + px], house: house) }
-                    } else {
-                        for px in 0 ..< ts { buffer[row + px] = pixels[py * ts + px] }
-                    }
+                    for px in 0 ..< ts { buffer[row + px] = pixels[py * ts + px] }
                 }
             }
         }
@@ -106,17 +132,28 @@ public enum FrameComposer {
         for u in frame.units {
             let house = House(rawValue: u.house.rawValue)
             let cx = imageX(u.positionX), cy = imageY(u.positionY)
+            // Air units (wingers) draw on top of ground units + explosions (a separate `viewport.c` pass).
+            let bodyZ = u.isAirUnit ? ZOrder.airBody : ZOrder.body
+            let turretZ = u.isAirUnit ? ZOrder.airTurret : ZOrder.turret
             if let body = source.unitFrame(globalIndex: u.body.spriteIndex) {
                 result.append(ComposedSprite(spriteIndex: u.body.spriteIndex, frame: body,
                                              centerX: cx + u.body.offsetX, centerY: cy + u.body.offsetY,
                                              flipped: u.body.flipped, flippedV: u.body.flippedV,
-                                             house: house, z: ZOrder.body))
+                                             house: house, z: bodyZ))
+            }
+            // The harvesting overlay is drawn without the house palette (`viewport.c:546` — its
+            // `GetSprite_HousePalette` call is commented out), so it is house-neutral.
+            if let overlay = u.overlay, let frame = source.unitFrame(globalIndex: overlay.spriteIndex) {
+                result.append(ComposedSprite(spriteIndex: overlay.spriteIndex, frame: frame,
+                                             centerX: cx + overlay.offsetX, centerY: cy + overlay.offsetY,
+                                             flipped: overlay.flipped, flippedV: overlay.flippedV,
+                                             house: nil, z: ZOrder.overlay))
             }
             if let turret = u.turret, let frame = source.unitFrame(globalIndex: turret.spriteIndex) {
                 result.append(ComposedSprite(spriteIndex: turret.spriteIndex, frame: frame,
                                              centerX: cx + turret.offsetX, centerY: cy + turret.offsetY,
                                              flipped: turret.flipped, flippedV: turret.flippedV,
-                                             house: house, z: ZOrder.turret))
+                                             house: house, z: turretZ))
             }
         }
 
