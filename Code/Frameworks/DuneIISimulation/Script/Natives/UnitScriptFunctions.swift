@@ -292,16 +292,26 @@ public struct UnitScriptFunctions: Sendable {
         return 0
     }
 
-    /// `Script_Unit_StartAnimation` (op 0x04, `script/unit.c:1475`): start the unit's death/corpse
-    /// animation at its tile. We perform the deterministic state effects (stop any animation on the tile +
-    /// claim the tile's `houseID`) and return 1 so the DIE branch proceeds to `Unit_Die` — but the corpse
-    /// itself (`Animation_Start(g_table_animation_unitScript1/2[…])`) is a SEAM: it is an **overlay**
-    /// animation, which the headless viewer doesn't render (overlay tiles are a render seam), and ticking
-    /// it would draw RNG the oracle's scenario harness never ticks. The unit is removed by the next op.
+    /// `Script_Unit_StartAnimation` (op 0x04, `script/unit.c:1475`): start the dying unit's **corpse**
+    /// overlay animation at its tile — it lingers ~1200 ticks (two `PAUSE 600`s) before `STOP` clears it.
+    /// Row 0/1 = on sand, 2/3 = on rock (`variables[1] == 1` adds 2); 3-frame infantry use `unitScript1`,
+    /// other foot units `unitScript2`. The corpse rides the map's overlay tile (icon group 4). The
+    /// animation is RNG-free to *start* (golden-safe); only `animationTick` (gated by `tickAnimations`)
+    /// advances it. The next opcode (`Unit_Die`) removes the unit, so the corpse outlives the body.
     public func startAnimation(slot: Int, in state: inout GameState) -> UInt16 {
-        let packed = state.units[slot].o.position.centered.packed
-        state.animationStopByTile(packed)
-        state.map[Int(packed)].houseID = state.unitHouseID(state.units[slot])
+        let position = state.units[slot].o.position
+        let packed = Int(position.packed)
+        state.animationStopByTile(position.centered.packed)
+        let houseID = state.unitHouseID(state.units[slot])
+        state.map[packed].houseID = houseID
+
+        guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 1 }
+        let lst = DefaultMapPrimitives().landscapeType(state.map[packed], tileIDs: state.tileIDs)
+        var row = LandscapeInfo[lst].isSand ? 0 : 1
+        if state.units[slot].o.script.variables[1] == 1 { row += 2 }
+        let kind: AnimationKind = UnitInfo[ut].displayMode == .infantry3Frames ? .unitScript1 : .unitScript2
+        state.animationStart(tableIndex: row, tile: position, tileLayout: 0, houseID: houseID,
+                             iconGroup: 4, kind: kind)
         return 1
     }
 

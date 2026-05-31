@@ -22,8 +22,14 @@ private func cmd(_ command: AnimationCommand, _ parameter: Int16) -> AnimationCo
     AnimationCommandStruct(command, parameter)
 }
 
+/// Which command table an animation runs: a structure's ground-cycle (`g_table_animation_structure`) or a
+/// dead unit's corpse overlay (`g_table_animation_unitScript1` for 3-frame infantry, `…unitScript2` else).
+public enum AnimationKind: UInt8, Sendable, Equatable {
+    case structure, unitScript1, unitScript2
+}
+
 /// An active animation instance. A port of OpenDUNE's `Animation` (`src/animation.c`); lives in the
-/// `GameState.animations` pool. `tableIndex` is the row of `AnimationTables.structure` it runs
+/// `GameState.animations` pool. `tableIndex` is the row of the `kind`'s command table it runs
 /// (`active == false` means a free slot).
 public struct Animation: Sendable, Equatable {
     public var tickNext: UInt32 = 0
@@ -31,7 +37,8 @@ public struct Animation: Sendable, Equatable {
     public var houseID: UInt8 = 0
     public var current: UInt8 = 0          // cursor into the command list
     public var iconGroup: UInt8 = 0
-    public var tableIndex: Int = -1        // row in AnimationTables.structure
+    public var tableIndex: Int = -1        // row in the `kind`'s command table
+    public var kind: AnimationKind = .structure
     public var tile: Tile32 = Tile32(x: 0, y: 0)
     public var active = false
     public init() {}
@@ -70,5 +77,23 @@ public enum AnimationTables {
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
+    ]
+
+    /// `g_table_animation_unitScript1[4]` (`table/animation.c:66`) — the corpse overlay for a 3-frame
+    /// infantry unit (soldier/trooper). Rows 0/1 = on sand, 2/3 = on rock (`variables[1] == 1` adds 2).
+    public static let unitScript1: [[AnimationCommandStruct]] = [
+        [ cmd(.setOverlayTile, 0), cmd(.pause, 600), cmd(.setOverlayTile, 1), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 0), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 4), cmd(.playVoice, 35), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 5), cmd(.playVoice, 35), cmd(.pause, 600), cmd(.stop, 0) ],
+    ]
+
+    /// `g_table_animation_unitScript2[4]` (`table/animation.c:93`) — the corpse overlay for the other foot
+    /// units (4-frame infantry/troopers).
+    public static let unitScript2: [[AnimationCommandStruct]] = [
+        [ cmd(.setOverlayTile, 2), cmd(.pause, 600), cmd(.setOverlayTile, 3), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 2), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 4), cmd(.playVoice, 35), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 5), cmd(.playVoice, 35), cmd(.pause, 600), cmd(.stop, 0) ],
     ]
 }

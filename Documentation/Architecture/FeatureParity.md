@@ -149,6 +149,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | Missiles/rockets: homing approach | ✅ | native 0x16 `moveToTarget` |
 | Ornithopter / frigate (winger flight) | ✅ | winger movement + air pass |
 | Smoke on damage / wobble / idle fidget (state) | ✅ | sprite cadence (render is presentation) |
+| Foot-unit death **corpse** animation (`Script_Unit_StartAnimation`) | ✅ | ported `unitScript1/2` tables + `setOverlayTile`; corpse lingers ~1200 ticks then clears (`InteractionTests`, 2026-05-31) |
 
 ## G. Combat & area effects (detail)
 

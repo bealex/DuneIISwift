@@ -45,8 +45,10 @@ public extension GameState {
         }
     }
 
-    /// `Animation_Start`.
-    mutating func animationStart(tableIndex: Int, tile: Tile32, tileLayout: UInt16, houseID: UInt8, iconGroup: UInt8) {
+    /// `Animation_Start`. `kind` selects the command table (structure ground-cycle by default; a unit
+    /// corpse-overlay table for `Script_Unit_StartAnimation`).
+    mutating func animationStart(tableIndex: Int, tile: Tile32, tileLayout: UInt16, houseID: UInt8,
+                                 iconGroup: UInt8, kind: AnimationKind = .structure) {
         animationStopByTile(tile.packed)
         let packed = Int(tile.packed)
         for i in animations.indices where !animations[i].active {
@@ -56,6 +58,7 @@ public extension GameState {
             a.houseID = houseID
             a.iconGroup = iconGroup
             a.tableIndex = tableIndex
+            a.kind = kind
             a.tile = tile
             a.active = true
             animations[i] = a
@@ -82,7 +85,13 @@ public extension GameState {
 
         for i in animations.indices where animations[i].active {
             if animations[i].tickNext <= timerGUI {
-                let row = AnimationTables.structure[animations[i].tableIndex]
+                let table: [[AnimationCommandStruct]]
+                switch animations[i].kind {
+                    case .structure:   table = AnimationTables.structure
+                    case .unitScript1: table = AnimationTables.unitScript1
+                    case .unitScript2: table = AnimationTables.unitScript2
+                }
+                let row = table[animations[i].tableIndex]
                 let cursor = Int(animations[i].current)
                 guard cursor < row.count else { animationStop(i); continue }
                 let command = row[cursor]
@@ -91,7 +100,7 @@ public extension GameState {
                 switch command.command {
                     case .stop: animationStop(i)
                     case .abort: animationAbort(i)
-                    case .setOverlayTile: break   // overlay not rendered in the viewer
+                    case .setOverlayTile: animationSetOverlayTile(i, command.parameter)
                     case .pause: animations[i].tickNext = timerGUI &+ UInt32(max(0, Int(command.parameter))) &+ UInt32(random256.next() % 4)
                     case .rewind: animations[i].current = 0
                     case .playVoice: break
@@ -117,7 +126,22 @@ public extension GameState {
             let pos = packed + Int(layout.tiles[k])
             guard pos >= 0, pos < map.count else { continue }
             if a.tileLayout != 0 { map[pos].groundTileID = mapBaseTileID[pos] }
+            // Clear a corpse/overlay the animation laid down (`Animation_Func_Stop`, only on revealed tiles).
+            if map[pos].isUnveiled { map[pos].overlayTileID = 0 }
         }
+        mapDirty = true
+    }
+
+    /// `Animation_Func_SetOverlayTile`: stamp the animation's overlay sprite (e.g. a unit corpse) onto its
+    /// tile, from `iconGroup` + `parameter`. Only on a revealed tile (the renderer composites the overlay).
+    private mutating func animationSetOverlayTile(_ i: Int, _ parameter: Int16) {
+        guard let iconMap, parameter >= 0 else { return }
+        let a = animations[i]
+        let packed = Int(a.tile.packed)
+        guard map[packed].isUnveiled else { return }
+        let tile = iconMap.tileID(group: Int(a.iconGroup), offset: Int(parameter)) ?? 0
+        map[packed].overlayTileID = UInt8(truncatingIfNeeded: tile)
+        map[packed].houseID = a.houseID
         mapDirty = true
     }
 
