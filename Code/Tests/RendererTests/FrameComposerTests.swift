@@ -83,9 +83,11 @@ struct FrameComposerTests {
         #expect(body.centerX == 6 && body.centerY == 8)
         #expect(body.flipped)
         #expect(body.house == .atreides)
+        #expect(body.spriteIndex == 113)                            // carried for texture caching
         #expect(body.frame.pixels.first == UInt8(100 + 113))
 
         let turret = try #require(sprites.first { $0.z == FrameComposer.ZOrder.turret })
+        #expect(turret.spriteIndex == 116)
         #expect(turret.centerX == 7 && turret.centerY == 6)         // (6+1, 8-2)
         #expect(turret.house == .atreides)
         #expect(turret.z > body.z)                                   // turret drawn over body

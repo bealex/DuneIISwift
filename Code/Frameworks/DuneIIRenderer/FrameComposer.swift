@@ -30,6 +30,9 @@ public protocol WorldSpriteSource {
 /// with an optional house recolour and a z order. The leaf colorizes (palette + `HouseRemap`) and lays
 /// it out; the composer chose the frame, position, flip, and tint.
 public struct ComposedSprite: Equatable, Sendable {
+    /// The source global sprite index — a stable identity for caching the colorized texture by
+    /// appearance `(spriteIndex, house)` (the flip is a node transform, not part of the texture).
+    public let spriteIndex: Int
     public let frame: SpriteFrame
     /// Image-space centre in base pixels (tile size 16).
     public let centerX: Int
@@ -39,7 +42,9 @@ public struct ComposedSprite: Equatable, Sendable {
     public let house: House?
     public let z: Int
 
-    public init(frame: SpriteFrame, centerX: Int, centerY: Int, flipped: Bool, house: House?, z: Int) {
+    public init(spriteIndex: Int, frame: SpriteFrame, centerX: Int, centerY: Int, flipped: Bool,
+                house: House?, z: Int) {
+        self.spriteIndex = spriteIndex
         self.frame = frame
         self.centerX = centerX
         self.centerY = centerY
@@ -94,20 +99,21 @@ public enum FrameComposer {
             let house = House(rawValue: u.house.rawValue)
             let cx = imageX(u.positionX), cy = imageY(u.positionY)
             if let body = source.unitFrame(globalIndex: u.body.spriteIndex) {
-                result.append(ComposedSprite(frame: body, centerX: cx + u.body.offsetX,
-                                             centerY: cy + u.body.offsetY, flipped: u.body.flipped,
-                                             house: house, z: ZOrder.body))
+                result.append(ComposedSprite(spriteIndex: u.body.spriteIndex, frame: body,
+                                             centerX: cx + u.body.offsetX, centerY: cy + u.body.offsetY,
+                                             flipped: u.body.flipped, house: house, z: ZOrder.body))
             }
             if let turret = u.turret, let frame = source.unitFrame(globalIndex: turret.spriteIndex) {
-                result.append(ComposedSprite(frame: frame, centerX: cx + turret.offsetX,
-                                             centerY: cy + turret.offsetY, flipped: turret.flipped,
-                                             house: house, z: ZOrder.turret))
+                result.append(ComposedSprite(spriteIndex: turret.spriteIndex, frame: frame,
+                                             centerX: cx + turret.offsetX, centerY: cy + turret.offsetY,
+                                             flipped: turret.flipped, house: house, z: ZOrder.turret))
             }
         }
 
         for e in frame.effects {
             guard let f = source.unitFrame(globalIndex: e.sprite.spriteIndex) else { continue }
-            result.append(ComposedSprite(frame: f, centerX: imageX(e.positionX) + e.sprite.offsetX,
+            result.append(ComposedSprite(spriteIndex: e.sprite.spriteIndex, frame: f,
+                                         centerX: imageX(e.positionX) + e.sprite.offsetX,
                                          centerY: imageY(e.positionY) + e.sprite.offsetY,
                                          flipped: e.sprite.flipped, house: nil, z: ZOrder.effect))
         }
