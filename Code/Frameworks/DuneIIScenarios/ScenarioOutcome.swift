@@ -58,6 +58,10 @@ public extension ScenarioWorld {
                 if let s = structureSlots.first, state.structures[s].upgradeLevel >= 1 {
                     return .finished("Upgraded to level 1")
                 }
+
+            case .sandwormEating:
+                // unitSlots = [worm, prey]; the prey is removed when swallowed.
+                if unitSlots.count > 1, !unitUsed(unitSlots[1]) { return .finished("Unit devoured") }
         }
         return .running
     }

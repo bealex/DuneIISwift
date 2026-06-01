@@ -948,7 +948,11 @@ public struct UnitCombat: Sendable {
                     state.units[target2].o.script.variables[1] = 0xFFFF
                     state.unitRemove(target2)   // Unit_RemovePlayer + HouseUnitCount_Remove are folded into unitRemove
                 }
-                // SEAM: Map_MakeExplosion(ui.explosionType, position) (#15).
+                // The "gulp" swallow animation at the worm (`Map_MakeExplosion(ui->explosionType, pos, 0, 0)`,
+                // `script/unit.c`): a visual-only blast (hitpoints 0 ⇒ no damage/RNG — the prey was already
+                // removed above). `ui` is the sandworm's info, so `explosionType` is EXPLOSION_SANDWORM_SWALLOW.
+                movement.mapMakeExplosion(type: ui.explosionType, position: state.units[slot].o.position,
+                                          hitpoints: 0, origin: 0, in: &state)
                 state.emitSound(63, at: state.units[slot].o.position)   // Voice_PlayAtTile(63, …) — WORMET3P
                 state.unitUpdateMap(1, slot)
                 state.units[slot].amount &-= 1

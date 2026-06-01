@@ -13,6 +13,7 @@ public enum ScenarioKind: String, Sendable, CaseIterable {
     case factoryProduce
     case repairBuilding
     case upgradeBuilding
+    case sandwormEating
 
     public var title: String {
         switch self {
@@ -27,6 +28,7 @@ public enum ScenarioKind: String, Sendable, CaseIterable {
             case .factoryProduce:     return "Factory builds a unit (credits drain → READY)"
             case .repairBuilding:     return "Building self-repairs (HP climbs)"
             case .upgradeBuilding:    return "Building upgrades (level up)"
+            case .sandwormEating:     return "Sandworm eats a unit (swallow animation)"
         }
     }
 

@@ -59,6 +59,29 @@ struct SandwormNativesTests {
         #expect(s.units[a].o.script.variables[4] == 0)   // dropped
     }
 
+    @Test("eating a unit starts the swallow explosion + plays the worm voice")
+    func eatStartsSwallowExplosion() {
+        let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+        var s = base()
+        s.playerHouseID = 0
+        // Worm and prey on the same tile ⇒ distance 0, so the worm (fireDistance 0) bites this tick.
+        let pos = Tile32.packXY(x: 20, y: 20)
+        let worm = addUnit(&s, .sandworm, house: 0, at: pos)
+        s.units[worm].amount = 3                               // remaining capacity (>1 ⇒ survives the bite)
+        let prey = addUnit(&s, .trike, house: 2, at: pos)
+        s.units[worm].targetAttack = s.indexEncode(s.units[prey].o.index, type: .unit)
+        s.units[worm].fireDelay = 0
+
+        let combat = UnitCombat(movement: UnitMovement(scriptInfo: info))
+        _ = combat.fire(slot: worm, in: &s)
+
+        #expect(!s.units[prey].o.flags.contains(.used))        // prey swallowed (removed from play)
+        // The EXPLOSION_SANDWORM_SWALLOW "gulp" animation is now started at the worm (was a SEAM).
+        #expect(s.explosions.contains { $0.active && $0.tableIndex == ExplosionType.sandwormSwallow.rawValue })
+        #expect(s.soundEvents.contains { $0.sound == SoundID(63) })   // WORMET3P (Voice_PlayAtTile 63)
+        #expect(s.units[worm].amount == 2)                     // capacity decremented; worm lives on
+    }
+
     @Test("Unknown0288: a live structure index → 0, an empty index → 1")
     func unknown0288() {
         var s = base()

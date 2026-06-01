@@ -168,6 +168,17 @@ public struct ScenarioBuilder {
                 state.structureSetUpgradingState(b, state: 1)                  // Structure_SetUpgradingState
                 state.houses[Int(player.rawValue)].credits = 4000
                 slots = []
+
+            case .sandwormEating:
+                // A sandworm slithers to an enemy unit and eats it — showing the "swallow" gulp animation
+                // (`EXPLOSION_SANDWORM_SWALLOW`, sprites 218-222) + the WORMET3P voice at the worm. Unit1 is
+                // forced to the sandworm regardless of the picker; unit2 is the prey. `amount` (the worm's
+                // remaining capacity) > 1 so it survives the bite (it dives — ACTION_DIE — only at amount < 1).
+                let worm = place(&state, .sandworm, player, terrain, lx: 2, ly: 3)
+                state.units[worm].amount = 3
+                let prey = place(&state, scenario.unit2, enemy, terrain, lx: 5, ly: 3)
+                attack(&state, attacker: worm, target: prey, actions)
+                slots = [worm, prey]
         }
 
         return ScenarioWorld(state: state, runner: runner, actions: actions, unitSlots: slots,
