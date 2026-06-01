@@ -29,6 +29,13 @@ struct ContentView: View {
                     .disabled(model.assets.scenarioNames.isEmpty)
                 }
                 ToolbarItem(placement: .automatic) {
+                    Menu {
+                        Button("Save Game…") { saveGame() }
+                        Button("Load Game…") { loadGame() }
+                    } label: { Image(systemName: "doc.badge.gearshape") }
+                    .help("Save / load the game")
+                }
+                ToolbarItem(placement: .automatic) {
                     Picker("Speed", selection: Binding(get: { model.gameSpeed }, set: { model.gameSpeed = $0 })) {
                         Text("0.5×").tag(0.5)
                         Text("1×").tag(1.0)
@@ -66,6 +73,22 @@ struct ContentView: View {
             }
             .animation(.easeInOut(duration: 0.2), value: model.notice)
             .onAppear { if !openedDefaults { tools.openDefaults(); openedDefaults = true } }
+    }
+
+    /// Present a save panel and write the current game (our `SaveGame` binary).
+    private func saveGame() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(model.currentScenario ?? "game").duneiisave"
+        panel.canCreateDirectories = true
+        if panel.runModal() == .OK, let url = panel.url { model.saveGame(to: url) }
+    }
+
+    /// Present an open panel and restore the chosen save.
+    private func loadGame() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url { model.loadGame(from: url) }
     }
 }
 

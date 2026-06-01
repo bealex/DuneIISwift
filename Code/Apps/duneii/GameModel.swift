@@ -22,6 +22,7 @@ final class GameModel {
     private(set) var currentScenario: String?
     private(set) var simulation: Simulation?
     @ObservationIgnored private var unitScript: ScriptInfo?
+    @ObservationIgnored private var structureScript: ScriptInfo?
     @ObservationIgnored private var controller = InputController(mapWidth: 64)
 
     /// Camera. The scene applies it; the minimap reads it.
@@ -107,7 +108,7 @@ final class GameModel {
     func load(_ scenarioName: String) {
         guard let ini = assets.scenarioINI(scenarioName), let iconMap = assets.iconMap else { return }
         unitScript = assets.data("UNIT.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
-        let structureScript = assets.data("BUILD.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
+        structureScript = assets.data("BUILD.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
 
         var state = GameState()
         state.aiFogOfWar = aiFogOfWar   // before unit placement, so the player units honour the AI-fog mask
@@ -134,10 +135,17 @@ final class GameModel {
             }
         }
 
+        finishLoad(state: state, scenarioName: scenarioName)
+    }
+
+    /// Build the live `Simulation` from a ready `GameState` (a freshly-loaded scenario or a restored save) and
+    /// set up the scene, camera, and minimap. Shared by `load` and `loadGame`.
+    private func finishLoad(state: GameState, scenarioName: String?) {
         let sim = Simulation(state: state, scriptInfo: unitScript, structureScriptInfo: structureScript,
                              tickExplosions: true, tickAnimations: true)
         simulation = sim
         currentScenario = scenarioName
+        playerHouse = HouseID(rawValue: Int(state.playerHouseID)) ?? .atreides
         controller.deselect()
         scene.load(simulation: sim, assets: assets)
         let frame = sim.makeFrameInfo()
@@ -151,6 +159,25 @@ final class GameModel {
         viewport.center(onWorldX: viewport.area.midX, worldY: viewport.area.midY, viewSize: viewSize)
         minimapBase = Minimap.baseImage(frame: frame, source: SpriteSource.make(assets: assets), palette: assets.palette)
         refreshDerived(frame)
+    }
+
+    /// Save the current game to `url` — our versioned `SaveGame` (the whole `GameState`, a bit-identical
+    /// deterministic resume point). Returns false on failure.
+    @discardableResult
+    func saveGame(to url: URL) -> Bool {
+        guard let sim = simulation, let data = try? SaveGame.save(sim.state) else { return false }
+        do { try data.write(to: url); return true } catch { return false }
+    }
+
+    /// Restore a saved game from `url` (`SaveGame.load`) and resume it. Reloads the EMC scripts (the same
+    /// programs) so the sim can run; the rest of the state comes from the save.
+    @discardableResult
+    func loadGame(from url: URL) -> Bool {
+        guard let data = try? Data(contentsOf: url), let state = try? SaveGame.load(data) else { return false }
+        unitScript = assets.data("UNIT.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
+        structureScript = assets.data("BUILD.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
+        finishLoad(state: state, scenarioName: "Saved game")
+        return true
     }
 
     private func setupAudio() {
