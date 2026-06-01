@@ -77,6 +77,10 @@ public enum FrameComposer {
     /// `viewport.c:390`).
     public static let fogColourIndex: UInt8 = 12
 
+    /// The palette index for a tile outside the scenario's playable rectangle (`FrameInfo.mapArea`) — the
+    /// unused map border. Same colour-12 black as fog; drawn unconditionally (independent of `showFog`).
+    public static let borderColourIndex: UInt8 = 12
+
     /// The composed `terrainTileSize²` indexed pixels for one map cell: the ground tile (house-recoloured
     /// for an owned/structure tile; identity for terrain / Harkonnen), then any **non-veil overlay** (a
     /// wall) drawn on top **with index-0 transparency** so the ground shows through the overlay's
@@ -120,11 +124,20 @@ public enum FrameComposer {
         let ts = source.terrainTileSize
         let side = ts * frame.mapWidth
         var buffer = [UInt8](repeating: 0, count: side * (ts * frame.mapHeight))
+        let border = [UInt8](repeating: borderColourIndex, count: ts * ts)
         for ty in 0 ..< frame.mapHeight {
             for tx in 0 ..< frame.mapWidth {
-                let tile = frame.tiles[ty * frame.mapWidth + tx]
-                guard let pixels = cell(tile, veiledTileIndex: frame.veiledTileIndex, showFog: showFog, source: source)
-                else { continue }
+                // Outside the scenario's playable rectangle: the unused border draws solid black, never the
+                // landscape underneath (independent of fog). Inside: compose the cell normally.
+                let pixels: [UInt8]
+                if !frame.mapArea.contains(tileX: tx, tileY: ty) {
+                    pixels = border
+                } else if let p = cell(frame.tiles[ty * frame.mapWidth + tx], veiledTileIndex: frame.veiledTileIndex,
+                                       showFog: showFog, source: source) {
+                    pixels = p
+                } else {
+                    continue
+                }
                 let ox = tx * ts, oy = ty * ts
                 for py in 0 ..< ts {
                     let row = (oy + py) * side + ox
@@ -147,9 +160,16 @@ public enum FrameComposer {
         return !frame.tiles[ty * frame.mapWidth + tx].isUnveiled
     }
 
+    /// Whether the world position falls outside the scenario's playable rectangle (`FrameInfo.mapArea`) — its
+    /// sprite belongs to the unused border and must not be drawn (the rendering twin of `Map_IsValidPosition`).
+    public static func isOutsideMapArea(_ frame: FrameInfo, worldX: Int, worldY: Int) -> Bool {
+        !frame.mapArea.contains(tileX: worldX / 256, tileY: worldY / 256)
+    }
+
     /// The unit (body + turret) and effect (explosion / smoke) sprites, resolved + placed in image space.
     /// When `showFog` is on, units/effects on a still-veiled tile are omitted (`viewport.c` masks each
-    /// entity pass by the tile's `isUnveiled` — enemies in the fog aren't drawn).
+    /// entity pass by the tile's `isUnveiled` — enemies in the fog aren't drawn). A unit/effect outside the
+    /// playable rectangle (`mapArea`) is likewise dropped so nothing paints over the black border.
     public static func sprites(_ frame: FrameInfo, source: WorldSpriteSource, showFog: Bool = false) -> [ComposedSprite] {
         let ts = source.terrainTileSize
         var result: [ComposedSprite] = []
@@ -158,6 +178,7 @@ public enum FrameComposer {
         func imageY(_ worldY: Int) -> Int { worldY * ts / 256 }
 
         for u in frame.units {
+            if isOutsideMapArea(frame, worldX: u.positionX, worldY: u.positionY) { continue }
             if isHiddenByFog(frame, worldX: u.positionX, worldY: u.positionY, showFog: showFog) { continue }
             let house = House(rawValue: u.house.rawValue)
             let cx = imageX(u.positionX), cy = imageY(u.positionY)
@@ -187,6 +208,7 @@ public enum FrameComposer {
         }
 
         for e in frame.effects {
+            if isOutsideMapArea(frame, worldX: e.positionX, worldY: e.positionY) { continue }
             if isHiddenByFog(frame, worldX: e.positionX, worldY: e.positionY, showFog: showFog) { continue }
             guard let f = source.unitFrame(globalIndex: e.sprite.spriteIndex) else { continue }
             result.append(ComposedSprite(spriteIndex: e.sprite.spriteIndex, frame: f,

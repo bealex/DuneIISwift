@@ -101,10 +101,16 @@ final class GameModel {
         simulation = sim
         currentScenario = scenarioName
         controller.deselect()
-        viewport = Viewport()
         scene.load(simulation: sim, assets: assets)
         let frame = sim.makeFrameInfo()
         lastFrame = frame
+        // Clamp the camera to the scenario's playable rectangle (so it can't scroll onto the black border)
+        // and start centred on it. The renderer blacks the border out independently (`FrameComposer`).
+        viewport = Viewport()
+        let a = frame.mapArea
+        viewport.area = CGRect(x: Double(a.minX) * Viewport.tilePx, y: Double(a.minY) * Viewport.tilePx,
+                               width: Double(a.width) * Viewport.tilePx, height: Double(a.height) * Viewport.tilePx)
+        viewport.center(onWorldX: viewport.area.midX, worldY: viewport.area.midY, viewSize: viewSize)
         minimapBase = Minimap.baseImage(frame: frame, source: SpriteSource.make(assets: assets), palette: assets.palette)
         refreshDerived(frame)
     }

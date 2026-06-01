@@ -139,6 +139,37 @@ struct FrameComposerTests {
         #expect(FrameComposer.terrainBuffer(frame, source: FakeSource(), showFog: true).allSatisfy { $0 == FrameComposer.fogColourIndex })
     }
 
+    @Test("terrainBuffer blacks out tiles outside the playable rectangle (mapArea)")
+    func terrainBufferMapArea() {
+        // A 3×2 map with ground id 5 everywhere, but the playable area is only tile (1,0): the rest is border.
+        let g = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 0, houseID: 0, isUnveiled: true)
+        var frame = emptyFrame(tiles: [FrameInfo.Tile](repeating: g, count: 6))
+        frame.mapArea = FrameInfo.MapArea(minX: 1, minY: 0, width: 1, height: 1)
+        let buf = FrameComposer.terrainBuffer(frame, source: FakeSource())
+        let side = 4 * 3
+        #expect(buf[0 * side + 4] == 5 && buf[3 * side + 7] == 5)               // tile (1,0): inside → ground 5
+        #expect(buf[0] == FrameComposer.borderColourIndex)                       // tile (0,0): outside → black
+        #expect(buf[4 * side + 8] == FrameComposer.borderColourIndex)            // tile (2,1): outside → black
+    }
+
+    @Test("a unit / effect outside the playable rectangle (mapArea) is culled")
+    func spritesMapAreaCull() {
+        func unit(tileX: Int) -> FrameInfo.Unit {
+            FrameInfo.Unit(id: UInt16(tileX), type: .tank, house: .harkonnen,
+                           positionX: tileX * 256 + 128, positionY: 128,
+                           body: SpriteLayer(spriteIndex: 113), turret: nil,
+                           isSmoking: false, hitpoints: 50, hitpointsMax: 100)
+        }
+        // 3×1 map; the playable area is just tile (1,0) — units on tiles 0 and 2 are in the border.
+        var frame = emptyFrame(units: [unit(tileX: 0), unit(tileX: 1), unit(tileX: 2)], w: 3, h: 1)
+        frame.mapArea = FrameInfo.MapArea(minX: 1, minY: 0, width: 1, height: 1)
+        let bodies = FrameComposer.sprites(frame, source: FakeSource()).filter { $0.z == FrameComposer.ZOrder.body }
+        #expect(bodies.count == 1)                  // only the unit on tile (1,0) survives
+        #expect(bodies.first?.centerX == 6)         // tile 1 centre: (256+128)·4/256
+        #expect(FrameComposer.isOutsideMapArea(frame, worldX: 128, worldY: 128))          // tile 0 → outside
+        #expect(!FrameComposer.isOutsideMapArea(frame, worldX: 256 + 128, worldY: 128))   // tile 1 → inside
+    }
+
     @Test("terrain house-remaps an owned (structure) tile; Harkonnen/terrain is identity")
     func terrainHouseRemap() {
         // Tile id 0x91 (145) → pixels all 145 (in the 0x90 house-colour block). HouseRemap.tile for

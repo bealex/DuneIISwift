@@ -36,9 +36,15 @@ public struct FrameInfo: Sendable, Equatable {
     /// this is under full fog; the renderer fills it black when fog display is enabled. 0 = no fog model.
     public var veiledTileIndex: Int
 
+    /// The scenario's playable rectangle in tile coordinates (`g_mapInfos[mapScale]`). Tiles outside it are
+    /// the unused border — the renderer draws nothing there (a black frame) and the camera won't pan to it.
+    /// Defaults to the full `64×64` for directly-constructed frames. See `Documentation/Algorithms/MapBounds.md`.
+    public var mapArea: MapArea
+
     public init(tick: UInt32, mapWidth: Int, mapHeight: Int, tiles: [Tile], units: [Unit],
                 structures: [Structure], effects: [Effect], houses: [House],
-                viewportX: Int, viewportY: Int, veiledTileIndex: Int = 0, blurs: [Blur] = []) {
+                viewportX: Int, viewportY: Int, veiledTileIndex: Int = 0, blurs: [Blur] = [],
+                mapArea: MapArea = .full) {
         self.tick = tick
         self.mapWidth = mapWidth
         self.mapHeight = mapHeight
@@ -51,6 +57,26 @@ public struct FrameInfo: Sendable, Equatable {
         self.viewportX = viewportX
         self.viewportY = viewportY
         self.veiledTileIndex = veiledTileIndex
+        self.mapArea = mapArea
+    }
+
+    /// The scenario's playable map rectangle in tile coordinates — OpenDUNE's `g_mapInfos[mapScale]`. Tiles
+    /// outside it are the unused border (drawn black, never scrolled to). `contains` is the rendering twin of
+    /// `Map_IsValidPosition`.
+    public struct MapArea: Sendable, Equatable {
+        public var minX: Int, minY: Int, width: Int, height: Int
+
+        public init(minX: Int, minY: Int, width: Int, height: Int) {
+            self.minX = minX; self.minY = minY; self.width = width; self.height = height
+        }
+
+        /// The whole 64×64 grid — the default when no scenario bound is supplied (draws everything).
+        public static let full = MapArea(minX: 0, minY: 0, width: 64, height: 64)
+
+        /// Is tile `(tx, ty)` inside the playable rectangle?
+        public func contains(tileX tx: Int, tileY ty: Int) -> Bool {
+            tx >= minX && tx < minX + width && ty >= minY && ty < minY + height
+        }
     }
 
     /// One map cell: the ground icon, an optional overlay (spice/walls), and the player-fog state.

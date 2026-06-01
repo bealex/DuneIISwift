@@ -205,6 +205,14 @@ public final class SpriteKitRenderer {
         for i in dirty {
             let app = appearance(frame.tiles[i])
             displayed[i] = app
+            // A cell outside the playable rectangle is the unused border — it stays solid black in the static
+            // background (composed by `terrainBuffer`), so never give it a landscape overlay node even if its
+            // underlying tile content changed (e.g. spice spreading across the boundary).
+            if !frame.mapArea.contains(tileX: i % mapWidth, tileY: i / mapWidth) {
+                windCells.remove(i)
+                if let node = overlayNodes[i] { node.removeFromParent(); overlayNodes[i] = nil }
+                continue
+            }
             if tileUsesWind(app.ground) { windCells.insert(i) } else { windCells.remove(i) }
 
             // A cell needs an overlay node when it differs from the static background or pulses with the wind.

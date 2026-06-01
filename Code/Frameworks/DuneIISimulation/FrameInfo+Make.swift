@@ -100,12 +100,18 @@ public extension Simulation {
                 powerProduction: Int(h.powerProduction), powerUsage: Int(h.powerUsage)))
         }
 
+        // The scenario's playable rectangle (g_mapInfos[mapScale]) — the renderer blacks out the border + the
+        // camera clamps to it. `MapInfo.scales` is the same table `Map_IsValidPosition` uses for gameplay.
+        let info = MapInfo.scales[Int(min(state.mapScale, UInt8(MapInfo.scales.count - 1)))]
+        let mapArea = FrameInfo.MapArea(minX: Int(info.minX), minY: Int(info.minY),
+                                        width: Int(info.sizeX), height: Int(info.sizeY))
+
         return FrameInfo(
             tick: state.timerGame, mapWidth: width, mapHeight: height,
             tiles: tiles, units: units, structures: structures, effects: effects, houses: houses,
             viewportX: Int(Tile32.packedX(state.viewportPosition)) * 256,
             viewportY: Int(Tile32.packedY(state.viewportPosition)) * 256,
-            veiledTileIndex: Int(state.tileIDs.veiled), blurs: blurs)
+            veiledTileIndex: Int(state.tileIDs.veiled), blurs: blurs, mapArea: mapArea)
     }
 
     /// The 4-neighbour fog-of-war veil bitmask for tile `packed` on a `width × height` grid — bit 0 = N,

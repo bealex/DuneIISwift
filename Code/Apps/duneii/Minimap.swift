@@ -19,11 +19,14 @@ enum Minimap {
         let centre = (ts / 2) * ts + (ts / 2)
         for ty in 0 ..< n {
             for tx in 0 ..< n {
+                let o = (ty * n + tx) * 4
+                rgba[o + 3] = 255
+                // Outside the playable rectangle: the unused border is black (matches the main map).
+                guard frame.mapArea.contains(tileX: tx, tileY: ty) else { continue }
                 let tile = frame.tiles[ty * n + tx]
                 let index = source.terrainTile(tile.groundSpriteIndex).map { $0[min(centre, $0.count - 1)] } ?? 0
                 let c = palette.rgba8(Int(index))
-                let o = (ty * n + tx) * 4
-                rgba[o] = c.red; rgba[o + 1] = c.green; rgba[o + 2] = c.blue; rgba[o + 3] = 255
+                rgba[o] = c.red; rgba[o + 1] = c.green; rgba[o + 2] = c.blue
             }
         }
         guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }

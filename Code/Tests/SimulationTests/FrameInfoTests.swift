@@ -72,6 +72,20 @@ struct FrameInfoTests {
         #expect(f.viewportX == 3 * 256 && f.viewportY == 4 * 256)
     }
 
+    @Test("mapArea is the playable rectangle for the scenario's mapScale (g_mapInfos)")
+    func mapArea() {
+        var sim = scene()
+        // Default scale 0 → the full 62×62 playable rect (a 1-tile border).
+        let s0 = sim.makeFrameInfo().mapArea
+        #expect(s0.minX == 1 && s0.minY == 1 && s0.width == 62 && s0.height == 62)
+        // Scale 2 → the small 21×21 centre rect; an out-of-range scale clamps to the last entry.
+        sim.state.mapScale = 2
+        let s2 = sim.makeFrameInfo().mapArea
+        #expect(s2.minX == 21 && s2.minY == 21 && s2.width == 21 && s2.height == 21)
+        sim.state.mapScale = 99
+        #expect(sim.makeFrameInfo().mapArea == s2)
+    }
+
     @Test("the veil tile id is carried for the renderer's fog test")
     func veiledTileIndex() {
         var sim = scene()

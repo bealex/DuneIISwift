@@ -16,6 +16,11 @@ struct Viewport: Equatable {
     /// Magnification, clamped to `[minZoom, maxZoom]`.
     var zoom: Double = 2
 
+    /// The scenario's playable rectangle in **world points** (image space, y-down) — the camera clamps to
+    /// this, so it never scrolls onto the unused map border. Defaults to the full 64×64 world; set from the
+    /// frame's `mapArea` on load. (`MapBounds.md`.)
+    var area = CGRect(x: 0, y: 0, width: worldSize, height: worldSize)
+
     static let minZoom = 1.0
     static let maxZoom = 16.0
 
@@ -42,15 +47,16 @@ struct Viewport: Equatable {
         return CGRect(x: centerX - w / 2, y: centerY - h / 2, width: w, height: h)
     }
 
-    /// Keep the world on screen: when the world is wider/taller than the view, clamp so its edge can't pull
-    /// past the view edge; when it's smaller (zoomed out past 1:1), pin the centre so it sits centred (the
-    /// surrounding area is left black).
+    /// Keep the **playable area** on screen: when it's wider/taller than the view, clamp so its edge can't
+    /// pull past the view edge; when it's smaller (zoomed out past 1:1), pin the centre on the area so it sits
+    /// centred (the surrounding border is left black). Clamps to `area`, not the full world — so the camera
+    /// follows the scenario's map boundary rather than scrolling onto the unused border.
     mutating func clamp(viewSize: CGSize) {
         let half = Double(viewSize.width) / zoom / 2
-        if half * 2 >= Self.worldSize { centerX = Self.worldSize / 2 }
-        else { centerX = min(Self.worldSize - half, max(half, centerX)) }
+        if half * 2 >= area.width { centerX = area.midX }
+        else { centerX = min(area.maxX - half, max(area.minX + half, centerX)) }
         let halfY = Double(viewSize.height) / zoom / 2
-        if halfY * 2 >= Self.worldSize { centerY = Self.worldSize / 2 }
-        else { centerY = min(Self.worldSize - halfY, max(halfY, centerY)) }
+        if halfY * 2 >= area.height { centerY = area.midY }
+        else { centerY = min(area.maxY - halfY, max(area.minY + halfY, centerY)) }
     }
 }
