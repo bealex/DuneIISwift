@@ -241,7 +241,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | Power maintenance upkeep | ✅ | `Simulation` `tickPowerMaintenance` |
 | Attack timers (unit/sandworm/structure) decrement | ✅ | `Simulation` house tick |
 | `House_EnsureHarvesterAvailable` + harvester-incoming spawn | ✅ | `UnitCombat` / `Simulation` |
-| Low-power / low-credit **player hints** | ⊘ pres | |
+| Low-power / low-credit **player hints** | ⊘ pres | sim-side `GUI_DisplayHint` is a seam; **duneii derives a client-side banner** (construction-complete / low-power / insufficient-funds) from the player economy + factory state — `Architecture/DuneiiClient.md` (Hints) |
 
 ## M. Spice & map effects
 
@@ -347,7 +347,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | Feature | Status | Evidence / note |
 |---|---|---|
 | `SoundEvent` emission for combat fire + explosions | ✅ | `GameState.soundEvents` |
-| Per-house spoken `%c` voices (acknowledge/announce) | ⊘ pres | `VoiceTable` covers only `+` combat effects |
+| Per-house spoken `%c` voices (acknowledge/announce) | ⊘ pres | `VoiceTable` covers the `+` combat effects; the **acknowledge** voices (select/order: REPORT/MOVEOUT/AFFIRM) are now played client-side in duneii (`DuneiiClient.md` Audio). The per-**house** *announcement* voices (build-complete/under-attack/…) still need sim-emitted announcement events |
 
 ---
 
