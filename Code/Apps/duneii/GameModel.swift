@@ -91,6 +91,10 @@ final class GameModel {
     @ObservationIgnored private var noticeFrames = 0
     @ObservationIgnored private var wasLowPower = false
     @ObservationIgnored private var readyFactories: Set<Int> = []
+    /// Durations (seconds) of the registered death-announcement voice fragments, for sequencing them.
+    @ObservationIgnored private var speechDuration: [SoundID: TimeInterval] = [:]
+    /// True while a spoken death announcement is playing — rate-limits so battles don't pile up speech.
+    @ObservationIgnored private var speaking = false
 
     // Build-GUI derived state (refreshed for the selected player-owned factory).
     private(set) var buildables: [Buildable] = []
@@ -262,6 +266,34 @@ final class GameModel {
             let s = assets.voc(voc)!
             audio.register(id, sampleRate: s.sampleRate, pcm8: s.samples)
         }
+        // The spoken death-announcement fragments ("<house>ENEMY/UNIT/DESTROY/…") — registered under their
+        // FeedbackVoice ids with their durations, so `playDeathFeedback` can chain the sequence in order.
+        speechDuration.removeAll(keepingCapacity: true)
+        for (voice, template) in FeedbackVoice.fragments {
+            let voc = template.replacingOccurrences(of: "%c", with: prefix)
+            guard let s = assets.voc(voc) else { continue }
+            let id = FeedbackVoice.id(voice)
+            audio.register(id, sampleRate: s.sampleRate, pcm8: s.samples)
+            speechDuration[id] = s.sampleRate > 0 ? Double(s.samples.count) / Double(s.sampleRate) : 0
+        }
+    }
+
+    /// Play a spoken death-announcement feedback (`Sound_Output_Feedback` death cue) — its fragment sequence,
+    /// each clip after the previous one finishes. Rate-limited to one announcement at a time (`speaking`) so a
+    /// busy battle doesn't pile up overlapping speech (mirrors OpenDUNE's single-speech / priority behaviour).
+    private func playDeathFeedback(_ feedback: UInt16) {
+        guard !speaking, let seq = FeedbackVoice.deathSequences[feedback] else { return }
+        let ids = seq.map { FeedbackVoice.id($0) }.filter { speechDuration[$0] != nil }
+        guard !ids.isEmpty else { return }
+        speaking = true
+        Task { @MainActor [weak self] in
+            for id in ids {
+                guard let self else { return }
+                self.audio.play(id)
+                try? await Task.sleep(for: .seconds(self.speechDuration[id] ?? 0.4))
+            }
+            self?.speaking = false
+        }
     }
 
     /// The "unit reports in" voice on selecting a player unit — REPORT1 (foot) / REPORT2 (vehicle), faithful
@@ -319,11 +351,15 @@ final class GameModel {
             // Play this tick's gameplay sounds (combat fire, explosions) — the full SoundEvent (with its
             // world position) so the sink can attenuate by distance. Unmapped voice ids are silent no-ops.
             for event in sim.state.soundEvents { audio.play(event) }
-            // Global UI feedback the sim raised this tick (`Sound_Output_Feedback`): un-attenuated voice +
-            // a viewport message. Only "base under attack" (48) so far — fired by Structure_HouseUnderAttack
-            // on a real combat impact, so it no longer false-fires on degradation/power/placement HP drops.
-            for feedback in sim.state.pendingFeedback where feedback == 48 {
-                postNotice("Your base is under attack"); audio.play(.houseUnderAttack); music.enterBattle()
+            // Global UI feedback the sim raised this tick (`Sound_Output_Feedback`): un-attenuated voice (+
+            // a viewport message). `48` = base-under-attack (Structure_HouseUnderAttack, on real combat
+            // impact); `13`/`14-18`/`20` = the spoken "unit destroyed" announcement (Unit_Damage death cue).
+            for feedback in sim.state.pendingFeedback {
+                if feedback == 48 {
+                    postNotice("Your base is under attack"); audio.play(.houseUnderAttack); music.enterBattle()
+                } else {
+                    playDeathFeedback(feedback)
+                }
             }
         }
         simulation = sim

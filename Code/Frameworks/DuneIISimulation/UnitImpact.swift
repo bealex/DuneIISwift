@@ -28,6 +28,7 @@ extension UnitMovement {
         let ui = UnitInfo[ut]
         if !ui.flags.contains(.isNormalUnit) && ut != .sandworm { return false }
 
+        let wasAlive = state.units[slot].o.hitpoints != 0   // for the death-cue gate (`Unit_Damage`'s `alive`)
         if state.units[slot].o.hitpoints >= damage {
             state.units[slot].o.hitpoints &-= damage
         } else {
@@ -44,7 +45,16 @@ extension UnitMovement {
                 map.fillCircleWithSpice(state.units[slot].o.position.packed,
                                         radius: UInt16(state.units[slot].amount) / 32, in: &state)
             }
-            // SEAM: Sound_Output_Feedback death cue (audio).
+            // The spoken "unit destroyed" cue (`Sound_Output_Feedback`, `unit.c:1558`): a saboteur uses its
+            // own feedback (20); every other unit (unless it's flagged `noMessageOnDeath` — bullets/worm/
+            // frigate — or wasn't actually alive) raises the house death announcement: the owner's house name
+            // for the player's own loss / late campaign, else the generic "enemy" (13). Routed through the
+            // global feedback queue; the host plays the voice sequence. RNG-free ⇒ golden-neutral.
+            if ut == .saboteur {
+                state.pendingFeedback.append(20)
+            } else if !ui.o.flags.contains(.noMessageOnDeath), wasAlive {
+                state.pendingFeedback.append((houseID == state.playerHouseID || state.campaignID > 3) ? UInt16(houseID) &+ 14 : 13)
+            }
             actions.setAction(slot: slot, action: UInt8(ActionType.die.rawValue), scriptInfo: scriptInfo, in: &state)
             return true
         }

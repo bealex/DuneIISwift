@@ -44,6 +44,29 @@ struct UnitCombatTests {
         #expect(!s.units[slot].o.flags.contains(.allocated))   // Unit_RemovePlayer cleared it
     }
 
+    @Test("a death raises the spoken 'unit destroyed' feedback (Sound_Output_Feedback)")
+    func deathFeedback() {
+        // An enemy unit (early campaign) → the generic "enemy unit destroyed" (13).
+        var (s, slot, combat) = setup(.tank, hp: 30, house: 2, player: 0)
+        _ = combat.damage(slot: slot, damage: 50, range: 0, in: &s)
+        #expect(s.pendingFeedback.contains(13))
+
+        // The player's own unit → its house's announcement (houseID + 14; Harkonnen 0 → 14).
+        var (s2, slot2, combat2) = setup(.tank, hp: 30, house: 0, player: 0)
+        _ = combat2.damage(slot: slot2, damage: 50, range: 0, in: &s2)
+        #expect(s2.pendingFeedback.contains(14))
+
+        // A saboteur uses its own feedback (20).
+        var (s3, slot3, combat3) = setup(.saboteur, hp: 10, house: 2, player: 0)
+        _ = combat3.damage(slot: slot3, damage: 50, range: 0, in: &s3)
+        #expect(s3.pendingFeedback.contains(20))
+
+        // A `noMessageOnDeath` unit (the sandworm) dies silently — no death announcement.
+        var (s4, slot4, combat4) = setup(.sandworm, hp: 1000, house: 2, player: 0)
+        _ = combat4.damage(slot: slot4, damage: 2000, range: 0, in: &s4)
+        #expect(s4.pendingFeedback.isEmpty)
+    }
+
     @Test("a non-player unit dying is not unallocated by Unit_RemovePlayer")
     func lethalEnemy() {
         var (s, slot, combat) = setup(.tank, hp: 10, house: 1, player: 0)
