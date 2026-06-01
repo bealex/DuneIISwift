@@ -58,6 +58,7 @@ run() {
               --parity-random-trace="$FIX/$name-r256.txt" --parity-lcg-trace="$FIX/$name-lcg.txt")
   local c; for c in "$@"; do
     if [[ "$c" == place,* ]]; then args+=(--parity-place="${c#place,}")
+    elif [[ "$c" == launch,* ]]; then args+=(--parity-launch="${c#launch,}")
     elif [[ "$c" == save ]]; then args+=(--parity-save="$FIX/$name.sav")
     else args+=(--parity-cmd="$c"); fi
   done
@@ -80,6 +81,12 @@ run  teams        91   teams.ini         "$TICKS"
 run  missile-duel 90   missile-duel.ini  "$TICKS"  attack,22,1045  attack,23,1040
 run  wall-destruction 89 wall-destruction.ini "$TICKS" attack,22,1042
 run  slab-indestructible 88 slab-indestructible.ini "$TICKS" attack,22,1042
+# palace-launch: a Harkonnen (player) palace fires its death-hand at a far tile. Frame 0 only (0 ticks) — the
+# bullet's spawn tile + jittered targetAttack + the palace's re-armed countDown prove the launch + its 3 RNG
+# draws cross-engine. (The oracle can't *fly* a missileHouse bullet headless — it segfaults in the missile's
+# GUI/sprite path — so we don't tick it; our engine flies it fine, covered by unit tests + the §G blast.)
+# launch,<palaceIndex>,<targetTile> → --parity-launch (Scen_LaunchMissile).
+run  palace-launch 85 palace-launch.ini 0 launch,0,2925
 # refinery-harvester: a CY builds + places two refineries on a concrete pad; EACH placement spawns its own
 # ferried harvester (viewport.c:210). Frame 0 only (0 ticks) — compares the CY + 2 refineries, the 2 spawned
 # carryalls (positions prove the Unit_CreateWrapper spawn RNG aligned), and houses' unitCount==4 +

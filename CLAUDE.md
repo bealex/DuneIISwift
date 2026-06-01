@@ -55,7 +55,9 @@ After that: `Documentation/Plan.v1.md` is the authoritative plan (goals, locked 
 
 ## Feature workflow
 
-Steps 0, 1, 4, 5, 6, 7 are mandatory. Tests are written **after** the feature (step 3).
+Steps 0, 1, 3, 4, 5, 6, 7 are mandatory. Tests are written **after** the feature (step 3).
+
+**Every new feature requires a golden test.** Unit tests alone do not close a feature. For a gameplay/parity feature this means a **cross-engine scenario golden** (add a `Spec` to `ScenarioGoldenTests` + a `gen-scenario-goldens.sh` case + the matching oracle command in `parity.c`, regenerated and committed) — that is the verification bar (core principle 1). For a renderer feature it means a **render golden** (`RenderGoldenTests`). Only when no OpenDUNE oracle behaviour exists (a debug toggle, a pure presentation/UI seam) is a cross-engine golden impossible — there, the golden bar is a **flag-off / neutrality golden** (prove the existing scenario or render goldens stay byte-identical with the feature off) plus the unit coverage, and you must say so explicitly in the History entry.
 
 0. Open `CurrentState.md`. Confirm the task matches the active task (or a queued next-up); if starting something new, record it there so a cold reader could resume.
 1. Design on paper first — write/update the relevant doc under `Documentation/Formats/` (or `Algorithms/`, `Architecture/`) before code. Own-words + pointer to the reference C source.
@@ -82,6 +84,7 @@ After each completed phase, **or** after every 32 commits (whichever comes first
 - Every writer has a round-trip test.
 - Every native primitive has a golden test against OpenDUNE-dumped values; every state machine has per-object decision-trace equivalence (Tier 2a) before integration.
 - Every public function has at least one test on real or synthetic input.
+- **Every feature has a golden test** (see Feature workflow step 3): a cross-engine scenario golden for gameplay/parity work, a render golden for renderer work, or — only when there is no OpenDUNE oracle behaviour (debug/UI/presentation seam) — a flag-off neutrality golden, called out as such in History.
 
 If something genuinely can't be tested (rare — usually visual correctness), say so in the History entry and write a manual-verification checklist in the relevant doc. Don't skip silently. See `Architecture/Testing.md` and `Architecture/ParityHarness.md`.
 

@@ -286,7 +286,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | Saboteur detonation + capture | ✅ | §K |
 | Death-hand blast pattern (when a missile lands) | ✅ | §G |
 | **Palace special-weapon countdown body** (death-hand launch, Fremen call, saboteur deploy) | ✅ | `Simulation.structureActivateSpecial` (`structure.c:822`) — an AI palace auto-fires when `countDown` hits 0; the human launches it from the duneii inspector via `Simulation.applyPalaceCommand` (`PalaceTests`) |
-| **House-missile launch** (palace → death-hand) | ✅ | AI launches directly; the human picks the target — `Command.launchHouseMissile` → `structureActivateSpecial(slot, missileTarget:)` (`Unit_LaunchHouseMissile` jitter), wired to a duneii target-select click. The 7-second `g_houseMissileCountdown` window is modelled as a UI mode, not sim state (`PalaceTests.humanMissile`) |
+| **House-missile launch** (palace → death-hand) | ✅ | AI launches directly; the human picks the target — `Command.launchHouseMissile` → `structureActivateSpecial(slot, missileTarget:)` (`Unit_LaunchHouseMissile` jitter), wired to a duneii target-select click. The 7-second `g_houseMissileCountdown` window is modelled as a UI mode, not sim state. Cross-engine golden: `palace-launch` (the spawned bullet's tile + jittered `targetAttack` + re-armed countDown match the oracle) + `PalaceTests.humanMissile` |
 | Fremen reinforcement call | ✅ | the Atreides/Fremen palace weapon — 5 hunting Fremen (`PalaceTests`) |
 
 ## Q. Campaign / tech / degrade

@@ -105,12 +105,17 @@ struct ScenarioGoldenTests {
         var cmd2Tile: UInt16 = 0
         var tickExplosions: Bool = false  // tick the GUI-clocked explosion VM ([BASIC] TickExplosions=1)
         var place: [PlaceCmd] = []   // build+place commands (a CY builds + the player places a structure)
+        var launch: [LaunchCmd] = [] // human palace death-hand launches (mirrors the oracle's --parity-launch)
         var testDescription: String { name }
     }
 
     /// A build+place command: construction yard `cy` builds `objectType` (a `StructureType.rawValue`) and the
     /// player places it at `tile` — mirrors the oracle's `--parity-place` (exercises the per-refinery harvester).
     struct PlaceCmd: Sendable { let cy: UInt16; let objectType: UInt16; let tile: UInt16 }
+
+    /// A human palace death-hand launch: palace pool index `structure` fires its house missile at `tile` —
+    /// mirrors the oracle's `--parity-launch` (`Scen_LaunchMissile`). Applied untraced before the tick loop.
+    struct LaunchCmd: Sendable { let structure: UInt16; let tile: UInt16 }
 
     static let specs: [Spec] = [
         Spec(name: "moving",       ini: "bootstrap.ini",    attack: false, cmdUnit: 22, tile: 2600, compared: 0),  // tank, full match
@@ -126,6 +131,8 @@ struct ScenarioGoldenTests {
         Spec(name: "wall-destruction", ini: "wall-destruction.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0),  // MAP-TILE golden: a tank's bullet impacts an Ordos wall; the 25-dmg hit's Random_256 roll (this seed) destroys the 50-HP wall at tick 67 — the [DUMPTILES] cell's ground reverts to terrain + overlay becomes the destroyed-wall marker (Map_MakeExplosion's wall branch + Map_UpdateWall). Rides the RNG-stream golden (the destroy draws Random_256).
         Spec(name: "refinery-harvester", ini: "refinery-harvester.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false,
              place: [PlaceCmd(cy: 0, objectType: 12, tile: 1168), PlaceCmd(cy: 0, objectType: 12, tile: 1296)]),  // a CY builds + places 2 refineries on a concrete pad; EACH placement spawns its own ferried harvester (the per-refinery spawn, viewport.c:210). Frame 0: CY + windtrap + 2 refineries (structures) + 2 spawned carryalls (the in-transport harvesters are skipped, but houses.unitCount==4 proves all 4 units exist). The carryall spawn positions prove Unit_CreateWrapper's RNG aligned cross-engine.
+        Spec(name: "palace-launch", ini: "palace-launch.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false,
+             launch: [LaunchCmd(structure: 0, tile: 2925)]),  // PALACE golden (frame 0 only, like refinery-harvester): a Harkonnen (player) palace launches its death-hand at tile (45,45). The human one-shot — carrier orientation (Tools_Random_256) + Tile_MoveByRandom(160) jitter + the bullet spawned from the palace — is applied untraced before frame 0. Frame 0 matches the oracle on the spawned missileHouse bullet (its spawn tile + the *jittered* targetAttack, which encodes the 3 launch RNG draws) + the palace's re-armed countDown (600). Verifies structureActivateSpecial(slot, missileTarget:) + Command.launchHouseMissile cross-engine. (The oracle segfaults flying a missileHouse bullet headless, so we don't tick it; the flight is covered by unit tests, the blast by §G.)
         Spec(name: "slab-indestructible", ini: "slab-indestructible.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0, tickExplosions: true),  // MAP-TILE golden, explosion VM TICKED: a tank's EXPLOSION_IMPACT_SMALL has no TILE_DAMAGE, so the [DUMPTILES] slab cell stays a slab even with explosions ticking. (Concrete IS destructible — by a TILE_DAMAGE explosion (IMPACT_LARGE/EXPLODE), verified RNG-free in ExplosionTests; a scattering rocket can't reliably hit an exact tile, so the destruction isn't a scenario golden.)  // BULLET-ACCOUNTING golden: an Atreides + an Ordos Launcher each ordered to attack the other, trading notAccurate rockets. Each rocket is a unit (Unit_Allocate → the firing house's unitCount++) freed on impact (unitCount--), so the per-tick house unitCount oscillates as bullets spawn + land — asserting the projectile allocate/free accounting matches the oracle tick-for-tick (the accounting whose uint16 wrap crashed a long mapview run). Non-player houses avoid the player-house House_CalculatePowerAndCredit GUI path the headless oracle lacks (turrets can't fire headless — no sprite-rotation GFX — so a missile duel exercises the identical bullet path).
     ]
 
@@ -237,6 +244,9 @@ struct ScenarioGoldenTests {
         // Run our engine for the whole trajectory, capturing a frame per tick (frame 0 = post-command).
         var sim = Simulation(state: state, scriptInfo: scriptInfo, structureScriptInfo: structureScriptInfo,
                              teamScriptInfo: teamScriptInfo, tickExplosions: spec.tickExplosions)
+        // Human palace death-hand launch — applied here (after build, before the trace sink) so its setup draws
+        // are untraced, exactly as the oracle launches before opening its RNG trace (`Scen_LaunchMissile`).
+        for l in spec.launch { _ = sim.applyPalaceCommand(.launchHouseMissile(structure: l.structure, tile: l.tile)) }
         // Record our per-tick RNG draws (post-setup, like the oracle's trace) for the draw-stream assertion.
         let rngSink = RngTraceSink()
         sim.state.random256.traceSink = rngSink
