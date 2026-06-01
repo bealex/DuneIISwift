@@ -10,6 +10,7 @@ struct ContentView: View {
     @State var model: GameModel
     @State private var tools: ToolWindowManager
     @State private var openedDefaults = false
+    @State private var showScenarioPicker = false
 
     init(model: GameModel) {
         _model = State(initialValue: model)
@@ -23,17 +24,14 @@ struct ContentView: View {
             .ignoresSafeArea()
             .toolbar {
                 ToolbarItem(placement: .navigation) {
-                    Menu(model.currentScenario ?? "Scenario") {
-                        ForEach(model.assets.scenarioNames, id: \.self) { name in Button(name) { model.load(name) } }
+                    Button { showScenarioPicker.toggle() } label: {
+                        Label(model.scenarioTitle, systemImage: "map")
                     }
                     .disabled(model.assets.scenarioNames.isEmpty)
-                }
-                ToolbarItem(placement: .navigation) {
-                    Picker("Campaign", selection: Binding(get: { model.campaignLevel }, set: { model.campaignLevel = $0 })) {
-                        ForEach(1 ... 9, id: \.self) { Text("Campaign \($0)").tag($0) }
+                    .help("Choose a scenario — by house, grouped by campaign level (which gates the tech tree).")
+                    .popover(isPresented: $showScenarioPicker, arrowEdge: .bottom) {
+                        ScenarioPicker(model: model, isPresented: $showScenarioPicker)
                     }
-                    .pickerStyle(.menu)
-                    .help("Mission/campaign level (1–9) — gates which structures & units you can build, as in the original campaign.")
                 }
                 ToolbarItem(placement: .automatic) {
                     Menu {

@@ -69,13 +69,20 @@ final class GameModel {
     var forceMinimap = false
     /// The campaign (mission) level 1…9 — OpenDUNE's `g_campaignID`, which gates build availability (the
     /// construction-yard `availableCampaign` check) and the upgrade chain. Our scenario `.INI`s don't carry
-    /// it, so it's chosen here (in the scenario selector). Applied live to the running sim and on every load,
-    /// so changing it updates the build menu immediately.
-    var campaignLevel = 1 { didSet {
-        // Don't reassign `campaignLevel` here — under @Observable that re-enters this setter and recurses
-        // forever. The picker only offers 1…9; `UInt8(clamping:)` is the belt-and-braces guard.
-        simulation?.state.campaignID = UInt8(clamping: campaignLevel)
-    } }
+    /// it, so it's derived from the loaded scenario's mission number (`ScenarioID.campaign`) and set on load.
+    private(set) var campaignLevel = 1
+
+    /// The install's scenarios, parsed into house / mission / campaign for the picker (it groups by house,
+    /// then campaign level). Stable after load, so recomputing per access is cheap.
+    var scenarioCatalog: [ScenarioID] {
+        assets.scenarioNames.compactMap(ScenarioID.init(fileName:)).sorted { $0.mission < $1.mission }
+    }
+
+    /// A friendly label for the current scenario (house + mission), for the toolbar button.
+    var scenarioTitle: String {
+        guard let name = currentScenario, let s = ScenarioID(fileName: name) else { return "Scenario" }
+        return "\(s.house.displayName) · Mission \(s.mission)"
+    }
 
     // Radar / minimap state (read by `MinimapView`).
     /// The player house's radar is active (outpost built + powered) — the minimap shows live content.
@@ -166,7 +173,10 @@ final class GameModel {
         state.aiFogOfWar = aiFogOfWar   // before unit placement, so the player units honour the AI-fog mask
         state.enforceUnitLimit = enforceUnitLimit
         state.loadScenario(ini: ini, iconMap: iconMap)
-        state.campaignID = UInt8(clamping: campaignLevel)   // the selected mission level (gates build availability)
+        // The mission level (gates build availability + the upgrade chain) — derived from the scenario's file
+        // number, since the `.INI` itself doesn't carry it. SCENA001 ⇒ campaign 1, SCENx020+ ⇒ campaign 8, etc.
+        campaignLevel = ScenarioID(fileName: scenarioName)?.campaign ?? 1
+        state.campaignID = UInt8(clamping: campaignLevel)
         // Activate every house; keep each one's scenario unit cap (`[HOUSES] MaxUnit`), defaulting houses with
         // no `[HOUSES]` entry to the Dune II default (39). The `enforceUnitLimit` toggle decides whether the
         // cap actually bites — so "follow the unit limit" uses the real scenario limit, not a pinned 1000.
