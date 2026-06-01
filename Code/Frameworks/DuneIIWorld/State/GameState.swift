@@ -122,6 +122,11 @@ public struct GameState: Sendable, Codable {
     /// toggle) to build past the limit. Golden-safe — the default `true` is exactly the original check.
     public var enforceUnitLimit: Bool = true
 
+    /// **Debug/UI only.** When true, `evaluateLevelEnd` never latches `gameEndState` — the win/lose check is
+    /// skipped so the player can keep playing indefinitely. Default `false` keeps the faithful behaviour (and
+    /// is golden/RNG-neutral — the level-end evaluation draws no RNG either way).
+    public var disableLevelEnd: Bool = false
+
     /// The active campaign (mission) number, 1…9. OpenDUNE's `g_campaignID`. Feeds several deterministic
     /// economy formulas faithfully — the structure-degrade gate (`> 1`), the AI build-speed cap
     /// (`campaignID*20+95`), the repair heal amount (`>= 3` → +5), and `Structure_IsUpgradable`. Defaults to

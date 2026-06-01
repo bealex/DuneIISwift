@@ -70,6 +70,28 @@ struct LevelEndTests {
         #expect(sim.state.gameEndState == .won)
     }
 
+    @Test("disableLevelEnd lets the game run on past a met win/lose condition")
+    func playIndefinitely() {
+        var sim = base(winFlags: 1, loseFlags: 1)
+        addStructure(&sim.state, house: 0)                  // the player's base; no enemy structures at all
+        sim.state.timerGame = 8000                          // past the minimum + the win condition is met
+
+        // Default (faithful): the win latches.
+        var control = sim
+        control.evaluateLevelEnd()
+        #expect(control.state.gameEndState == .won)
+
+        // With the debug toggle, the same state never latches — the player keeps playing.
+        sim.state.disableLevelEnd = true
+        sim.evaluateLevelEnd()
+        #expect(sim.state.gameEndState == .playing)
+
+        // Even re-evaluated repeatedly / much later, it stays playing.
+        sim.state.timerGame = 100_000
+        sim.evaluateLevelEnd()
+        #expect(sim.state.gameEndState == .playing)
+    }
+
     @Test("a level never ends before 7200 ticks even with the condition met")
     func minimumDuration() {
         var sim = base(winFlags: 1, loseFlags: 1)

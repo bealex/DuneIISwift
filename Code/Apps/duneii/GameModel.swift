@@ -52,6 +52,16 @@ final class GameModel {
     /// Whether the per-house unit limit (the scenario's `MaxUnit`) is enforced. On (default) = follow the
     /// limit faithfully; off = build past it. Applied to the live sim and to every scenario (re)load.
     var enforceUnitLimit = true { didSet { simulation?.state.enforceUnitLimit = enforceUnitLimit } }
+    /// Play indefinitely: skip the win/lose evaluation so the game never ends. Applied to the live sim and to
+    /// every scenario (re)load. Turning it on also clears any already-latched outcome (and dismisses the
+    /// banner) so a finished game can resume.
+    var playIndefinitely = false { didSet {
+        simulation?.state.disableLevelEnd = playIndefinitely
+        if playIndefinitely, simulation?.state.gameEndState != .playing {
+            simulation?.state.gameEndState = .playing
+            gameEnd = .playing
+        }
+    } }
     var showAllEconomies = false
     var showHealthOverlay = true   // health/state bars over units + buildings are on by default (a normal HUD element)
 
@@ -160,6 +170,8 @@ final class GameModel {
     /// Build the live `Simulation` from a ready `GameState` (a freshly-loaded scenario or a restored save) and
     /// set up the scene, camera, and minimap. Shared by `load` and `loadGame`.
     private func finishLoad(state: GameState, scenarioName: String?) {
+        var state = state
+        state.disableLevelEnd = playIndefinitely   // the live "play indefinitely" preference wins on every load
         let sim = Simulation(state: state, scriptInfo: unitScript, structureScriptInfo: structureScript,
                              tickExplosions: true, tickAnimations: true)
         simulation = sim

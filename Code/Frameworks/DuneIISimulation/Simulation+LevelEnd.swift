@@ -9,6 +9,7 @@ public extension Simulation {
     /// Evaluate the level-end conditions and latch `state.gameEndState`. Cheap + idempotent: a no-op once the
     /// game has ended, and before the 7200-tick minimum.
     mutating func evaluateLevelEnd() {
+        guard !state.disableLevelEnd else { return }   // debug/UI: play indefinitely (no win/lose latch)
         guard state.gameEndState == .playing else { return }
         if state.timerGame &- state.tickScenarioStart < 7200 { return }
         if levelIsFinished() {

@@ -259,6 +259,11 @@ struct DebugPanel: View {
                 Text("Unit cap (scenario MaxUnit) ignored — build past it.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Toggle("Play indefinitely", isOn: Binding(get: { model.playIndefinitely }, set: { model.playIndefinitely = $0 }))
+            if model.playIndefinitely {
+                Text("Victory/defeat is disabled — the game never ends. Turning it on clears any current outcome.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Toggle("Show all economies", isOn: Binding(get: { model.showAllEconomies }, set: { model.showAllEconomies = $0 }))
             Toggle("Health bars (units + buildings)", isOn: Binding(get: { model.showHealthOverlay }, set: { model.showHealthOverlay = $0 }))
             Toggle("Music", isOn: Binding(get: { model.musicEnabled }, set: { model.musicEnabled = $0 }))
