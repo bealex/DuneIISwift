@@ -81,8 +81,6 @@ final class GameModel {
     @ObservationIgnored private var noticeFrames = 0
     @ObservationIgnored private var wasLowPower = false
     @ObservationIgnored private var readyFactories: Set<Int> = []
-    @ObservationIgnored private var lastPlayerStructureHP: Int?
-    @ObservationIgnored private var underAttackCooldown = 0
 
     // Build-GUI derived state (refreshed for the selected player-owned factory).
     private(set) var buildables: [Buildable] = []
@@ -166,7 +164,7 @@ final class GameModel {
         paused = state.paused      // fresh scenario ⇒ false; a restored save ⇒ its saved pause
         gameEnd = state.gameEndState
         // Reset the transient hint state so the new base doesn't false-fire build-complete / under-attack.
-        wasLowPower = false; readyFactories = []; lastPlayerStructureHP = nil; underAttackCooldown = 0
+        wasLowPower = false; readyFactories = []
         notice = nil; noticeFrames = 0
         controller.deselect()
         scene.load(simulation: sim, assets: assets)
@@ -304,6 +302,12 @@ final class GameModel {
             // Play this tick's gameplay sounds (combat fire, explosions) — the full SoundEvent (with its
             // world position) so the sink can attenuate by distance. Unmapped voice ids are silent no-ops.
             for event in sim.state.soundEvents { audio.play(event) }
+            // Global UI feedback the sim raised this tick (`Sound_Output_Feedback`): un-attenuated voice +
+            // a viewport message. Only "base under attack" (48) so far — fired by Structure_HouseUnderAttack
+            // on a real combat impact, so it no longer false-fires on degradation/power/placement HP drops.
+            for feedback in sim.state.pendingFeedback where feedback == 48 {
+                postNotice("Your base is under attack"); audio.play(.houseUnderAttack); music.enterBattle()
+            }
         }
         simulation = sim
         let frame = sim.makeFrameInfo()
@@ -376,17 +380,6 @@ final class GameModel {
             }
         }
         readyFactories = nowReady
-
-        // Under attack — the total HP of the player's buildings dropped since last frame ⇒ the house
-        // "your base is under attack" voice + a notice, rate-limited so a sustained attack doesn't spam.
-        var hp = 0
-        for s in state.structures where s.o.flags.contains(.used) && s.o.houseID == ph { hp += Int(s.o.hitpoints) }
-        if underAttackCooldown > 0 { underAttackCooldown -= 1 }
-        if let last = lastPlayerStructureHP, hp < last, underAttackCooldown == 0 {
-            postNotice("Your base is under attack"); audio.play(.houseUnderAttack); music.enterBattle()
-            underAttackCooldown = 600   // ~10s at 60 fps
-        }
-        lastPlayerStructureHP = hp
     }
 
     /// Show a transient hint banner for ~3 seconds (≈180 frames at 60 fps).

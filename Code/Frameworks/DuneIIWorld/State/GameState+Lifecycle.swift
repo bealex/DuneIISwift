@@ -312,6 +312,28 @@ public extension GameState {
         return false
     }
 
+    /// `Structure_HouseUnderAttack` (`structure.c:1933`): the "your base is under attack" alert, raised when
+    /// an explosion lands on one of `houseID`'s structures (`Map_MakeExplosion`, `map.c:500`) — so it fires on
+    /// real combat impact only, never on degradation, power-shortfall HP clamping, or partial-slab placement.
+    /// For the human player (the single `flags.human` house ≡ `playerHouseID`), it raises the global feedback
+    /// (`Sound_Output_Feedback(48)` — voice + viewport message) at most once per `timerStructureAttack` window
+    /// (set to 8 here, ticked down in the house loop). For an AI house it flips the one-shot `doneFullScaleAttack`
+    /// flag; the original's `g_dune2_enhanced`-only counter-attack loop (foot a carryall search that does nothing
+    /// un-enhanced) is omitted — un-enhanced parity behaviour.
+    mutating func structureHouseUnderAttack(_ houseID: UInt8) {
+        guard houseID != 0xFF else { return }
+        let h = Int(houseID)
+        if houseID != playerHouseID, houses[h].flags.contains(.doneFullScaleAttack) { return }
+        houses[h].flags.insert(.doneFullScaleAttack)
+
+        // The player house is the human one in single-player; gate on `playerHouseID` (RNG-free, so the
+        // golden stream is untouched whether or not `flags.human` was set at load).
+        guard houseID == playerHouseID else { return }
+        if houses[h].timerStructureAttack != 0 { return }
+        pendingFeedback.append(48)   // Sound_Output_Feedback(48) — "your base is under attack"
+        houses[h].timerStructureAttack = 8
+    }
+
     /// `Unit_Hide` (`unit.c:1083`): take a unit off the map + out of play without freeing it — used when it
     /// enters a structure. Clears its tile occupancy (the `bulletIsBig` toggle keeps a 2-tile bullet's
     /// footprint clearing), resets its script, scrubs references, flags it off-map, and drops it from the

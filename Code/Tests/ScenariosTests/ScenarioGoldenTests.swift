@@ -75,6 +75,12 @@ struct ScenarioGoldenTests {
         let index: UInt16; let credits: UInt16; let creditsStorage: UInt16
         let powerProduction: UInt16; let powerUsage: UInt16
         let unitCount: UInt16     // live units of the house — verifies the bullet allocate/free accounting
+        // The base-under-attack observables (`Structure_HouseUnderAttack`), compared only for the
+        // `checkUnderAttack` spec — nil (and so absent from the comparison) for every other scenario, whose
+        // older goldens don't dump these keys. `timerStructureAttack` (the human-player rate limit) and
+        // `doneFullScaleAttack` (the one-shot "I've been hit" flag set for *any* struck house).
+        var timerStructureAttack: UInt16? = nil
+        var doneFullScaleAttack: Int? = nil
     }
     struct UnitState: Decodable, Equatable {
         let index: UInt16; let type: UInt8; let houseID: UInt8; let packed: UInt16; let orient: Int16
@@ -104,6 +110,7 @@ struct ScenarioGoldenTests {
         var cmd2Unit: UInt16? = nil  // an optional second attack order (the mutual missile duel)
         var cmd2Tile: UInt16 = 0
         var tickExplosions: Bool = false  // tick the GUI-clocked explosion VM ([BASIC] TickExplosions=1)
+        var checkUnderAttack: Bool = false  // compare the Structure_HouseUnderAttack house fields (timer + doneFullScaleAttack)
         var place: [PlaceCmd] = []   // build+place commands (a CY builds + the player places a structure)
         var launch: [LaunchCmd] = [] // human palace death-hand launches (mirrors the oracle's --parity-launch)
         var testDescription: String { name }
@@ -125,6 +132,7 @@ struct ScenarioGoldenTests {
         Spec(name: "attack-rocket", ini: "attack-rocket.ini", attack: true, cmdUnit: 22, tile: 1045, compared: 0),  // Launcher duel → notAccurate rocket: FULL 400-tick match incl. the scatter (after the GameLoop_Team cursor-draw fix — see note)
         Spec(name: "attack-structure", ini: "attack-structure.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0),  // tank attacks an Ordos windtrap: full 400-tick match (structures + units), inc. the bullet-impact Structure_Damage (200→175). Found the structure-corner-position bug (see note).
         Spec(name: "trooper",     ini: "trooper.ini",     attack: false, cmdUnit: 22, tile: 1040, compared: 0),  // a foot trooper walks: verifies the walk animation (spriteOffset, tickUnknown5) + movement, full match
+        Spec(name: "house-under-attack", ini: "house-under-attack.ini", attack: true, cmdUnit: 22, tile: 1042, compared: 0, checkUnderAttack: true),  // HOUSE-UNDER-ATTACK golden: a Harkonnen tank's bullet impacts an Ordos windtrap; on impact Map_MakeExplosion → Structure_HouseUnderAttack(Ordos) flips the Ordos house's doneFullScaleAttack 0→1 (tick 82, same hit that drops the windtrap 200→175). Full 400-tick match incl. the house fields (timerStructureAttack stays 0 — Ordos isn't the human player) + the RNG stream. The player-human branch (timer + the "your base is under attack" feedback) can't run headless (the oracle SIGSEGVs in Sound_Output_Feedback — no strings) so it's a UI seam covered by HouseUnderAttackTests.
         Spec(name: "economy", ini: "economy.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false),  // HOUSE golden: an Ordos windtrap+silo base — full 60-tick match of the house aggregate (credits 2000→clamp 1000→power-maint 999, power 100/5, storage 1000) + structures. Validates House_CalculatePowerAndCredit + the credit clamp + power maintenance.
         Spec(name: "teams", ini: "teams.ini", attack: false, cmdUnit: 0, tile: 0, compared: 0, cmd: false, team: true),  // TEAM-AI golden: an Ordos `Normal`-brain team recruits its tanks via GameLoop_Team. Unit-state + (decisively) the RNG draw stream match the oracle full 400 ticks — proving the team loop + brain run identically cross-engine (recruiting isn't in the dump; the RNG stream is the proof). Targeting is fog-gated off (seenByHouses 0), matching the oracle.
         Spec(name: "missile-duel", ini: "missile-duel.ini", attack: true, cmdUnit: 22, tile: 1045, compared: 0, cmd2Unit: 23, cmd2Tile: 1040),
@@ -170,12 +178,16 @@ struct ScenarioGoldenTests {
         packed.map { p in TileGolden(packed: p, ground: s.map[Int(p)].groundTileID, veil: s.map[Int(p)].isUnveiled ? 1 : 0) }
     }
 
-    private func houseSnapshot(_ s: GameState) -> [HouseGolden] {
+    private func houseSnapshot(_ s: GameState, underAttack: Bool) -> [HouseGolden] {
         s.houses.indices.filter { s.houses[$0].flags.contains(.used) }.map { i in
             let h = s.houses[i]
             return HouseGolden(index: UInt16(h.index), credits: h.credits, creditsStorage: h.creditsStorage,
                                powerProduction: h.powerProduction, powerUsage: h.powerUsage,
-                               unitCount: h.unitCount)
+                               unitCount: h.unitCount,
+                               // Only the under-attack spec compares these; nil keeps every other scenario's
+                               // house comparison identical to its (timer/flag-free) committed golden.
+                               timerStructureAttack: underAttack ? h.timerStructureAttack : nil,
+                               doneFullScaleAttack: underAttack ? (h.flags.contains(.doneFullScaleAttack) ? 1 : 0) : nil)
         }
         .sorted { $0.index < $1.index }
     }
@@ -252,7 +264,7 @@ struct ScenarioGoldenTests {
         let rngSink = RngTraceSink()
         sim.state.random256.traceSink = rngSink
         sim.state.randomLCG.traceSink = rngSink
-        func frame() -> Frame { Frame(tick: 0, units: snapshot(sim.state), structures: structureSnapshot(sim.state), houses: houseSnapshot(sim.state), tiles: tilesSnapshot(sim.state, dumpTiles)) }
+        func frame() -> Frame { Frame(tick: 0, units: snapshot(sim.state), structures: structureSnapshot(sim.state), houses: houseSnapshot(sim.state, underAttack: spec.checkUnderAttack), tiles: tilesSnapshot(sim.state, dumpTiles)) }
         var ours: [Frame] = [frame()]
         for t in 1 ..< max(oracle.count, 1) {
             rngSink.setTick(UInt32(t))

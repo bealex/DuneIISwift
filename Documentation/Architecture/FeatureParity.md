@@ -166,6 +166,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | IMPACT crater classification (small/medium by damage) | ✅ | `UnitMovement` (crater **overlay** is presentation) |
 | Wall destruction (HP-vs-RNG) + `Map_UpdateWall` | ✅ | `UnitImpact`, `GameState+WallSlab` |
 | Explosion reactions: retaliate / team HUNT staging / harvester flee | ✅ | `UnitImpact` |
+| `Structure_HouseUnderAttack` (base-under-attack alert on explosion impact) | ✅ | `GameState+Lifecycle.structureHouseUnderAttack` — fires from `Map_MakeExplosion` only (real combat impact), gated by `timerStructureAttack`; raises `pendingFeedback` 48 for the player. Cross-engine **`house-under-attack`** scenario golden (the AI house's `doneFullScaleAttack` flips 0→1 on impact, tick-for-tick vs the oracle) + `HouseUnderAttackTests`. The player-human feedback (timer + voice/message) is a UI seam — the headless oracle SIGSEGVs in `Sound_Output_Feedback` — so it's unit-tested only |
 | `g_scenario` kill/score tally on a kill | ✅ | `UnitImpact.die` |
 
 ## H. Unit lifecycle

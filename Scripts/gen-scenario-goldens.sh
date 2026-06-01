@@ -75,6 +75,10 @@ run  attack-close 97   attack-close.ini  "$TICKS"  attack,22,1041
 run  guard        96   guard.ini         "$TICKS"  move,23,1100
 run  attack-rocket 95   attack-rocket.ini "$TICKS"  attack,22,1045
 run  attack-structure 94 attack-structure.ini "$TICKS" attack,22,1042
+# house-under-attack: a Harkonnen tank attacks an Ordos windtrap; on impact Structure_HouseUnderAttack flips
+# the Ordos house's doneFullScaleAttack flag (the headless-safe half — the player-human feedback path
+# SIGSEGVs in the oracle, so it's a UI seam covered by unit tests). Dumps houses (Ordos via [HOUSES]).
+run  house-under-attack 83 house-under-attack.ini "$TICKS" attack,22,1042
 run  trooper      92   trooper.ini       "$TICKS"  move,22,1040
 run  economy      93   economy.ini       60
 run  teams        91   teams.ini         "$TICKS"

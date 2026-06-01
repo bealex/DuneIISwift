@@ -176,6 +176,13 @@ public struct GameState: Sendable, Codable {
     /// `SoundID` carries the OpenDUNE voice id (e.g. a unit's `bulletSound`); the host maps it to a VOC.
     public var soundEvents: [SoundEvent] = []
 
+    /// Global UI feedback the sim raised this tick — OpenDUNE's `Sound_Output_Feedback(index)` sites, which
+    /// pair a non-positional spoken voice with a viewport message (`g_feedback[index]`). Distinct from
+    /// `soundEvents` (positional `Voice_PlayAtTile` combat cues): a feedback is global, so the host plays its
+    /// voice un-attenuated and shows the message. Currently only `48` ("your base is under attack", from
+    /// `Structure_HouseUnderAttack`). Transient — the loop clears it each tick, so a golden run never accumulates.
+    public var pendingFeedback: [UInt16] = []
+
     /// Packed tiles where an explosion's VM hit a still-live spice bloom this tick (`Explosion_Func_BloomExplosion`,
     /// `explosion.c:157`). The World-layer explosion VM only records the tile; the Simulation drains this after
     /// `explosionTick` and runs `Map_Bloom_ExplodeSpice` (a Simulation primitive — spice-fill + tremor). Transient:

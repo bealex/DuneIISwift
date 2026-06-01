@@ -104,6 +104,7 @@ public struct Simulation: Sendable {
     /// Mirrors the headless parity driver (`src/parity.c` `Parity_Run`).
     public mutating func tick() {
         state.soundEvents.removeAll(keepingCapacity: true)   // the host drained last tick's sounds
+        state.pendingFeedback.removeAll(keepingCapacity: true)   // …and last tick's global UI feedback
         if !state.scenario.spiceFields.isEmpty { applyScenarioSpiceFields() }   // [MAP] Field — once, at start
         state.timerGUI &+= 1
         if state.paused { return }

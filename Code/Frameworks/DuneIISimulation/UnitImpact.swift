@@ -234,9 +234,11 @@ extension UnitMovement {
         }
 
         // Structure at the impact tile takes the blast. The EXPLOSION_IMPACT_LARGE → SMOKE_PLUME type
-        // swap (when the building is already below half HP) is animation-only (SEAM), and
-        // Structure_HouseUnderAttack (the AI alert) is a SEAM; the damage itself is ported.
+        // swap (when the building is already below half HP) is animation-only (SEAM). The
+        // Structure_HouseUnderAttack alert (`map.c:500`) fires here — on real combat impact only — so the
+        // "base under attack" warning never triggers on degradation/power/placement HP changes.
         if hitpoints != 0, let sSlot = state.structureGetByPackedTile(positionPacked) {
+            state.structureHouseUnderAttack(state.structures[sSlot].o.houseID)
             state.structureDamage(sSlot, damage: hitpoints, range: 0)
         }
         // Wall destruction (`map.c:503`): a wall tile is destroyed if the blast HP is at least the wall's
