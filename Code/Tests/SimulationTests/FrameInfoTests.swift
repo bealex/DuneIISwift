@@ -256,6 +256,17 @@ struct FrameInfoTests {
         #expect(sim.makeFrameInfo().units.isEmpty)
     }
 
+    @Test("hidden (isNotOnMap) structures are omitted — no phantom blip at world origin (0,0)")
+    func hiddenStructureOmitted() {
+        var sim = scene()
+        #expect(sim.makeFrameInfo().structures.count == 1)
+        // `Structure_Create` parks a not-yet-placed structure off-map at (0,0); it must not be drawn
+        // (the minimap would otherwise show a blip in its top-left corner).
+        sim.state.structures[0].o.flags.insert(.isNotOnMap)
+        sim.state.structures[0].o.position = Tile32(x: 0, y: 0)
+        #expect(sim.makeFrameInfo().structures.isEmpty)
+    }
+
     @Test("a carryall is flagged as an air unit for the renderer's z-order")
     func airUnitFlag() throws {
         var sim = scene()

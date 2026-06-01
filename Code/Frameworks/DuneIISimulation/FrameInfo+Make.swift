@@ -71,6 +71,11 @@ public extension Simulation {
 
         var structures = [FrameInfo.Structure]()
         for s in state.structures where s.o.flags.contains(.used) {
+            // Created-but-not-yet-placed structures (`Structure_Create` parks them off-map at (0,0) until
+            // they are built onto the map) must not be drawn — otherwise they leave a phantom blip at world
+            // origin (the minimap's top-left). Mirrors the unit guard above (`viewport.c` never draws
+            // off-map objects).
+            if s.o.flags.contains(.isNotOnMap) { continue }
             guard let type = StructureType(rawValue: Int(s.o.type)) else { continue }
             let house = HouseID(rawValue: Int(s.o.houseID)) ?? .harkonnen
             structures.append(FrameInfo.Structure(
