@@ -250,7 +250,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | Harvesting + tile depletion | ✅ | native 0x2A |
 | `Map_ChangeSpiceAmount` (sand↔spice↔thick, edge fix) | ✅ | `MapPrimitives` |
 | `Map_FillCircleWithSpice` | ✅ | `MapPrimitives` |
-| Spice bloom detonation (`Map_Bloom_ExplodeSpice`) | ✅ | `UnitImpact`; the bloom sprite is removed on detonation — the loader keeps the tile's base as sand (not the bloom), or the revert would restore it (`BloomInteractionTests`) |
+| Spice bloom detonation (`Map_Bloom_ExplodeSpice`) | ✅ | `UnitImpact`; the bloom sprite is removed on detonation — the loader keeps the tile's base as sand (not the bloom), or the revert would restore it. Triggered by a unit driving onto it **and** by an explosion's `BLOOM_EXPLOSION` VM command (`Explosion_Func_BloomExplosion` → `pendingBloomDetonations` → `Simulation.drainBloomDetonations`) — the "shoot a bloom to pop it" path (`BloomInteractionTests`, `ExplosionTests`) |
 | `Map_Bloom_ExplodeSpecial` | ✅ n/a | unreachable in 1.07, intentionally unported |
 | `Map_DeviateArea` | ✅ | `UnitMovement` |
 | `Map_SearchSpice` | ✅ | `MapPrimitives` |

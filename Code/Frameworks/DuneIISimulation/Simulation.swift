@@ -117,7 +117,25 @@ public struct Simulation: Sendable {
         // Visual subsystems the oracle's parity harness doesn't tick (both draw RNG) — gated off the
         // golden/oracle-matched path, on for the visual apps. See `tickAnimations`/`tickExplosions`.
         if tickAnimations { state.animationTick() }   // structure animations (mutates the map ground tiles)
-        if tickExplosions { state.explosionTick() }   // explosion sprite animations
+        if tickExplosions {
+            state.explosionTick()                     // explosion sprite animations
+            drainBloomDetonations()                   // pop any bloom a blast's VM landed on (shoot-the-bloom)
+        }
+    }
+
+    /// Realize the bloom detonations the explosion VM queued this tick (`Explosion_Func_BloomExplosion`):
+    /// the World layer only records the tile, since `Map_Bloom_ExplodeSpice` (spice-fill + tremor) is a
+    /// Simulation primitive. Runs only on the explosion-ticking (visual-app) path, so it's golden-neutral.
+    private mutating func drainBloomDetonations() {
+        guard !state.pendingBloomDetonations.isEmpty, let movement = unitScript?.movement else {
+            state.pendingBloomDetonations.removeAll(keepingCapacity: true)
+            return
+        }
+        let blooms = state.pendingBloomDetonations
+        state.pendingBloomDetonations.removeAll(keepingCapacity: true)
+        for packed in blooms {
+            movement.mapBloomExplodeSpice(packed: packed, houseID: state.playerHouseID, in: &state)
+        }
     }
 
     /// `Tools_AdjustToGameSpeed` with this run's `gameSpeed`.

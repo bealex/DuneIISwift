@@ -161,6 +161,12 @@ public struct GameState: Sendable, Codable {
     /// `SoundID` carries the OpenDUNE voice id (e.g. a unit's `bulletSound`); the host maps it to a VOC.
     public var soundEvents: [SoundEvent] = []
 
+    /// Packed tiles where an explosion's VM hit a still-live spice bloom this tick (`Explosion_Func_BloomExplosion`,
+    /// `explosion.c:157`). The World-layer explosion VM only records the tile; the Simulation drains this after
+    /// `explosionTick` and runs `Map_Bloom_ExplodeSpice` (a Simulation primitive — spice-fill + tremor). Transient:
+    /// only populated while explosions tick (the visual apps), so a golden/parity run never accumulates.
+    public var pendingBloomDetonations: [UInt16] = []
+
     /// Queue a sound at a world position (`Voice_PlayAtTile`, `sound.c:134`). Ignores out-of-range ids and
     /// the `0xFFFF` "no sound" sentinel. RNG-free, so it doesn't perturb the golden/parity path.
     public mutating func emitSound(_ voiceID: Int, at position: Tile32) {

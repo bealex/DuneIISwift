@@ -74,7 +74,13 @@ public extension GameState {
                     case .setAnimation:
                         break   // SEAM: g_table_animation_map (only the two crash explosions use it)
                     case .bloomExplosion:
-                        break   // SEAM: Map_Bloom_ExplodeSpice
+                        // Explosion_Func_BloomExplosion (explosion.c:157): if the tile under the explosion is
+                        // still the spice bloom, queue it for Map_Bloom_ExplodeSpice (a Simulation primitive,
+                        // drained by the loop after explosionTick). This is the "shoot a bloom to pop it" path.
+                        let bp = explosions[i].position.packed
+                        if Int(bp) < map.count, map[Int(bp)].groundTileID == tileIDs.bloom {
+                            pendingBloomDetonations.append(bp)
+                        }
                 }
                 if !explosions[i].active { continue }
             }

@@ -263,6 +263,17 @@ final class GameModel {
     // Inspector actions.
     func arm(_ kind: OrderKind) { controller.beginOrder(kind); audio.play(.select); pendingOrder = controller.pendingOrder }
     func stopSelected() { controller.stopSelected(); audio.play(.acknowledge) }
+
+    /// Issue a `PanelAction` from the inspector. A targeted action (Attack/Move/Harvest) arms a click; an
+    /// immediate action (Guard/Retreat/Return/Deploy/Destruct/…) is queued straight away as `Command.setAction`.
+    func issue(_ action: PanelAction) {
+        if action.targeted, let kind = action.type.orderKind {
+            arm(kind)
+        } else if let slot = controller.selection.unitSlot {
+            enqueue(.setAction(unit: UInt16(slot), action: UInt8(action.type.rawValue)))
+            audio.play(.acknowledge)
+        }
+    }
     func deselect() { controller.deselect(); selection = nil; pendingOrder = nil }
 
     // MARK: - Building
@@ -403,9 +414,20 @@ final class GameModel {
                 let house = HouseID(rawValue: Int(state.unitHouseID(u))) ?? .harkonnen
                 let p = Int(u.o.position.packed)
                 let stateText = ActionType(rawValue: Int(u.actionID)).map { ActionInfo[$0].name } ?? "—"
+                // The original's per-unit player action menu (`actionsPlayer`), deduped + in order, for a
+                // player unit: Attack/Move/Harvest/Return/Deploy/Guard/… A `.target` action arms a click; a
+                // `.unit` action applies immediately.
+                var actions: [PanelAction] = []
+                if house == playerHouse {
+                    var seen = Set<ActionType>()
+                    for a in UnitInfo[type].o.actionsPlayer where seen.insert(a).inserted {
+                        actions.append(PanelAction(type: a, targeted: ActionInfo[a].selectionType == .target))
+                    }
+                }
                 return SelectionInfo(kind: .unit, name: type.displayName, house: house.displayName,
                                      isPlayer: house == playerHouse, state: stateText, hitpoints: Int(u.o.hitpoints),
-                                     hitpointsMax: Int(UnitInfo[type].o.hitpoints), tileX: p % 64, tileY: p / 64)
+                                     hitpointsMax: Int(UnitInfo[type].o.hitpoints), tileX: p % 64, tileY: p / 64,
+                                     unitActions: actions)
             case let .structure(slot):
                 guard slot < state.structures.count, state.structures[slot].o.flags.contains(.used),
                       let type = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return nil }
@@ -420,6 +442,13 @@ final class GameModel {
                                      hitpointsMax: Int(StructureInfo[type].o.hitpoints), tileX: p % 64, tileY: p / 64)
         }
     }
+}
+
+/// One entry of a unit's player action menu: an `ActionType` plus whether it needs a target click
+/// (`selectionType == .target`, e.g. Attack/Move/Harvest) or applies immediately (Guard/Return/Deploy/…).
+struct PanelAction: Equatable, Hashable {
+    var type: ActionType
+    var targeted: Bool
 }
 
 /// Repair/upgrade availability for the selected player structure (the inspector's structure-command buttons).
@@ -460,6 +489,7 @@ struct SelectionInfo: Equatable {
     var state: String
     var hitpoints: Int, hitpointsMax: Int
     var tileX: Int, tileY: Int
-    var commands: [OrderKind] { kind == .unit && isPlayer ? [.move, .attack] : [] }
-    var canStop: Bool { kind == .unit && isPlayer }
+    /// The player order buttons for this entity — the original's per-unit `actionsPlayer` menu (Attack/Move/
+    /// Harvest/Return/Deploy/Guard/…), deduped and in order. Empty for structures and non-player units.
+    var unitActions: [PanelAction] = []
 }

@@ -1,5 +1,6 @@
 import DuneIIInput
 import DuneIISimulation
+import DuneIIWorld
 import SwiftUI
 
 /// The selected unit/building's properties + the commands available to it (player-owned units only).
@@ -28,19 +29,16 @@ struct InspectorPanel: View {
                         ProgressView(value: Double(s.hitpoints), total: Double(max(s.hitpointsMax, 1)))
                             .tint(tint(s.hitpoints, s.hitpointsMax))
                     }.font(.callout)
-                    if !s.commands.isEmpty || s.canStop {
+                    if !s.unitActions.isEmpty {
                         Divider()
                         Text("Commands").font(.headline)
-                        ForEach(s.commands, id: \.self) { kind in
-                            Button { model.arm(kind) } label: {
-                                Label("\(kind.label) (\(kind.shortcut))", systemImage: kind.systemImage)
+                        ForEach(s.unitActions, id: \.self) { action in
+                            Button { model.issue(action) } label: {
+                                Label(action.label, systemImage: action.type.systemImage)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .buttonStyle(.bordered).tint(model.pendingOrder == kind ? .accentColor : nil)
-                        }
-                        if s.canStop {
-                            Button { model.stopSelected() } label: { Label("Stop (S)", systemImage: "stop.fill").frame(maxWidth: .infinity, alignment: .leading) }
-                                .buttonStyle(.bordered)
+                            .buttonStyle(.bordered)
+                            .tint(action.targeted && model.pendingOrder == action.type.orderKind ? .accentColor : nil)
                         }
                         if let p = model.pendingOrder {
                             Label("Click a target to \(p.verb)…", systemImage: "scope").font(.caption).foregroundStyle(.secondary)
@@ -242,6 +240,36 @@ struct Diamond: Shape {
         p.move(to: CGPoint(x: r.midX, y: r.minY)); p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
         p.addLine(to: CGPoint(x: r.midX, y: r.maxY)); p.addLine(to: CGPoint(x: r.minX, y: r.midY)); p.closeSubpath()
         return p
+    }
+}
+
+extension PanelAction {
+    /// The button caption — the original action name (`ActionInfo`), with the keyboard shortcut appended for
+    /// the targeted orders that have one (Move/Attack/Harvest).
+    var label: String {
+        if targeted, let k = type.orderKind { return "\(ActionInfo[type].name) (\(k.shortcut))" }
+        return ActionInfo[type].name
+    }
+}
+
+extension ActionType {
+    /// The matching armed-order kind for a targeted action, else `nil` (an immediate `.unit` action).
+    var orderKind: OrderKind? {
+        switch self {
+            case .attack: .attack; case .move: .move; case .harvest: .harvest; case .retreat: .retreat
+            default: nil
+        }
+    }
+
+    /// SF Symbol for the action-panel button.
+    var systemImage: String {
+        switch self {
+            case .attack: "target"; case .move: "arrow.up.right"; case .harvest: "leaf"
+            case .retreat: "arrow.uturn.left"; case .guard_, .areaGuard: "shield"
+            case .return: "arrow.down.left.circle"; case .stop: "stop.fill"
+            case .deploy: "shippingbox"; case .destruct: "burst"; case .sabotage: "bolt.trianglebadge.exclamationmark"
+            case .ambush: "eye.slash"; case .hunt: "scope"; case .die: "xmark"
+        }
     }
 }
 

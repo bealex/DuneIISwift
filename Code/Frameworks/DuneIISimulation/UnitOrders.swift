@@ -31,6 +31,7 @@ public struct UnitOrders: Sendable {
             case let .harvest(unit, tile): order(slot: Int(unit), action: .harvest, targetPacked: tile, in: &state)
             case let .retreat(unit, tile): order(slot: Int(unit), action: .retreat, targetPacked: tile, in: &state)
             case let .stop(unit):          stop(slot: Int(unit), in: &state)
+            case let .setAction(unit, action): setUnitAction(slot: Int(unit), action: action, in: &state)
             case let .build(structure, objectType):
                 _ = combat.structureBuildObject(slot: Int(structure), objectType: objectType, in: &state)
             case let .starportOrder(structure, objectType):
@@ -56,12 +57,19 @@ public struct UnitOrders: Sendable {
     /// Stop the unit: clear its move/attack targets + route and set it to GUARD in place (the original's
     /// viewport "stop"/deselect-to-guard behaviour).
     public func stop(slot: Int, in state: inout GameState) {
+        setUnitAction(slot: slot, action: UInt8(ActionType.guard_.rawValue), in: &state)
+    }
+
+    /// Issue a no-target action to the unit (the player action-panel buttons whose `selectionType` is `.unit`:
+    /// Guard / Retreat / Return / Deploy / Destruct / …): clear the unit's move/attack targets + route, then
+    /// `Unit_SetAction` — its script's action handler computes any destination itself. `stop` is this with GUARD.
+    public func setUnitAction(slot: Int, action: UInt8, in state: inout GameState) {
         guard slot >= 0, slot < state.units.count else { return }
         state.objectScriptVariable4Clear(.unit(slot))
         state.units[slot].targetAttack = 0
         state.units[slot].targetMove = 0
         state.units[slot].route[0] = 0xFF
-        actions.setAction(slot: slot, action: UInt8(ActionType.guard_.rawValue), scriptInfo: scriptInfo, in: &state)
+        actions.setAction(slot: slot, action: action, scriptInfo: scriptInfo, in: &state)
     }
 
     /// The viewport-click order: clear the unit's existing targets, resolve the target tile (for an

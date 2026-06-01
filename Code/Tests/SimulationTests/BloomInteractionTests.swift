@@ -63,4 +63,24 @@ struct BloomInteractionTests {
 
         #expect(s.map[Int(onto)].groundTileID != Self.bloomID)   // the bloom was detonated + removed
     }
+
+    /// The "shoot the bloom" path: an explosion's VM queues `pendingBloomDetonations` (a World seam), and
+    /// the loop drains it after `explosionTick`, running `Map_Bloom_ExplodeSpice` — reverting the bloom +
+    /// spreading spice. Here we seed the queue (what the VM's BLOOM command would have done) and tick.
+    @Test("the loop drains a queued bloom detonation (reverts the bloom + spreads spice)")
+    func tickDrainsBloomDetonation() {
+        var sim = Simulation(scriptInfo: info, tickExplosions: true)
+        sim.state.playerHouseID = 0
+        _ = sim.state.houseAllocate(index: 0)
+        sim.state.tileIDs.bloom = Self.bloomID
+        let p = Int(Tile32.packXY(x: 30, y: 30))
+        sim.state.map[p].groundTileID = Self.bloomID
+        sim.state.mapBaseTileID[p] = Self.sandID
+        sim.state.pendingBloomDetonations = [UInt16(p)]
+
+        sim.tick()
+
+        #expect(sim.state.map[p].groundTileID != Self.bloomID)        // detonated → reverted off the bloom
+        #expect(sim.state.pendingBloomDetonations.isEmpty)            // drained
+    }
 }

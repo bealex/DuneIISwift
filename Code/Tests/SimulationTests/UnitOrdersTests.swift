@@ -108,6 +108,19 @@ struct UnitOrdersTests {
         #expect(s.units[slot].targetAttack != 0)
     }
 
+    @Test("setAction command clears targets/route and sets the chosen no-target action (e.g. Return)")
+    func setActionOrder() {
+        var s = makeState()
+        let slot = place(&s, .harvester, house: 0, packed: 1300)
+        orders.apply(.move(unit: UInt16(slot), tile: 2000), in: &s)   // give it a move first
+        #expect(s.units[slot].targetMove != 0)
+        orders.apply(.setAction(unit: UInt16(slot), action: UInt8(ActionType.return.rawValue)), in: &s)
+        #expect(s.units[slot].actionID == UInt8(ActionType.return.rawValue))
+        #expect(s.units[slot].targetMove == 0)
+        #expect(s.units[slot].targetAttack == 0)
+        #expect(s.units[slot].route[0] == 0xFF)
+    }
+
     @Test("findTargetAround returns an adjacent unit's tile, else the tile itself")
     func findTargetAround() {
         var s = makeState()

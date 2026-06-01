@@ -33,7 +33,13 @@ stop, plus a few side-effecting commands). They live in `GameState.explosions` (
   its `Random_256() & 1` draw. Documented seam (no-op): craters need the crater icon-map + the spice/bloom
   primitives, which aren't ported; it is cosmetic + gated off for goldens (see below).
 - `PLAY_VOICE` (audio), `SCREEN_SHAKE` (video), `SET_ANIMATION` (only the two crash explosions use it —
-  needs `g_table_animation_map`), `BLOOM_EXPLOSION` (`Map_Bloom_ExplodeSpice`). All no-ops.
+  needs `g_table_animation_map`). No-ops.
+- `BLOOM_EXPLOSION` (`Explosion_Func_BloomExplosion`, `explosion.c:157`) is **wired**: when the explosion's
+  tile is still the bloom tile it records the packed tile in `state.pendingBloomDetonations` (the VM is
+  World-layer; `Map_Bloom_ExplodeSpice` is a Simulation primitive — spice-fill + tremor), which the loop
+  drains right after `explosionTick` (`Simulation.drainBloomDetonations`). This is the "shoot a bloom to
+  pop it" path — the impact explosions all carry the command. Only realized on the explosion-ticking
+  (visual-app) path, so it is golden-neutral. (`ExplosionTests`, `BloomInteractionTests`.)
 
 ## Triggering + the parity gate
 

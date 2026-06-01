@@ -13,6 +13,9 @@ public enum Command: Sendable, Equatable {
     case retreat(unit: UInt16, tile: UInt16)
     /// Order the unit to stop — hold position and guard (clear its move/attack targets).
     case stop(unit: UInt16)
+    /// Issue a no-target action (`ActionType.rawValue`) to the unit — the original's `.unit`-selection action
+    /// buttons (Guard / Retreat / Return / Deploy / Destruct / …): clear targets, then `Unit_SetAction`.
+    case setAction(unit: UInt16, action: UInt8)
     /// Start the factory `structure` (a structure pool index) building `objectType` — a `UnitType.rawValue`
     /// for a unit factory, or a `StructureType.rawValue` for the construction yard (`Structure_BuildObject`).
     case build(structure: UInt16, objectType: UInt16)

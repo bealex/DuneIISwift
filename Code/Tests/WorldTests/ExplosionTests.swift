@@ -145,6 +145,33 @@ struct ExplosionTests {
         #expect(state.map[p].groundTileID == 30)
     }
 
+    @Test("an explosion sitting on a spice bloom queues it for detonation at the BLOOM command")
+    func bloomExplosionQueuesDetonation() {
+        var state = GameState()
+        state.tileIDs.bloom = 200
+        let pos = Tile32.unpack(Tile32.packXY(x: 6, y: 6))
+        let p = Int(pos.packed)
+        state.map[p].groundTileID = 200                 // the bloom under the blast
+        state.explosionStart(type: ExplosionType.impactSmall.rawValue, position: pos)
+        // [setSprite 153, setTimeout 3, BLOOM, …] — step to the BLOOM command.
+        step(&state)                                    // setSprite
+        step(&state)                                    // setTimeout
+        #expect(state.pendingBloomDetonations.isEmpty)
+        step(&state)                                    // BLOOM → queues the tile
+        #expect(state.pendingBloomDetonations == [UInt16(p)])
+    }
+
+    @Test("an explosion on a non-bloom tile queues nothing at the BLOOM command")
+    func bloomExplosionSkipsNonBloom() {
+        var state = GameState()
+        state.tileIDs.bloom = 200
+        let pos = Tile32.unpack(Tile32.packXY(x: 6, y: 6))
+        state.map[Int(pos.packed)].groundTileID = 50    // not a bloom
+        state.explosionStart(type: ExplosionType.impactSmall.rawValue, position: pos)
+        step(&state); step(&state); step(&state)        // through the BLOOM command
+        #expect(state.pendingBloomDetonations.isEmpty)
+    }
+
     @Test("a second explosion on the same tile stops the first")
     func stopAtPosition() {
         var state = GameState()
