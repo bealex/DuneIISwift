@@ -217,7 +217,13 @@ struct StructureScriptFunctions: Sendable {
 
         if state.structures[slot].o.linkedID == 0xFF { state.structureSetState(slot, .idle) }
         state.objectScriptVariable4Clear(.structure(slot))
-        return 1   // SEAM: Sound_Output_Feedback (player non-repair deploy)
+        // "<house> unit/harvester deployed" (`script/structure.c:289`): the player's own non-repair factory
+        // only. Harvester → house+68, any other unit → house+30. Routed through the global feedback queue.
+        if state.structures[slot].o.houseID == state.playerHouseID,
+           StructureType(rawValue: Int(state.structures[slot].o.type)) != .repair {
+            state.pendingFeedback.append(UInt16(state.playerHouseID) &+ (ut == .harvester ? 68 : 30))
+        }
+        return 1
     }
 
     /// `Script_Structure_FindUnitByType` (op 0x03, `:195`): summon a unit of `type` (in practice a carryall)

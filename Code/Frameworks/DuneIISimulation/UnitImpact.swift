@@ -165,7 +165,7 @@ extension UnitMovement {
             mapMakeExplosion(type: UInt16(ExplosionType.spiceBloomTremor.rawValue),
                              position: Tile32.unpack(packed), hitpoints: 0, origin: 0, in: &state)
         }
-        // SEAM: Sound_Output_Feedback(36) for the player house (audio).
+        if houseID == state.playerHouseID { state.pendingFeedback.append(36) }   // "Spice bloom located"
         map.fillCircleWithSpice(packed, radius: 5, in: &state)
     }
 

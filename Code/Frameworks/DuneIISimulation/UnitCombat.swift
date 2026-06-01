@@ -215,7 +215,10 @@ public struct UnitCombat: Sendable {
         if !state.mapIsValidPosition(drop.packed) { return 0 }
         let passenger = Int(state.units[slot].o.linkedID)
         if !unitSetPosition(slot: passenger, position: drop, in: &state) { return 0 }
-        // SEAM: Voice_PlayAtTile(24) for a player unit.
+        // The carryall drop cue (`Voice_PlayAtTile(24)` → DROPEQ2P), for a player-owned passenger only.
+        if state.units[passenger].o.houseID == state.playerHouseID {
+            state.emitSound(24, at: state.units[slot].o.position)
+        }
 
         let facing = state.units[slot].orientation[0].current
         var u2 = state.units[passenger]

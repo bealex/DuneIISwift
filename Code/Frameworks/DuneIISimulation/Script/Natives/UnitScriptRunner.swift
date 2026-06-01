@@ -73,7 +73,8 @@ public struct UnitScriptRunner: Sendable {
             case 0x0F: return movement.die(slot: slot, engine: &engine, in: &state)
             case 0x10: let d = general.delay(ticks: engine.peek(1)); engine.delay = d; return d
             case 0x11: return general.isFriendly(currentHouseID: state.unitHouseID(u), encoded: engine.peek(1), in: state)
-            case 0x15, 0x26, 0x27, 0x2B, 0x34, 0x35, 0x39, 0x3F: return general.noOperation()   // 0x26 VoicePlay / 0x27 DisplayDestroyedText — audio/GUI (SEAM)
+            case 0x26: state.emitSound(Int(engine.peek(1)), at: u.o.position); return 0   // Script_Unit_VoicePlay
+            case 0x15, 0x27, 0x2B, 0x34, 0x35, 0x39, 0x3F: return general.noOperation()   // 0x27 DisplayDestroyedText — GUI (SEAM)
             case 0x17: return general.randomRange(min: engine.peek(1), max: engine.peek(2), in: &state)
             case 0x19: return unit.setDestinationDirect(slot: slot, encoded: engine.peek(1), in: &state)
             case 0x1A: return unit.stop(slot: slot, in: &state)

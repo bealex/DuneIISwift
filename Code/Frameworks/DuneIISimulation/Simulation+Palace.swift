@@ -37,6 +37,9 @@ public extension Simulation {
                                                       position: Tile32(x: 0xFFFF, y: 0xFFFF), orientation: orientation,
                                                       in: &state) else { break }
                 state.structures[slot].countDown = countDown
+                // An AI launch warns the player ("missile approaching", `Unit_LaunchHouseMissile` feedback 39);
+                // the human's own launch is silent here (it enters target-selection in the original).
+                if houseID != state.playerHouseID { state.pendingFeedback.append(39) }
                 // Human launch: fire the death-hand at the player's chosen tile (`Unit_LaunchHouseMissile`).
                 if let missileTarget {
                     let jittered = Tile32.moveByRandom(Tile32.unpack(missileTarget), distance: 160, center: false,

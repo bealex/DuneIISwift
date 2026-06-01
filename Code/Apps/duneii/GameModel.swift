@@ -266,11 +266,14 @@ final class GameModel {
             let s = assets.voc(voc)!
             audio.register(id, sampleRate: s.sampleRate, pcm8: s.samples)
         }
-        // The spoken death-announcement fragments ("<house>ENEMY/UNIT/DESTROY/…") — registered under their
-        // FeedbackVoice ids with their durations, so `playDeathFeedback` can chain the sequence in order.
+        // The spoken feedback-announcement fragments ("<house>ENEMY/UNIT/DESTROY/WARNING/…") — registered
+        // under their FeedbackVoice ids with their durations, so `playFeedback` can chain a sequence in order.
+        // Strip the leading load-class marker (`?`/`+`/`-`/`/`) before substituting `%c` → the house letter.
         speechDuration.removeAll(keepingCapacity: true)
         for (voice, template) in FeedbackVoice.fragments {
-            let voc = template.replacingOccurrences(of: "%c", with: prefix)
+            var name = template
+            if let f = name.first, "?+-/".contains(f) { name.removeFirst() }
+            let voc = name.replacingOccurrences(of: "%c", with: prefix)
             guard let s = assets.voc(voc) else { continue }
             let id = FeedbackVoice.id(voice)
             audio.register(id, sampleRate: s.sampleRate, pcm8: s.samples)
@@ -278,11 +281,15 @@ final class GameModel {
         }
     }
 
-    /// Play a spoken death-announcement feedback (`Sound_Output_Feedback` death cue) — its fragment sequence,
-    /// each clip after the previous one finishes. Rate-limited to one announcement at a time (`speaking`) so a
-    /// busy battle doesn't pile up overlapping speech (mirrors OpenDUNE's single-speech / priority behaviour).
-    private func playDeathFeedback(_ feedback: UInt16) {
-        guard !speaking, let seq = FeedbackVoice.deathSequences[feedback] else { return }
+    /// Play a spoken `Sound_Output_Feedback` announcement — its fragment sequence, each clip after the
+    /// previous one finishes. Threat feedbacks switch to battle music + show a banner first (always), then the
+    /// speech is rate-limited to one announcement at a time (`speaking`) so a busy battle doesn't pile up
+    /// overlapping voices (mirrors OpenDUNE's single-speech / priority behaviour).
+    private func playFeedback(_ feedback: UInt16) {
+        guard let seq = FeedbackVoice.sequences[feedback] else { return }
+        if FeedbackVoice.battleMusic.contains(feedback) { music.enterBattle() }
+        if let text = FeedbackVoice.notice[feedback] { postNotice(text) }
+        guard !speaking else { return }
         let ids = seq.map { FeedbackVoice.id($0) }.filter { speechDuration[$0] != nil }
         guard !ids.isEmpty else { return }
         speaking = true
@@ -351,14 +358,15 @@ final class GameModel {
             // Play this tick's gameplay sounds (combat fire, explosions) — the full SoundEvent (with its
             // world position) so the sink can attenuate by distance. Unmapped voice ids are silent no-ops.
             for event in sim.state.soundEvents { audio.play(event) }
-            // Global UI feedback the sim raised this tick (`Sound_Output_Feedback`): un-attenuated voice (+
-            // a viewport message). `48` = base-under-attack (Structure_HouseUnderAttack, on real combat
-            // impact); `13`/`14-18`/`20` = the spoken "unit destroyed" announcement (Unit_Damage death cue).
+            // Global UI feedback the sim raised this tick (`Sound_Output_Feedback`): un-attenuated spoken
+            // announcements. `48` = base-under-attack (its own voice + banner + battle music); every other
+            // index (unit/structure destroyed, threat warnings, deploy, starport, bloom, missile) is a
+            // `FeedbackVoice` sequence played by `playFeedback`.
             for feedback in sim.state.pendingFeedback {
                 if feedback == 48 {
                     postNotice("Your base is under attack"); audio.play(.houseUnderAttack); music.enterBattle()
                 } else {
-                    playDeathFeedback(feedback)
+                    playFeedback(feedback)
                 }
             }
         }

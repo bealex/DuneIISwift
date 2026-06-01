@@ -240,7 +240,7 @@ public extension GameState {
         structures[slot].o.script.delay = 0
         structures[slot].o.script.reset()                 // Script_Reset
         // SEAM: Script_Load(structure death script) — needs BUILD.EMC + the structure ScriptInfo.
-        // SEAM: Voice_PlayAtTile(44) — audio.
+        emitSound(44, at: structures[slot].o.position)   // Voice_PlayAtTile(44) → voiceMapping → CRUMBLE collapse cue
 
         let linkedID = structures[slot].o.linkedID
         if linkedID != 0xFF {
@@ -302,7 +302,15 @@ public extension GameState {
                 }
             }
             structureDestroy(slot)
-            // SEAM: Sound_Output_Feedback (audio).
+            // The spoken "structure destroyed" announcement (`structure.c:1071`): the player's own loss says
+            // its house name (22/23/24 for Harkonnen/Atreides/Ordos; no cue for other houses), an enemy's
+            // says the generic "enemy structure destroyed" (21). Routed through the global feedback queue.
+            if structures[slot].o.houseID == playerHouseID {
+                switch playerHouseID { case 0: pendingFeedback.append(22); case 1: pendingFeedback.append(23)
+                                       case 2: pendingFeedback.append(24); default: break }
+            } else {
+                pendingFeedback.append(21)
+            }
             structureUntargetMe(slot)
             return true
         }
@@ -432,6 +440,21 @@ public extension GameState {
             if hpMax >= structures[s].o.hitpoints { continue }
             _ = structureDamage(s, damage: 1, range: 0)
         }
+        houseUpdateRadarState(houseID)   // structure.c:630 (player-only inside)
+    }
+
+    /// `House_UpdateRadarState` (`house.c:402`): toggle the player's minimap radar as its outpost + power
+    /// come and go, announcing "radar activated/deactivated" (feedback 28/29) on a change. Player-only; the
+    /// WSA static-noise transition + the `Voice_Play(62)` static are GUI seams. RNG-free ⇒ golden-neutral
+    /// (the `radarActivated` flag + the feedback aren't dumped, and no RNG is drawn).
+    mutating func houseUpdateRadarState(_ houseID: UInt8) {
+        guard houseID == playerHouseID else { return }
+        let h = Int(houseID)
+        let hasOutpost = houses[h].structuresBuilt & (UInt32(1) << UInt32(StructureType.outpost.rawValue)) != 0
+        let active = hasOutpost && houses[h].powerProduction >= houses[h].powerUsage
+        if houses[h].flags.contains(.radarActivated) == active { return }
+        if active { houses[h].flags.insert(.radarActivated) } else { houses[h].flags.remove(.radarActivated) }
+        pendingFeedback.append(active ? 28 : 29)
     }
 
     /// `Structure_IsUpgradable` (`structure.c:1102`): can structure `slot` still be upgraded at its current
@@ -819,8 +842,38 @@ public extension GameState {
         // player ever calls this, so `houseID == playerHouseID` here is the player making contact.)
         if !allied && houseID == playerHouseID { aiFogReveal(toEnemyHouse: unitHouse) }
 
-        // SEAM: player-alert block (audio/GUI/music + suppression timers + team var4) — needs the audio
-        // + GUI seams and `g_selectionType`, which we don't model headlessly. (unit.c:Unit_HouseUnitCount_Add)
+        // Player-alert block (`Unit_HouseUnitCount_Add`, unit.c:2699): when the player first sights a threat
+        // (gated by the per-house suppression timers), raise the spoken warning. The `g_selectionType !=
+        // MENTAT` gate is always true in-game. RNG-free ⇒ golden-neutral (the timers + the team's var4 aren't
+        // dumped and draw no RNG). The host also switches to battle music on these threat feedbacks.
+        if houseID == playerHouseID {
+            if ut == .sandworm {
+                if houses[Int(houseID)].timerSandwormAttack == 0 {
+                    pendingFeedback.append(37)   // "Warning: sandworms roam Dune…"
+                    houses[Int(houseID)].timerSandwormAttack = 8
+                }
+            } else if !allied {
+                if houses[Int(houseID)].timerUnitAttack == 0 {
+                    if ut == .saboteur {
+                        pendingFeedback.append(12)   // "Warning: saboteur approaching"
+                    } else if campaignID < 3 {
+                        // Directional warning relative to the player's construction yard (or the non-directional
+                        // feedback 1 if there is none): "enemy unit approaching from the <N/E/S/W>".
+                        var feedbackID: UInt16 = 1
+                        var find = PoolFind(houseID: playerHouseID, type: UInt16(StructureType.constructionYard.rawValue))
+                        if let cy = structureFind(&find) {
+                            let dir8 = Orientation.to8(UInt8(bitPattern: Tile32.direction(from: structures[cy].o.position, to: units[slot].o.position)))
+                            feedbackID = UInt16((Int(dir8) + 1) & 7) / 2 + 2
+                        }
+                        pendingFeedback.append(feedbackID)
+                    } else {
+                        pendingFeedback.append(UInt16(units[slot].o.houseID) &+ 6)   // late campaign: house-specific
+                    }
+                    houses[Int(houseID)].timerUnitAttack = 8
+                }
+                if units[slot].team != 0 { teams[Int(units[slot].team) - 1].script.variables[4] = 1 }
+            }
+        }
         // SEAM: ambush → Unit_SetAction(HUNT) reaction — needs the EMC script VM (Tier-F #19).
 
         // Player-owned (and the player's Fremen allies) reveal to all houses (`0xFF`) in stock Dune II;

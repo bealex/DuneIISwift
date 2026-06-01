@@ -103,7 +103,7 @@ public extension GameState {
                     case .setOverlayTile: animationSetOverlayTile(i, command.parameter)
                     case .pause: animations[i].tickNext = timerGUI &+ UInt32(max(0, Int(command.parameter))) &+ UInt32(random256.next() % 4)
                     case .rewind: animations[i].current = 0
-                    case .playVoice: break
+                    case .playVoice: emitSound(Int(command.parameter), at: animations[i].tile)   // Animation_Func_PlayVoice
                     case .setGroundTile: animationSetGroundTile(i, command.parameter)
                     case .forward: animations[i].current = UInt8(truncatingIfNeeded: Int(animations[i].current) + Int(command.parameter) - 1)
                     case .setIconGroup: animations[i].iconGroup = UInt8(truncatingIfNeeded: command.parameter)

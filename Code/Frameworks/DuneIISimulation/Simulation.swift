@@ -559,7 +559,7 @@ extension Simulation {
                         state.units[f].o.linkedID = UInt8(truncatingIfNeeded: state.houses[h].starportLinkedID)
                         state.houses[h].starportLinkedID = 0xFFFF
                         state.units[f].o.flags.insert(.inTransport)
-                        // SEAM: Sound_Output_Feedback(38).
+                        state.pendingFeedback.append(38)   // Sound_Output_Feedback(38) — "frigate has arrived"
                         state.houses[h].starportTimeLeft = HouseInfo[HouseID(rawValue: Int(houseIndex)) ?? .harkonnen].starportDeliveryTime
                     } else {
                         state.houses[h].starportTimeLeft = 1
