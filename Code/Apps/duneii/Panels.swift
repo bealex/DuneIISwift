@@ -248,6 +248,11 @@ struct DebugPanel: View {
                 Text("AI only attacks after you make contact. Set before loading a scenario.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Toggle("Follow unit limit", isOn: Binding(get: { model.enforceUnitLimit }, set: { model.enforceUnitLimit = $0 }))
+            if !model.enforceUnitLimit {
+                Text("Unit cap (scenario MaxUnit) ignored — build past it.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Toggle("Show all economies", isOn: Binding(get: { model.showAllEconomies }, set: { model.showAllEconomies = $0 }))
             Toggle("Health bars (units + buildings)", isOn: Binding(get: { model.showHealthOverlay }, set: { model.showHealthOverlay = $0 }))
             LabeledContent("Player house", value: model.playerHouse.displayName)

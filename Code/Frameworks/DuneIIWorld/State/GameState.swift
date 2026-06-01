@@ -117,6 +117,11 @@ public struct GameState: Sendable, Codable {
     /// the whole player base). Always 0 with the flag off.
     public var housesFoundPlayer: UInt8 = 0
 
+    /// Whether the per-house unit cap (`House.unitCountMax`) is enforced in `Unit_Allocate`. `true` is the
+    /// faithful Dune II behaviour (a house at its cap can't make more ground units); set `false` (a debug/test
+    /// toggle) to build past the limit. Golden-safe — the default `true` is exactly the original check.
+    public var enforceUnitLimit: Bool = true
+
     /// The active campaign (mission) number, 1…9. OpenDUNE's `g_campaignID`. Feeds several deterministic
     /// economy formulas faithfully — the structure-degrade gate (`> 1`), the AI build-speed cap
     /// (`campaignID*20+95`), the repair heal amount (`>= 3` → +5), and `Structure_IsUpgradable`. Defaults to

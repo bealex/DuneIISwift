@@ -131,7 +131,7 @@ public extension GameState {
         guard let unitType = UnitType(rawValue: Int(type)) else { return nil }
 
         let h = houses[Int(houseID)]
-        if h.unitCount >= h.unitCountMax {
+        if enforceUnitLimit && h.unitCount >= h.unitCountMax {
             let mt = UnitInfo[unitType].movementType
             if mt != .winger && mt != .slither && validateStrictIfZero == 0 { return nil }
         }

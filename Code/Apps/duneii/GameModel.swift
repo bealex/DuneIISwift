@@ -37,6 +37,9 @@ final class GameModel {
     /// knowing the base from turn one). Applied to the live sim and to every scenario (re)load. Best set
     /// before loading a scenario — toggling mid-game only affects objects placed/sighted afterwards.
     var aiFogOfWar = false { didSet { simulation?.state.aiFogOfWar = aiFogOfWar } }
+    /// Whether the per-house unit limit (the scenario's `MaxUnit`) is enforced. On (default) = follow the
+    /// limit faithfully; off = build past it. Applied to the live sim and to every scenario (re)load.
+    var enforceUnitLimit = true { didSet { simulation?.state.enforceUnitLimit = enforceUnitLimit } }
     var showAllEconomies = false
     var showHealthOverlay = true   // health/state bars over units + buildings are on by default (a normal HUD element)
 
@@ -93,8 +96,15 @@ final class GameModel {
 
         var state = GameState()
         state.aiFogOfWar = aiFogOfWar   // before unit placement, so the player units honour the AI-fog mask
+        state.enforceUnitLimit = enforceUnitLimit
         state.loadScenario(ini: ini, iconMap: iconMap)
-        for h in 0 ..< 6 { _ = state.houseAllocate(index: UInt8(h)); state.houses[h].unitCountMax = 1000 }
+        // Activate every house; keep each one's scenario unit cap (`[HOUSES] MaxUnit`), defaulting houses with
+        // no `[HOUSES]` entry to the Dune II default (39). The `enforceUnitLimit` toggle decides whether the
+        // cap actually bites — so "follow the unit limit" uses the real scenario limit, not a pinned 1000.
+        for h in 0 ..< 6 {
+            _ = state.houseAllocate(index: UInt8(h))
+            if state.houses[h].unitCountMax == 0 { state.houses[h].unitCountMax = 39 }
+        }
         playerHouse = AssetStore.playerHouse(in: ini)
             ?? state.houses.first(where: { $0.flags.contains(.used) }).flatMap { HouseID(rawValue: Int($0.index)) }
             ?? .atreides

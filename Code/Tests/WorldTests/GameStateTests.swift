@@ -51,6 +51,16 @@ struct GameStateTests {
         #expect(s.units[worm!].amount == 3)   // sandworm starts with amount 3
     }
 
+    @Test("enforceUnitLimit=false lets a capped house build ground units past the limit")
+    func unitCapDisabled() {
+        var s = GameState()
+        s.houses[0].unitCountMax = 0          // at cap
+        s.enforceUnitLimit = false            // debug toggle: ignore the cap
+        #expect(s.unitAllocate(index: 0, type: u(.tank), houseID: 0) != nil)   // now allowed
+        #expect(s.unitAllocate(index: 0, type: u(.tank), houseID: 0) != nil)   // and again
+        #expect(s.houses[0].unitCount == 2)   // both counted
+    }
+
     @Test("structure allocate: specials route to fixed slots, normals take soft slots")
     func structureAllocate() {
         var s = GameState()
