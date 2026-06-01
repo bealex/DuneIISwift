@@ -28,6 +28,13 @@ struct ContentView: View {
                     }
                     .disabled(model.assets.scenarioNames.isEmpty)
                 }
+                ToolbarItem(placement: .navigation) {
+                    Picker("Campaign", selection: Binding(get: { model.campaignLevel }, set: { model.campaignLevel = $0 })) {
+                        ForEach(1 ... 9, id: \.self) { Text("Campaign \($0)").tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    .help("Mission/campaign level (1–9) — gates which structures & units you can build, as in the original campaign.")
+                }
                 ToolbarItem(placement: .automatic) {
                     Menu {
                         Button("Save Game…") { saveGame() }

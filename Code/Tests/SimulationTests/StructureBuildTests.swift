@@ -62,6 +62,66 @@ struct StructureBuildTests {
         #expect(simulation.buildables(forStructure: wt).isEmpty)
     }
 
+    // MARK: - buildOptions (the full greyed-out menu)
+
+    /// The available subset of `buildOptions` must equal `buildables` (the cross-engine-verified
+    /// `Structure_GetBuildable` port) — the GUI's "show all, grey the locked" list can never disagree with
+    /// what is actually buildable. Checked for both factory kinds.
+    @Test("buildOptions' available subset equals buildables (construction yard + unit factory)")
+    func buildOptionsAvailableMatchesBuildables() {
+        var simulation = self.sim()
+        let cy = addFactory(&simulation.state, .constructionYard)
+        let cyAvail = simulation.buildOptions(forStructure: cy).filter(\.isAvailable).map(\.item)
+        #expect(cyAvail == simulation.buildables(forStructure: cy))
+        #expect(!cyAvail.isEmpty)
+
+        let fac = addFactory(&simulation.state, .lightVehicle)
+        simulation.state.structures[fac].upgradeLevel = 1
+        let facAvail = simulation.buildOptions(forStructure: fac).filter(\.isAvailable).map(\.item)
+        #expect(facAvail == simulation.buildables(forStructure: fac))
+        #expect(!facAvail.isEmpty)
+        // The construction yard self-entry is never a build option.
+        #expect(!simulation.buildOptions(forStructure: cy).contains { $0.item.objectType == UInt16(StructureType.constructionYard.rawValue) })
+    }
+
+    /// With every Heavy-Factory prerequisite built but the campaign too low, the Heavy Factory is listed but
+    /// locked by a single `.campaign` blocker; raising the campaign level unlocks it. (This is the "can't
+    /// build Heavy Factory" case — the gate is `campaignID >= availableCampaign - 1`, Heavy `availableCampaign`
+    /// 4 ⇒ needs `campaignID >= 3`.)
+    @Test("Heavy Factory is campaign-locked at a low level, then unlocks")
+    func heavyFactoryCampaignGate() {
+        var s = GameState(); s.playerHouseID = 0
+        _ = s.houseAllocate(index: 0)
+        s.houses[0].structuresBuilt =
+            (1 << StructureType.windtrap.rawValue) | (1 << StructureType.outpost.rawValue) | (1 << StructureType.lightVehicle.rawValue)
+        s.campaignID = 1
+        let cy = addFactory(&s, .constructionYard)
+        var sm = Simulation(state: s, scriptInfo: info)
+        let heavy = UInt16(StructureType.heavyVehicle.rawValue)
+        let locked = sm.buildOptions(forStructure: cy).first { $0.item.objectType == heavy }
+        #expect(locked?.isAvailable == false)
+        #expect(locked?.blockers == [.campaign(level: 3)])
+        // Raising the campaign level removes the only blocker.
+        sm.state.campaignID = 3
+        let unlocked = sm.buildOptions(forStructure: cy).first { $0.item.objectType == heavy }
+        #expect(unlocked?.isAvailable == true)
+    }
+
+    /// A locked item enumerates its missing prerequisite structures (in bit order), with no campaign blocker
+    /// when the campaign is high enough.
+    @Test("a locked construction-yard item lists its missing prerequisite structures")
+    func missingPrerequisiteBlockers() {
+        var s = GameState(); s.playerHouseID = 0
+        _ = s.houseAllocate(index: 0)
+        s.houses[0].structuresBuilt = 0   // nothing built yet
+        s.campaignID = 9                  // high enough that only structures are missing
+        let cy = addFactory(&s, .constructionYard)
+        var sm = Simulation(state: s, scriptInfo: info)
+        let heavy = sm.buildOptions(forStructure: cy).first { $0.item.objectType == UInt16(StructureType.heavyVehicle.rawValue) }
+        #expect(heavy?.isAvailable == false)
+        #expect(heavy?.blockers == [.structure(.lightVehicle), .structure(.windtrap), .structure(.outpost)])
+    }
+
     @Test("buildState reports progress and readiness across a build")
     func buildStateProgress() {
         var simulation = self.sim()

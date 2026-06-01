@@ -183,26 +183,48 @@ struct InspectorPanel: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-            } else if model.buildables.isEmpty {
+            } else if model.buildOptions.isEmpty {
                 Text("Nothing available to build.").font(.caption).foregroundStyle(.secondary)
             } else {
+                // Every item the factory could ever build; locked ones (missing prerequisites / campaign /
+                // upgrade) are greyed-out with a tooltip listing what's missing.
                 VStack(spacing: 4) {
-                    ForEach(model.buildables, id: \.objectType) { item in
+                    ForEach(model.buildOptions, id: \.item.objectType) { option in
+                        let item = option.item
+                        let tooLowCredits = option.isAvailable && item.cost > model.playerCredits
                         Button { model.startBuild(item.objectType) } label: {
                             HStack {
                                 Text(item.displayName)
+                                if !option.isAvailable {
+                                    Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary)
+                                }
                                 Spacer()
                                 Text("\(item.cost) cr").monospacedDigit()
-                                    .foregroundStyle(item.cost > model.playerCredits ? Color.red : Color.secondary)
+                                    .foregroundStyle(tooLowCredits ? Color.red : Color.secondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.bordered)
-                        .disabled(item.cost > model.playerCredits)
+                        .disabled(!option.isAvailable || tooLowCredits)
+                        .help(buildHelp(option))
                     }
                 }
             }
         }
+    }
+
+    /// The tooltip for a build button: what an item costs, and — when locked — what's missing to unlock it
+    /// (prerequisite structures, campaign level, factory upgrade), or a low-credits note when it's affordable
+    /// only once you have more money.
+    private func buildHelp(_ option: BuildOption) -> String {
+        let item = option.item
+        if !option.isAvailable {
+            return "Requires: " + option.blockers.map(\.summary).joined(separator: ", ")
+        }
+        if item.cost > model.playerCredits {
+            return "Costs \(item.cost) cr — need \(item.cost - model.playerCredits) more."
+        }
+        return "Build \(item.displayName) (\(item.cost) cr)"
     }
 }
 

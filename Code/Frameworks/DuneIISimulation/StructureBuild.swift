@@ -46,6 +46,44 @@ public struct BuildState: Sendable, Equatable {
     public var displayName: String { Buildable.name(objectType: objectType, isStructure: isStructure) }
 }
 
+/// A single reason a `BuildOption` can't be built yet (credits are excluded — the UI checks those live, as
+/// they change every tick). Mirrors the gating in `Structure_GetBuildable` (`structure.c:1834`).
+public enum BuildBlocker: Sendable, Equatable {
+    /// The active campaign (mission) level is below the item's threshold (construction-yard structures only —
+    /// units have no campaign gate). `level` is the minimum `campaignID` that unlocks it.
+    case campaign(level: Int)
+    /// A prerequisite structure the house hasn't built yet.
+    case structure(StructureType)
+    /// The factory must be upgraded to at least this level first.
+    case upgradeLevel(Int)
+
+    /// A short human label for the build tooltip.
+    public var summary: String {
+        switch self {
+            case .campaign(let level):     "Campaign \(level)"
+            case .structure(let type):     type.displayName
+            case .upgradeLevel(let level): "Factory upgrade \(level)"
+        }
+    }
+}
+
+/// One row of a factory's **full** build menu: the item plus, when not currently buildable, the reasons why.
+/// Unlike `buildables` (which returns only the ready-now items), `buildOptions` lists every item the house
+/// could ever build at this factory (so the GUI can show locked items greyed-out with a "what's missing"
+/// tooltip). `blockers` empty ⇔ buildable now (credits aside).
+public struct BuildOption: Sendable, Equatable {
+    public let item: Buildable
+    public let blockers: [BuildBlocker]
+
+    public init(item: Buildable, blockers: [BuildBlocker]) {
+        self.item = item
+        self.blockers = blockers
+    }
+
+    /// Buildable right now (ignoring credits)?
+    public var isAvailable: Bool { blockers.isEmpty }
+}
+
 /// The build-GUI queries the simulation needs (read-only, no mutation): what a factory can build, how a
 /// build is progressing, and whether a placement tile is valid. See `Documentation/Architecture/BuildGUI.md`.
 public extension Simulation {
@@ -105,6 +143,81 @@ public extension Simulation {
             default: break
         }
         return result
+    }
+
+    /// The factory's **full** build menu: every item this house could ever build here, each tagged with the
+    /// reasons it isn't buildable yet (empty `blockers` ⇒ ready now). The available subset (`isAvailable`) is
+    /// exactly what `buildables(forStructure:)` returns — this function adds the locked items + their blockers
+    /// for the greyed-out GUI listing. Same gating as `Structure_GetBuildable` (`structure.c:1834`); items the
+    /// house can't build at all (`availableHouse`) and the construction-yard self-entry (`FLAG_STRUCTURE_NEVER`)
+    /// are excluded. Intended for a player-owned factory (no AI/non-player prerequisite bypass).
+    func buildOptions(forStructure slot: Int) -> [BuildOption] {
+        guard slot >= 0, slot < state.structures.count,
+              let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return [] }
+        let s = state.structures[slot]
+        let structuresBuilt = state.houses[Int(s.o.houseID)].structuresBuilt
+        let campaign = UInt16(state.campaignID)
+        let ordos = UInt16(HouseID.ordos.rawValue)
+        let harkonnen = UInt8(HouseID.harkonnen.rawValue)
+        var result: [BuildOption] = []
+
+        switch st {
+            case .lightVehicle, .heavyVehicle, .highTech, .worTrooper, .barracks:
+                for raw in StructureInfo[st].buildableUnits where raw != 0xFF {
+                    var unitRaw = raw
+                    if unitRaw == UInt8(UnitType.trike.rawValue) && s.creatorHouseID == ordos {
+                        unitRaw = UInt8(UnitType.raiderTrike.rawValue)
+                    }
+                    guard let ut = UnitType(rawValue: Int(unitRaw)) else { continue }
+                    let ui = UnitInfo[ut].o
+                    if (ui.availableHouse & (1 << s.creatorHouseID)) == 0 { continue }
+                    var upgradeRequired = UInt16(ui.upgradeLevelRequired)
+                    if ut == .siegeTank && s.creatorHouseID == ordos { upgradeRequired &-= 1 }
+                    var blockers = Self.missingStructureBlockers(required: ui.structuresRequired, built: structuresBuilt)
+                    if UInt16(s.upgradeLevel) < upgradeRequired { blockers.append(.upgradeLevel(Int(upgradeRequired))) }
+                    result.append(BuildOption(item: Buildable(objectType: UInt16(ut.rawValue), isStructure: false,
+                                                              cost: Int(ui.buildCredits), buildTime: Int(ui.buildTime)),
+                                              blockers: blockers))
+                }
+
+            case .constructionYard:
+                for i in 0 ..< StructureType.allCases.count {
+                    guard let stType = StructureType(rawValue: i) else { continue }
+                    let lsi = StructureInfo[stType].o
+                    // The construction yard itself (FLAG_STRUCTURE_NEVER) is never a build item.
+                    if lsi.structuresRequired == 0xFFFF_FFFF { continue }
+                    if (lsi.availableHouse & (1 << s.o.houseID)) == 0 { continue }
+                    var availableCampaign = lsi.availableCampaign
+                    var structuresRequired = lsi.structuresRequired
+                    if stType == .worTrooper && s.o.houseID == harkonnen && state.campaignID >= 1 {
+                        structuresRequired &= ~(UInt32(1) << StructureType.barracks.rawValue)
+                        availableCampaign = 2
+                    }
+                    if s.o.houseID != harkonnen && stType == .lightVehicle { availableCampaign = 2 }
+                    var blockers = Self.missingStructureBlockers(required: structuresRequired, built: structuresBuilt)
+                    if campaign < availableCampaign &- 1 { blockers.append(.campaign(level: Int(availableCampaign) - 1)) }
+                    if UInt16(s.upgradeLevel) < UInt16(lsi.upgradeLevelRequired) {
+                        blockers.append(.upgradeLevel(Int(lsi.upgradeLevelRequired)))
+                    }
+                    result.append(BuildOption(item: Buildable(objectType: UInt16(i), isStructure: true,
+                                                              cost: Int(lsi.buildCredits), buildTime: Int(lsi.buildTime)),
+                                              blockers: blockers))
+                }
+
+            default: break
+        }
+        return result
+    }
+
+    /// The prerequisite structures in `required` the house hasn't `built` yet, as `.structure` blockers.
+    static func missingStructureBlockers(required: UInt32, built: UInt32) -> [BuildBlocker] {
+        let missing = required & ~built
+        guard missing != 0 else { return [] }
+        var out: [BuildBlocker] = []
+        for i in 0 ..< StructureType.allCases.count where (missing & (UInt32(1) << i)) != 0 {
+            if let t = StructureType(rawValue: i) { out.append(.structure(t)) }
+        }
+        return out
     }
 
     /// Factory `slot`'s in-progress build, or `nil` when it isn't building (no linked product).

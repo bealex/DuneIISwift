@@ -67,6 +67,14 @@ final class GameModel {
     /// Debug: force the minimap on regardless of radar availability. Off (default) ⇒ the minimap obeys the
     /// player's radar (`radarActive`) — blank until an outpost + power bring it online, as in Dune II.
     var forceMinimap = false
+    /// The campaign (mission) level 1…9 — OpenDUNE's `g_campaignID`, which gates build availability (the
+    /// construction-yard `availableCampaign` check) and the upgrade chain. Our scenario `.INI`s don't carry
+    /// it, so it's chosen here (in the scenario selector). Applied live to the running sim and on every load,
+    /// so changing it updates the build menu immediately.
+    var campaignLevel = 1 { didSet {
+        campaignLevel = min(max(campaignLevel, 1), 9)
+        simulation?.state.campaignID = UInt8(campaignLevel)
+    } }
 
     // Radar / minimap state (read by `MinimapView`).
     /// The player house's radar is active (outpost built + powered) — the minimap shows live content.
@@ -110,7 +118,9 @@ final class GameModel {
     @ObservationIgnored private var speaking = false
 
     // Build-GUI derived state (refreshed for the selected player-owned factory).
-    private(set) var buildables: [Buildable] = []
+    /// The selected factory's **full** build menu (every item, locked ones tagged with their blockers) so the
+    /// panel can grey-out unavailable items with a "what's missing" tooltip.
+    private(set) var buildOptions: [BuildOption] = []
     private(set) var buildProgress: BuildState?
     private(set) var isFactorySelected = false
     private(set) var playerCredits = 0
@@ -155,6 +165,7 @@ final class GameModel {
         state.aiFogOfWar = aiFogOfWar   // before unit placement, so the player units honour the AI-fog mask
         state.enforceUnitLimit = enforceUnitLimit
         state.loadScenario(ini: ini, iconMap: iconMap)
+        state.campaignID = UInt8(campaignLevel)   // the selected mission level (gates build availability)
         // Activate every house; keep each one's scenario unit cap (`[HOUSES] MaxUnit`), defaulting houses with
         // no `[HOUSES]` entry to the Dune II default (39). The `enforceUnitLimit` toggle decides whether the
         // cap actually bites — so "follow the unit limit" uses the real scenario limit, not a pinned 1000.
@@ -605,14 +616,14 @@ final class GameModel {
     private func refreshBuild() {
         guard let slot = selectedFactorySlot, let sim = simulation else {
             if isFactorySelected { isFactorySelected = false }
-            if !buildables.isEmpty { buildables = [] }
+            if !buildOptions.isEmpty { buildOptions = [] }
             if buildProgress != nil { buildProgress = nil }
             if placement != nil { placement = nil }
             return
         }
         if !isFactorySelected { isFactorySelected = true }
-        let b = sim.buildables(forStructure: slot)
-        if b != buildables { buildables = b }
+        let b = sim.buildOptions(forStructure: slot)
+        if b != buildOptions { buildOptions = b }
         let st = sim.buildState(structureSlot: slot)
         if st != buildProgress { buildProgress = st }
     }
@@ -750,9 +761,10 @@ final class GameModel {
     /// Start the selected factory building `objectType` (a `Buildable.objectType`).
     func startBuild(_ objectType: UInt16) {
         guard let slot = selectedFactorySlot else { return }
-        if let item = buildables.first(where: { $0.objectType == objectType }), item.cost > playerCredits {
-            noticeInsufficientFunds(); return
-        }
+        // A locked item (missing prerequisites / campaign / upgrade) can't be started — the panel greys it,
+        // but guard here too so a stale tap is a no-op.
+        guard let option = buildOptions.first(where: { $0.item.objectType == objectType }), option.isAvailable else { return }
+        if option.item.cost > playerCredits { noticeInsufficientFunds(); return }
         enqueue(.build(structure: UInt16(slot), objectType: objectType))
         audio.play(.select)
     }
