@@ -97,15 +97,20 @@ struct MinimapView: View {
                         context.fill(Path(rect), with: .color(.black))
                     }
                     if let frame {
+                        // Only plot what's inside the playable rectangle — the base image blacks the border
+                        // out, and units *can* sit in it (e.g. the Fremen palace wave scatters into the
+                        // unplayable corner, faithfully to OpenDUNE), which otherwise shows as a stray corner
+                        // blip. `mapArea` is the same clip the base terrain uses.
+                        let area = frame.mapArea
                         // Buildings first (footprint-ish squares), then unit dots on top. Mine = bright, foes dim.
-                        for s in frame.structures {
+                        for s in frame.structures where area.contains(tileX: s.positionX / 256, tileY: s.positionY / 256) {
                             let x = Double(s.positionX) * scale / 256
                             let y = Double(s.positionY) * scale / 256
                             let mine = s.house == playerHouse
                             context.fill(Path(CGRect(x: x, y: y, width: 3.5, height: 3.5)),
                                          with: .color(mine ? .cyan : .orange))
                         }
-                        for unit in frame.units {
+                        for unit in frame.units where area.contains(tileX: unit.positionX / 256, tileY: unit.positionY / 256) {
                             let x = Double(unit.positionX) * scale / 256
                             let y = Double(unit.positionY) * scale / 256
                             let mine = unit.house == playerHouse
