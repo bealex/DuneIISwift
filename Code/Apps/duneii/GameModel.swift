@@ -48,6 +48,10 @@ final class GameModel {
     private(set) var selection: SelectionInfo?
     private(set) var pendingOrder: OrderKind?
     private(set) var economy: [HouseEconomy] = []
+    /// A bare tile the player left-clicked to inspect (no unit/structure there). Shown in the inspector when
+    /// nothing is selected. `inspectedTile` is the live tile coords; `tileInfo` is its derived parameters.
+    @ObservationIgnored private var inspectedTile: (x: Int, y: Int)?
+    private(set) var tileInfo: TileInfo?
 
     // Build-GUI derived state (refreshed for the selected player-owned factory).
     private(set) var buildables: [Buildable] = []
@@ -171,8 +175,10 @@ final class GameModel {
         let info = currentInfo()
         if info != selection { selection = info }
         if controller.pendingOrder != pendingOrder { pendingOrder = controller.pendingOrder }
+        // Only houses actually present on the map (≥1 unit or structure) — drop merely-activated empty houses.
+        let present = housesOnMap()
         let econ = frame.houses
-            .filter { showAllEconomies || $0.id == playerHouse }
+            .filter { (showAllEconomies || $0.id == playerHouse) && present.contains(UInt8($0.id.rawValue)) }
             .map { HouseEconomy(house: $0.id.displayName, isPlayer: $0.id == playerHouse,
                                 credits: $0.credits, storage: $0.creditsStorage,
                                 power: $0.powerProduction, powerUsed: $0.powerUsage) }
@@ -182,6 +188,17 @@ final class GameModel {
         if credits != playerCredits { playerCredits = credits }
         refreshBuild()
         refreshStructureActions()
+        refreshTileInfo()
+    }
+
+    /// The set of house ids with at least one used unit or structure — i.e. actually on the map (vs a house
+    /// merely activated for the economy via `[HOUSES]`, which the Economy panel should not list).
+    private func housesOnMap() -> Set<UInt8> {
+        guard let state = simulation?.state else { return [] }
+        var present = Set<UInt8>()
+        for u in state.units where u.o.flags.contains(.used) { present.insert(u.o.houseID) }
+        for s in state.structures where s.o.flags.contains(.used) { present.insert(s.o.houseID) }
+        return present
     }
 
     /// Recompute the selected player structure's repair/upgrade availability + (for a starport) its CHOAM
@@ -299,6 +316,10 @@ final class GameModel {
         if wasArmed { audio.play(.acknowledge) } else if !hit.isEmpty { audio.play(.select) }
         pendingOrder = controller.pendingOrder
         selection = currentInfo()
+        // Clicking a bare tile (nothing selectable there, not completing an order) inspects that tile;
+        // selecting a unit/structure clears the tile inspection.
+        inspectedTile = (selection == nil && !wasArmed) ? (x, y) : nil
+        refreshTileInfo()
     }
 
     func rightClickTile(_ x: Int, _ y: Int) {
@@ -330,7 +351,28 @@ final class GameModel {
             audio.play(.acknowledge)
         }
     }
-    func deselect() { controller.deselect(); selection = nil; pendingOrder = nil }
+    func deselect() { controller.deselect(); selection = nil; pendingOrder = nil; inspectedTile = nil; tileInfo = nil }
+
+    /// Derive the inspected bare tile's parameters from the live map (nil unless a tile is being inspected and
+    /// nothing is selected). Republished only on change so the per-tick refresh doesn't churn SwiftUI.
+    private func refreshTileInfo() {
+        guard selection == nil, let (x, y) = inspectedTile, let sim = simulation else {
+            if tileInfo != nil { tileInfo = nil }
+            return
+        }
+        let packed = UInt16(y * 64 + x)
+        let tile = sim.state.map[Int(packed)]
+        let land = DefaultMapPrimitives().landscapeType(tile, tileIDs: sim.state.tileIDs)
+        // The tile's house only means something on owned terrain (concrete / wall / a stamped structure).
+        let owned = land == .concreteSlab || land == .wall || land == .structure || land == .destroyedWall
+        let info = TileInfo(
+            tileX: x, tileY: y, packed: Int(packed), landscape: land.displayName,
+            groundTileID: Int(tile.groundTileID), overlayTileID: Int(tile.overlayTileID),
+            isSpice: land == .spice || land == .thickSpice,
+            owner: owned ? HouseID(rawValue: Int(tile.houseID))?.displayName : nil,
+            isUnveiled: tile.isUnveiled, isBuildable: LandscapeInfo[land].isValidForStructure)
+        if info != tileInfo { tileInfo = info }
+    }
 
     // MARK: - Building
 
@@ -505,6 +547,40 @@ final class GameModel {
 struct PanelAction: Equatable, Hashable {
     var type: ActionType
     var targeted: Bool
+}
+
+/// A bare map tile's inspected parameters (the inspector shows these when no unit/structure is selected).
+struct TileInfo: Equatable {
+    var tileX: Int
+    var tileY: Int
+    var packed: Int
+    var landscape: String
+    var groundTileID: Int
+    var overlayTileID: Int
+    var isSpice: Bool
+    var owner: String?
+    var isUnveiled: Bool
+    var isBuildable: Bool
+}
+
+extension LandscapeType {
+    /// A short human label for the tile inspector.
+    var displayName: String {
+        switch self {
+            case .normalSand:       "Sand"
+            case .partialRock:      "Rock (partial)"
+            case .entirelyDune, .partialDune: "Dune"
+            case .entirelyRock, .mostlyRock:  "Rock"
+            case .entirelyMountain, .partialMountain: "Mountain"
+            case .spice:            "Spice"
+            case .thickSpice:       "Thick spice"
+            case .concreteSlab:     "Concrete"
+            case .wall:             "Wall"
+            case .structure:        "Structure"
+            case .destroyedWall:    "Rubble"
+            case .bloomField:       "Spice bloom"
+        }
+    }
 }
 
 /// Repair/upgrade availability for the selected player structure (the inspector's structure-command buttons).

@@ -43,14 +43,15 @@ struct InspectorPanel: View {
                         if let p = model.pendingOrder {
                             Label("Click a target to \(p.verb)…", systemImage: "scope").font(.caption).foregroundStyle(.secondary)
                         }
-                        Button("Deselect", role: .cancel) { model.deselect() }.controlSize(.small)
                     }
                     structureSection()
                     superWeaponSection()
                     buildSection()
+                } else if let t = model.tileInfo {
+                    tileSection(t)
                 } else {
                     ContentUnavailableView("No selection", systemImage: "cursorarrow.rays",
-                                           description: Text("Left-click a unit or building.\nRight-click to move/attack."))
+                                           description: Text("Left-click a tile to inspect it,\na unit or building to select it."))
                         .padding(.top, 30)
                 }
                 Spacer(minLength: 0)
@@ -62,6 +63,29 @@ struct InspectorPanel: View {
     private func tint(_ hp: Int, _ max: Int) -> Color {
         let f = max > 0 ? Double(hp) / Double(max) : 1
         return f > 0.66 ? .green : (f > 0.33 ? .yellow : .red)
+    }
+
+    /// A bare map tile's parameters — shown when the player left-clicks a tile with no unit/structure on it.
+    @ViewBuilder private func tileSection(_ t: TileInfo) -> some View {
+        HStack {
+            Image(systemName: "squareshape.split.3x3").foregroundStyle(.secondary)
+            Text(t.landscape).font(.title2.bold())
+        }
+        Label("Tile (\(t.tileX), \(t.tileY))", systemImage: "mappin.and.ellipse")
+            .font(.callout.weight(.semibold)).foregroundStyle(.tint)
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+            GridRow { Text("Packed").foregroundStyle(.secondary); Text("\(t.packed)").monospacedDigit() }
+            GridRow { Text("Ground id").foregroundStyle(.secondary); Text("\(t.groundTileID)").monospacedDigit() }
+            GridRow { Text("Overlay id").foregroundStyle(.secondary); Text("\(t.overlayTileID)").monospacedDigit() }
+            if t.isSpice {
+                GridRow { Text("Spice").foregroundStyle(.secondary); Text(t.landscape == "Thick spice" ? "thick" : "yes").foregroundStyle(.orange) }
+            }
+            if let owner = t.owner {
+                GridRow { Text("Owner").foregroundStyle(.secondary); Text(owner) }
+            }
+            GridRow { Text("Fog").foregroundStyle(.secondary); Text(t.isUnveiled ? "revealed" : "hidden") }
+            GridRow { Text("Buildable").foregroundStyle(.secondary); Text(t.isBuildable ? "yes" : "no") }
+        }.font(.callout)
     }
 
     /// Repair / Upgrade (toggle) for the selected player building, plus a starport's CHOAM order list.
@@ -226,46 +250,10 @@ struct DebugPanel: View {
             }
             Toggle("Show all economies", isOn: Binding(get: { model.showAllEconomies }, set: { model.showAllEconomies = $0 }))
             Toggle("Health bars (units + buildings)", isOn: Binding(get: { model.showHealthOverlay }, set: { model.showHealthOverlay = $0 }))
-            if model.showHealthOverlay {
-                LabeledContent("State chip") {
-                    HStack(spacing: 8) {
-                        legend(RightTriangle(), .green, "Move"); legend(Diamond(), .red, "Attack")
-                        legend(Rectangle(), .blue, "Guard"); legend(Circle(), .orange, "Harvest")
-                    }
-                }
-                Text("Idle units show no chip.").font(.caption).foregroundStyle(.secondary)
-            }
             LabeledContent("Player house", value: model.playerHouse.displayName)
             LabeledContent("Scenario", value: model.currentScenario ?? "—")
         }
         .formStyle(.grouped)
-    }
-
-    private func legend(_ shape: some Shape, _ color: Color, _ label: String) -> some View {
-        HStack(spacing: 3) {
-            shape.fill(color).frame(width: 8, height: 8)
-            Text(label).font(.caption2)
-        }
-    }
-}
-
-/// A right-pointing triangle (the "move" state chip), matching `GameScene.chipStyle`.
-struct RightTriangle: Shape {
-    func path(in r: CGRect) -> Path {
-        var p = Path()
-        p.move(to: CGPoint(x: r.minX, y: r.minY)); p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
-        p.addLine(to: CGPoint(x: r.minX, y: r.maxY)); p.closeSubpath()
-        return p
-    }
-}
-
-/// A diamond (the "attack" state chip).
-struct Diamond: Shape {
-    func path(in r: CGRect) -> Path {
-        var p = Path()
-        p.move(to: CGPoint(x: r.midX, y: r.minY)); p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
-        p.addLine(to: CGPoint(x: r.midX, y: r.maxY)); p.addLine(to: CGPoint(x: r.minX, y: r.midY)); p.closeSubpath()
-        return p
     }
 }
 
