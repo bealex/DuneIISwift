@@ -167,6 +167,33 @@ struct StructureBuildTests {
         #expect(s.units[harvester].originEncoded != 0)
     }
 
+    @Test("structure commands route through UnitOrders: repair / upgrade / starport order")
+    func structureCommandSeam() {
+        var simulation = self.sim()
+        let orders = UnitOrders(scriptInfo: info)
+
+        // Repair: a damaged, allocated structure starts self-repairing.
+        let win = addFactory(&simulation.state, .windtrap)
+        simulation.state.structures[win].o.flags.insert(.allocated)
+        simulation.state.structures[win].o.hitpoints = StructureInfo[.windtrap].o.hitpoints - 10
+        orders.apply(.repair(structure: UInt16(win)), in: &simulation.state)
+        #expect(simulation.state.structures[win].o.flags.contains(.repairing))
+
+        // Upgrade: an upgradable structure starts upgrading.
+        let fac = addFactory(&simulation.state, .lightVehicle)
+        simulation.state.structures[fac].o.flags.insert(.allocated)
+        simulation.state.structures[fac].upgradeTimeLeft = 100
+        orders.apply(.upgrade(structure: UInt16(fac)), in: &simulation.state)
+        #expect(simulation.state.structures[fac].o.flags.contains(.upgrading))
+
+        // Starport order: an in-stock unit is chained onto the house delivery list.
+        let sp = addFactory(&simulation.state, .starport)
+        simulation.state.structures[sp].o.houseID = 0
+        simulation.state.starportAvailable[Int(UnitType.trike.rawValue)] = 3
+        orders.apply(.starportOrder(structure: UInt16(sp), objectType: UInt16(UnitType.trike.rawValue)), in: &simulation.state)
+        #expect(simulation.state.houses[0].starportLinkedID != Pool.unitIndexInvalid)
+    }
+
     @Test("placeReady refuses when the factory isn't ready")
     func placeNotReady() {
         var simulation = self.sim()

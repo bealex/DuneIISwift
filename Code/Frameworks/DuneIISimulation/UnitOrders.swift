@@ -33,6 +33,12 @@ public struct UnitOrders: Sendable {
             case let .stop(unit):          stop(slot: Int(unit), in: &state)
             case let .build(structure, objectType):
                 _ = combat.structureBuildObject(slot: Int(structure), objectType: objectType, in: &state)
+            case let .starportOrder(structure, objectType):
+                _ = combat.structureStarportOrder(slot: Int(structure), objectType: objectType, in: &state)
+            case let .repair(structure):
+                _ = state.structureSetRepairingState(Int(structure), state: -1)   // toggle
+            case let .upgrade(structure):
+                _ = state.structureSetUpgradingState(Int(structure), state: -1)    // toggle
             case let .cancelBuild(structure):
                 state.structureCancelBuild(Int(structure))
             case let .placeStructure(structure, tile):

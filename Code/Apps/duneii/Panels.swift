@@ -47,6 +47,7 @@ struct InspectorPanel: View {
                         }
                         Button("Deselect", role: .cancel) { model.deselect() }.controlSize(.small)
                     }
+                    structureSection()
                     buildSection()
                 } else {
                     ContentUnavailableView("No selection", systemImage: "cursorarrow.rays",
@@ -62,6 +63,45 @@ struct InspectorPanel: View {
     private func tint(_ hp: Int, _ max: Int) -> Color {
         let f = max > 0 ? Double(hp) / Double(max) : 1
         return f > 0.66 ? .green : (f > 0.33 ? .yellow : .red)
+    }
+
+    /// Repair / Upgrade (toggle) for the selected player building, plus a starport's CHOAM order list.
+    @ViewBuilder private func structureSection() -> some View {
+        if let a = model.structureActions {
+            Divider()
+            HStack {
+                Button { model.repairSelected() } label: {
+                    Label(a.isRepairing ? "Repairing…" : "Repair", systemImage: "wrench.and.screwdriver")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered).tint(a.isRepairing ? .accentColor : nil)
+                .disabled(!a.canRepair && !a.isRepairing)
+
+                Button { model.upgradeSelected() } label: {
+                    Label(a.isUpgrading ? "Upgrading…" : "Upgrade", systemImage: "arrow.up.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered).tint(a.isUpgrading ? .accentColor : nil)
+                .disabled(!a.canUpgrade && !a.isUpgrading)
+            }
+            if !model.starportStock.isEmpty {
+                Text("Order (Starport)").font(.headline).padding(.top, 4)
+                VStack(spacing: 4) {
+                    ForEach(model.starportStock, id: \.objectType) { item in
+                        Button { model.orderFromStarport(item.objectType) } label: {
+                            HStack {
+                                Text(item.displayName)
+                                Spacer()
+                                Text("\(item.cost) cr").monospacedDigit()
+                                    .foregroundStyle(item.cost > model.playerCredits ? Color.red : Color.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+        }
     }
 
     /// The factory build section: a buildable-item selector, or — once building — a progress bar with

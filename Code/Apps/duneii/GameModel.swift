@@ -50,6 +50,10 @@ final class GameModel {
     private(set) var buildProgress: BuildState?
     private(set) var isFactorySelected = false
     private(set) var playerCredits = 0
+    /// Repair/upgrade availability for the selected player structure (nil = not a player structure).
+    private(set) var structureActions: StructureActions?
+    /// In-stock orderable units for a selected player starport (CHOAM buy).
+    private(set) var starportStock: [Buildable] = []
     /// Active structure-placement mode: a finished construction-yard product awaiting a map click.
     private(set) var placement: PlacementState?
     /// Build/place/cancel commands queued from the UI, applied next `advance()` (alongside unit orders).
@@ -160,6 +164,53 @@ final class GameModel {
         let credits = frame.houses.first { $0.id == playerHouse }?.credits ?? 0
         if credits != playerCredits { playerCredits = credits }
         refreshBuild()
+        refreshStructureActions()
+    }
+
+    /// Recompute the selected player structure's repair/upgrade availability + (for a starport) its CHOAM
+    /// stock. Published only on change.
+    private func refreshStructureActions() {
+        guard let slot = selectedStructureSlot, let sim = simulation,
+              let type = StructureType(rawValue: Int(sim.state.structures[slot].o.type)) else {
+            if structureActions != nil { structureActions = nil }
+            if !starportStock.isEmpty { starportStock = [] }
+            return
+        }
+        let s = sim.state.structures[slot]
+        let actions = StructureActions(
+            slot: slot,
+            canRepair: s.o.hitpoints < StructureInfo[type].o.hitpoints,
+            canUpgrade: s.upgradeTimeLeft != 0 && !s.o.flags.contains(.upgrading),
+            isRepairing: s.o.flags.contains(.repairing),
+            isUpgrading: s.o.flags.contains(.upgrading))
+        if actions != structureActions { structureActions = actions }
+
+        var stock: [Buildable] = []
+        if type == .starport {
+            for t in sim.state.starportAvailable.indices where sim.state.starportAvailable[t] > 0 {
+                guard let ut = UnitType(rawValue: t) else { continue }
+                stock.append(Buildable(objectType: UInt16(t), isStructure: false,
+                                       cost: Int(UnitInfo[ut].o.buildCredits), buildTime: Int(UnitInfo[ut].o.buildTime)))
+            }
+        }
+        if stock != starportStock { starportStock = stock }
+    }
+
+    /// The selected structure's pool slot iff it's a **player-owned** structure (any type, not just a factory).
+    private var selectedStructureSlot: Int? {
+        guard case let .structure(slot) = controller.selection, let state = simulation?.state,
+              slot < state.structures.count, state.structures[slot].o.flags.contains(.used),
+              state.structures[slot].o.houseID == UInt8(playerHouse.rawValue) else { return nil }
+        return slot
+    }
+
+    /// Toggle the selected structure's self-repair.
+    func repairSelected() { if let slot = selectedStructureSlot { enqueue(.repair(structure: UInt16(slot))); audio.play(.select) } }
+    /// Toggle the selected structure's upgrade.
+    func upgradeSelected() { if let slot = selectedStructureSlot { enqueue(.upgrade(structure: UInt16(slot))); audio.play(.select) } }
+    /// Order one `objectType` from the selected starport (CHOAM buy).
+    func orderFromStarport(_ objectType: UInt16) {
+        if let slot = selectedStructureSlot { enqueue(.starportOrder(structure: UInt16(slot), objectType: objectType)); audio.play(.select) }
     }
 
     /// Recompute the selected factory's buildable list + in-progress build (cheap; published only on change
@@ -184,7 +235,7 @@ final class GameModel {
         guard case let .structure(slot) = controller.selection, let state = simulation?.state,
               slot < state.structures.count, state.structures[slot].o.flags.contains(.used),
               let type = StructureType(rawValue: Int(state.structures[slot].o.type)),
-              StructureInfo[type].o.flags.contains(.factory),
+              StructureInfo[type].o.flags.contains(.factory), type != .starport,   // the starport orders, not builds
               state.structures[slot].o.houseID == UInt8(playerHouse.rawValue) else { return nil }
         return slot
     }
@@ -369,6 +420,15 @@ final class GameModel {
                                      hitpointsMax: Int(StructureInfo[type].o.hitpoints), tileX: p % 64, tileY: p / 64)
         }
     }
+}
+
+/// Repair/upgrade availability for the selected player structure (the inspector's structure-command buttons).
+struct StructureActions: Equatable {
+    var slot: Int
+    var canRepair: Bool
+    var canUpgrade: Bool
+    var isRepairing: Bool
+    var isUpgrading: Bool
 }
 
 /// Active structure-placement mode: a finished construction-yard product awaiting a valid map click.
