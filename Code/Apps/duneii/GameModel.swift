@@ -72,8 +72,9 @@ final class GameModel {
     /// it, so it's chosen here (in the scenario selector). Applied live to the running sim and on every load,
     /// so changing it updates the build menu immediately.
     var campaignLevel = 1 { didSet {
-        campaignLevel = min(max(campaignLevel, 1), 9)
-        simulation?.state.campaignID = UInt8(campaignLevel)
+        // Don't reassign `campaignLevel` here — under @Observable that re-enters this setter and recurses
+        // forever. The picker only offers 1…9; `UInt8(clamping:)` is the belt-and-braces guard.
+        simulation?.state.campaignID = UInt8(clamping: campaignLevel)
     } }
 
     // Radar / minimap state (read by `MinimapView`).
@@ -165,7 +166,7 @@ final class GameModel {
         state.aiFogOfWar = aiFogOfWar   // before unit placement, so the player units honour the AI-fog mask
         state.enforceUnitLimit = enforceUnitLimit
         state.loadScenario(ini: ini, iconMap: iconMap)
-        state.campaignID = UInt8(campaignLevel)   // the selected mission level (gates build availability)
+        state.campaignID = UInt8(clamping: campaignLevel)   // the selected mission level (gates build availability)
         // Activate every house; keep each one's scenario unit cap (`[HOUSES] MaxUnit`), defaulting houses with
         // no `[HOUSES]` entry to the Dune II default (39). The `enforceUnitLimit` toggle decides whether the
         // cap actually bites — so "follow the unit limit" uses the real scenario limit, not a pinned 1000.
