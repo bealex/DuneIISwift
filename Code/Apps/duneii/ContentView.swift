@@ -52,6 +52,19 @@ struct ContentView: View {
                     Text(error).font(.callout).padding(8).background(.red.opacity(0.85)).foregroundStyle(.white)
                 }
             }
+            .overlay(alignment: .bottom) {
+                if let notice = model.notice {
+                    Label(notice, systemImage: "exclamationmark.bubble.fill")
+                        .font(.callout.weight(.semibold))
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(.black.opacity(0.7), in: Capsule())
+                        .foregroundStyle(.yellow)
+                        .padding(.bottom, 24)
+                        .transition(.opacity)
+                        .id(notice)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: model.notice)
             .onAppear { if !openedDefaults { tools.openDefaults(); openedDefaults = true } }
     }
 }

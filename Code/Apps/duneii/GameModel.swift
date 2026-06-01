@@ -55,6 +55,12 @@ final class GameModel {
     /// nothing is selected. `inspectedTile` is the live tile coords; `tileInfo` is its derived parameters.
     @ObservationIgnored private var inspectedTile: (x: Int, y: Int)?
     private(set) var tileInfo: TileInfo?
+    /// A transient player hint banner (construction complete / low power / no funds), auto-cleared after a
+    /// few seconds. Derived each frame from the player's economy + factories — no new sim events needed.
+    private(set) var notice: String?
+    @ObservationIgnored private var noticeFrames = 0
+    @ObservationIgnored private var wasLowPower = false
+    @ObservationIgnored private var readyFactories: Set<Int> = []
 
     // Build-GUI derived state (refreshed for the selected player-owned factory).
     private(set) var buildables: [Buildable] = []
@@ -240,7 +246,46 @@ final class GameModel {
         refreshBuild()
         refreshStructureActions()
         refreshTileInfo()
+        refreshHints(frame)
     }
+
+    /// Player hints (`GUI_DisplayHint` family): a transient banner on construction-complete, low power, or
+    /// out of funds. All derived from the player's economy + factory state each frame — no new sim events.
+    private func refreshHints(_ frame: FrameInfo) {
+        if noticeFrames > 0 { noticeFrames -= 1; if noticeFrames == 0 { notice = nil } }
+        guard let sim = simulation else { return }
+        let state = sim.state
+        let ph = UInt8(playerHouse.rawValue)
+
+        // Low power — production < usage (House_CalculatePowerAndCredit's low-power state). Edge-triggered.
+        if let p = frame.houses.first(where: { $0.id == playerHouse }) {
+            let low = p.powerUsage > p.powerProduction
+            if low && !wasLowPower { postNotice("Low power — build a windtrap") }
+            wasLowPower = low
+        }
+
+        // Construction complete — a player factory's product just became ready (edge-triggered per factory).
+        var nowReady: Set<Int> = []
+        for i in state.structures.indices where state.structures[i].o.flags.contains(.used) {
+            let s = state.structures[i]
+            guard s.o.houseID == ph, let type = StructureType(rawValue: Int(s.o.type)),
+                  StructureInfo[type].o.flags.contains(.factory) else { continue }
+            if let bs = sim.buildState(structureSlot: i), bs.isReady {
+                nowReady.insert(i)
+                if !readyFactories.contains(i) { postNotice("\(bs.displayName) ready") }
+            }
+        }
+        readyFactories = nowReady
+    }
+
+    /// Show a transient hint banner for ~3 seconds (≈180 frames at 60 fps).
+    private func postNotice(_ message: String) {
+        if notice != message { notice = message }
+        noticeFrames = 180
+    }
+
+    /// Flash an "insufficient funds" hint (a refused build/order). Called by the build/order paths.
+    func noticeInsufficientFunds() { postNotice("Insufficient funds") }
 
     /// The set of house ids with at least one used unit or structure — i.e. actually on the map (vs a house
     /// merely activated for the economy via `[HOUSES]`, which the Economy panel should not list).
@@ -320,7 +365,7 @@ final class GameModel {
     func orderFromStarport(_ objectType: UInt16) {
         guard let slot = selectedStructureSlot else { return }
         let price = starportPriceByType[Int(objectType)] ?? 0
-        guard playerCredits >= Int(price) else { return }   // can't afford — the button is disabled too
+        guard playerCredits >= Int(price) else { noticeInsufficientFunds(); return }
         enqueue(.starportOrder(structure: UInt16(slot), objectType: objectType, price: price))
         audio.play(.select)
     }
@@ -483,6 +528,9 @@ final class GameModel {
     /// Start the selected factory building `objectType` (a `Buildable.objectType`).
     func startBuild(_ objectType: UInt16) {
         guard let slot = selectedFactorySlot else { return }
+        if let item = buildables.first(where: { $0.objectType == objectType }), item.cost > playerCredits {
+            noticeInsufficientFunds(); return
+        }
         enqueue(.build(structure: UInt16(slot), objectType: objectType))
         audio.play(.select)
     }

@@ -33,6 +33,10 @@ For a selected entity: name/house/tile/health, then context sections — the uni
 
 One card per house with credits/storage and the power balance. Lists **only houses actually on the map** (≥1 used unit or structure — `GameModel.housesOnMap`), so houses merely activated for the economy via `[HOUSES]` with no presence are not shown. The Debug *Show all economies* toggle gates whether non-player houses appear at all.
 
+## Hints
+
+A transient banner at the bottom of the map (`GameModel.notice`, auto-cleared after ~3 s) surfaces the `GUI_DisplayHint`-family player notices, all **derived each frame from the player's economy + factory state** (no new sim events): **construction complete** (a player factory's product becomes ready — edge-triggered per factory), **low power** (production < usage — edge-triggered), and **insufficient funds** (a build/starport order refused for cost). Faithful triggers, our own strings; presentation-only, so the sim is untouched.
+
 ## Debug toggles
 
 The Debug panel. Toggles marked *(debug)* change simulation behaviour; both default to the faithful setting, so the goldens stay byte-identical.
