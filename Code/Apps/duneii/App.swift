@@ -14,6 +14,18 @@ struct DuneIIApp: App {
             ContentView(model: model)
                 .frame(minWidth: 800, minHeight: 600)
         }
+        .commands {
+            // Save / Load in the File menu (⌘S / ⌘O), alongside the toolbar buttons.
+            CommandGroup(replacing: .saveItem) {
+                Button("Save Game…") { presentSaveGame(model) }
+                    .keyboardShortcut("s")
+                    .disabled(model.simulation == nil)
+                Button("Load Game…") { presentLoadGame(model) }
+                    .keyboardShortcut("o")
+            }
+        }
+
+        Settings { SettingsView(model: model) }
     }
 
     private static func installURL() -> URL {

@@ -18,6 +18,9 @@ public final class EngineAudioSink: AudioSink {
     private var buffers: [SoundID: AVAudioPCMBuffer] = [:]
     private var next = 0
     private(set) var running = false
+    /// Master enable for sound effects. Off ⇒ `play` no-ops (the engine + node pool keep running, so turning
+    /// it back on is instant). Music is separate (`MusicDirector.enabled`).
+    public var enabled = true
     /// The listener (camera centre) in sub-tile world units (256/tile); `nil` ⇒ no attenuation.
     private var listener: (x: Int, y: Int)?
 
@@ -73,7 +76,7 @@ public final class EngineAudioSink: AudioSink {
     }
 
     public func play(_ event: SoundEvent) {
-        guard running, let buffer = buffers[event.sound] else { return }
+        guard running, enabled, let buffer = buffers[event.sound] else { return }
         let node = nodes[next]
         next = (next + 1) % nodes.count
         node.volume = volume(for: event)   // distance attenuation (1 for a position-less / UI sound)

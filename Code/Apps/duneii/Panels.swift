@@ -293,7 +293,6 @@ struct DebugPanel: View {
             }
             Toggle("Show all economies", isOn: Binding(get: { model.showAllEconomies }, set: { model.showAllEconomies = $0 }))
             Toggle("Health bars (units + buildings)", isOn: Binding(get: { model.showHealthOverlay }, set: { model.showHealthOverlay = $0 }))
-            Toggle("Music", isOn: Binding(get: { model.musicEnabled }, set: { model.musicEnabled = $0 }))
             LabeledContent("Player house", value: model.playerHouse.displayName)
             LabeledContent("Scenario", value: model.scenarioTitle)
             LabeledContent("Campaign level", value: "\(model.campaignLevel)")

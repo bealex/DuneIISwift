@@ -23,6 +23,8 @@ final class GameModel {
     @ObservationIgnored let music = MusicDirector(musicDirectory: GameModel.musicURL(), soundBank: GameModel.soundBankURL())
     /// Master music toggle — also the neutrality switch for goldens (off ⇒ music never plays, sim untouched).
     var musicEnabled = true { didSet { music.enabled = musicEnabled } }
+    /// Master sound-effects toggle (Settings). Off ⇒ no SFX play; the sim is untouched (presentation only).
+    var soundEnabled = true { didSet { audio.enabled = soundEnabled } }
     @ObservationIgnored var scene: GameScene!
 
     private(set) var currentScenario: String?

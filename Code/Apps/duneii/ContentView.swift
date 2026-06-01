@@ -101,21 +101,25 @@ struct ContentView: View {
             .onAppear { if !openedDefaults { tools.openDefaults(); openedDefaults = true } }
     }
 
-    /// Present a save panel and write the current game (our `SaveGame` binary).
-    private func saveGame() {
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "\(model.currentScenario ?? "game").duneiisave"
-        panel.canCreateDirectories = true
-        if panel.runModal() == .OK, let url = panel.url { model.saveGame(to: url) }
-    }
+    private func saveGame() { presentSaveGame(model) }
+    private func loadGame() { presentLoadGame(model) }
+}
 
-    /// Present an open panel and restore the chosen save.
-    private func loadGame() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        if panel.runModal() == .OK, let url = panel.url { model.loadGame(from: url) }
-    }
+/// Present a save panel and write the current game (our `SaveGame` binary). A top-level function so both the
+/// toolbar button and the File-menu command (`DuneIIApp.commands`) can invoke the same flow.
+@MainActor func presentSaveGame(_ model: GameModel) {
+    let panel = NSSavePanel()
+    panel.nameFieldStringValue = "\(model.currentScenario ?? "game").duneiisave"
+    panel.canCreateDirectories = true
+    if panel.runModal() == .OK, let url = panel.url { model.saveGame(to: url) }
+}
+
+/// Present an open panel and restore the chosen save. Shared by the toolbar button and the File-menu command.
+@MainActor func presentLoadGame(_ model: GameModel) {
+    let panel = NSOpenPanel()
+    panel.allowsMultipleSelection = false
+    panel.canChooseDirectories = false
+    if panel.runModal() == .OK, let url = panel.url { model.loadGame(from: url) }
 }
 
 /// Hosts the map `GameScene` in an `SKView` that **accepts the first mouse** — so a click on the map is
