@@ -12,10 +12,17 @@ public protocol AudioSink: AnyObject {
     /// mono PCM (the VOC sample format) at `sampleRate` Hz. Re-registering an id replaces it.
     func register(_ id: SoundID, sampleRate: Int, pcm8: [UInt8])
     /// Play a registered sound **immediately**, mixing with anything already playing. An unregistered or
-    /// not-yet-started sink ignores it.
+    /// not-yet-started sink ignores it. A `SoundEvent` carrying a world position is attenuated by its
+    /// distance from the listener (`setListener`); a position-less event plays at full volume.
     func play(_ event: SoundEvent)
     /// Silence every currently-playing voice.
     func stopAll()
+    /// Set the listener (camera centre) in **sub-tile** world units (256/tile), for distance attenuation.
+    func setListener(x: Int, y: Int)
+}
+
+public extension AudioSink {
+    func setListener(x: Int, y: Int) {}   // default: no attenuation (NullAudio / sinks that don't care)
 }
 
 public extension AudioSink {

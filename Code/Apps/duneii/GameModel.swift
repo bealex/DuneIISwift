@@ -75,6 +75,8 @@ final class GameModel {
     @ObservationIgnored private var noticeFrames = 0
     @ObservationIgnored private var wasLowPower = false
     @ObservationIgnored private var readyFactories: Set<Int> = []
+    @ObservationIgnored private var lastPlayerStructureHP: Int?
+    @ObservationIgnored private var underAttackCooldown = 0
 
     // Build-GUI derived state (refreshed for the selected player-owned factory).
     private(set) var buildables: [Buildable] = []
@@ -154,8 +156,12 @@ final class GameModel {
         simulation = sim
         currentScenario = scenarioName
         playerHouse = HouseID(rawValue: Int(state.playerHouseID)) ?? .atreides
+        registerHouseVoices()      // the player-house announcement voices (the prefix can change per scenario)
         paused = state.paused      // fresh scenario ⇒ false; a restored save ⇒ its saved pause
         gameEnd = state.gameEndState
+        // Reset the transient hint state so the new base doesn't false-fire build-complete / under-attack.
+        wasLowPower = false; readyFactories = []; lastPlayerStructureHP = nil; underAttackCooldown = 0
+        notice = nil; noticeFrames = 0
         controller.deselect()
         scene.load(simulation: sim, assets: assets)
         let frame = sim.makeFrameInfo()
@@ -207,6 +213,19 @@ final class GameModel {
         audio.start()
     }
 
+    /// Register the player house's spoken **announcement** voices (the `%c`-prefixed VOCs, `%c` = the house
+    /// letter: `HCONST.VOC`/`AWARNING.VOC`/…). Called on each load since the player house can change.
+    private func registerHouseVoices() {
+        let prefix = String(Character(UnicodeScalar(UInt8(truncatingIfNeeded: HouseInfo[playerHouse].prefixChar))))
+        let voices: [(SoundID, String)] = [
+            (.houseConstruct, "\(prefix)CONST.VOC"), (.houseUnderAttack, "\(prefix)WARNING.VOC"),
+        ]
+        for (id, voc) in voices where assets.voc(voc) != nil {
+            let s = assets.voc(voc)!
+            audio.register(id, sampleRate: s.sampleRate, pcm8: s.samples)
+        }
+    }
+
     /// The "unit reports in" voice on selecting a player unit — REPORT1 (foot) / REPORT2 (vehicle), faithful
     /// to `unit.c:1730`. A structure selection keeps the plain CLICK (`.select`).
     private func playSelectVoice(unitSlot: Int?) {
@@ -254,11 +273,14 @@ final class GameModel {
                 for c in commands where !sim.applyPalaceCommand(c) { orders.apply(c, in: &sim.state) }
             }
         }
+        // Listener = the camera centre, in sub-tile world units (256/tile; the viewport is in 16-px tiles),
+        // so combat/explosion sounds attenuate by distance.
+        audio.setListener(x: Int(viewport.centerX * 16), y: Int(viewport.centerY * 16))
         for _ in 0 ..< ticks {
             sim.tick()
-            // Play this tick's gameplay sounds (combat fire, explosions) — only those the VoiceTable
-            // resolved to a registered effect VOC; unmapped voice ids are silent no-ops in EngineAudioSink.
-            for event in sim.state.soundEvents { audio.play(event.sound) }
+            // Play this tick's gameplay sounds (combat fire, explosions) — the full SoundEvent (with its
+            // world position) so the sink can attenuate by distance. Unmapped voice ids are silent no-ops.
+            for event in sim.state.soundEvents { audio.play(event) }
         }
         simulation = sim
         let frame = sim.makeFrameInfo()
@@ -324,10 +346,21 @@ final class GameModel {
                   StructureInfo[type].o.flags.contains(.factory) else { continue }
             if let bs = sim.buildState(structureSlot: i), bs.isReady {
                 nowReady.insert(i)
-                if !readyFactories.contains(i) { postNotice("\(bs.displayName) ready") }
+                if !readyFactories.contains(i) { postNotice("\(bs.displayName) ready"); audio.play(.houseConstruct) }
             }
         }
         readyFactories = nowReady
+
+        // Under attack — the total HP of the player's buildings dropped since last frame ⇒ the house
+        // "your base is under attack" voice + a notice, rate-limited so a sustained attack doesn't spam.
+        var hp = 0
+        for s in state.structures where s.o.flags.contains(.used) && s.o.houseID == ph { hp += Int(s.o.hitpoints) }
+        if underAttackCooldown > 0 { underAttackCooldown -= 1 }
+        if let last = lastPlayerStructureHP, hp < last, underAttackCooldown == 0 {
+            postNotice("Your base is under attack"); audio.play(.houseUnderAttack)
+            underAttackCooldown = 600   // ~10s at 60 fps
+        }
+        lastPlayerStructureHP = hp
     }
 
     /// Show a transient hint banner for ~3 seconds (≈180 frames at 60 fps).

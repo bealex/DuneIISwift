@@ -12,4 +12,8 @@ extension SoundID {
     static let report3 = SoundID(1004)       // REPORT3.VOC — harvest order / random vehicle ack
     static let moveOut = SoundID(1005)       // MOVEOUT.VOC — move order
     static let overOut = SoundID(1006)       // OVEROUT.VOC — attack/retreat order
+    // The per-house **announcement** voices (`g_table_voices` 43/49…, `%c` = the player house letter, e.g.
+    // `HCONST.VOC`/`ACONST.VOC`/`OCONST.VOC`). Re-registered per scenario (the player house can change).
+    static let houseConstruct = SoundID(1010)    // %cCONST.VOC — "construction complete"
+    static let houseUnderAttack = SoundID(1011)  // %cWARNING.VOC — "your base is under attack"
 }

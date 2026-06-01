@@ -54,7 +54,11 @@ The Debug panel. Toggles marked *(debug)* change simulation behaviour; both defa
 
 ## Audio
 
-Combat/explosion effects are sim-emitted `SoundEvent`s resolved through `VoiceTable` (the `+` effect VOCs). The unit **acknowledgement voices** (`g_table_voices` 17–22, the language-`%c`=Z English set) are host-played: selecting a player unit plays REPORT1 (foot) / REPORT2 (vehicle) — `unit.c:1730`; ordering it plays the action's voice for a foot unit (move→MOVEOUT, attack/retreat→OVEROUT, harvest→REPORT3) or a random REPORT3/AFFIRM for a vehicle — `viewport.c:182` (the vehicle pick uses a **host** random, never the sim RNG, so determinism/goldens are untouched). Structure selection keeps the plain CLICK. Still seams: the per-**house** spoken announcement voices (`%c`=house: build-complete, under-attack, deploy, …), which need sim-emitted announcement events; music; distance attenuation from `SoundEvent.position`.
+Combat/explosion effects are sim-emitted `SoundEvent`s resolved through `VoiceTable` (the `+` effect VOCs), played as the **full positioned event** so the sink **attenuates by distance**: `EngineAudioSink` keeps a listener (the camera centre, `GameModel.advance` sets it from the viewport) and fades a sound's volume from full (≤2 tiles) to ~0.12 (≥18 tiles).
+
+The unit **acknowledgement voices** (`g_table_voices` 17–22, the language-`%c`=Z English set) are host-played: selecting a player unit plays REPORT1 (foot) / REPORT2 (vehicle) — `unit.c:1730`; ordering it plays the action's voice for a foot unit (move→MOVEOUT, attack/retreat→OVEROUT, harvest→REPORT3) or a random REPORT3/AFFIRM for a vehicle — `viewport.c:182` (the vehicle pick uses a **host** random, never the sim RNG). Structure selection keeps the plain CLICK.
+
+The per-**house** spoken **announcement** voices (`%c` = the player house letter, `HCONST.VOC`/`AWARNING.VOC`/…) are registered per scenario (`GameModel.registerHouseVoices`, the prefix from `HouseInfo.prefixChar`) and played on the client-derived hint events: **construction complete** → `%cCONST.VOC`, **base under attack** (player-building HP dropped, rate-limited) → `%cWARNING.VOC`. Remaining seams: more announcement events (deploy / enemy-approaching), and **music** (XMI/AdLib — not ported).
 
 ## Parity note
 

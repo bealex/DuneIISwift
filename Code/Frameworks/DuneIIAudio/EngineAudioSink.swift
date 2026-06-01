@@ -18,6 +18,21 @@ public final class EngineAudioSink: AudioSink {
     private var buffers: [SoundID: AVAudioPCMBuffer] = [:]
     private var next = 0
     private(set) var running = false
+    /// The listener (camera centre) in sub-tile world units (256/tile); `nil` ⇒ no attenuation.
+    private var listener: (x: Int, y: Int)?
+
+    public func setListener(x: Int, y: Int) { listener = (x, y) }
+
+    /// Volume for a sound at `position` (sub-tile units) given the listener: full within ~2 tiles, fading
+    /// linearly to `minVolume` by ~`falloff` tiles. A position-less event (or no listener) is full volume.
+    private func volume(for event: SoundEvent) -> Float {
+        guard let listener, let px = event.positionX, let py = event.positionY else { return 1 }
+        let dx = Double(px - listener.x), dy = Double(py - listener.y)
+        let dist = (dx * dx + dy * dy).squareRoot()
+        let near = 2.0 * 256, falloff = 18.0 * 256   // sub-tile units
+        let v = 1 - (dist - near) / (falloff - near)
+        return Float(min(1, max(0.12, v)))
+    }
 
     /// - Parameters:
     ///   - voices: simultaneous voices (player nodes) before a new sound steals the oldest. 24 ≫ Dune II's
@@ -61,6 +76,7 @@ public final class EngineAudioSink: AudioSink {
         guard running, let buffer = buffers[event.sound] else { return }
         let node = nodes[next]
         next = (next + 1) % nodes.count
+        node.volume = volume(for: event)   // distance attenuation (1 for a position-less / UI sound)
         // `.interrupts` replaces whatever is on this node, so the new sound starts immediately even on a
         // busy voice (round-robin makes that the rare, oldest one).
         node.scheduleBuffer(buffer, at: nil, options: .interrupts, completionHandler: nil)
