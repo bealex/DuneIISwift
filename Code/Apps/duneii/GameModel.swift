@@ -17,6 +17,12 @@ import Foundation
 final class GameModel {
     let assets: AssetStore
     @ObservationIgnored let audio = EngineAudioSink()
+    /// In-game music (host-side presentation — never touches the sim). Maps OpenDUNE's `g_table_musics`
+    /// selection to the extracted MIDI songs in `Resources/Audio/Music/`, played through `AVMIDIPlayer` + the
+    /// system DLS bank (or a bundled `.sf2` if present).
+    @ObservationIgnored let music = MusicDirector(musicDirectory: GameModel.musicURL(), soundBank: GameModel.soundBankURL())
+    /// Master music toggle — also the neutrality switch for goldens (off ⇒ music never plays, sim untouched).
+    var musicEnabled = true { didSet { music.enabled = musicEnabled } }
     @ObservationIgnored var scene: GameScene!
 
     private(set) var currentScenario: String?
@@ -54,7 +60,7 @@ final class GameModel {
     var gameSpeed: Double = 1
     /// Freeze the simulation (the two-clock pause — `Simulation.tick` no-ops while `state.paused`). The
     /// camera, selection, and orders still work; only game time stops.
-    var paused = false { didSet { simulation?.state.paused = paused } }
+    var paused = false { didSet { simulation?.state.paused = paused; paused ? music.pause() : music.resume() } }
     /// The latched level outcome (`GameLoop_IsLevelFinished`). `playing` until a Win/Lose condition is met,
     /// then `won`/`lost`; the client shows a banner + pauses. Reset to `playing` on each scenario/save load.
     private(set) var gameEnd: GameEndState = .playing
@@ -175,6 +181,23 @@ final class GameModel {
         viewport.center(onWorldX: viewport.area.midX, worldY: viewport.area.midY, viewSize: viewSize)
         minimapBase = Minimap.baseImage(frame: frame, source: SpriteSource.make(assets: assets), palette: assets.palette)
         refreshDerived(frame)
+        music.startInGame()   // a random in-mission map theme (musicID 8–15), rolling into the next at its end
+    }
+
+    /// Where the extracted MIDI songs live — the app bundle's `Audio/Music/` when packaged, else the repo's
+    /// `Resources/` relative to `Code/` (how `swift run duneii` is launched), mirroring `App.installURL()`.
+    private static func musicURL() -> URL {
+        if let bundled = Bundle.main.resourceURL?.appendingPathComponent("Audio/Music"),
+           FileManager.default.fileExists(atPath: bundled.path) { return bundled }
+        return URL(fileURLWithPath: "../Resources/Audio/Music")
+    }
+
+    /// Optional SoundFont for the MIDI synth: a bundled/repo `Audio/music.sf2` if present, else `nil` ⇒ the
+    /// system's built-in General-MIDI DLS bank. Pluggable so a better bank can be dropped in later.
+    private static func soundBankURL() -> URL? {
+        let candidates = [Bundle.main.resourceURL?.appendingPathComponent("Audio/music.sf2"),
+                          URL(fileURLWithPath: "../Resources/Audio/music.sf2")].compactMap { $0 }
+        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     /// Save the current game to `url` — our versioned `SaveGame` (the whole `GameState`, a bit-identical
@@ -316,7 +339,10 @@ final class GameModel {
         let end = simulation?.state.gameEndState ?? .playing
         if end != gameEnd {
             gameEnd = end
-            if end != .playing { paused = true }
+            if end != .playing {
+                paused = true
+                end == .won ? music.win(house: playerHouse) : music.lose(house: playerHouse)
+            }
         }
     }
 
@@ -357,7 +383,7 @@ final class GameModel {
         for s in state.structures where s.o.flags.contains(.used) && s.o.houseID == ph { hp += Int(s.o.hitpoints) }
         if underAttackCooldown > 0 { underAttackCooldown -= 1 }
         if let last = lastPlayerStructureHP, hp < last, underAttackCooldown == 0 {
-            postNotice("Your base is under attack"); audio.play(.houseUnderAttack)
+            postNotice("Your base is under attack"); audio.play(.houseUnderAttack); music.enterBattle()
             underAttackCooldown = 600   // ~10s at 60 fps
         }
         lastPlayerStructureHP = hp
