@@ -378,6 +378,7 @@ final class GameScene: SKScene {
             case 124: model?.scroll(dx: 64, dy: 0)    // →
             case 126: model?.scroll(dx: 0, dy: -64)   // ↑ (up = toward smaller image-y)
             case 125: model?.scroll(dx: 0, dy: 64)    // ↓
+            case 49:  model?.togglePause()   // space — pause / resume
             case 53:  // Esc — back out of whatever mode is active, else deselect
                 if model?.missileTargeting != nil { model?.cancelMissileTargeting() }
                 else if model?.placement != nil { model?.cancelPlacement() }

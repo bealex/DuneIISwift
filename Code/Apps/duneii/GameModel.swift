@@ -52,6 +52,14 @@ final class GameModel {
     /// Wall-clock speed multiplier (0.5×…4×). The scene paces sim ticks against real time × this — see
     /// `GameScene.update`. 1× ≈ the base 60-ticks/second cadence (one tick per drawn frame at 60 fps).
     var gameSpeed: Double = 1
+    /// Freeze the simulation (the two-clock pause — `Simulation.tick` no-ops while `state.paused`). The
+    /// camera, selection, and orders still work; only game time stops.
+    var paused = false { didSet { simulation?.state.paused = paused } }
+    /// The latched level outcome (`GameLoop_IsLevelFinished`). `playing` until a Win/Lose condition is met,
+    /// then `won`/`lost`; the client shows a banner + pauses. Reset to `playing` on each scenario/save load.
+    private(set) var gameEnd: GameEndState = .playing
+    /// The end-of-game banner text, or `nil` while playing.
+    var outcomeText: String? { switch gameEnd { case .won: "Victory"; case .lost: "Defeat"; case .playing: nil } }
 
     // Derived per-frame info for the tool windows.
     private(set) var selection: SelectionInfo?
@@ -146,6 +154,8 @@ final class GameModel {
         simulation = sim
         currentScenario = scenarioName
         playerHouse = HouseID(rawValue: Int(state.playerHouseID)) ?? .atreides
+        paused = state.paused      // fresh scenario ⇒ false; a restored save ⇒ its saved pause
+        gameEnd = state.gameEndState
         controller.deselect()
         scene.load(simulation: sim, assets: assets)
         let frame = sim.makeFrameInfo()
@@ -279,7 +289,17 @@ final class GameModel {
         refreshStructureActions()
         refreshTileInfo()
         refreshHints(frame)
+
+        // Level outcome: latch + show the banner, and pause the game once it ends.
+        let end = simulation?.state.gameEndState ?? .playing
+        if end != gameEnd {
+            gameEnd = end
+            if end != .playing { paused = true }
+        }
     }
+
+    /// Toggle the pause (the toolbar button + spacebar).
+    func togglePause() { paused.toggle() }
 
     /// Player hints (`GUI_DisplayHint` family): a transient banner on construction-complete, low power, or
     /// out of funds. All derived from the player's economy + factory state each frame — no new sim events.

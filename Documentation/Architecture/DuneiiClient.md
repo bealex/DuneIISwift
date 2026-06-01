@@ -50,7 +50,7 @@ The Debug panel. Toggles marked *(debug)* change simulation behaviour; both defa
 | **Show all economies** | off | Show every (on-map) house in the Economy panel, not just the player's. |
 | **Health bars (units + buildings)** | on | Draw the per-object health/state overlay on the map. |
 
-Speed (0.5×–4×) and pause are separate toolbar controls; the two-clock model lets the sim run sped-up deterministically.
+**Speed / pause / outcome.** A toolbar **Speed** picker (0.5×–4×) paces the sim against wall-clock; a toolbar **Pause** button (and the **space** key) toggles `GameState.paused` — the two-clock model freezes game time (`Simulation.tick` no-ops) while the camera/selection/orders keep working. The level **outcome** (`GameState.gameEndState`, latched by `evaluateLevelEnd`/`GameLoop_IsLevelFinished`) shows a centred **Victory / Defeat** banner and auto-pauses; loading a scenario or save clears it.
 
 ## Audio
 

@@ -36,6 +36,12 @@ struct ContentView: View {
                     .help("Save / load the game")
                 }
                 ToolbarItem(placement: .automatic) {
+                    Button { model.togglePause() } label: {
+                        Image(systemName: model.paused ? "play.fill" : "pause.fill")
+                    }
+                    .help(model.paused ? "Resume (space)" : "Pause (space)")
+                }
+                ToolbarItem(placement: .automatic) {
                     Picker("Speed", selection: Binding(get: { model.gameSpeed }, set: { model.gameSpeed = $0 })) {
                         Text("0.5×").tag(0.5)
                         Text("1×").tag(1.0)
@@ -44,6 +50,7 @@ struct ContentView: View {
                     }
                     .pickerStyle(.menu)
                     .help("Game speed")
+                    .disabled(model.paused)
                 }
                 ToolbarItemGroup(placement: .automatic) {
                     ForEach(ToolKind.allCases) { kind in
@@ -59,6 +66,20 @@ struct ContentView: View {
                     Text(error).font(.callout).padding(8).background(.red.opacity(0.85)).foregroundStyle(.white)
                 }
             }
+            .overlay {
+                if let outcome = model.outcomeText {
+                    VStack(spacing: 6) {
+                        Text(outcome).font(.system(size: 56, weight: .heavy))
+                            .foregroundStyle(outcome == "Victory" ? .green : .red)
+                        Text("Pick a scenario or load a save to play again.")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                    .padding(40)
+                    .background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 16))
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .animation(.spring(duration: 0.3), value: model.outcomeText)
             .overlay(alignment: .bottom) {
                 if let notice = model.notice {
                     Label(notice, systemImage: "exclamationmark.bubble.fill")
