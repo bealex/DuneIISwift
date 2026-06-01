@@ -14,6 +14,11 @@ struct InspectorPanel: View {
                     HStack {
                         Image(systemName: s.kind == .unit ? "shippingbox.fill" : "building.2.fill").foregroundStyle(.secondary)
                         Text(s.name).font(.title2.bold())
+                        if model.selectedUnitCount > 1 {
+                            Text("×\(model.selectedUnitCount)").font(.caption.bold())
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.25), in: Capsule())
+                        }
                         if s.isPlayer { Text("yours").font(.caption).foregroundStyle(.green) }
                     }
                     // What it's doing right now (a unit's order / a structure's activity).

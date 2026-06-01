@@ -30,7 +30,13 @@ final class GameScene: SKScene {
     private var renderer: SpriteKitRenderer?
     private var lastUpdateTime: TimeInterval = 0
     private var tickAccumulator = 0.0
-    private let selectionNode = SKShapeNode()
+    private let selectionLayer = SKNode()          // outline(s) around the selected unit(s)/structure
+    private var selectionNodes: [SKShapeNode] = []
+    private let dragBoxNode = SKShapeNode()         // the drag-select rubber-band box
+    // Left-drag (drag-select) gesture state.
+    private var leftDragStartWindow: CGPoint?
+    private var leftDragStartTile: (Int, Int)?
+    private var leftDragging = false
     private let placementNode = SKShapeNode()      // structure-placement footprint preview
     private var trackingArea: NSTrackingArea?
     // Middle-button pan/recentre state: the last cursor point (window coords, camera-independent), whether
@@ -50,12 +56,14 @@ final class GameScene: SKScene {
         backgroundColor = .black
         addChild(cam)
         camera = cam
-        selectionNode.strokeColor = .white
-        selectionNode.lineWidth = 1.5
-        selectionNode.fillColor = .clear
-        selectionNode.zPosition = 30
-        selectionNode.isHidden = true
-        addChild(selectionNode)
+        selectionLayer.zPosition = 30
+        addChild(selectionLayer)
+        dragBoxNode.strokeColor = .green
+        dragBoxNode.lineWidth = 1
+        dragBoxNode.fillColor = NSColor.green.withAlphaComponent(0.12)
+        dragBoxNode.zPosition = 40
+        dragBoxNode.isHidden = true
+        addChild(dragBoxNode)
         placementNode.lineWidth = 1.5
         placementNode.zPosition = 35
         placementNode.isHidden = true
@@ -84,7 +92,7 @@ final class GameScene: SKScene {
     func load(simulation: Simulation, assets: AssetStore) {
         // Keep our overlay nodes — only drop the renderer's terrain/sprite nodes. (The placement-preview node
         // was being orphaned here, so its footprint never drew.)
-        let keep: [SKNode] = [cam, selectionNode, healthLayer, placementNode]
+        let keep: [SKNode] = [cam, selectionLayer, dragBoxNode, healthLayer, placementNode]
         for child in children where !keep.contains(child) { child.removeFromParent() }
         let r = SpriteKitRenderer(source: SpriteSource.make(assets: assets), basePalette: assets.palette,
                                   showFog: model?.showFog ?? false)
@@ -149,12 +157,34 @@ final class GameScene: SKScene {
     // MARK: - Selection outline
 
     private func updateSelection() {
-        guard let model, let box = model.selectionBox() else { selectionNode.isHidden = true; return }
-        // Image space (y-down) → scene (y-up): the rect's bottom-left in scene coords.
-        let originX = box.centerX - box.width / 2
-        let bottomY = Double(Self.worldSidePx) - (box.centerY + box.height / 2)
-        selectionNode.path = CGPath(rect: CGRect(x: originX, y: bottomY, width: box.width, height: box.height), transform: nil)
-        selectionNode.isHidden = false
+        let boxes = model?.selectionBoxes() ?? []
+        // Grow the outline-node pool to match the number of selected entities.
+        while selectionNodes.count < boxes.count {
+            let n = SKShapeNode()
+            n.strokeColor = .white; n.lineWidth = 1.5; n.fillColor = .clear
+            selectionNodes.append(n); selectionLayer.addChild(n)
+        }
+        for (i, node) in selectionNodes.enumerated() {
+            guard i < boxes.count else { node.isHidden = true; continue }
+            let box = boxes[i]
+            // Image space (y-down) → scene (y-up): the rect's bottom-left in scene coords.
+            let originX = box.centerX - box.width / 2
+            let bottomY = Double(Self.worldSidePx) - (box.centerY + box.height / 2)
+            node.path = CGPath(rect: CGRect(x: originX, y: bottomY, width: box.width, height: box.height), transform: nil)
+            node.isHidden = false
+        }
+    }
+
+    /// Draw the drag-select rubber-band over the tile rectangle from `from` to `to` (inclusive).
+    private func setDragBox(from: (Int, Int), to: (Int, Int)) {
+        let minX = min(from.0, to.0), maxX = max(from.0, to.0)
+        let minY = min(from.1, to.1), maxY = max(from.1, to.1)
+        let x = Double(minX * Self.tileSize)
+        let w = Double((maxX - minX + 1) * Self.tileSize)
+        let bottomY = Double(Self.worldSidePx - (maxY + 1) * Self.tileSize)
+        let h = Double((maxY - minY + 1) * Self.tileSize)
+        dragBoxNode.path = CGPath(rect: CGRect(x: x, y: bottomY, width: w, height: h), transform: nil)
+        dragBoxNode.isHidden = false
     }
 
     // MARK: - Health/state overlay
@@ -271,7 +301,29 @@ final class GameScene: SKScene {
 
     // MARK: - Input
 
+    // Left-click is resolved on mouse-UP so a press-drag-release can be a drag-select box instead. The
+    // special modes (missile target-select, structure placement, an armed order) act on a plain click and
+    // suppress drag-select.
     override func mouseDown(with event: NSEvent) {
+        leftDragStartWindow = event.locationInWindow
+        leftDragStartTile = tile(at: event)
+        leftDragging = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = leftDragStartWindow,
+              model?.missileTargeting == nil, model?.placement == nil, model?.pendingOrder == nil else { return }
+        let cur = event.locationInWindow
+        if hypot(cur.x - start.x, cur.y - start.y) > 4 { leftDragging = true }
+        if leftDragging, let from = leftDragStartTile, let to = tile(at: event) { setDragBox(from: from, to: to) }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer { leftDragStartWindow = nil; leftDragStartTile = nil; leftDragging = false; dragBoxNode.isHidden = true }
+        if leftDragging, let from = leftDragStartTile, let to = tile(at: event) {
+            model?.dragSelect(fromTileX: from.0, fromTileY: from.1, toTileX: to.0, toTileY: to.1)
+            return
+        }
         guard let (x, y) = tile(at: event) else { return }
         if model?.missileTargeting != nil { model?.launchMissileAt(tileX: x, tileY: y) }
         else if model?.placement != nil { model?.placeAt(tileX: x, tileY: y) }

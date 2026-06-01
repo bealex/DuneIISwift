@@ -354,18 +354,43 @@ final class GameModel {
         refreshTileInfo()
     }
 
+    /// Drag-select: select every player-owned, on-map, normal unit whose tile falls in the box `[from, to]`
+    /// (a verification-client convenience; the original selects one unit at a time). Replaces the selection.
+    func dragSelect(fromTileX: Int, fromTileY: Int, toTileX: Int, toTileY: Int) {
+        guard let state = simulation?.state else { return }
+        let minX = min(fromTileX, toTileX), maxX = max(fromTileX, toTileX)
+        let minY = min(fromTileY, toTileY), maxY = max(fromTileY, toTileY)
+        let ph = UInt8(playerHouse.rawValue)
+        var slots: [Int] = []
+        for i in state.units.indices where state.units[i].o.flags.contains(.used) {
+            let u = state.units[i]
+            guard u.o.houseID == ph, !u.o.flags.contains(.isNotOnMap),
+                  let ut = UnitType(rawValue: Int(u.o.type)), UnitInfo[ut].flags.contains(.isNormalUnit) else { continue }
+            let tx = Int(u.o.position.x) / 256, ty = Int(u.o.position.y) / 256
+            if tx >= minX, tx <= maxX, ty >= minY, ty <= maxY { slots.append(i) }
+        }
+        controller.selectGroup(slots)
+        selection = currentInfo()
+        inspectedTile = nil; refreshTileInfo()
+        if !slots.isEmpty { audio.play(.select) }
+    }
+
+    /// How many units are in the current (drag) selection — shown in the inspector header.
+    var selectedUnitCount: Int { controller.selectedUnits.count }
+
     func rightClickTile(_ x: Int, _ y: Int) {
-        let willOrder = controller.selection.unitSlot != nil
+        let willOrder = !controller.selectedUnits.isEmpty
         controller.rightClick(tileX: x, tileY: y, enemyTarget: isEnemy(x, y), harvester: isSelectedHarvester())
         if willOrder { audio.play(.acknowledge) }
         pendingOrder = controller.pendingOrder
     }
 
-    /// True when the selected unit is a harvester — its right-click default action is Harvest (it moves to the
-    /// tile and harvests/seeks spice there), not Move.
+    /// True only when a **single** harvester is selected — its right-click default action is Harvest (move to
+    /// the tile and harvest/seek spice). A multi-unit group gets a plain move/attack instead.
     private func isSelectedHarvester() -> Bool {
-        guard let state = simulation?.state, let slot = controller.selection.unitSlot, slot < state.units.count
-        else { return false }
+        guard controller.selectedUnits.count == 1, let state = simulation?.state else { return false }
+        let slot = controller.selectedUnits[0]
+        guard slot < state.units.count else { return false }
         return state.units[slot].o.type == UInt8(UnitType.harvester.rawValue)
     }
 
@@ -500,23 +525,25 @@ final class GameModel {
         return (Int(layout.size.width), Int(layout.size.height))
     }
 
-    /// The selected entity's centre + size in **world pixels** (16 px/tile) for the selection outline. A
-    /// **unit** follows smoothly via its sub-tile `position` (no tile-to-tile jumping); a **structure** uses
-    /// its tile corner + footprint. `nil` when nothing live is selected.
-    func selectionBox() -> (centerX: Double, centerY: Double, width: Double, height: Double)? {
-        guard let state = simulation?.state else { return nil }
+    /// The selection outline boxes, in **world pixels** (16 px/tile). A **structure** selection ⇒ one
+    /// footprint box; a **unit (drag) group** ⇒ one tile-size box per live selected unit (each follows its
+    /// sub-tile `position` smoothly). Empty when nothing live is selected.
+    func selectionBoxes() -> [(centerX: Double, centerY: Double, width: Double, height: Double)] {
+        guard let state = simulation?.state else { return [] }
         let tile = 16.0
-        switch controller.selection {
-            case let .unit(slot) where slot < state.units.count && state.units[slot].o.flags.contains(.used):
-                let p = state.units[slot].o.position
-                return (Double(p.x) * tile / 256, Double(p.y) * tile / 256, tile, tile)
-            case let .structure(slot) where slot < state.structures.count && state.structures[slot].o.flags.contains(.used):
-                let (w, h) = selectionFootprint()
-                let cornerX = Double(state.structures[slot].o.position.x) * tile / 256
-                let cornerY = Double(state.structures[slot].o.position.y) * tile / 256
-                return (cornerX + Double(w) * tile / 2, cornerY + Double(h) * tile / 2, Double(w) * tile, Double(h) * tile)
-            default: return nil
+        if case let .structure(slot) = controller.selection,
+           slot < state.structures.count, state.structures[slot].o.flags.contains(.used) {
+            let (w, h) = selectionFootprint()
+            let cornerX = Double(state.structures[slot].o.position.x) * tile / 256
+            let cornerY = Double(state.structures[slot].o.position.y) * tile / 256
+            return [(cornerX + Double(w) * tile / 2, cornerY + Double(h) * tile / 2, Double(w) * tile, Double(h) * tile)]
         }
+        var boxes: [(centerX: Double, centerY: Double, width: Double, height: Double)] = []
+        for slot in controller.selectedUnits where slot < state.units.count && state.units[slot].o.flags.contains(.used) {
+            let p = state.units[slot].o.position
+            boxes.append((Double(p.x) * tile / 256, Double(p.y) * tile / 256, tile, tile))
+        }
+        return boxes
     }
 
     /// A readable "what it's doing" label for a structure: its build activity if it's producing/upgrading,

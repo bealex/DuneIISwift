@@ -82,10 +82,46 @@ struct InputControllerTests {
         c.beginOrder(.move)
         #expect(c.pendingOrder == nil)            // nothing selected → not armed
         c.leftClick(tileX: 0, tileY: 0, hit: .unit(slot: 5))
+        #expect(c.selectedUnits == [5])           // a single unit-click forms a one-unit group
         c.stopSelected()
         #expect(c.drainCommands() == [.stop(unit: 5)])
         c.beginOrder(.move)
         c.deselect()
-        #expect(c.selection == .none && c.pendingOrder == nil)
+        #expect(c.selection == .none && c.selectedUnits.isEmpty && c.pendingOrder == nil)
+    }
+
+    @Test("selectGroup selects a unit group; single-unit and structure clicks reset it")
+    func groupSelection() {
+        var c = InputController()
+        c.selectGroup([3, 7, 12])
+        #expect(c.selectedUnits == [3, 7, 12])
+        #expect(c.selection == .unit(slot: 3))    // inspector mirrors the first
+        c.leftClick(tileX: 1, tileY: 1, hit: .unit(slot: 9))   // a single click collapses the group
+        #expect(c.selectedUnits == [9])
+        c.leftClick(tileX: 2, tileY: 2, hit: .structure(slot: 4))   // selecting a building clears it
+        #expect(c.selectedUnits.isEmpty)
+        c.selectGroup([])                         // an empty box deselects
+        #expect(c.selection == .none && c.selectedUnits.isEmpty)
+    }
+
+    @Test("a group order (right-click + armed) is issued to every selected unit")
+    func groupOrders() {
+        var c = InputController(mapWidth: 64)
+        c.selectGroup([3, 7])
+        c.rightClick(tileX: 10, tileY: 10, enemyTarget: false, harvester: false)
+        let moveTile: UInt16 = 10 * 64 + 10
+        let moves = c.drainCommands()
+        #expect(moves == [Command.move(unit: 3, tile: moveTile), Command.move(unit: 7, tile: moveTile)])
+        // An armed attack on the group → an attack command per unit.
+        c.beginOrder(.attack)
+        #expect(c.pendingOrder == .attack)
+        c.leftClick(tileX: 5, tileY: 5, hit: .none)
+        let attackTile: UInt16 = 5 * 64 + 5
+        let attacks = c.drainCommands()
+        #expect(attacks == [Command.attack(unit: 3, tile: attackTile), Command.attack(unit: 7, tile: attackTile)])
+        // Stop hits the whole group.
+        c.stopSelected()
+        let stops = c.drainCommands()
+        #expect(stops == [Command.stop(unit: 3), Command.stop(unit: 7)])
     }
 }

@@ -40,8 +40,13 @@ public struct ScriptedInput: InputSource {
 /// resolved at the tile) and inspector button presses; it tracks the current `selection` + an armed
 /// `pendingOrder`, and queues `Command`s for the host to drain. Pure value type — fully unit-testable.
 public struct InputController: InputSource {
-    /// The currently selected entity.
+    /// The currently selected entity — drives the inspector. For a multi-unit (drag) selection this is the
+    /// first unit of `selectedUnits`; for a structure it is that structure.
     public private(set) var selection: Selection = .none
+    /// The group of player units orders apply to. A single unit-click sets `[that unit]`; a drag-select sets
+    /// the whole group; selecting a structure / empty ground clears it. (The original Dune II selects one unit
+    /// at a time — group select is a verification-client convenience.)
+    public private(set) var selectedUnits: [Int] = []
     /// An order armed by an inspector button (`move`/`attack`); the next map click is its target.
     public private(set) var pendingOrder: OrderKind?
     private var queue: [Command] = []
@@ -51,42 +56,51 @@ public struct InputController: InputSource {
 
     public mutating func drainCommands() -> [Command] { defer { queue.removeAll() }; return queue }
 
-    /// A left-click on the map at tile `(x, y)`. With an order armed on a selected unit, this supplies the
-    /// order's target (and disarms it); otherwise it selects `hit` (the entity the host resolved there, or
-    /// `.none` to deselect).
+    /// A left-click on the map at tile `(x, y)`. With an order armed on the selected unit(s), this supplies the
+    /// order's target for every selected unit (and disarms it); otherwise it selects `hit` (the entity the host
+    /// resolved there, or `.none` to deselect) as a single-unit/structure selection.
     public mutating func leftClick(tileX x: Int, tileY y: Int, hit: Selection) {
-        if let pending = pendingOrder, let slot = selection.unitSlot {
-            queue.append(order(pending, slot: slot, tileX: x, tileY: y))
+        if let pending = pendingOrder, !selectedUnits.isEmpty {
+            for slot in selectedUnits { queue.append(order(pending, slot: slot, tileX: x, tileY: y)) }
             pendingOrder = nil
         } else {
             selection = hit
+            selectedUnits = hit.unitSlot.map { [$0] } ?? []
             pendingOrder = nil
         }
     }
 
-    /// A right-click on the map at tile `(x, y)`: order the selected unit with its **default contextual**
-    /// action. The host resolves the two facts it needs the world model for: `harvester` (the selected unit
-    /// is a harvester — its default action is `Harvest`, `actionsPlayer[0]`, so it harvests/seeks spice at the
-    /// tile) and `enemyTarget` (the tile holds an entity of a different house ⇒ attack). Harvester wins (a
-    /// harvester can't attack); otherwise enemy ⇒ attack, else move.
-    public mutating func rightClick(tileX x: Int, tileY y: Int, enemyTarget: Bool, harvester: Bool) {
-        guard let slot = selection.unitSlot else { return }
-        let kind: OrderKind = harvester ? .harvest : (enemyTarget ? .attack : .move)
-        queue.append(order(kind, slot: slot, tileX: x, tileY: y))
+    /// Replace the selection with a drag-selected group of player unit slots (the host computes which units
+    /// fall in the box). `selection` mirrors the first for the inspector; empty ⇒ deselect.
+    public mutating func selectGroup(_ units: [Int]) {
+        selectedUnits = units
+        selection = units.first.map { .unit(slot: $0) } ?? .none
         pendingOrder = nil
     }
 
-    /// Arm an order from an inspector button (no-op unless a unit is selected).
-    public mutating func beginOrder(_ kind: OrderKind) { if selection.unitSlot != nil { pendingOrder = kind } }
+    /// A right-click on the map at tile `(x, y)`: order **every** selected unit with the default contextual
+    /// action. The host resolves the facts it needs the world model for: `enemyTarget` (the tile holds an
+    /// entity of a different house ⇒ attack) and `harvester` (a *single* selected harvester ⇒ Harvest, its
+    /// `actionsPlayer[0]`; the host passes `false` for a multi-unit group). Harvester wins; else enemy ⇒
+    /// attack, else move. The same kind is issued to the whole group.
+    public mutating func rightClick(tileX x: Int, tileY y: Int, enemyTarget: Bool, harvester: Bool) {
+        guard !selectedUnits.isEmpty else { return }
+        let kind: OrderKind = harvester ? .harvest : (enemyTarget ? .attack : .move)
+        for slot in selectedUnits { queue.append(order(kind, slot: slot, tileX: x, tileY: y)) }
+        pendingOrder = nil
+    }
 
-    /// Stop the selected unit immediately (the inspector's Stop button).
+    /// Arm an order from an inspector button (no-op unless ≥1 unit is selected).
+    public mutating func beginOrder(_ kind: OrderKind) { if !selectedUnits.isEmpty { pendingOrder = kind } }
+
+    /// Stop every selected unit immediately (the inspector's Stop button).
     public mutating func stopSelected() {
-        if let slot = selection.unitSlot { queue.append(.stop(unit: UInt16(slot))) }
+        for slot in selectedUnits { queue.append(.stop(unit: UInt16(slot))) }
         pendingOrder = nil
     }
 
     /// Clear the selection + any armed order (Escape).
-    public mutating func deselect() { selection = .none; pendingOrder = nil }
+    public mutating func deselect() { selection = .none; selectedUnits = []; pendingOrder = nil }
 
     private func order(_ kind: OrderKind, slot: Int, tileX x: Int, tileY y: Int) -> Command {
         let tile = UInt16(y * mapWidth + x)
