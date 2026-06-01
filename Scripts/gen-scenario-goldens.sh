@@ -48,6 +48,7 @@ for f in "$INSTALL"/*; do ln -sf "$f" "$DATADIR/"; done
 # run <name> <scenarioId> <iniFile> <ticks> <cmd...>
 #   cmd = move|attack,<unitIndex>,<packedTile>  →  --parity-cmd
 #         place,<cyIndex>,<objectType>,<tile>   →  --parity-place (build+place a structure on a CY)
+#         save                                  →  --parity-save (write a real .SAV — the converter fixture)
 run() {
   local name="$1" id="$2" ini="$3" ticks="$4"; shift 4
   [ -n "$ONLY" ] && [ "$ONLY" != "$name" ] && return 0
@@ -56,7 +57,9 @@ run() {
               --parity-data-dir="$DATADIR" --parity-dump="$FIX/$name-golden.jsonl"
               --parity-random-trace="$FIX/$name-r256.txt" --parity-lcg-trace="$FIX/$name-lcg.txt")
   local c; for c in "$@"; do
-    if [[ "$c" == place,* ]]; then args+=(--parity-place="${c#place,}"); else args+=(--parity-cmd="$c"); fi
+    if [[ "$c" == place,* ]]; then args+=(--parity-place="${c#place,}")
+    elif [[ "$c" == save ]]; then args+=(--parity-save="$FIX/$name.sav")
+    else args+=(--parity-cmd="$c"); fi
   done
   echo "  $name  (scenario $id, $ticks ticks, cmds: $*)"
   "$ORACLE/bin/opendune" "${args[@]}"
@@ -82,6 +85,9 @@ run  slab-indestructible 88 slab-indestructible.ini "$TICKS" attack,22,1042
 # carryalls (positions prove the Unit_CreateWrapper spawn RNG aligned), and houses' unitCount==4 +
 # harvestersIncoming==0. The in-transport harvesters are skipped by Unit_Find (both engines).
 run  refinery-harvester 87 refinery-harvester.ini 0 place,0,12,1168 place,0,12,1296
+# convert-save: the oracle saves a small Harkonnen base (--parity-save) + dumps it; the Swift SaveConverter
+# reads the .SAV and must reproduce that dump (SaveConverterTests).
+run  convert-save 86 convert-save.ini 0 save
 # Multi-unit attack/guard match the deterministic prefix (setup + movement + the guard sitting); the
 # Swift side gates `compared` before combat RNG (target acquisition / fire), which parity doesn't chase.
 # attack-structure dumps structures + houses too (Scen_DumpState): a tank drains + destroys a windtrap.

@@ -323,9 +323,9 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | Feature | Status | Evidence / note |
 |---|---|---|
 | Scenario `.INI` load (map, houses, units, structures, teams) | ✅ | `ScenarioLoader` |
-| **Save game state** | ✗ | not implemented (Phase-2 tail) |
-| **Load game state** | ✗ | not implemented |
-| **Original `.SAV` → our format converter** | ✗ | not implemented |
+| **Save game state** (our format) | ✅ | `SaveGame.save` — versioned binary plist of the whole `GameState` (`SaveGameTests`) |
+| **Load game state** (our format) | ✅ | `SaveGame.load` — resumes **bit-identically** (RNG state included; `SaveGameTests.deterministicResume`) |
+| **Original `.SAV` converter** (read OpenDUNE saves) | ✅ | `SaveConverter` — parses the IFF/FORM chunks (INFO/PLYR/UNIT/BLDG/MAP/TEAM), seed-regenerates the map + applies tile overrides, rebuilds the pools. Cross-engine-verified vs the oracle's load of the same `.SAV` (`SaveConverterTests`). Behaviorally faithful, not a byte-exact EMC-VM resume (per `Plan.v1.md` §2) |
 
 ## U. Scenario `.INI` loading (per section)
 
@@ -362,7 +362,9 @@ Everything in the four-phase battle simulation is done and cross-engine-verified
 5. ~~Palace super-weapons~~ ✅ (§P, 2026-05-31) — `structureActivateSpecial`: AI death-hand launch / Fremen call / saboteur deploy. The human launch UI stays a Phase-6 seam.
 6. ~~AI base expansion~~ ✅ (§O, 2026-05-31) — `aiStructureMaintenance` + `structureAIPickNextToBuild` + the `aiStructureRebuild` queue: auto-repair, auto-build, rebuild-and-auto-place.
 7. ~~Starport ordering~~ ✅ (§J, 2026-05-31) — `structureStarportOrder` chains an order onto the delivery list; the factory-window GUI + CHOAM pricing stays a Phase-6 seam.
-8. **Save / load + original-save converter** ✗ (§T) — Phase-2 tail. **The only remaining missing gameplay feature** — every other feature in the four-phase battle simulation is done and cross-engine-verified.
+8. ~~Save / load + original-save converter~~ ✅ (§T, 2026-05-31) — our `SaveGame` (bit-identical resume) + `SaveConverter` (reads original OpenDUNE `.SAV`, cross-engine-verified). **This was the last missing gameplay feature.**
 9. ~~Scenario `[MAP] Field` not filled~~ ✅ (§U, 2026-05-31) — `applyScenarioSpiceFields` detonates each hand-placed field (radius-5 spice circle) before the first tick.
+
+**🎉 No missing gameplay features remain.** The entire four-phase battle simulation + persistence is implemented and cross-engine-verified against OpenDUNE 1.07. Open items are presentation seams (per-house spoken voices, the human palace-launch / starport-buy GUI windows) and `duneii`-client polish — out of this table's scope.
 
 (~~Known parity bug: `unitCreateWrapper` returned the carryall instead of the cargo~~ ✅ fixed 2026-05-31 — §H; it now returns the ferried cargo, so a harvester's `originEncoded` home refinery is set correctly.)
