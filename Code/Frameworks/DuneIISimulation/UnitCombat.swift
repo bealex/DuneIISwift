@@ -310,7 +310,10 @@ public struct UnitCombat: Sendable {
         if valid == 0 && houseID == state.playerHouseID && state.validateStrictIfZero == 0 { return false }
 
         state.structures[slot].o.seenByHouses |= UInt8(1 << houseID)
-        if houseID == state.playerHouseID { state.structures[slot].o.seenByHouses = 0xFF }
+        // A player-built structure reveals to all houses (`0xFF`) in stock Dune II; with the debug
+        // `aiFogOfWar` on, only to the player + AI houses that have already found the player (the mask is
+        // `0xFF` with the flag off, so the stock path is unchanged). See `Architecture/AIFogOfWar.md`.
+        if houseID == state.playerHouseID { state.structures[slot].o.seenByHouses |= state.playerObjectVisibilityMask() }
         state.structures[slot].o.flags.remove(.isNotOnMap)
         let corner = Tile32.unpack(position)
         state.structures[slot].o.position = Tile32(x: corner.x & 0xFF00, y: corner.y & 0xFF00)

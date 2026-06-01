@@ -97,3 +97,81 @@ struct FogTests {
         #expect(s.map[Int(Tile32.packXY(x: 20, y: 20))].isUnveiled)
     }
 }
+
+/// The debug `aiFogOfWar` test mode (`Architecture/AIFogOfWar.md`): with the flag off the player's objects
+/// reveal to all houses (stock 1.07); with it on, an AI house only sees the player's base after the player
+/// makes contact with one of its objects.
+@Suite("AI fog of war (debug)")
+struct AIFogTests {
+    private func world() -> GameState {
+        var s = GameState()
+        s.playerHouseID = 0
+        _ = s.houseAllocate(index: 0)
+        _ = s.houseAllocate(index: 2)
+        s.houses[0].unitCountMax = 100
+        s.houses[2].unitCountMax = 100
+        return s
+    }
+
+    /// Place an on-map unit of `house` at `packed`, registered so `unitGetByPackedTile` finds it.
+    private func place(_ s: inout GameState, type: UnitType, house: UInt8, at packed: UInt16) -> Int {
+        let u = s.unitAllocate(index: 0, type: UInt8(type.rawValue), houseID: house)!
+        s.units[u].o.flags.insert([.used, .allocated])
+        s.units[u].o.position = Tile32.unpack(packed)
+        s.map[Int(packed)].hasUnit = true
+        s.map[Int(packed)].index = UInt8(u + 1)
+        return u
+    }
+
+    @Test("the visibility mask is 0xFF with the flag off, player+found with it on")
+    func mask() {
+        var s = world()
+        #expect(s.playerObjectVisibilityMask() == 0xFF)         // stock: seen by all
+        s.aiFogOfWar = true
+        #expect(s.playerObjectVisibilityMask() == UInt8(1 << 0)) // only the player (house 0)
+        s.housesFoundPlayer = UInt8(1 << 2)                      // house 2 has found the player
+        #expect(s.playerObjectVisibilityMask() == UInt8(1 << 0 | 1 << 2))
+    }
+
+    @Test("flag off (stock): a player unit is seen by all houses on sight")
+    func stockUnitRevealsToAll() {
+        var s = world()
+        let mine = place(&s, type: .tank, house: 0, at: Tile32.packXY(x: 30, y: 30))
+        s.unitHouseUnitCountAdd(mine, houseID: s.playerHouseID)
+        #expect(s.units[mine].o.seenByHouses == 0xFF)
+    }
+
+    @Test("flag on: a player unit stays hidden from the AI until contact")
+    func playerUnitHiddenUntilContact() {
+        var s = world()
+        s.aiFogOfWar = true
+        let mine = place(&s, type: .tank, house: 0, at: Tile32.packXY(x: 30, y: 30))
+        s.unitHouseUnitCountAdd(mine, houseID: s.playerHouseID)
+        #expect(s.units[mine].o.seenByHouses == UInt8(1 << 0))   // only the player sees it
+        #expect(s.units[mine].o.seenByHouses & (1 << 2) == 0)    // the AI (house 2) does not
+    }
+
+    @Test("flag on: the player sighting an enemy unit reveals the whole player base to that house")
+    func contactRevealsBase() {
+        var s = world()
+        s.aiFogOfWar = true
+        // The player's existing army/base — hidden from the AI so far.
+        let mine = place(&s, type: .tank, house: 0, at: Tile32.packXY(x: 30, y: 30))
+        s.unitHouseUnitCountAdd(mine, houseID: s.playerHouseID)
+        #expect(s.units[mine].o.seenByHouses & (1 << 2) == 0)
+        #expect(s.housesFoundPlayer == 0)
+
+        // An enemy (house 2) tank the player now sights via Map_UnveilTile ⇒ contact.
+        _ = place(&s, type: .tank, house: 2, at: Tile32.packXY(x: 10, y: 10))
+        let unveiled = s.mapUnveilTile(Tile32.packXY(x: 10, y: 10), houseID: 0)
+        #expect(unveiled)
+
+        // House 2 has now found the player: it is recorded, and the pre-existing player tank is back-filled.
+        #expect(s.housesFoundPlayer & (1 << 2) != 0)
+        #expect(s.units[mine].o.seenByHouses & (1 << 2) != 0)
+        // A player unit created *after* contact also carries house 2 via the mask.
+        let later = place(&s, type: .tank, house: 0, at: Tile32.packXY(x: 31, y: 30))
+        s.unitHouseUnitCountAdd(later, houseID: s.playerHouseID)
+        #expect(s.units[later].o.seenByHouses & (1 << 2) != 0)
+    }
+}

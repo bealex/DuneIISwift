@@ -33,6 +33,10 @@ final class GameModel {
 
     // Debug toggles (the Debug window binds these; the scene/economy/fog read them).
     var showFog = false { didSet { scene?.applyFog() } }
+    /// Debug: give the AI a fog of war so it only attacks after the player makes contact (instead of
+    /// knowing the base from turn one). Applied to the live sim and to every scenario (re)load. Best set
+    /// before loading a scenario — toggling mid-game only affects objects placed/sighted afterwards.
+    var aiFogOfWar = false { didSet { simulation?.state.aiFogOfWar = aiFogOfWar } }
     var showAllEconomies = false
     var showHealthOverlay = true   // health/state bars over units + buildings are on by default (a normal HUD element)
 
@@ -80,6 +84,7 @@ final class GameModel {
         let structureScript = assets.data("BUILD.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
 
         var state = GameState()
+        state.aiFogOfWar = aiFogOfWar   // before unit placement, so the player units honour the AI-fog mask
         state.loadScenario(ini: ini, iconMap: iconMap)
         for h in 0 ..< 6 { _ = state.houseAllocate(index: UInt8(h)); state.houses[h].unitCountMax = 1000 }
         playerHouse = AssetStore.playerHouse(in: ini)

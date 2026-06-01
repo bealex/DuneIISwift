@@ -107,6 +107,16 @@ public struct GameState: Sendable, Codable {
     /// The local player's house. OpenDUNE's `g_playerHouseID`; set by scenario loading (not yet ported).
     public var playerHouseID: UInt8 = 0
 
+    /// **Debug/test only.** When true, the AI gets a crude fog of war: player-owned objects are no longer
+    /// auto-revealed to every house (`seenByHouses = 0xFF`) on placement — instead an AI house only learns
+    /// of the player's base/army the first time the player makes contact with it. Default `false` keeps the
+    /// exact stock Dune II 1.07 behaviour (and so is golden/RNG neutral). See `Architecture/AIFogOfWar.md`.
+    public var aiFogOfWar: Bool = false
+
+    /// `aiFogOfWar` companion: bitmask of AI houses that have made contact with the player (and so now see
+    /// the whole player base). Always 0 with the flag off.
+    public var housesFoundPlayer: UInt8 = 0
+
     /// The active campaign (mission) number, 1…9. OpenDUNE's `g_campaignID`. Feeds several deterministic
     /// economy formulas faithfully — the structure-degrade gate (`> 1`), the AI build-speed cap
     /// (`campaignID*20+95`), the repair heal amount (`>= 3` → +5), and `Structure_IsUpgradable`. Defaults to

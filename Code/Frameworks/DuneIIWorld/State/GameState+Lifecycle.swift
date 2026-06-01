@@ -792,13 +792,21 @@ public extension GameState {
             houses[Int(unitHouse)].flags.insert(.isAIActive)
         }
 
+        // Debug `aiFogOfWar`: the player sighting an enemy unit is contact — reveal the player base to that
+        // unit's house so it commits. No-op with the flag off, or if already found / allied. (Only the
+        // player ever calls this, so `houseID == playerHouseID` here is the player making contact.)
+        if !allied && houseID == playerHouseID { aiFogReveal(toEnemyHouse: unitHouse) }
+
         // SEAM: player-alert block (audio/GUI/music + suppression timers + team var4) — needs the audio
         // + GUI seams and `g_selectionType`, which we don't model headlessly. (unit.c:Unit_HouseUnitCount_Add)
         // SEAM: ambush → Unit_SetAction(HUNT) reaction — needs the EMC script VM (Tier-F #19).
 
+        // Player-owned (and the player's Fremen allies) reveal to all houses (`0xFF`) in stock Dune II;
+        // with `aiFogOfWar` on, only to the player + AI houses that have already found the player. `|= mask`
+        // equals `= 0xFF` with the flag off, so the stock path is byte-identical. (unit.c)
         if unitHouse == UInt8(HouseID.fremen.rawValue) && playerHouseID == UInt8(HouseID.atreides.rawValue)
             || units[slot].o.houseID == playerHouseID {
-            units[slot].o.seenByHouses = 0xFF
+            units[slot].o.seenByHouses |= playerObjectVisibilityMask()
         } else {
             units[slot].o.seenByHouses |= houseIDBit
         }

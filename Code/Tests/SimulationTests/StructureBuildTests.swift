@@ -101,6 +101,26 @@ struct StructureBuildTests {
         #expect(simulation.state.structures[cy].objectType == 0xFFFF)
     }
 
+    @Test("a player-placed structure is seen by all houses (stock) but only the player with aiFogOfWar on")
+    func placedStructureVisibility() {
+        for fog in [false, true] {
+            var simulation = self.sim()                 // playerHouseID = 0
+            simulation.state.validateStrictIfZero = 1
+            simulation.state.aiFogOfWar = fog
+            let cy = addFactory(&simulation.state, .constructionYard)
+            let combat = simulation.unitScript!.combat
+            #expect(combat.structureBuildObject(slot: cy, objectType: UInt16(StructureType.windtrap.rawValue), in: &simulation.state))
+            let product = Int(simulation.state.structures[cy].o.linkedID)
+            simulation.state.structures[cy].countDown = 0
+            simulation.state.structures[cy].state = .ready
+            #expect(combat.structurePlaceReady(factory: cy, position: Tile32.packXY(x: 20, y: 20), in: &simulation.state))
+
+            let seen = simulation.state.structures[product].o.seenByHouses
+            if fog { #expect(seen == UInt8(1 << 0)) }    // only the player (house 0)
+            else { #expect(seen == 0xFF) }               // stock 1.07: seen by all houses
+        }
+    }
+
     @Test("each placed refinery spawns its own harvester (a 2nd refinery ⇒ a 2nd harvester)")
     func refineryHarvesterPerPlacement() throws {
         var s = GameState(random256Seed: 0x55, randomLCGSeed: 0x55)

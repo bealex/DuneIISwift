@@ -24,9 +24,38 @@ public extension GameState {
         map[Int(packed)].overlayTileID = 0
 
         if let u = unitGetByPackedTile(packed) { unitHouseUnitCountAdd(u, houseID: houseID) }
-        if let s = structureGetByPackedTile(packed) { structures[s].o.seenByHouses |= (1 << houseID) }
+        if let s = structureGetByPackedTile(packed) {
+            structures[s].o.seenByHouses |= (1 << houseID)
+            // Debug `aiFogOfWar`: the player sighting an enemy structure is contact — reveal the base to it.
+            let sHouse = structures[s].o.houseID
+            if !House.areAllied(houseID, sHouse, playerHouseID: playerHouseID) { aiFogReveal(toEnemyHouse: sHouse) }
+        }
         // SEAM: Map_MarkTileDirty / Map_Update / structure isDirty — render dirty-marking.
         return true
+    }
+
+    /// **Debug `aiFogOfWar` (default off, no-op).** The `seenByHouses` bits a freshly placed/created
+    /// **player-owned** object should carry. Stock Dune II reveals every player object to all houses
+    /// (`0xFF`); with `aiFogOfWar` on, a new object is seen only by the player plus any AI house that has
+    /// already found the player (`housesFoundPlayer`).
+    func playerObjectVisibilityMask() -> UInt8 {
+        aiFogOfWar ? (UInt8(1 << playerHouseID) | housesFoundPlayer) : 0xFF
+    }
+
+    /// **Debug `aiFogOfWar` (default off, no-op).** The player has made contact with enemy house `h`
+    /// (sighted one of its objects). Reveal the whole player base/army to that house — it now commits, as
+    /// if it had scouted the player out. Idempotent (a no-op once `h` has already found the player).
+    mutating func aiFogReveal(toEnemyHouse h: UInt8) {
+        guard aiFogOfWar else { return }
+        let bit = UInt8(1 << h)
+        if housesFoundPlayer & bit != 0 { return }
+        housesFoundPlayer |= bit
+        for i in units.indices where units[i].o.flags.contains(.used) && units[i].o.houseID == playerHouseID {
+            units[i].o.seenByHouses |= bit
+        }
+        for i in structures.indices where structures[i].o.flags.contains(.used) && structures[i].o.houseID == playerHouseID {
+            structures[i].o.seenByHouses |= bit
+        }
     }
 
     /// `Tile_RemoveFogInRadius` (`map.c:1196`): unveil (for the player) every in-bounds tile whose centre
