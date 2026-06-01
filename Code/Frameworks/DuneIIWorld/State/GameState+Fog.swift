@@ -100,13 +100,21 @@ public extension GameState {
         }
     }
 
-    /// `Unit_RemoveFog` (`unit.c:1217`): lift the fog around a unit by its type's `fogUncoverRadius`. An
-    /// unplaced unit (position 0:0) reveals nothing.
+    /// `Unit_RemoveFog` (`unit.c:1217`): lift the **player's** fog around a unit by its type's
+    /// `fogUncoverRadius`. Skips an off-map / unplaced unit (position `0xFFFF` or `0:0`), a radius of 0, and —
+    /// crucially — **a unit not allied to the player**: only the player's own/allied units reveal the player's
+    /// fog. Without that check every enemy unit would unveil the player's fog around itself (the player would
+    /// "see" all enemies + make contact at once — the `aiFogOfWar` + render-fog bug this fixes).
     mutating func unitRemoveFog(_ slot: Int) {
-        let pos = units[slot].o.position
-        if pos.x == 0 && pos.y == 0 { return }
-        guard let ut = UnitType(rawValue: Int(units[slot].o.type)) else { return }
-        tileRemoveFogInRadius(pos, radius: UInt16(UnitInfo[ut].o.fogUncoverRadius))
+        let u = units[slot]
+        if u.o.flags.contains(.isNotOnMap) { return }
+        let pos = u.o.position
+        if (pos.x == 0xFFFF && pos.y == 0xFFFF) || (pos.x == 0 && pos.y == 0) { return }
+        if !House.areAllied(unitHouseID(u), playerHouseID, playerHouseID: playerHouseID) { return }
+        guard let ut = UnitType(rawValue: Int(u.o.type)) else { return }
+        let radius = UInt16(UnitInfo[ut].o.fogUncoverRadius)
+        if radius == 0 { return }
+        tileRemoveFogInRadius(pos, radius: radius)
     }
 
     /// `Structure_RemoveFog` (`structure.c:954`): lift the fog around a player-owned structure by its

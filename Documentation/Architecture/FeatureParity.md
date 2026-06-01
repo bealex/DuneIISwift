@@ -263,7 +263,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | Binary `isUnveiled` model | ✅ | `GameState+Fog` |
 | `Map_UnveilTile` (player reveal) | ✅ | `GameState+Fog` |
 | `Tile_RemoveFogInRadius` | ✅ | `GameState+Fog` |
-| `Unit_RemoveFog` / `Structure_RemoveFog` (per fogUncoverRadius) | ✅ | natives + `GameState+Fog` |
+| `Unit_RemoveFog` / `Structure_RemoveFog` (per fogUncoverRadius) | ✅ | natives + `GameState+Fog`; `Unit_RemoveFog` is **player-allied only** (an enemy must not self-reveal the player's fog — fixed 2026-06-01, was the "see all enemy troopers" + AI-instant-contact bug). Cross-engine `fog` golden (`veil` per-tile dump) — insight `sim-unit-removefog-allied-only` |
 | Continuous reveal while moving (`Unit_UpdateMap(1)`) | ✅ | `GameState+Lifecycle` |
 | `seenByHouses` per-object visibility + target gating | ✅ | `UnitCombat` / `TargetFinder` |
 | Partial-fog edge model (sim) | ◐ | sim is binary; the renderer *derives* soft edges (a render concern) |

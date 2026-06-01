@@ -81,6 +81,9 @@ run  teams        91   teams.ini         "$TICKS"
 run  missile-duel 90   missile-duel.ini  "$TICKS"  attack,22,1045  attack,23,1040
 run  wall-destruction 89 wall-destruction.ini "$TICKS" attack,22,1042
 run  slab-indestructible 88 slab-indestructible.ini "$TICKS" attack,22,1042
+# fog: a Harkonnen base + Ordos soldiers at increasing distances; the [DUMPTILES] track each tile's `veil`
+# (isUnveiled) per tick, so the golden traces exactly which tiles the player base reveals.
+run  fog 84 fog.ini 10
 # palace-launch: a Harkonnen (player) palace fires its death-hand at a far tile. Frame 0 only (0 ticks) — the
 # bullet's spawn tile + jittered targetAttack + the palace's re-armed countDown prove the launch + its 3 RNG
 # draws cross-engine. (The oracle can't *fly* a missileHouse bullet headless — it segfaults in the missile's

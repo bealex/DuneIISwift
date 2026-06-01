@@ -214,6 +214,7 @@ struct StructureScriptTests {
         let turret = placeTurret(&s, .turret, house: 0, at: 20 * 64 + 20)
         s.structureUpdateMap(turret)                                   // stamp groundTileID (rotation 0)
         placeUnit(&s, .tank, house: 1, at: 20 * 64 + 23, seenBy: 0)    // a seen enemy 3 tiles east
+        s.map[20 * 64 + 23].isUnveiled = true   // on a visible tile, so Unit_UpdateMap keeps its seenByHouses (a fogged enemy is un-seen, post the Unit_RemoveFog allied-check fix)
 
         var sim = Simulation(state: s, scriptInfo: unit, structureScriptInfo: build)
 
