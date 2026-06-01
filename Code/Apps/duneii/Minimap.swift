@@ -35,6 +35,31 @@ enum Minimap {
                        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
                        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
+
+    /// The radar "tuning" animation (`STATIC.WSA`): the static-noise frames Dune II plays when radar comes
+    /// online / goes dark. Decoded once; each frame is `width×height` palette indices → a `CGImage`.
+    @MainActor
+    static func radarStaticFrames(assets: AssetStore) -> [CGImage] {
+        guard let data = assets.data("STATIC.WSA"), let anim = try? Wsa.Animation(data) else { return [] }
+        let palette = anim.palette ?? assets.palette
+        return anim.frames.compactMap { rgbaImage(indices: $0, width: anim.width, height: anim.height, palette: palette) }
+    }
+
+    /// Build a `CGImage` from `width×height` row-major palette indices.
+    static func rgbaImage(indices: [UInt8], width: Int, height: Int, palette: Palette) -> CGImage? {
+        guard width > 0, height > 0, indices.count >= width * height else { return nil }
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        for i in 0 ..< width * height {
+            let c = palette.rgba8(Int(indices[i]))
+            let o = i * 4
+            rgba[o] = c.red; rgba[o + 1] = c.green; rgba[o + 2] = c.blue; rgba[o + 3] = 255
+        }
+        guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+                       space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    }
 }
 
 struct MinimapView: View {
@@ -47,12 +72,25 @@ struct MinimapView: View {
         let frame = model.lastFrame
         let viewport = model.viewport
         let playerHouse = model.playerHouse
+        // Radar state (observed in `body` so the Canvas redraws on a transition). The minimap shows live
+        // content only when the radar is up (or the debug override is on); during a transition it plays the
+        // STATIC.WSA "tuning" frames; otherwise (radar offline) it's a dark screen.
+        let staticFrames = model.radarStaticFrames
+        let staticIndex = model.radarStaticFrameIndex
+        let radarOn = model.forceMinimap || model.radarActive
         GeometryReader { geo in
             let side = min(geo.size.width, geo.size.height)
             let scale = side / Viewport.worldSize    // world points → minimap points
             ZStack(alignment: .topLeading) {
                 Canvas { context, _ in
                     let rect = CGRect(x: 0, y: 0, width: side, height: side)
+                    // Radar tuning in/out: the STATIC.WSA noise frame, stretched to fill.
+                    if let staticIndex, staticIndex < staticFrames.count {
+                        context.draw(Image(decorative: staticFrames[staticIndex], scale: 1, orientation: .up), in: rect)
+                        return
+                    }
+                    // Radar offline (no outpost / no power) and not force-enabled — a dark, empty screen.
+                    guard radarOn else { context.fill(Path(rect), with: .color(.black)); return }
                     if let base = model.minimapBase {
                         context.draw(Image(decorative: base, scale: 1, orientation: .up), in: rect)
                     } else {
@@ -82,14 +120,17 @@ struct MinimapView: View {
                 }
                 .frame(width: side, height: side)
                 // An AppKit click/drag layer: recentres the map on click and follows the cursor while
-                // dragging — and works even when the minimap panel isn't the key window (first-mouse).
-                MinimapMouse(side: side) { point in
-                    let world = Viewport.worldSize / side
-                    let x = min(max(0, Double(point.x)), side) * world
-                    let y = min(max(0, Double(point.y)), side) * world
-                    model.centerOn(worldX: x, worldY: y)
+                // dragging — and works even when the minimap panel isn't the key window (first-mouse). Only
+                // active while the radar is up + settled (a dark / tuning screen isn't clickable, as in Dune II).
+                if radarOn, staticIndex == nil {
+                    MinimapMouse(side: side) { point in
+                        let world = Viewport.worldSize / side
+                        let x = min(max(0, Double(point.x)), side) * world
+                        let y = min(max(0, Double(point.y)), side) * world
+                        model.centerOn(worldX: x, worldY: y)
+                    }
+                    .frame(width: side, height: side)
                 }
-                .frame(width: side, height: side)
             }
             .frame(width: side, height: side)
             .background(.black)

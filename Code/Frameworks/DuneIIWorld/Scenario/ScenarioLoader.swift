@@ -85,9 +85,14 @@ public extension GameState {
             structureUpdateMap(index)
         }
 
-        // Seed each active house's power/storage from its structures (the oracle's tick-0 baseline).
+        // Seed each active house's power/storage + its `structuresBuilt` bitmask from its placed structures
+        // (the oracle's tick-0 baseline / `Game_Prepare`). `structuresBuilt` gates build prerequisites + the
+        // radar (`House_UpdateRadarState`), so a scenario that *starts* with an outpost has its radar on.
         var find = PoolFind()
-        while let h = houseFind(&find) { houseCalculatePowerAndCredit(houses[h].index) }
+        while let h = houseFind(&find) {
+            houseCalculatePowerAndCredit(houses[h].index)
+            houses[h].structuresBuilt = structureGetStructuresBuilt(houseID: houses[h].index)
+        }
     }
 
     /// Activate the scenario's houses + seed their economy. Two formats are accepted:

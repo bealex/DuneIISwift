@@ -64,6 +64,19 @@ final class GameModel {
     } }
     var showAllEconomies = false
     var showHealthOverlay = true   // health/state bars over units + buildings are on by default (a normal HUD element)
+    /// Debug: force the minimap on regardless of radar availability. Off (default) ⇒ the minimap obeys the
+    /// player's radar (`radarActive`) — blank until an outpost + power bring it online, as in Dune II.
+    var forceMinimap = false
+
+    // Radar / minimap state (read by `MinimapView`).
+    /// The player house's radar is active (outpost built + powered) — the minimap shows live content.
+    private(set) var radarActive = false
+    /// The decoded STATIC.WSA "tuning" frames, played on each radar on/off transition. Loaded once.
+    @ObservationIgnored private(set) var radarStaticFrames: [CGImage] = []
+    /// The static frame currently showing during a transition (`nil` ⇒ no transition in progress).
+    private(set) var radarStaticFrameIndex: Int?
+    @ObservationIgnored private var radarStaticForward = true   // play forward (on) or backward (off)
+    @ObservationIgnored private var radarStaticTick = 0         // sub-frame counter (a few render frames per WSA frame)
 
     /// Wall-clock speed multiplier (0.5×…4×). The scene paces sim ticks against real time × this — see
     /// `GameScene.update`. 1× ≈ the base 60-ticks/second cadence (one tick per drawn frame at 60 fps).
@@ -199,6 +212,9 @@ final class GameModel {
                                width: Double(a.width) * Viewport.tilePx, height: Double(a.height) * Viewport.tilePx)
         viewport.center(onWorldX: viewport.area.midX, worldY: viewport.area.midY, viewSize: viewSize)
         minimapBase = Minimap.baseImage(frame: frame, source: SpriteSource.make(assets: assets), palette: assets.palette)
+        if radarStaticFrames.isEmpty { radarStaticFrames = Minimap.radarStaticFrames(assets: assets) }   // STATIC.WSA, once
+        radarActive = frame.houses.first { $0.id == playerHouse }?.radarActivated ?? false
+        radarStaticFrameIndex = nil
         refreshDerived(frame)
         music.startInGame()   // a random in-mission map theme (musicID 8–15), rolling into the next at its end
     }
@@ -378,6 +394,7 @@ final class GameModel {
     }
 
     private func refreshDerived(_ frame: FrameInfo) {
+        updateRadar(frame)
         // Drop a dead selection, then republish only when something the panels show actually changed
         // (guarded so the per-tick refresh doesn't churn SwiftUI 60×/sec).
         if currentInfo() == nil && !controller.selection.isEmpty { controller.deselect() }
@@ -408,6 +425,29 @@ final class GameModel {
                 paused = true
                 end == .won ? music.win(house: playerHouse) : music.lose(house: playerHouse)
             }
+        }
+    }
+
+    /// Drive the minimap radar from the player house's `radarActivated`: on a change, play the STATIC.WSA
+    /// "tuning" animation (forward = coming online, backward = going dark). The announcer voice (feedback
+    /// 28/29) is emitted by the sim and played by `playFeedback`; this only handles the visual transition.
+    private func updateRadar(_ frame: FrameInfo) {
+        let nowActive = frame.houses.first { $0.id == playerHouse }?.radarActivated ?? false
+        if nowActive != radarActive {
+            radarActive = nowActive
+            if !radarStaticFrames.isEmpty {
+                radarStaticForward = nowActive
+                radarStaticFrameIndex = nowActive ? 0 : radarStaticFrames.count - 1
+                radarStaticTick = 0
+            }
+        }
+        // Advance the tuning animation one WSA frame every couple of render frames (~Dune II's cadence).
+        guard let idx = radarStaticFrameIndex else { return }
+        radarStaticTick += 1
+        if radarStaticTick >= 2 {
+            radarStaticTick = 0
+            let next = radarStaticForward ? idx + 1 : idx - 1
+            radarStaticFrameIndex = (0 ..< radarStaticFrames.count).contains(next) ? next : nil
         }
     }
 

@@ -72,6 +72,14 @@ struct FrameInfoTests {
         #expect(f.viewportX == 3 * 256 && f.viewportY == 4 * 256)
     }
 
+    @Test("a house's radarActivated flag is surfaced into FrameInfo (the host gates the minimap on it)")
+    func radarActivatedExposed() {
+        var sim = scene()
+        #expect(sim.makeFrameInfo().houses.first { $0.id == .ordos }?.radarActivated == false)
+        sim.state.houses[Int(HouseID.ordos.rawValue)].flags.insert(.radarActivated)
+        #expect(sim.makeFrameInfo().houses.first { $0.id == .ordos }?.radarActivated == true)
+    }
+
     @Test("mapArea is the playable rectangle for the scenario's mapScale (g_mapInfos)")
     func mapArea() {
         var sim = scene()

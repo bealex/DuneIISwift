@@ -97,7 +97,8 @@ public extension Simulation {
             guard let id = HouseID(rawValue: Int(h.index)) else { continue }
             houses.append(FrameInfo.House(
                 id: id, credits: Int(h.credits), creditsStorage: Int(h.creditsStorage),
-                powerProduction: Int(h.powerProduction), powerUsage: Int(h.powerUsage)))
+                powerProduction: Int(h.powerProduction), powerUsage: Int(h.powerUsage),
+                radarActivated: h.flags.contains(.radarActivated)))
         }
 
         // The scenario's playable rectangle (g_mapInfos[mapScale]) — the renderer blacks out the border + the

@@ -211,14 +211,18 @@ public struct FrameInfo: Sendable, Equatable {
         public var creditsStorage: Int
         public var powerProduction: Int
         public var powerUsage: Int
+        /// Whether this house's minimap radar is active (`House.radarActivated` — outpost built + powered).
+        /// The host gates the minimap on the player house's value.
+        public var radarActivated: Bool
 
         public init(id: HouseID, credits: Int, creditsStorage: Int,
-                    powerProduction: Int, powerUsage: Int) {
+                    powerProduction: Int, powerUsage: Int, radarActivated: Bool = false) {
             self.id = id
             self.credits = credits
             self.creditsStorage = creditsStorage
             self.powerProduction = powerProduction
             self.powerUsage = powerUsage
+            self.radarActivated = radarActivated
         }
     }
 }

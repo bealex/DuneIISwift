@@ -264,6 +264,11 @@ struct DebugPanel: View {
                 Text("Victory/defeat is disabled — the game never ends. Turning it on clears any current outcome.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Toggle("Minimap (force on)", isOn: Binding(get: { model.forceMinimap }, set: { model.forceMinimap = $0 }))
+            if !model.forceMinimap {
+                Text("Off: the minimap obeys radar (needs an outpost + power). On: always shown.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Toggle("Show all economies", isOn: Binding(get: { model.showAllEconomies }, set: { model.showAllEconomies = $0 }))
             Toggle("Health bars (units + buildings)", isOn: Binding(get: { model.showHealthOverlay }, set: { model.showHealthOverlay = $0 }))
             Toggle("Music", isOn: Binding(get: { model.musicEnabled }, set: { model.musicEnabled = $0 }))

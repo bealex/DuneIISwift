@@ -64,6 +64,9 @@ struct ScenarioLoaderTests {
         // [Ordos] Brain=CPU is allocated too (so GameLoop_House runs it), and is not human.
         #expect(state.houses[Int(HouseID.ordos.rawValue)].flags.contains(.used))
         #expect(!state.houses[Int(HouseID.ordos.rawValue)].flags.contains(.human))
+        // `structuresBuilt` is computed at load (Game_Prepare) so build prerequisites + the radar work from
+        // turn 1 — the Atreides player's placed construction yard sets its bit.
+        #expect(state.houses[atreides].structuresBuilt & (UInt32(1) << UInt32(StructureType.constructionYard.rawValue)) != 0)
     }
 
     @Test("SCENA001 places its [MAP] Bloom spice bloom + loads the WinFlags/LoseFlags")
