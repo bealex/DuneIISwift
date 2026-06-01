@@ -71,7 +71,7 @@ Steps 0, 1, 3, 4, 5, 6, 7 are mandatory. Tests are written **after** the feature
 
 **Commit cadence.** Commit after every **2–3 blocks** are done (a block = one logical work-unit; see below), or after each phase. End commit messages with the `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` trailer. Work happens on a feature branch off `main`.
 
-**Chunking & check cadence (batched porting work).** When doing repetitive porting work in "blocks" (one logical work-unit, e.g. a stat table or primitive batch): work in **bigger chunks — bundle 2–3 blocks per commit**, not one tiny increment per commit. Relax the per-step checks of workflow steps 4–5 to match: a block's own new/changed tests must compile and pass every block (run the filtered subset, `swift test --filter <Suite>`); run the **full suite every 4–6 blocks** and a **clean build every 6–10 blocks**; always finish a push with a full suite + clean build before declaring done. These cadences are specific to this project.
+**Chunking & check cadence (batched porting work).** When doing repetitive porting work in "blocks" (one logical work-unit, e.g. a stat table or primitive batch): work in **bigger chunks — bundle 2–3 blocks per commit**, not one tiny increment per commit. Relax the per-step checks of workflow steps 4–5 to match: a block's own new/changed tests must compile and pass every block (run the filtered subset, `swift test --filter <TypeName>` — the test struct name, not the `@Suite` display string); run the **full suite every 4–6 blocks** and a **clean build every 6–10 blocks**; always finish a push with a full suite + clean build before declaring done. These cadences are specific to this project.
 
 ## Periodic self-review
 
@@ -95,7 +95,7 @@ If something genuinely can't be tested (rare — usually visual correctness), sa
 ```
 Scripts/check.sh                    # incremental build + full test suite → concise BUILD/TESTS/VERDICT
 Scripts/check.sh --full             # `swift package clean` first — the zero-warnings audit (workflow step 5)
-Scripts/check.sh --filter <Suite>   # build + only matching tests (fast inner loop)
+Scripts/check.sh --filter <TypeName>   # build + only matching tests (fast inner loop). Matches the test struct/type NAME (e.g. `GameStateTests`), NOT the `@Suite("…")` display string — a display-name pattern runs 0 tests and falsely reads green. See insight `build-test-filter-suite-name`.
 Scripts/log-history.sh "<bullet>"   # append a bullet to today's History/YYYY-MM-DD.md (workflow step 6; creates+indexes a new day)
 Scripts/build-oracle.sh             # rebuild + re-sign the OpenDUNE parity oracle (run with sandbox disabled)
 Scripts/gen-scenario-goldens.sh [--only <name>]   # regenerate the scenario goldens (one, with --only)
