@@ -71,8 +71,10 @@ final class GameScene: SKScene {
     override func didMove(to view: SKView) {
         view.window?.acceptsMouseMovedEvents = true
         if trackingArea == nil {
+            // `.activeAlways` (not `.activeInKeyWindow`): hover/cursor updates over the map keep working while
+            // a floating tool window holds focus, matching the first-mouse click handling (`FirstMouseSKView`).
             let area = NSTrackingArea(rect: .zero,
-                                      options: [.mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                      options: [.mouseMoved, .cursorUpdate, .activeAlways, .inVisibleRect],
                                       owner: self)
             view.addTrackingArea(area)
             trackingArea = area

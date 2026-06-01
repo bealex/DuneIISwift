@@ -17,7 +17,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        SpriteView(scene: model.scene, options: [.ignoresSiblingOrder])
+        MapSpriteView(scene: model.scene)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.black)
             .ignoresSafeArea()
@@ -54,6 +54,31 @@ struct ContentView: View {
             }
             .onAppear { if !openedDefaults { tools.openDefaults(); openedDefaults = true } }
     }
+}
+
+/// Hosts the map `GameScene` in an `SKView` that **accepts the first mouse** — so a click on the map is
+/// delivered to the scene even when the main window isn't key (a floating tool window has focus). SwiftUI's
+/// stock `SpriteView` returns `acceptsFirstMouse == false`, which swallows that first click to merely focus
+/// the window. (The scene is `.resizeFill`, so the view just presents it and resizes do the rest.)
+struct MapSpriteView: NSViewRepresentable {
+    let scene: SKScene
+
+    func makeNSView(context: Context) -> SKView {
+        let view = FirstMouseSKView()
+        view.ignoresSiblingOrder = true
+        view.presentScene(scene)
+        return view
+    }
+
+    func updateNSView(_ view: SKView, context: Context) {
+        if view.scene !== scene { view.presentScene(scene) }
+    }
+}
+
+/// An `SKView` that takes the first click in an inactive window (rather than just activating it), so map
+/// taps work while a tool window is focused.
+final class FirstMouseSKView: SKView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 /// Reaches the SwiftUI window's backing `NSWindow` (for child-window parenting + frame autosave). Fires the
