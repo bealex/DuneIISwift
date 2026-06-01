@@ -64,11 +64,15 @@ public struct InputController: InputSource {
         }
     }
 
-    /// A right-click on the map at tile `(x, y)`: order the selected unit. `enemyTarget` (the host resolved
-    /// whether the tile holds an entity of a different house) chooses **attack** vs **move**.
-    public mutating func rightClick(tileX x: Int, tileY y: Int, enemyTarget: Bool) {
+    /// A right-click on the map at tile `(x, y)`: order the selected unit with its **default contextual**
+    /// action. The host resolves the two facts it needs the world model for: `harvester` (the selected unit
+    /// is a harvester — its default action is `Harvest`, `actionsPlayer[0]`, so it harvests/seeks spice at the
+    /// tile) and `enemyTarget` (the tile holds an entity of a different house ⇒ attack). Harvester wins (a
+    /// harvester can't attack); otherwise enemy ⇒ attack, else move.
+    public mutating func rightClick(tileX x: Int, tileY y: Int, enemyTarget: Bool, harvester: Bool) {
         guard let slot = selection.unitSlot else { return }
-        queue.append(order(enemyTarget ? .attack : .move, slot: slot, tileX: x, tileY: y))
+        let kind: OrderKind = harvester ? .harvest : (enemyTarget ? .attack : .move)
+        queue.append(order(kind, slot: slot, tileX: x, tileY: y))
         pendingOrder = nil
     }
 

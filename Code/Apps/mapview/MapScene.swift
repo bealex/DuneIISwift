@@ -103,7 +103,8 @@ final class MapScene: SKScene {
     override func rightMouseDown(with event: NSEvent) {
         guard let (x, y) = tile(at: event) else { return }
         let willOrder = controller.selection.unitSlot != nil
-        controller.rightClick(tileX: x, tileY: y, enemyTarget: isEnemyOfSelected(tileX: x, tileY: y))
+        controller.rightClick(tileX: x, tileY: y, enemyTarget: isEnemyOfSelected(tileX: x, tileY: y),
+                              harvester: isSelectedHarvester())
         if willOrder { onSound?(.acknowledge) }
         publishState()
     }
@@ -136,6 +137,12 @@ final class MapScene: SKScene {
     }
 
     /// Whether the tile holds an entity of a different house than the selected unit (→ attack, not move).
+    private func isSelectedHarvester() -> Bool {
+        guard let state = simulation?.state, let slot = controller.selection.unitSlot,
+              slot < state.units.count else { return false }
+        return state.units[slot].o.type == UInt8(UnitType.harvester.rawValue)
+    }
+
     private func isEnemyOfSelected(tileX x: Int, tileY y: Int) -> Bool {
         guard let state = simulation?.state, let slot = controller.selection.unitSlot,
               slot < state.units.count else { return false }

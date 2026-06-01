@@ -22,21 +22,32 @@ struct InputControllerTests {
     func rightClickOrders() {
         var c = InputController(mapWidth: 64)
         c.leftClick(tileX: 0, tileY: 0, hit: .unit(slot: 22))
-        c.rightClick(tileX: 18, tileY: 16, enemyTarget: false)
+        c.rightClick(tileX: 18, tileY: 16, enemyTarget: false, harvester: false)
         #expect(c.drainCommands() == [.move(unit: 22, tile: 16 * 64 + 18)])
-        c.rightClick(tileX: 20, tileY: 16, enemyTarget: true)
+        c.rightClick(tileX: 20, tileY: 16, enemyTarget: true, harvester: false)
         #expect(c.drainCommands() == [.attack(unit: 22, tile: 16 * 64 + 20)])
         // Draining clears the queue.
         #expect(c.drainCommands().isEmpty)
     }
 
+    @Test("right-click with a harvester selected harvests (its default action), even over open ground or an enemy")
+    func rightClickHarvester() {
+        var c = InputController(mapWidth: 64)
+        c.leftClick(tileX: 0, tileY: 0, hit: .unit(slot: 7))
+        c.rightClick(tileX: 18, tileY: 16, enemyTarget: false, harvester: true)
+        #expect(c.drainCommands() == [.harvest(unit: 7, tile: 16 * 64 + 18)])
+        // Harvester wins over the enemy flag (a harvester can't attack).
+        c.rightClick(tileX: 20, tileY: 16, enemyTarget: true, harvester: true)
+        #expect(c.drainCommands() == [.harvest(unit: 7, tile: 16 * 64 + 20)])
+    }
+
     @Test("right-click with no unit selected (or a structure) issues nothing")
     func rightClickNoUnit() {
         var c = InputController()
-        c.rightClick(tileX: 5, tileY: 5, enemyTarget: false)
+        c.rightClick(tileX: 5, tileY: 5, enemyTarget: false, harvester: false)
         #expect(c.drainCommands().isEmpty)
         c.leftClick(tileX: 1, tileY: 1, hit: .structure(slot: 4))
-        c.rightClick(tileX: 5, tileY: 5, enemyTarget: true)
+        c.rightClick(tileX: 5, tileY: 5, enemyTarget: true, harvester: false)
         #expect(c.drainCommands().isEmpty)   // a structure can't be ordered
     }
 

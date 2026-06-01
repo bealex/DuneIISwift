@@ -76,9 +76,14 @@ struct MapSpriteView: NSViewRepresentable {
 }
 
 /// An `SKView` that takes the first click in an inactive window (rather than just activating it), so map
-/// taps work while a tool window is focused.
+/// taps work while a tool window is focused. It also **forwards middle-button (`otherMouse`) events** to the
+/// scene: `SKView` relays `mouseDown`/`rightMouseDown` to its scene but not `otherMouse*`, so without this the
+/// scene's middle-drag pan / middle-click recentre never fired.
 final class FirstMouseSKView: SKView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func otherMouseDown(with event: NSEvent) { scene?.otherMouseDown(with: event) }
+    override func otherMouseDragged(with event: NSEvent) { scene?.otherMouseDragged(with: event) }
+    override func otherMouseUp(with event: NSEvent) { scene?.otherMouseUp(with: event) }
 }
 
 /// Reaches the SwiftUI window's backing `NSWindow` (for child-window parenting + frame autosave). Fires the

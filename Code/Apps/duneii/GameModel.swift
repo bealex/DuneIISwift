@@ -303,9 +303,17 @@ final class GameModel {
 
     func rightClickTile(_ x: Int, _ y: Int) {
         let willOrder = controller.selection.unitSlot != nil
-        controller.rightClick(tileX: x, tileY: y, enemyTarget: isEnemy(x, y))
+        controller.rightClick(tileX: x, tileY: y, enemyTarget: isEnemy(x, y), harvester: isSelectedHarvester())
         if willOrder { audio.play(.acknowledge) }
         pendingOrder = controller.pendingOrder
+    }
+
+    /// True when the selected unit is a harvester — its right-click default action is Harvest (it moves to the
+    /// tile and harvests/seeks spice there), not Move.
+    private func isSelectedHarvester() -> Bool {
+        guard let state = simulation?.state, let slot = controller.selection.unitSlot, slot < state.units.count
+        else { return false }
+        return state.units[slot].o.type == UInt8(UnitType.harvester.rawValue)
     }
 
     // Inspector actions.
