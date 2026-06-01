@@ -77,7 +77,8 @@ struct ContentView: View {
                         Text(outcome).font(.system(size: 56, weight: .heavy))
                             .foregroundStyle(outcome == "Victory" ? .green : .red)
                         Text("Pick a scenario or load a save to play again.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            // On the dark panel, `.secondary` is near-invisible — use a light tint instead.
+                            .font(.callout).foregroundStyle(.white.opacity(0.85))
                     }
                     .padding(40)
                     .background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 16))
