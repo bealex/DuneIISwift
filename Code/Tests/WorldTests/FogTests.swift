@@ -174,4 +174,38 @@ struct AIFogTests {
         s.unitHouseUnitCountAdd(later, houseID: s.playerHouseID)
         #expect(s.units[later].o.seenByHouses & (1 << 2) != 0)
     }
+
+    @Test("the load flow (unitUpdateMap for every unit) does NOT reveal the base to a far enemy in fog")
+    func loadDoesNotRevealFarEnemy() {
+        var s = world()
+        s.aiFogOfWar = true
+        // The player's base unit, placed like the loader does.
+        let mine = place(&s, type: .tank, house: 0, at: Tile32.packXY(x: 30, y: 30))
+        s.unitUpdateMap(1, mine)
+        // An enemy (house 2) unit far away on a *fogged* tile — the loader runs unitUpdateMap for every unit,
+        // enemies included; its tile isn't unveiled, so this is not player contact.
+        let enemy = place(&s, type: .tank, house: 2, at: Tile32.packXY(x: 5, y: 5))
+        s.unitUpdateMap(1, enemy)
+        #expect(s.housesFoundPlayer == 0)                       // no contact ⇒ the base stays hidden
+        #expect(s.units[mine].o.seenByHouses & (1 << 2) == 0)   // the AI still can't see the player unit
+    }
+
+    @Test("reapplyPlayerVisibility re-hides a base that was placed while the flag was off (the toggle-after-load fix)")
+    func reapplyHidesExistingBase() {
+        var s = world()
+        // Placed while the flag was OFF ⇒ seen by all houses (incl. the AI), as in stock.
+        let mine = place(&s, type: .tank, house: 0, at: Tile32.packXY(x: 30, y: 30))
+        s.unitHouseUnitCountAdd(mine, houseID: 0)
+        let base = s.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(StructureType.windtrap.rawValue))!
+        s.structures[base].o.flags.insert([.used, .allocated]); s.structures[base].o.houseID = 0
+        s.structures[base].o.seenByHouses = 0xFF
+        #expect(s.units[mine].o.seenByHouses == 0xFF)
+
+        // Turn the flag on mid-game + reapply ⇒ the AI (house 2) can no longer see the base.
+        s.aiFogOfWar = true
+        s.reapplyPlayerVisibility()
+        #expect(s.housesFoundPlayer == 0)
+        #expect(s.units[mine].o.seenByHouses == UInt8(1 << 0))        // only the player
+        #expect(s.structures[base].o.seenByHouses == UInt8(1 << 0))
+    }
 }

@@ -58,6 +58,22 @@ public extension GameState {
         }
     }
 
+    /// Re-apply the **current** `aiFogOfWar` setting to every existing player-owned object — used when the
+    /// duneii toggle flips **mid-game / after a scenario is already loaded** (the live objects were placed
+    /// under the old setting). Turning the flag **on** re-hides the player base from the AI (resets each
+    /// player object to the player bit + clears `housesFoundPlayer`, so the AI must re-discover via contact);
+    /// turning it **off** restores the stock all-houses visibility (`0xFF`).
+    mutating func reapplyPlayerVisibility() {
+        housesFoundPlayer = 0
+        let v = playerObjectVisibilityMask()   // 0xFF off, (1<<playerHouseID) on (housesFoundPlayer now 0)
+        for i in units.indices where units[i].o.flags.contains(.used) && units[i].o.houseID == playerHouseID {
+            units[i].o.seenByHouses = v
+        }
+        for i in structures.indices where structures[i].o.flags.contains(.used) && structures[i].o.houseID == playerHouseID {
+            structures[i].o.seenByHouses = v
+        }
+    }
+
     /// `Tile_RemoveFogInRadius` (`map.c:1196`): unveil (for the player) every in-bounds tile whose centre
     /// is within `radius` (rounded-up tile distance) of `tile`.
     mutating func tileRemoveFogInRadius(_ tile: Tile32, radius: UInt16) {

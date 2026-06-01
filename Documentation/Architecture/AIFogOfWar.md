@@ -36,7 +36,8 @@ Each AI house finds the player independently. Once found, that house behaves exa
 - `unitHouseUnitCountAdd` (`GameState+Lifecycle.swift`) — uses the mask for player units; fires `aiFogReveal` when the player sights an enemy unit.
 - `mapUnveilTile` (`GameState+Fog.swift`) — fires `aiFogReveal` when the player sights an enemy structure.
 - `structurePlace` (`UnitCombat.swift`) — uses the mask for a player-placed building.
-- duneii: `GameModel.aiFogOfWar` + the Debug-panel toggle wire the flag into the live `Simulation.state`.
+- `reapplyPlayerVisibility()` (`GameState+Fog.swift`) — re-applies the current flag to **already-placed** player objects, so flipping the toggle mid-game (or after a scenario loaded with the flag off) takes effect immediately: on ⇒ re-hide the base (reset to the player bit, clear `housesFoundPlayer`); off ⇒ restore `0xFF`. Without it, the live toggle only affected *future* objects, so a base placed while the flag was off stayed visible to the AI — the cause of "AI fog of war doesn't work, they attack anyway."
+- duneii: `GameModel.aiFogOfWar` + the Debug-panel toggle wire the flag into the live `Simulation.state` **and call `reapplyPlayerVisibility()`**, so the toggle works at any time (no scenario reload needed).
 
 ## Determinism / parity
 

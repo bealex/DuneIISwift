@@ -251,7 +251,7 @@ struct DebugPanel: View {
             Toggle("Fog of war", isOn: Binding(get: { model.showFog }, set: { model.showFog = $0 }))
             Toggle("AI fog of war", isOn: Binding(get: { model.aiFogOfWar }, set: { model.aiFogOfWar = $0 }))
             if model.aiFogOfWar {
-                Text("AI only attacks after you make contact. Set before loading a scenario.")
+                Text("The AI only attacks after you make contact (its units/your scouts sighting each other). Applies immediately, even mid-game.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Toggle("Follow unit limit", isOn: Binding(get: { model.enforceUnitLimit }, set: { model.enforceUnitLimit = $0 }))

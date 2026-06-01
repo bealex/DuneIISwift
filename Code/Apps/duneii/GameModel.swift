@@ -36,7 +36,12 @@ final class GameModel {
     /// Debug: give the AI a fog of war so it only attacks after the player makes contact (instead of
     /// knowing the base from turn one). Applied to the live sim and to every scenario (re)load. Best set
     /// before loading a scenario — toggling mid-game only affects objects placed/sighted afterwards.
-    var aiFogOfWar = false { didSet { simulation?.state.aiFogOfWar = aiFogOfWar } }
+    var aiFogOfWar = false { didSet {
+        simulation?.state.aiFogOfWar = aiFogOfWar
+        // Re-hide (or re-reveal) the already-placed base/army so toggling mid-game or after a scenario load
+        // takes effect immediately — otherwise objects keep the visibility they were placed with.
+        simulation?.state.reapplyPlayerVisibility()
+    } }
     /// Whether the per-house unit limit (the scenario's `MaxUnit`) is enforced. On (default) = follow the
     /// limit faithfully; off = build past it. Applied to the live sim and to every scenario (re)load.
     var enforceUnitLimit = true { didSet { simulation?.state.enforceUnitLimit = enforceUnitLimit } }
