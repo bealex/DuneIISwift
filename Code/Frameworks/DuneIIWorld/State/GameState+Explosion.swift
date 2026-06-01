@@ -106,7 +106,9 @@ public extension GameState {
             map[pos].groundTileID = mapBaseTileID[pos]
             mapDirty = true
         }
-        // SEAM: the crater overlay (+ Random_256), Map_ChangeSpiceAmount, and bloom-explode on sand/rock.
+        // The crater overlay + Map_ChangeSpiceAmount + bloom-explode need Simulation primitives
+        // (Map_GetLandscapeType / ChangeSpiceAmount + Random_256), so record the tile for `drainCraters`.
+        pendingCraters.append(packed)
     }
 
     /// `Map_IsPositionUnveiled` (`map.c`): the tile is revealed and its overlay isn't the fog veil.

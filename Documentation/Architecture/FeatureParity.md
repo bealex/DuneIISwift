@@ -228,7 +228,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | Soldier spawn-on-death (per-tile spawnChance) | ✅ | native 0x17 `destroy` |
 | Capture / conquer (<25% HP houseID swap, recalc) | ✅ | `GameState+Lifecycle` |
 | Windtrap count inc/dec | ✅ | place / destroy |
-| Destruction **animation** (rubble) | ⊘ pres | |
+| Destruction **animation** (rubble) | ✅ | `Structure_Remove` starts the collapse animation (table 0) which replaces the building's ground tiles with rubble frames then aborts to the base landscape — rendered via the tile layer (`GameState+Lifecycle` + `GameState+Animation`) |
 
 ## L. House economy
 
@@ -254,7 +254,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | `Map_Bloom_ExplodeSpecial` | ✅ n/a | unreachable in 1.07, intentionally unported |
 | `Map_DeviateArea` | ✅ | `UnitMovement` |
 | `Map_SearchSpice` | ✅ | `MapPrimitives` |
-| Crater overlay + off-slab spice change on explosion | ⊘ pres | cosmetic + an RNG draw, deferred |
+| Crater overlay + off-slab spice change on explosion | ✅ | `Explosion_Func_TileDamage` tail (`explosion.c:49`): the World VM records the impact tile (`pendingCraters`), `Simulation.drainCraters` stamps the sand/rock crater overlay (grow-or-random `Random_256`), deducts spice, pops a bloom. Gated to `tickExplosions` (off goldens) so the RNG draw is parity-neutral (`ExplosionTests.craterRecording`) |
 
 ## N. Fog of war
 

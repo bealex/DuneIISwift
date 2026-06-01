@@ -120,6 +120,7 @@ public struct Simulation: Sendable {
         if tickExplosions {
             state.explosionTick()                     // explosion sprite animations
             drainBloomDetonations()                   // pop any bloom a blast's VM landed on (shoot-the-bloom)
+            drainCraters()                            // stamp the crater overlay a TILE_DAMAGE blast left
         }
     }
 
@@ -135,6 +136,45 @@ public struct Simulation: Sendable {
         state.pendingBloomDetonations.removeAll(keepingCapacity: true)
         for packed in blooms {
             movement.mapBloomExplodeSpice(packed: packed, houseID: state.playerHouseID, in: &state)
+        }
+    }
+
+    /// `Explosion_Func_TileDamage` crater tail (`explosion.c:49`): for each impact tile the World VM recorded
+    /// in `pendingCraters`, stamp the sand/rock crater overlay (growing an existing crater, else a random one
+    /// of two — one `Random_256` draw), deduct spice, and pop a bloom underneath. Gated to `tickExplosions`
+    /// (off for goldens), so the `Random_256` draw never perturbs a parity run.
+    private mutating func drainCraters() {
+        guard !state.pendingCraters.isEmpty, let movement = unitScript?.movement, let iconMap = state.iconMap else {
+            state.pendingCraters.removeAll(keepingCapacity: true)
+            return
+        }
+        let craters = state.pendingCraters
+        state.pendingCraters.removeAll(keepingCapacity: true)
+        for packed in craters {
+            let pos = Int(packed)
+            guard pos >= 0, pos < state.map.count else { continue }
+            let type = movement.map.landscapeType(state.map[pos], tileIDs: state.tileIDs)
+            let craterType = Int(LandscapeInfo[type].craterType)
+            if craterType == 0 { continue }   // mountain / structure / etc. take no crater
+            // craterIconMapIndex {-1, 2(sand), 1(rock)}: craterType 1 → Sand Craters (group 2), 2 → Rock (1).
+            let group = craterType == 1 ? 2 : 1
+            guard let base = iconMap.tileID(group: group, offset: 0),
+                  let top = iconMap.tileID(group: group, offset: 10) else { continue }
+            let existing = Int(state.map[pos].overlayTileID)
+            var overlay: Int
+            if existing >= base, existing <= top {   // there's already a crater → make it bigger
+                overlay = existing - base
+                if overlay < 4 { overlay += 2 }
+            } else {
+                overlay = Int(state.random256.next()) & 1   // randomly pick 1 of the 2 base craters
+            }
+            movement.map.changeSpiceAmount(packed, -1, in: &state)
+            if state.map[pos].groundTileID == state.tileIDs.bloom {   // a bloom under the blast pops
+                movement.mapBloomExplodeSpice(packed: packed, houseID: state.playerHouseID, in: &state)
+                continue
+            }
+            state.map[pos].overlayTileID = UInt8(truncatingIfNeeded: overlay + base)
+            state.mapDirty = true
         }
     }
 

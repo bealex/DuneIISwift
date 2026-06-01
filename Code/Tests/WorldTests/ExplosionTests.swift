@@ -126,9 +126,27 @@ struct ExplosionTests {
         // An already-destroyed wall (overlay == wall id, LST_DESTROYED_WALL) is skipped.
         makeSlab(); state.map[p].overlayTileID = 50; state.explosionTileDamage(UInt16(p))
         #expect(state.map[p].groundTileID == 100)
-        // A non-slab tile (sand) gets no slab revert here (its crater overlay is the documented SEAM).
+        // A non-slab tile (sand) gets no slab revert here; the crater overlay is stamped by `drainCraters`.
         makeSlab(); state.map[p].groundTileID = 77; state.explosionTileDamage(UInt16(p))
         #expect(state.map[p].groundTileID == 77)
+    }
+
+    @Test("TILE_DAMAGE records an open unveiled tile for the crater drain, but skips structure/wall/fogged")
+    func craterRecording() {
+        var state = GameState()
+        state.tileIDs.builtSlab = 100; state.tileIDs.wall = 50; state.tileIDs.veiled = 200
+        let p = Int(Tile32.packXY(x: 9, y: 9))
+        func openTile() {
+            state.pendingCraters = []
+            state.map[p] = MapTile()
+            state.map[p].groundTileID = 77; state.map[p].isUnveiled = true; state.map[p].overlayTileID = 0
+        }
+        openTile(); state.explosionTileDamage(UInt16(p))
+        #expect(state.pendingCraters == [UInt16(p)])          // recorded for drainCraters
+        openTile(); state.map[p].hasStructure = true; state.explosionTileDamage(UInt16(p))
+        #expect(state.pendingCraters.isEmpty)                 // a structure tile records nothing
+        openTile(); state.map[p].isUnveiled = false; state.explosionTileDamage(UInt16(p))
+        #expect(state.pendingCraters.isEmpty)                 // a fogged tile records nothing
     }
 
     @Test("the IMPACT_EXPLODE sequence reaches TILE_DAMAGE and destroys the slab in the VM")

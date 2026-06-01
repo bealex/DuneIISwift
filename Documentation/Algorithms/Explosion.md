@@ -29,9 +29,12 @@ stop, plus a few side-effecting commands). They live in `GameState.explosions` (
 - `explosionStopAtPosition(packed)` (`explosion.c:252`).
 
 ### Seams (not needed for the unit-death / building-destruction / smoke visuals)
-- `TILE_DAMAGE` (`explosion.c:49`) — crater overlay + `Map_ChangeSpiceAmount(-1)` + bloom detonation, and
-  its `Random_256() & 1` draw. Documented seam (no-op): craters need the crater icon-map + the spice/bloom
-  primitives, which aren't ported; it is cosmetic + gated off for goldens (see below).
+- `TILE_DAMAGE` (`explosion.c:49`) — slab-revert (in `explosionTileDamage`, World), then the crater overlay
+  + `Map_ChangeSpiceAmount(-1)` + bloom-detonation tail. The tail needs Simulation primitives
+  (`Map_GetLandscapeType`/`ChangeSpiceAmount`) + a `Random_256() & 1` draw, so the World VM records the impact
+  tile in `pendingCraters` and `Simulation.drainCraters` does the work (sand/rock crater group from the
+  icon-map, grow-or-random, spice deduct, bloom pop). Gated to `tickExplosions` (off for goldens), so the RNG
+  draw stays parity-neutral.
 - `PLAY_VOICE` (audio), `SCREEN_SHAKE` (video), `SET_ANIMATION` (only the two crash explosions use it —
   needs `g_table_animation_map`). No-ops.
 - `BLOOM_EXPLOSION` (`Explosion_Func_BloomExplosion`, `explosion.c:157`) is **wired**: when the explosion's

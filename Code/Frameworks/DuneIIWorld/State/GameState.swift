@@ -182,6 +182,11 @@ public struct GameState: Sendable, Codable {
     /// only populated while explosions tick (the visual apps), so a golden/parity run never accumulates.
     public var pendingBloomDetonations: [UInt16] = []
 
+    /// Tiles a `TILE_DAMAGE` explosion landed on, for the crater overlay (`Explosion_Func_TileDamage` tail).
+    /// Drained by `Simulation.drainCraters` (which needs `Map_GetLandscapeType`/`Map_ChangeSpiceAmount` +
+    /// `Random_256`) right after the bloom drain. Transient — only populated while explosions tick.
+    public var pendingCraters: [UInt16] = []
+
     /// Queue a sound at a world position (`Voice_PlayAtTile`, `sound.c:134`). Ignores out-of-range ids and
     /// the `0xFFFF` "no sound" sentinel. RNG-free, so it doesn't perturb the golden/parity path.
     public mutating func emitSound(_ voiceID: Int, at position: Tile32) {
