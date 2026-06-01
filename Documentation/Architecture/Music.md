@@ -17,7 +17,9 @@ macOS ships a complete MIDI sequencer + synthesiser in AVFoundation: `AVMIDIPlay
 
 The key finding: the `.NN` suffix **is the XMI sequence index**, which is exactly the index OpenDUNE's `g_table_musics` uses. Every `(file, song)` pair the game selects in-mission resolves to an existing file; the only absent ones (dune0 songs 3/5) are intro/cutscene-only — content we deliberately omit. So the selection table can be transcribed directly against the existing files; **no XMI→MIDI decoder is required.**
 
-> Known gap (out of scope here): these `.mid` were produced by an external tool, so `assetgen` cannot currently regenerate them — they're committed as-is. A future Formats XMI decoder (oracle: `src/audio/mt32mpu.c`) would let `assetgen` own them and would also unlock the raw AdLib timbre data for an OPL2 route, if ever wanted.
+> Known gap (out of scope here): these `.mid` were produced by an external tool, so `assetgen` cannot currently regenerate them — they're committed as-is. A future Formats XMI decoder (oracle: `src/audio/mt32mpu.c`) would let `assetgen` own them.
+>
+> **Authentic AdLib timbre is a separate, larger route** that does *not* go through these MIDI files — it synthesises the Westwood `.ADL` files on an emulated OPL2 chip. See **`Music.OPL2.md`** for the full investigation/design (Tier C).
 
 ## Selection — `MusicDirector`
 
