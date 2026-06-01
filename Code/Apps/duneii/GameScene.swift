@@ -80,7 +80,10 @@ final class GameScene: SKScene {
     }
 
     func load(simulation: Simulation, assets: AssetStore) {
-        for child in children where child !== cam && child !== selectionNode && child !== healthLayer { child.removeFromParent() }
+        // Keep our overlay nodes — only drop the renderer's terrain/sprite nodes. (The placement-preview node
+        // was being orphaned here, so its footprint never drew.)
+        let keep: [SKNode] = [cam, selectionNode, healthLayer, placementNode]
+        for child in children where !keep.contains(child) { child.removeFromParent() }
         let r = SpriteKitRenderer(source: SpriteSource.make(assets: assets), basePalette: assets.palette,
                                   showFog: model?.showFog ?? false)
         r.attach(to: self)
