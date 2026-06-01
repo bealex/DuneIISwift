@@ -144,12 +144,49 @@ final class GameModel {
 
     private func setupAudio() {
         if let s = assets.voc("CLICK.VOC") { audio.register(.select, sampleRate: s.sampleRate, pcm8: s.samples) }
-        if let s = assets.voc("AFFIRM.VOC") { audio.register(.acknowledge, sampleRate: s.sampleRate, pcm8: s.samples) }
+        // The unit "speaks" voices (`g_table_voices` 17–22) — select/order acknowledgements.
+        let unitVoices: [(SoundID, String)] = [
+            (.acknowledge, "AFFIRM.VOC"), (.report1, "REPORT1.VOC"), (.report2, "REPORT2.VOC"),
+            (.report3, "REPORT3.VOC"), (.moveOut, "MOVEOUT.VOC"), (.overOut, "OVEROUT.VOC"),
+        ]
+        for (id, voc) in unitVoices {
+            if let s = assets.voc(voc) { audio.register(id, sampleRate: s.sampleRate, pcm8: s.samples) }
+        }
         // The sim's combat sound effects: register each VOC under its OpenDUNE voice id (the SoundEvent id).
         for (voiceID, voc) in VoiceTable.registrations {
             if let s = assets.voc(voc) { audio.register(SoundID(voiceID), sampleRate: s.sampleRate, pcm8: s.samples) }
         }
         audio.start()
+    }
+
+    /// The "unit reports in" voice on selecting a player unit — REPORT1 (foot) / REPORT2 (vehicle), faithful
+    /// to `unit.c:1730`. A structure selection keeps the plain CLICK (`.select`).
+    private func playSelectVoice(unitSlot: Int?) {
+        guard let slot = unitSlot else { audio.play(.select); return }
+        audio.play(isFootUnit(slot) ? .report1 : .report2)
+    }
+
+    /// The order-acknowledge voice (`viewport.c:182`): a **foot** unit speaks the action's voice (move →
+    /// MOVEOUT, attack/retreat → OVEROUT, harvest → REPORT3); a **vehicle** says a (host-random, so it never
+    /// touches the sim RNG) REPORT3 / AFFIRM. Falls back to AFFIRM.
+    private func playOrderVoice(unitSlot: Int?, kind: OrderKind?) {
+        guard let slot = unitSlot else { audio.play(.acknowledge); return }
+        if isFootUnit(slot) {
+            switch kind {
+                case .move:    audio.play(.moveOut)
+                case .attack, .retreat: audio.play(.overOut)
+                case .harvest: audio.play(.report3)
+                case nil:      audio.play(.acknowledge)
+            }
+        } else {
+            audio.play(Bool.random() ? .report3 : .acknowledge)
+        }
+    }
+
+    private func isFootUnit(_ slot: Int) -> Bool {
+        guard let state = simulation?.state, slot < state.units.count,
+              let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
+        return UnitInfo[ut].movementType == .foot
     }
 
     // MARK: - Per-frame loop (driven by the scene)
@@ -343,9 +380,12 @@ final class GameModel {
 
     func leftClickTile(_ x: Int, _ y: Int) {
         let hit = pick(x, y)
-        let wasArmed = controller.pendingOrder != nil && controller.selection.unitSlot != nil
+        let pending = controller.pendingOrder
+        let wasArmed = pending != nil && !controller.selectedUnits.isEmpty
         controller.leftClick(tileX: x, tileY: y, hit: hit)
-        if wasArmed { audio.play(.acknowledge) } else if !hit.isEmpty { audio.play(.select) }
+        if wasArmed { playOrderVoice(unitSlot: controller.selectedUnits.first, kind: pending) }
+        else if hit.unitSlot != nil { playSelectVoice(unitSlot: hit.unitSlot) }
+        else if !hit.isEmpty { audio.play(.select) }   // a structure
         pendingOrder = controller.pendingOrder
         selection = currentInfo()
         // Clicking a bare tile (nothing selectable there, not completing an order) inspects that tile;
@@ -372,7 +412,7 @@ final class GameModel {
         controller.selectGroup(slots)
         selection = currentInfo()
         inspectedTile = nil; refreshTileInfo()
-        if !slots.isEmpty { audio.play(.select) }
+        if !slots.isEmpty { playSelectVoice(unitSlot: slots.first) }
     }
 
     /// How many units are in the current (drag) selection — shown in the inspector header.
@@ -380,8 +420,12 @@ final class GameModel {
 
     func rightClickTile(_ x: Int, _ y: Int) {
         let willOrder = !controller.selectedUnits.isEmpty
-        controller.rightClick(tileX: x, tileY: y, enemyTarget: isEnemy(x, y), harvester: isSelectedHarvester())
-        if willOrder { audio.play(.acknowledge) }
+        let harvester = isSelectedHarvester(), enemy = isEnemy(x, y)
+        controller.rightClick(tileX: x, tileY: y, enemyTarget: enemy, harvester: harvester)
+        if willOrder {
+            let kind: OrderKind = harvester ? .harvest : (enemy ? .attack : .move)
+            playOrderVoice(unitSlot: controller.selectedUnits.first, kind: kind)
+        }
         pendingOrder = controller.pendingOrder
     }
 

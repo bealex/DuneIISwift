@@ -47,6 +47,10 @@ The Debug panel. Toggles marked *(debug)* change simulation behaviour; both defa
 
 Speed (0.5×–4×) and pause are separate toolbar controls; the two-clock model lets the sim run sped-up deterministically.
 
+## Audio
+
+Combat/explosion effects are sim-emitted `SoundEvent`s resolved through `VoiceTable` (the `+` effect VOCs). The unit **acknowledgement voices** (`g_table_voices` 17–22, the language-`%c`=Z English set) are host-played: selecting a player unit plays REPORT1 (foot) / REPORT2 (vehicle) — `unit.c:1730`; ordering it plays the action's voice for a foot unit (move→MOVEOUT, attack/retreat→OVEROUT, harvest→REPORT3) or a random REPORT3/AFFIRM for a vehicle — `viewport.c:182` (the vehicle pick uses a **host** random, never the sim RNG, so determinism/goldens are untouched). Structure selection keeps the plain CLICK. Still seams: the per-**house** spoken announcement voices (`%c`=house: build-complete, under-attack, deploy, …), which need sim-emitted announcement events; music; distance attenuation from `SoundEvent.position`.
+
 ## Parity note
 
 The client is out of `FeatureParity.md`'s scope (presentation). The only simulation-affecting switches are the two *(debug)* flags, which live on `GameState`, default to the original 1.07 behaviour, and draw no RNG — so every scenario/render golden is unchanged with them at their defaults. See the `feedback_golden_per_feature` rule: presentation/no-oracle features are verified by neutrality + unit tests.
