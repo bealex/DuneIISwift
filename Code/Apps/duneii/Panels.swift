@@ -121,6 +121,7 @@ struct InspectorPanel: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.bordered)
+                        .disabled(item.cost > model.playerCredits)
                     }
                 }
             }

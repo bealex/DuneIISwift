@@ -19,9 +19,10 @@ public enum Command: Sendable, Equatable {
     /// Start the factory `structure` (a structure pool index) building `objectType` — a `UnitType.rawValue`
     /// for a unit factory, or a `StructureType.rawValue` for the construction yard (`Structure_BuildObject`).
     case build(structure: UInt16, objectType: UInt16)
-    /// Order one `objectType` (`UnitType.rawValue`) from the starport `structure` — the CHOAM buy: chains it
-    /// onto the house delivery list + decrements stock (`Structure_BuildObject`'s `FACTORY_BUY` body).
-    case starportOrder(structure: UInt16, objectType: UInt16)
+    /// Order one `objectType` (`UnitType.rawValue`) from the starport `structure` — the CHOAM buy: charge the
+    /// rolled `price`, chain the unit onto the house delivery list, decrement stock (`Structure_BuildObject`'s
+    /// `FACTORY_BUY` body + the GUI credit charge). `price` is the `starportPrice` shown to the player.
+    case starportOrder(structure: UInt16, objectType: UInt16, price: UInt16)
     /// Toggle the `structure`'s self-repair (`Structure_SetRepairingState`, −1 = toggle).
     case repair(structure: UInt16)
     /// Toggle the `structure`'s upgrade (`Structure_SetUpgradingState`, −1 = toggle).

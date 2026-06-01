@@ -34,8 +34,8 @@ public struct UnitOrders: Sendable {
             case let .setAction(unit, action): setUnitAction(slot: Int(unit), action: action, in: &state)
             case let .build(structure, objectType):
                 _ = combat.structureBuildObject(slot: Int(structure), objectType: objectType, in: &state)
-            case let .starportOrder(structure, objectType):
-                _ = combat.structureStarportOrder(slot: Int(structure), objectType: objectType, in: &state)
+            case let .starportOrder(structure, objectType, price):
+                _ = combat.structureStarportOrder(slot: Int(structure), objectType: objectType, price: price, in: &state)
             case let .repair(structure):
                 _ = state.structureSetRepairingState(Int(structure), state: -1)   // toggle
             case let .upgrade(structure):

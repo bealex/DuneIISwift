@@ -480,7 +480,11 @@ public struct UnitCombat: Sendable {
     /// drain that list. Returns false if `slot` isn't a starport, the type is out of stock, or the pool is
     /// full (refunding a carryall's cost, as OpenDUNE does). Credits/CHOAM pricing is charged by the GUI seam.
     @discardableResult
-    public func structureStarportOrder(slot: Int, objectType: UInt16, in state: inout GameState) -> Bool {
+    /// `price` is the CHOAM amount charged on send (the GUI's `h->credits -= amount`; `widget_click.c:1308`),
+    /// refunded if the unit can't be allocated. `0` (the default) keeps the EMC-only behaviour — no charge —
+    /// so existing callers/goldens are unchanged; the duneii client passes the rolled `starportPrice`.
+    public func structureStarportOrder(slot: Int, objectType: UInt16, price: UInt16 = 0,
+                                       in state: inout GameState) -> Bool {
         guard StructureType(rawValue: Int(state.structures[slot].o.type)) == .starport,
               UnitType(rawValue: Int(objectType)) != nil else { return false }
         let typeIndex = Int(objectType)
@@ -488,9 +492,11 @@ public struct UnitCombat: Sendable {
 
         let houseID = state.structures[slot].o.houseID
         let h = Int(houseID)
+        let charged = min(state.houses[h].credits, price)   // the GUI greys out unaffordable orders; clamp anyway
+        state.houses[h].credits &-= charged
         guard let u = unitCreate(index: Pool.unitIndexInvalid, type: UInt8(objectType), houseID: houseID,
                                  position: Tile32(x: 0xFFFF, y: 0xFFFF), orientation: 0, in: &state) else {
-            state.houses[h].credits &+= UnitInfo[.carryall].o.buildCredits   // pool full — refund (GUI text seam)
+            state.houses[h].credits &+= charged   // pool full — refund what we charged (GUI text seam)
             return false
         }
 

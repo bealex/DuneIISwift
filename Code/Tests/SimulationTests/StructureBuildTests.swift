@@ -210,7 +210,7 @@ struct StructureBuildTests {
         let sp = addFactory(&simulation.state, .starport)
         simulation.state.structures[sp].o.houseID = 0
         simulation.state.starportAvailable[Int(UnitType.trike.rawValue)] = 3
-        orders.apply(.starportOrder(structure: UInt16(sp), objectType: UInt16(UnitType.trike.rawValue)), in: &simulation.state)
+        orders.apply(.starportOrder(structure: UInt16(sp), objectType: UInt16(UnitType.trike.rawValue), price: 0), in: &simulation.state)
         #expect(simulation.state.houses[0].starportLinkedID != Pool.unitIndexInvalid)
     }
 

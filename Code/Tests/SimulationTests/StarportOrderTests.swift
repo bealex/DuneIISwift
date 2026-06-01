@@ -63,6 +63,25 @@ struct StarportOrderTests {
         #expect(s.houses[0].starportLinkedID == Pool.unitIndexInvalid)
     }
 
+    @Test("a priced order charges the house, and refunds when the pool is full")
+    func chargesPrice() {
+        var (s, combat, sp) = base()
+        s.starportAvailable[Int(trike)] = 1
+        s.houses[0].credits = 500
+        #expect(combat.structureStarportOrder(slot: sp, objectType: trike, price: 200, in: &s))
+        #expect(s.houses[0].credits == 300)   // charged 200
+
+        // Fill the trike pool so the next allocate fails, and confirm the charge is refunded.
+        var s2 = s
+        s2.starportAvailable[Int(trike)] = 5
+        s2.houses[0].credits = 500
+        for i in UnitInfo[.trike].indexStart ... UnitInfo[.trike].indexEnd {
+            s2.units[Int(i)].o.flags.insert([.used, .allocated])
+        }
+        #expect(!combat.structureStarportOrder(slot: sp, objectType: trike, price: 200, in: &s2))
+        #expect(s2.houses[0].credits == 500)   // refunded
+    }
+
     @Test("ordering from a non-starport factory is refused")
     func notStarport() {
         var (s, combat, _) = base()

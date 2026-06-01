@@ -216,7 +216,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | Silo storage + credit clamp | ✅ | `House_CalculatePowerAndCredit` + house tick |
 | Starport: stock array + random restock | ✅ | `Simulation` `tickStarportAvailability` |
 | Starport: frigate delivery to free starport | ✅ | `Simulation` `tickStarport` |
-| **Starport: order units (CHOAM buy flow)** | ✅ | `UnitCombat.structureStarportOrder` — creates the unit, chains it onto `starportLinkedID`, arms the timer, decrements stock (`StarportOrderTests`). The factory-window GUI + CHOAM pricing is a Phase-6 seam |
+| **Starport: order units (CHOAM buy flow)** | ✅ | `UnitCombat.structureStarportOrder` — charges the rolled CHOAM `price`, creates the unit, chains it onto `starportLinkedID`, arms the timer, decrements stock (`StarportOrderTests`). **CHOAM pricing** (`GameState.starportPrice`, `gui.c:2726`) is ported + cross-engine-golden (`StarportPriceTests` / `choamprice-golden.jsonl`); duneii rolls + charges it. The factory-window art is the only seam |
 
 ## K. Structure lifecycle
 
@@ -365,6 +365,6 @@ Everything in the four-phase battle simulation is done and cross-engine-verified
 8. ~~Save / load + original-save converter~~ ✅ (§T, 2026-05-31) — our `SaveGame` (bit-identical resume) + `SaveConverter` (reads original OpenDUNE `.SAV`, cross-engine-verified). **This was the last missing gameplay feature.**
 9. ~~Scenario `[MAP] Field` not filled~~ ✅ (§U, 2026-05-31) — `applyScenarioSpiceFields` detonates each hand-placed field (radius-5 spice circle) before the first tick.
 
-**🎉 No missing gameplay features remain.** The entire four-phase battle simulation + persistence is implemented and cross-engine-verified against OpenDUNE 1.07. Open items are presentation seams (per-house spoken voices, the starport-buy CHOAM GUI window) and `duneii`-client polish — out of this table's scope.
+**🎉 No missing gameplay features remain.** The entire four-phase battle simulation + persistence is implemented and cross-engine-verified against OpenDUNE 1.07. Open items are presentation seams (per-house spoken voices, the original factory-window art) and `duneii`-client polish — out of this table's scope.
 
 (~~Known parity bug: `unitCreateWrapper` returned the carryall instead of the cargo~~ ✅ fixed 2026-05-31 — §H; it now returns the ferried cargo, so a harvester's `originEncoded` home refinery is set correctly.)

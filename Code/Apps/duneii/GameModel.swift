@@ -63,8 +63,12 @@ final class GameModel {
     private(set) var playerCredits = 0
     /// Repair/upgrade availability for the selected player structure (nil = not a player structure).
     private(set) var structureActions: StructureActions?
-    /// In-stock orderable units for a selected player starport (CHOAM buy).
+    /// In-stock orderable units for a selected player starport (CHOAM buy), priced via `starportPrice`.
     private(set) var starportStock: [Buildable] = []
+    /// The starport slot whose CHOAM prices are currently rolled (so the per-tick refresh re-uses them
+    /// instead of re-rolling), and the prices by unit type.
+    @ObservationIgnored private var pricedStarport: Int?
+    @ObservationIgnored private var starportPriceByType: [Int: UInt16] = [:]
     /// Super-weapon state for a selected player **palace** (nil if the selection isn't a player palace).
     private(set) var superWeapon: SuperWeaponState?
     /// While non-nil, the palace slot awaiting a death-hand **target** click (the human missile launch).
@@ -240,11 +244,25 @@ final class GameModel {
 
         var stock: [Buildable] = []
         if type == .starport {
+            // Roll fresh CHOAM prices once per starport selection (drawing the sim LCG, as opening the window
+            // does in the original); re-use them on the per-tick refreshes so the list doesn't re-roll/flicker.
+            if pricedStarport != slot {
+                pricedStarport = slot
+                starportPriceByType = [:]
+                for t in sim.state.starportAvailable.indices where sim.state.starportAvailable[t] > 0 {
+                    guard let ut = UnitType(rawValue: t) else { continue }
+                    let base = UInt16(clamping: Int(UnitInfo[ut].o.buildCredits))
+                    starportPriceByType[t] = simulation?.state.starportPrice(buildCredits: base) ?? base
+                }
+            }
             for t in sim.state.starportAvailable.indices where sim.state.starportAvailable[t] > 0 {
                 guard let ut = UnitType(rawValue: t) else { continue }
+                let price = starportPriceByType[t] ?? UInt16(clamping: Int(UnitInfo[ut].o.buildCredits))
                 stock.append(Buildable(objectType: UInt16(t), isStructure: false,
-                                       cost: Int(UnitInfo[ut].o.buildCredits), buildTime: Int(UnitInfo[ut].o.buildTime)))
+                                       cost: Int(price), buildTime: Int(UnitInfo[ut].o.buildTime)))
             }
+        } else if pricedStarport != nil {
+            pricedStarport = nil; starportPriceByType = [:]
         }
         if stock != starportStock { starportStock = stock }
     }
@@ -263,7 +281,11 @@ final class GameModel {
     func upgradeSelected() { if let slot = selectedStructureSlot { enqueue(.upgrade(structure: UInt16(slot))); audio.play(.select) } }
     /// Order one `objectType` from the selected starport (CHOAM buy).
     func orderFromStarport(_ objectType: UInt16) {
-        if let slot = selectedStructureSlot { enqueue(.starportOrder(structure: UInt16(slot), objectType: objectType)); audio.play(.select) }
+        guard let slot = selectedStructureSlot else { return }
+        let price = starportPriceByType[Int(objectType)] ?? 0
+        guard playerCredits >= Int(price) else { return }   // can't afford — the button is disabled too
+        enqueue(.starportOrder(structure: UInt16(slot), objectType: objectType, price: price))
+        audio.play(.select)
     }
 
     /// Fire the selected ready player palace's super-weapon. The death-hand arms a target click (resolved by
