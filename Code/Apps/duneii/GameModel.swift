@@ -436,8 +436,11 @@ final class GameModel {
         if nowActive != radarActive {
             radarActive = nowActive
             if !radarStaticFrames.isEmpty {
-                radarStaticForward = nowActive
-                radarStaticFrameIndex = nowActive ? 0 : radarStaticFrames.count - 1
+                // Dune II plays the tuning reel REVERSED coming online (`activate ? frameCount - frame`) and
+                // FORWARD going dark (`House_UpdateRadarState`, house.c): ON ⇒ last frame down to 0;
+                // OFF ⇒ 0 up to the last.
+                radarStaticForward = !nowActive
+                radarStaticFrameIndex = nowActive ? radarStaticFrames.count - 1 : 0
                 radarStaticTick = 0
             }
         }
