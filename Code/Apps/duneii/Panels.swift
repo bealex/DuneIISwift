@@ -269,15 +269,26 @@ struct DebugPanel: View {
 }
 
 extension PanelAction {
-    /// The button caption — the original action name (`ActionInfo`), with the keyboard shortcut appended for
-    /// the targeted orders that have one (Move/Attack/Harvest).
+    /// The button caption — the original action name (`ActionInfo`) with its keyboard shortcut appended.
     var label: String {
-        if targeted, let k = type.orderKind { return "\(ActionInfo[type].name) (\(k.shortcut))" }
+        if let s = type.shortcut { return "\(ActionInfo[type].name) (\(s))" }
         return ActionInfo[type].name
     }
 }
 
 extension ActionType {
+    /// The keyboard shortcut letter for this action (matches `GameScene.keyDown`), or `nil` for non-player
+    /// actions. `r` = Return (per the harvester); Retreat is `e`, Guard `g`, Deploy `d`, Sabotage `b`,
+    /// Destruct `x` (Stop is the universal `s`, handled separately).
+    var shortcut: String? {
+        switch self {
+            case .attack: "A"; case .move: "M"; case .harvest: "H"; case .return: "R"
+            case .retreat: "E"; case .guard_, .areaGuard: "G"; case .deploy: "D"
+            case .sabotage: "B"; case .destruct: "X"
+            default: nil
+        }
+    }
+
     /// The matching armed-order kind for a targeted action, else `nil` (an immediate `.unit` action).
     var orderKind: OrderKind? {
         switch self {

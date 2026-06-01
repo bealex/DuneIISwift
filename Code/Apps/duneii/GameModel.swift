@@ -522,15 +522,26 @@ final class GameModel {
     func arm(_ kind: OrderKind) { controller.beginOrder(kind); audio.play(.select); pendingOrder = controller.pendingOrder }
     func stopSelected() { controller.stopSelected(); audio.play(.acknowledge) }
 
-    /// Issue a `PanelAction` from the inspector. A targeted action (Attack/Move/Harvest) arms a click; an
-    /// immediate action (Guard/Retreat/Return/Deploy/Destruct/…) is queued straight away as `Command.setAction`.
+    /// Issue a `PanelAction` (inspector button or keyboard shortcut). A targeted action (Attack/Move/Harvest)
+    /// arms a click; an immediate action (Guard/Retreat/Return/Deploy/Destruct/…) is applied to **every**
+    /// selected unit straight away as `Command.setAction`.
     func issue(_ action: PanelAction) {
         if action.targeted, let kind = action.type.orderKind {
             arm(kind)
-        } else if let slot = controller.selection.unitSlot {
-            enqueue(.setAction(unit: UInt16(slot), action: UInt8(action.type.rawValue)))
+        } else if !controller.selectedUnits.isEmpty {
+            for slot in controller.selectedUnits { enqueue(.setAction(unit: UInt16(slot), action: UInt8(action.type.rawValue))) }
             audio.play(.acknowledge)
         }
+    }
+
+    /// Issue an action by `ActionType` (the keyboard shortcuts) — only if it's one of the selected unit's
+    /// player actions (`actionsPlayer`), so e.g. `a`=Attack is ignored for a harvester, `r`=Return for a tank.
+    /// Targeted actions (`selectionType == .target`: Attack/Move/Harvest) arm a click; the rest apply at once.
+    func issueAction(_ type: ActionType) {
+        guard let slot = controller.selectedUnits.first, let state = simulation?.state, slot < state.units.count,
+              let ut = UnitType(rawValue: Int(state.units[slot].o.type)),
+              UnitInfo[ut].o.actionsPlayer.contains(type) else { return }
+        issue(PanelAction(type: type, targeted: ActionInfo[type].selectionType == .target))
     }
     func deselect() { controller.deselect(); selection = nil; pendingOrder = nil; inspectedTile = nil; tileInfo = nil }
 

@@ -383,13 +383,19 @@ final class GameScene: SKScene {
                 else if model?.placement != nil { model?.cancelPlacement() }
                 else { model?.deselect() }
             default:
-                // Order shortcuts on the selected unit: a/m/h/r arm a target-needing order (the cursor turns
-                // into a crosshair; the next left-click supplies the target), s stops immediately.
+                // Per-action shortcuts on the selected unit(s) — only the actions valid for that unit type
+                // fire (so `a`=Attack is ignored for a harvester, `r`=Return for a tank). Targeted actions
+                // (a/m/h) arm a crosshair click; the rest apply at once. `s` always stops.
                 switch event.charactersIgnoringModifiers?.lowercased() {
-                    case "a": model?.arm(.attack)
-                    case "m": model?.arm(.move)
-                    case "h": model?.arm(.harvest)
-                    case "r": model?.arm(.retreat)
+                    case "a": model?.issueAction(.attack)
+                    case "m": model?.issueAction(.move)
+                    case "h": model?.issueAction(.harvest)
+                    case "r": model?.issueAction(.return)
+                    case "e": model?.issueAction(.retreat)
+                    case "g": model?.issueAction(.guard_)
+                    case "d": model?.issueAction(.deploy)
+                    case "b": model?.issueAction(.sabotage)
+                    case "x": model?.issueAction(.destruct)
                     case "s": model?.stopSelected()
                     default:  super.keyDown(with: event)
                 }
