@@ -139,6 +139,11 @@ final class GameModel {
             ?? state.houses.first(where: { $0.flags.contains(.used) }).flatMap { HouseID(rawValue: Int($0.index)) }
             ?? .atreides
         state.playerHouseID = UInt8(playerHouse.rawValue)
+        // Mark the player's house human (as a real Brain=Human load does) so the human-only gates behave —
+        // chiefly the palace special-weapon auto-fire (`!human && isAIActive`), which otherwise launches the
+        // player's own house missile on the palace's first tick. Set on the *chosen* player house, since it can
+        // differ from any Brain=Human the loader saw (the fallbacks above).
+        state.houses[Int(playerHouse.rawValue)].flags.insert(.human)
         state.viewportPosition = Tile32.packXY(x: 32, y: 32)
 
         if let unitScript {

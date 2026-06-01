@@ -57,8 +57,13 @@ struct ScenarioLoaderTests {
         #expect(state.playerHouseID == UInt8(HouseID.atreides.rawValue))
         // The no-silo allowance = the player's starting credits, so the house-tick clamp keeps them.
         #expect(state.playerCreditsNoSilo == 1000)
-        // [Ordos] Brain=CPU is allocated too (so GameLoop_House runs it).
+        // The Brain=Human house is flagged `.human` (`Scenario_Load_House`, scenario.c:74). Without it the
+        // human-only gates misfire — e.g. the palace auto-fire (`!human && isAIActive`) launches the player's
+        // own house missile at scenario start. The CPU house must NOT be human.
+        #expect(state.houses[atreides].flags.contains(.human))
+        // [Ordos] Brain=CPU is allocated too (so GameLoop_House runs it), and is not human.
         #expect(state.houses[Int(HouseID.ordos.rawValue)].flags.contains(.used))
+        #expect(!state.houses[Int(HouseID.ordos.rawValue)].flags.contains(.human))
     }
 
     @Test("SCENA001 places its [MAP] Bloom spice bloom + loads the WinFlags/LoseFlags")

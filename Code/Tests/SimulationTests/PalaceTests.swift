@@ -1,5 +1,7 @@
+import Foundation
 import Testing
 import DuneIIContracts
+import DuneIIFormats
 @testable import DuneIIWorld
 @testable import DuneIISimulation
 
@@ -124,6 +126,65 @@ struct PalaceTests {
         // A non-super-weapon command is not consumed here (the caller routes it through UnitOrders).
         let notConsumed = sm.applyPalaceCommand(.stop(unit: 0))
         #expect(!notConsumed)
+    }
+
+    @Test("loaded scenario: a Brain=Human player's palace does not auto-fire at start (castle-rocket bug)")
+    func loadedHumanPalaceDoesNotAutoFire() throws {
+        // End-to-end repro of "the Harkonnen castle launches a rocket when the scenario starts": load a
+        // scenario through the real loader (which must now set flags.human), then run the palace cursor.
+        var root = URL(fileURLWithPath: #filePath)
+        for _ in 0 ..< 4 { root.deleteLastPathComponent() }
+        guard let iconData = try? Data(contentsOf: root.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")) else { return }
+        let iconMap = try IconMap(iconData)
+        // A Harkonnen (Brain=Human) palace + an Ordos target. The [TEAMS] entry flips Harkonnen isAIActive —
+        // the *other* half of the `!human && isAIActive` auto-fire gate — so only the human flag stops the launch.
+        let iniText = """
+        [BASIC]
+        MapScale=1
+        [Harkonnen]
+        Brain=Human
+        Credits=1000
+        [Ordos]
+        Brain=CPU
+        [MAP]
+        Seed=4660
+        [STRUCTURES]
+        ID000=Harkonnen,Palace,256,1040
+        ID001=Ordos,Windtrap,256,1300
+        [TEAMS]
+        ID000=Harkonnen,Normal,Foot,1,1
+        """
+        var state = GameState()
+        state.loadScenario(ini: Ini(Data(iniText.utf8)), iconMap: iconMap)
+        let player = Int(state.playerHouseID)
+        #expect(state.houses[player].flags.contains(.human))        // the fix
+        #expect(state.houses[player].flags.contains(.isAIActive))   // the gate's other half (via [TEAMS])
+        let palace = try #require(state.structures.firstIndex {
+            $0.o.flags.contains(.used) && $0.o.type == UInt8(StructureType.palace.rawValue)
+        })
+        #expect(state.structures[palace].countDown == 0)            // a fresh palace is "ready"
+
+        // Fire only the palace cursor (as in `loopFiresAIOnly`).
+        func armPalaceCursorOnly(_ s: inout GameState) {
+            s.timerGame = 20000
+            s.structureTick.palace = 0
+            s.structureTick.structure = 30000; s.structureTick.script = 30000; s.structureTick.degrade = 30000
+        }
+        armPalaceCursorOnly(&state)
+
+        var sm = Simulation(state: state, scriptInfo: info, structureScriptInfo: info)
+        sm.gameLoopStructure()
+        #expect(sm.state.structures[palace].countDown == 0)         // human palace did NOT fire
+        #expect(countUnits(&sm.state, type: .missileHouse) == 0)    // no rocket launched at start
+
+        // Negative control: the pre-fix state (human flag missing) ⇒ the same palace DOES auto-fire its
+        // death-hand at the Ordos target on its first palace tick — exactly the reported bug.
+        var state2 = state
+        state2.houses[player].flags.remove(.human)
+        var sm2 = Simulation(state: state2, scriptInfo: info, structureScriptInfo: info)
+        sm2.gameLoopStructure()
+        #expect(sm2.state.structures[palace].countDown == HouseInfo[.harkonnen].specialCountDown)  // fired
+        #expect(countUnits(&sm2.state, type: .missileHouse) == 1)                                  // rocket launched
     }
 
     @Test("via the loop: an AI palace fires on its first palace tick; a human palace does not")

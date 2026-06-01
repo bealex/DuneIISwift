@@ -112,6 +112,11 @@ public extension GameState {
             if brain == "HUMAN" {
                 playerHouseID = UInt8(house.rawValue)
                 playerCreditsNoSilo = houses[h].credits
+                // `Scenario_Load_House` (`scenario.c:74`) sets `h->flags.human` for the Brain=Human house.
+                // Without it the human-only gates misfire — notably the palace special-weapon auto-fire
+                // (`!human && isAIActive`), which otherwise launches the *player's* house missile on its first
+                // palace tick (a fresh palace's countDown starts at 0). See `Simulation` palace tick.
+                houses[h].flags.insert(.human)
             }
         }
         for key in ini.keys(section: "HOUSES") {
