@@ -31,4 +31,11 @@ public enum Command: Sendable, Equatable {
     /// Place the construction yard `structure`'s finished (ready) structure at `tile` (a packed map
     /// position), then reset the factory (`Structure_Place` + the GUI place-flow reset).
     case placeStructure(structure: UInt16, tile: UInt16)
+    /// Fire the player palace `structure`'s house super-weapon now (`Structure_ActivateSpecial`). Used for
+    /// the no-target weapons — Atreides Fremen call + Ordos saboteur. (Harkonnen's death-hand uses
+    /// `launchHouseMissile`, which carries a target.)
+    case activateSuperWeapon(structure: UInt16)
+    /// Launch the player palace `structure`'s death-hand missile at `tile` (a packed map position) — the
+    /// human's target-select click (`Structure_ActivateSpecial` → `Unit_LaunchHouseMissile`).
+    case launchHouseMissile(structure: UInt16, tile: UInt16)
 }

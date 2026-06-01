@@ -23,9 +23,9 @@ Evidence is `file` + symbol (line numbers drift; symbols don't). Audited 2026-05
 | Power-maintenance cursor + upkeep deduction | ✅ | `Simulation` `tickPowerMaintenance` |
 | Starport-availability restock cursor | ✅ | `Simulation` `tickStarportAvailability` |
 | Starport frigate-delivery cursor | ✅ | `Simulation` `tickStarport` |
-| Palace special-weapon cursor + body | ✅ | `Simulation.gameLoopStructure` + `structureActivateSpecial` (AI fires; human launch UI is a Phase-6 seam — see §P) |
+| Palace special-weapon cursor + body | ✅ | `Simulation.gameLoopStructure` + `structureActivateSpecial` (AI auto-fires; human launch wired in duneii via `applyPalaceCommand` — see §P) |
 | Reinforcement cursor | ✅ | `gameLoopHouse` → `tickReinforcements` (see §S) |
-| House-missile countdown cursor | ⊘ pres | `Simulation` — the human's 7-sec manual-target window (the AI launches directly, see §P) |
+| House-missile countdown cursor | ⊘ pres | the human target-select is a duneii UI mode, not sim state (the AI launches directly, see §P) |
 | Campaign-degrade cursor | ⊘ gameplay | `Simulation` — cursor only (see §Q) |
 | `Random256` (3-byte feedback) | ✅ | `Random256` — bit-exact, golden-verified |
 | `RandomLCG` (Borland 0x015A4E35) | ✅ | `RandomLCG` — bit-exact, golden-verified |
@@ -285,8 +285,8 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 |---|---|---|
 | Saboteur detonation + capture | ✅ | §K |
 | Death-hand blast pattern (when a missile lands) | ✅ | §G |
-| **Palace special-weapon countdown body** (death-hand launch, Fremen call, saboteur deploy) | ✅ | `Simulation.structureActivateSpecial` (`structure.c:822`) — an AI palace fires its house weapon when `countDown` hits 0 (`PalaceTests`). The player's manual launch UI is a Phase-6 seam |
-| **House-missile launch** (palace → death-hand) | ◐ | the AI launches directly (`Unit_LaunchHouseMissile`, in `structureActivateSpecial`); the human's 7-second target-select window is a Phase-6 GUI seam |
+| **Palace special-weapon countdown body** (death-hand launch, Fremen call, saboteur deploy) | ✅ | `Simulation.structureActivateSpecial` (`structure.c:822`) — an AI palace auto-fires when `countDown` hits 0; the human launches it from the duneii inspector via `Simulation.applyPalaceCommand` (`PalaceTests`) |
+| **House-missile launch** (palace → death-hand) | ✅ | AI launches directly; the human picks the target — `Command.launchHouseMissile` → `structureActivateSpecial(slot, missileTarget:)` (`Unit_LaunchHouseMissile` jitter), wired to a duneii target-select click. The 7-second `g_houseMissileCountdown` window is modelled as a UI mode, not sim state (`PalaceTests.humanMissile`) |
 | Fremen reinforcement call | ✅ | the Atreides/Fremen palace weapon — 5 hunting Fremen (`PalaceTests`) |
 
 ## Q. Campaign / tech / degrade
@@ -359,12 +359,12 @@ Everything in the four-phase battle simulation is done and cross-engine-verified
 2. ~~Scenario reinforcements~~ ✅ (§S, 2026-05-31) — `[REINFORCEMENTS]` parsing + timed edge/air spawns; 1.07 fires each once.
 3. ~~Campaign degrade body~~ ✅ (§Q, 2026-05-31) — campaign>1 periodic degradation to half HP.
 4. ~~`[CHOAM]` starport stock seed~~ ✅ (§U, 2026-05-31) — `starportAvailable` seeded from the scenario.
-5. ~~Palace super-weapons~~ ✅ (§P, 2026-05-31) — `structureActivateSpecial`: AI death-hand launch / Fremen call / saboteur deploy. The human launch UI stays a Phase-6 seam.
+5. ~~Palace super-weapons~~ ✅ (§P, 2026-05-31) — `structureActivateSpecial`: AI death-hand launch / Fremen call / saboteur deploy, **plus the human launch** (`applyPalaceCommand` + duneii inspector launch button & death-hand target-select).
 6. ~~AI base expansion~~ ✅ (§O, 2026-05-31) — `aiStructureMaintenance` + `structureAIPickNextToBuild` + the `aiStructureRebuild` queue: auto-repair, auto-build, rebuild-and-auto-place.
 7. ~~Starport ordering~~ ✅ (§J, 2026-05-31) — `structureStarportOrder` chains an order onto the delivery list; the factory-window GUI + CHOAM pricing stays a Phase-6 seam.
 8. ~~Save / load + original-save converter~~ ✅ (§T, 2026-05-31) — our `SaveGame` (bit-identical resume) + `SaveConverter` (reads original OpenDUNE `.SAV`, cross-engine-verified). **This was the last missing gameplay feature.**
 9. ~~Scenario `[MAP] Field` not filled~~ ✅ (§U, 2026-05-31) — `applyScenarioSpiceFields` detonates each hand-placed field (radius-5 spice circle) before the first tick.
 
-**🎉 No missing gameplay features remain.** The entire four-phase battle simulation + persistence is implemented and cross-engine-verified against OpenDUNE 1.07. Open items are presentation seams (per-house spoken voices, the human palace-launch / starport-buy GUI windows) and `duneii`-client polish — out of this table's scope.
+**🎉 No missing gameplay features remain.** The entire four-phase battle simulation + persistence is implemented and cross-engine-verified against OpenDUNE 1.07. Open items are presentation seams (per-house spoken voices, the starport-buy CHOAM GUI window) and `duneii`-client polish — out of this table's scope.
 
 (~~Known parity bug: `unitCreateWrapper` returned the carryall instead of the cargo~~ ✅ fixed 2026-05-31 — §H; it now returns the ferried cargo, so a harvester's `originEncoded` home refinery is set correctly.)

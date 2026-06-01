@@ -17,7 +17,10 @@ public extension Simulation {
     /// - **SABOTEUR** (Ordos/Mercenary): find a free tile next to the palace; none ⇒ `countDown = 1` (retry
     ///   next palace tick). Otherwise spawn a saboteur there (one `Random256` orientation), set to SABOTAGE,
     ///   and re-arm `countDown`.
-    mutating func structureActivateSpecial(_ slot: Int) {
+    /// `missileTarget`: for the human launch of a MISSILE weapon, the packed tile the player clicked — the
+    /// death-hand fires there (jittered ±160) instead of the AI's "first non-allied structure" scan. `nil`
+    /// (the AI auto-fire and the non-missile weapons) keeps the original behaviour.
+    mutating func structureActivateSpecial(_ slot: Int, missileTarget: UInt16? = nil) {
         guard StructureType(rawValue: Int(state.structures[slot].o.type)) == .palace,
               let combat = unitScript?.combat,
               let actions = unitScript?.actions, let scriptInfo = unitScript?.scriptInfo else { return }
@@ -34,6 +37,18 @@ public extension Simulation {
                                                       position: Tile32(x: 0xFFFF, y: 0xFFFF), orientation: orientation,
                                                       in: &state) else { break }
                 state.structures[slot].countDown = countDown
+                // Human launch: fire the death-hand at the player's chosen tile (`Unit_LaunchHouseMissile`).
+                if let missileTarget {
+                    let jittered = Tile32.moveByRandom(Tile32.unpack(missileTarget), distance: 160, center: false,
+                                                       rng: &state.random256)
+                    let target = state.indexEncode(jittered.packed, type: .tile)
+                    let palacePosition = state.structures[slot].o.position
+                    state.unitFree(carrier)
+                    _ = combat.unitCreateBullet(position: palacePosition,
+                                                type: UInt8(UnitType.missileHouse.rawValue), houseID: houseID,
+                                                damage: 0x1F4, target: target, in: &state)
+                    return
+                }
                 // AI: launch at the first non-allied, non-slab/wall structure.
                 let housePrim = combat.movement.house
                 var find = PoolFind()
@@ -91,5 +106,31 @@ public extension Simulation {
                 break
         }
         // SEAM (player): GUI_Widget_ActionPanel_Draw(true) for the player's palace.
+    }
+
+    /// Apply a palace super-weapon player `Command`. The launch is gated to a **ready** (`countDown == 0`),
+    /// used, player-owned palace, so a stale UI click can't fire early or fire an enemy/non-palace. Returns
+    /// `true` if `command` was a super-weapon command (consumed here); `false` ⇒ the caller routes it through
+    /// `UnitOrders`. The human's death-hand carries its clicked target; Fremen/saboteur are no-target.
+    mutating func applyPalaceCommand(_ command: Command) -> Bool {
+        switch command {
+            case let .activateSuperWeapon(structure):
+                if palaceReadyForPlayer(Int(structure)) { structureActivateSpecial(Int(structure)) }
+                return true
+            case let .launchHouseMissile(structure, tile):
+                if palaceReadyForPlayer(Int(structure)) { structureActivateSpecial(Int(structure), missileTarget: tile) }
+                return true
+            default:
+                return false
+        }
+    }
+
+    private func palaceReadyForPlayer(_ slot: Int) -> Bool {
+        guard slot >= 0, slot < state.structures.count else { return false }
+        let s = state.structures[slot]
+        return s.o.flags.contains(.used)
+            && s.o.type == UInt8(StructureType.palace.rawValue)
+            && s.o.houseID == state.playerHouseID
+            && s.countDown == 0
     }
 }

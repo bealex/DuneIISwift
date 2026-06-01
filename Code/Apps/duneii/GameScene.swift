@@ -273,10 +273,13 @@ final class GameScene: SKScene {
 
     override func mouseDown(with event: NSEvent) {
         guard let (x, y) = tile(at: event) else { return }
-        if model?.placement != nil { model?.placeAt(tileX: x, tileY: y) } else { model?.leftClickTile(x, y) }
+        if model?.missileTargeting != nil { model?.launchMissileAt(tileX: x, tileY: y) }
+        else if model?.placement != nil { model?.placeAt(tileX: x, tileY: y) }
+        else { model?.leftClickTile(x, y) }
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        if model?.missileTargeting != nil { model?.cancelMissileTargeting(); return }
         if model?.placement != nil { model?.cancelPlacement(); return }
         if let (x, y) = tile(at: event) { model?.rightClickTile(x, y) }
     }
@@ -323,7 +326,10 @@ final class GameScene: SKScene {
             case 124: model?.scroll(dx: 64, dy: 0)    // →
             case 126: model?.scroll(dx: 0, dy: -64)   // ↑ (up = toward smaller image-y)
             case 125: model?.scroll(dx: 0, dy: 64)    // ↓
-            case 53:  if model?.placement != nil { model?.cancelPlacement() } else { model?.deselect() }   // Esc
+            case 53:  // Esc — back out of whatever mode is active, else deselect
+                if model?.missileTargeting != nil { model?.cancelMissileTargeting() }
+                else if model?.placement != nil { model?.cancelPlacement() }
+                else { model?.deselect() }
             default:
                 // Order shortcuts on the selected unit: a/m/h/r arm a target-needing order (the cursor turns
                 // into a crosshair; the next left-click supplies the target), s stops immediately.
@@ -340,8 +346,9 @@ final class GameScene: SKScene {
 
     // MARK: - Targeting cursor
 
-    /// True while the next left-click supplies a target: an armed unit order or structure placement.
-    private var targetingActive: Bool { (model?.pendingOrder != nil) || (model?.placement != nil) }
+    /// True while the next left-click supplies a target: an armed unit order, structure placement, or the
+    /// palace death-hand target-select.
+    private var targetingActive: Bool { (model?.pendingOrder != nil) || (model?.placement != nil) || (model?.missileTargeting != nil) }
 
     /// Set the crosshair while targeting, the arrow otherwise — only when the state changes (cheap each frame).
     private func refreshCursor() {

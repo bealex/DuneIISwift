@@ -58,6 +58,10 @@ final class GameModel {
     private(set) var structureActions: StructureActions?
     /// In-stock orderable units for a selected player starport (CHOAM buy).
     private(set) var starportStock: [Buildable] = []
+    /// Super-weapon state for a selected player **palace** (nil if the selection isn't a player palace).
+    private(set) var superWeapon: SuperWeaponState?
+    /// While non-nil, the palace slot awaiting a death-hand **target** click (the human missile launch).
+    private(set) var missileTargeting: Int?
     /// Active structure-placement mode: a finished construction-yard product awaiting a map click.
     private(set) var placement: PlacementState?
     /// Build/place/cancel commands queued from the UI, applied next `advance()` (alongside unit orders).
@@ -142,7 +146,9 @@ final class GameModel {
             let commands = controller.drainCommands() + drainPending()
             if !commands.isEmpty {
                 let orders = UnitOrders(scriptInfo: unitScript)
-                for c in commands { orders.apply(c, in: &sim.state) }
+                // Palace super-weapon commands need the Simulation's activation context; everything else is a
+                // unit/factory order applied to the state directly.
+                for c in commands where !sim.applyPalaceCommand(c) { orders.apply(c, in: &sim.state) }
             }
         }
         for _ in 0 ..< ticks {
@@ -185,9 +191,18 @@ final class GameModel {
               let type = StructureType(rawValue: Int(sim.state.structures[slot].o.type)) else {
             if structureActions != nil { structureActions = nil }
             if !starportStock.isEmpty { starportStock = [] }
+            if superWeapon != nil { superWeapon = nil }
+            if missileTargeting != nil { missileTargeting = nil }   // selection gone ⇒ abandon a pending target-select
             return
         }
         let s = sim.state.structures[slot]
+
+        // A selected player palace: surface its house super-weapon + readiness (countdown at 0 = ready).
+        if type == .palace, let house = HouseID(rawValue: Int(s.o.houseID)),
+           let weapon = SuperWeaponState.Weapon(rawValue: Int(HouseInfo[house].specialWeapon)) {
+            let sw = SuperWeaponState(slot: slot, weapon: weapon, ready: s.countDown == 0)
+            if sw != superWeapon { superWeapon = sw }
+        } else if superWeapon != nil { superWeapon = nil }
         let actions = StructureActions(
             slot: slot,
             canRepair: s.o.hitpoints < StructureInfo[type].o.hitpoints,
@@ -223,6 +238,28 @@ final class GameModel {
     func orderFromStarport(_ objectType: UInt16) {
         if let slot = selectedStructureSlot { enqueue(.starportOrder(structure: UInt16(slot), objectType: objectType)); audio.play(.select) }
     }
+
+    /// Fire the selected ready player palace's super-weapon. The death-hand arms a target click (resolved by
+    /// `launchMissileAt`); the Fremen call / saboteur fire immediately (no target).
+    func launchSuperWeapon() {
+        guard let sw = superWeapon, sw.ready else { return }
+        switch sw.weapon {
+            case .missile: missileTargeting = sw.slot; audio.play(.select)
+            case .fremen, .saboteur:
+                enqueue(.activateSuperWeapon(structure: UInt16(sw.slot)))
+                audio.play(.acknowledge)
+        }
+    }
+
+    /// The death-hand target-select click: launch the missile at the clicked tile and leave targeting mode.
+    func launchMissileAt(tileX: Int, tileY: Int) {
+        guard let slot = missileTargeting else { return }
+        enqueue(.launchHouseMissile(structure: UInt16(slot), tile: UInt16(tileY * 64 + tileX)))
+        missileTargeting = nil
+        audio.play(.acknowledge)
+    }
+
+    func cancelMissileTargeting() { missileTargeting = nil }
 
     /// Recompute the selected factory's buildable list + in-progress build (cheap; published only on change
     /// so the inspector doesn't churn each tick). Clears when the selection isn't a player-owned factory.
@@ -469,6 +506,34 @@ struct StructureActions: Equatable {
     var canUpgrade: Bool
     var isRepairing: Bool
     var isUpgrading: Bool
+}
+
+/// The selected player palace's super-weapon (which weapon + whether the countdown has recharged).
+struct SuperWeaponState: Equatable {
+    /// `HouseInfo.specialWeapon`: 1 = Harkonnen/Sardaukar death-hand missile, 2 = Atreides/Fremen call,
+    /// 3 = Ordos/Mercenary saboteur.
+    enum Weapon: Int { case missile = 1, fremen = 2, saboteur = 3 }
+    var slot: Int
+    var weapon: Weapon
+    var ready: Bool
+
+    /// The launch button's title.
+    var title: String {
+        switch weapon {
+            case .missile:  "Launch Death Hand"
+            case .fremen:   "Call Fremen"
+            case .saboteur: "Deploy Saboteur"
+        }
+    }
+    var systemImage: String {
+        switch weapon {
+            case .missile:  "flame"
+            case .fremen:   "person.3"
+            case .saboteur: "bolt.trianglebadge.exclamationmark"
+        }
+    }
+    /// The death-hand needs a target click; the other two fire in place.
+    var needsTarget: Bool { weapon == .missile }
 }
 
 /// Active structure-placement mode: a finished construction-yard product awaiting a valid map click.

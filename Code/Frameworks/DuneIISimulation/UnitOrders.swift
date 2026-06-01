@@ -44,6 +44,9 @@ public struct UnitOrders: Sendable {
                 state.structureCancelBuild(Int(structure))
             case let .placeStructure(structure, tile):
                 combat.structurePlaceReady(factory: Int(structure), position: tile, in: &state)
+            case .activateSuperWeapon, .launchHouseMissile:
+                break   // Palace super-weapon — handled at the Simulation level (`Simulation.applyPalaceCommand`),
+                        // which owns the activation context; the caller routes it there before this applier.
         }
     }
 

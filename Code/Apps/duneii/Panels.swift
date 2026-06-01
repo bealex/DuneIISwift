@@ -46,6 +46,7 @@ struct InspectorPanel: View {
                         Button("Deselect", role: .cancel) { model.deselect() }.controlSize(.small)
                     }
                     structureSection()
+                    superWeaponSection()
                     buildSection()
                 } else {
                     ContentUnavailableView("No selection", systemImage: "cursorarrow.rays",
@@ -98,6 +99,26 @@ struct InspectorPanel: View {
                         .buttonStyle(.bordered)
                     }
                 }
+            }
+        }
+    }
+
+    /// The palace super-weapon launch: a button (enabled when the countdown has recharged). The death-hand
+    /// then arms a target click; the Fremen call / saboteur fire in place.
+    @ViewBuilder private func superWeaponSection() -> some View {
+        if let sw = model.superWeapon {
+            Divider()
+            Text("Palace").font(.headline)
+            Button { model.launchSuperWeapon() } label: {
+                Label(sw.ready ? sw.title : "Recharging…", systemImage: sw.systemImage)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(model.missileTargeting != nil ? .orange : .red)
+            .disabled(!sw.ready)
+            if model.missileTargeting != nil {
+                Label("Click a target for the Death Hand…", systemImage: "scope")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }

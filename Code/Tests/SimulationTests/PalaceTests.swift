@@ -73,6 +73,59 @@ struct PalaceTests {
         #expect(sm.state.structures[palace].countDown == HouseInfo[.ordos].specialCountDown)
     }
 
+    @Test("human launch: a death-hand missile fires at the player's chosen tile")
+    func humanMissile() {
+        var s = GameState(); s.playerHouseID = 0
+        _ = s.houseAllocate(index: 0); s.houses[0].flags.insert(.human); s.houses[0].unitCountMax = 100
+        let palace = addPalace(&s, house: 0)   // player-owned Harkonnen palace, ready (countDown 0)
+
+        var sm = Simulation(state: s, scriptInfo: info, structureScriptInfo: info)
+        let handled = sm.applyPalaceCommand(.launchHouseMissile(structure: UInt16(palace),
+                                                                 tile: Tile32.packXY(x: 12, y: 40)))
+        #expect(handled)
+        #expect(countUnits(&sm.state, type: .missileHouse) == 1)   // the launched death-hand bullet
+        #expect(sm.state.structures[palace].countDown == HouseInfo[.harkonnen].specialCountDown)
+    }
+
+    @Test("human launch: an Atreides palace activates the Fremen call (no target)")
+    func humanFremen() {
+        var s = GameState(); s.playerHouseID = 1
+        _ = s.houseAllocate(index: 1); s.houses[1].flags.insert(.human)   // player-owned Atreides palace
+        _ = s.houseAllocate(index: 3); s.houses[3].unitCountMax = 100     // HOUSE_FREMEN owns the troopers
+        let palace = addPalace(&s, house: 1)
+
+        var sm = Simulation(state: s, scriptInfo: info, structureScriptInfo: info)
+        let handled = sm.applyPalaceCommand(.activateSuperWeapon(structure: UInt16(palace)))
+        #expect(handled)
+        let fremen = countUnits(&sm.state, type: .trooper) + countUnits(&sm.state, type: .troopers)
+        #expect((4 ... 5).contains(fremen))
+        #expect(sm.state.structures[palace].countDown == HouseInfo[.atreides].specialCountDown)
+    }
+
+    @Test("human launch gating: no fire when not ready, enemy-owned, or non-super-weapon command")
+    func humanLaunchGating() {
+        var s = GameState(); s.playerHouseID = 0
+        _ = s.houseAllocate(index: 0); s.houses[0].flags.insert(.human); s.houses[0].unitCountMax = 100
+        _ = s.houseAllocate(index: 1); s.houses[1].unitCountMax = 100   // enemy
+        let notReady = addPalace(&s, house: 0); // player Harkonnen palace, recharging
+        let enemy = addPalace(&s, house: 1)     // enemy palace, ready
+
+        var sm = Simulation(state: s, scriptInfo: info, structureScriptInfo: info)
+        sm.state.structures[notReady].countDown = 5   // still recharging ⇒ must not fire
+
+        let firedNotReady = sm.applyPalaceCommand(.launchHouseMissile(structure: UInt16(notReady),
+                                                                      tile: Tile32.packXY(x: 12, y: 40)))
+        let firedEnemy = sm.applyPalaceCommand(.activateSuperWeapon(structure: UInt16(enemy)))
+        #expect(firedNotReady)   // consumed…
+        #expect(firedEnemy)      // …consumed…
+        #expect(countUnits(&sm.state, type: .missileHouse) == 0)   // …but nothing fired
+        #expect(sm.state.structures[notReady].countDown == 5)
+
+        // A non-super-weapon command is not consumed here (the caller routes it through UnitOrders).
+        let notConsumed = sm.applyPalaceCommand(.stop(unit: 0))
+        #expect(!notConsumed)
+    }
+
     @Test("via the loop: an AI palace fires on its first palace tick; a human palace does not")
     func loopFiresAIOnly() {
         var s = GameState(); s.playerHouseID = 1
