@@ -104,6 +104,17 @@ struct InputControllerTests {
         #expect(c.selection == .none && c.selectedUnits.isEmpty)
     }
 
+    @Test("dominantGroup keeps only the most-numerous unit type (ties → lowest type id)")
+    func dominantGroup() {
+        // slots 0,1,2 are type 5 (×3); slot 3 is type 9 (×1) → keep the three type-5 slots.
+        let types: [Int: Int] = [0: 5, 1: 5, 2: 5, 3: 9]
+        #expect(InputController.dominantGroup([0, 1, 2, 3], typeOf: { types[$0]! }) == [0, 1, 2])
+        // tie 2-vs-2 between type 5 and type 9 → the lower id (5) wins.
+        let tie: [Int: Int] = [0: 9, 1: 9, 2: 5, 3: 5]
+        #expect(InputController.dominantGroup([0, 1, 2, 3], typeOf: { tie[$0]! }) == [2, 3])
+        #expect(InputController.dominantGroup([], typeOf: { _ in 0 }).isEmpty)
+    }
+
     @Test("a group order (right-click + armed) is issued to every selected unit")
     func groupOrders() {
         var c = InputController(mapWidth: 64)

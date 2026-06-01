@@ -70,6 +70,18 @@ public struct InputController: InputSource {
         }
     }
 
+    /// Reduce a drag-selected set to its **dominant unit type** — the single most-numerous type in the box
+    /// (ties broken by the lowest type id, for determinism). A mixed-type group can't share one order (a
+    /// harvester can't attack, a tank can't harvest), so a drag selects only the majority type. `typeOf`
+    /// maps a slot to its unit-type id. Returns the kept slots (sorted); `[]` for an empty input.
+    public static func dominantGroup(_ slots: [Int], typeOf: (Int) -> Int) -> [Int] {
+        let groups = Dictionary(grouping: slots, by: typeOf)
+        guard let best = groups.max(by: { l, r in
+            l.value.count != r.value.count ? l.value.count < r.value.count : l.key > r.key
+        }) else { return [] }
+        return best.value.sorted()
+    }
+
     /// Replace the selection with a drag-selected group of player unit slots (the host computes which units
     /// fall in the box). `selection` mirrors the first for the inspector; empty ⇒ deselect.
     public mutating func selectGroup(_ units: [Int]) {

@@ -459,10 +459,13 @@ final class GameModel {
             let tx = Int(u.o.position.x) / 256, ty = Int(u.o.position.y) / 256
             if tx >= minX, tx <= maxX, ty >= minY, ty <= maxY { slots.append(i) }
         }
-        controller.selectGroup(slots)
+        // Keep only the most-numerous unit type — a mixed group (e.g. trike + harvester) can't share one
+        // order, so the box selects the dominant type.
+        let dominant = InputController.dominantGroup(slots, typeOf: { Int(state.units[$0].o.type) })
+        controller.selectGroup(dominant)
         selection = currentInfo()
         inspectedTile = nil; refreshTileInfo()
-        if !slots.isEmpty { playSelectVoice(unitSlot: slots.first) }
+        if !dominant.isEmpty { playSelectVoice(unitSlot: dominant.first) }
     }
 
     /// How many units are in the current (drag) selection — shown in the inspector header.
