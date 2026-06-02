@@ -41,7 +41,9 @@ public struct RandomLCG: Sendable {
             let value = Int32(next()) * span / 0x8000 + Int32(lo)
             result = UInt16(truncatingIfNeeded: value)
         } while result > hi
-        traceSink?.recordLCG(result)
+        #if DEBUG
+        traceSink?.recordLCG(result)   // parity/RNG-stream observation — stripped from release builds
+        #endif
         return result
     }
 }

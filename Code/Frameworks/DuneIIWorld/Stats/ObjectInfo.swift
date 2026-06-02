@@ -1,3 +1,23 @@
+/// The 4 player-menu actions for an object, as a **POD value** (four `ActionType` enum cases, no heap).
+/// Replaces the former `[ActionType]` stored in `ObjectInfo`: that array was heap-backed, so every hot-path
+/// `UnitInfo[ut]`/`StructureInfo[…]` lookup copied the struct and did an atomic retain/release on the shared
+/// table buffer — death under multi-core (true-sharing cache-line ping-pong). Storing the four cases inline
+/// makes the copy trivially register-copyable. Values are identical to the old array; the `[i]` subscript and
+/// `contains`/`all` cover every former call site. See `Documentation/Architecture/Parallelization.md` §8.
+public struct PlayerActions: Sendable, Equatable {
+    public let a, b, c, d: ActionType
+    public init(_ arr: [ActionType]) {
+        a = arr.count > 0 ? arr[0] : .stop
+        b = arr.count > 1 ? arr[1] : .stop
+        c = arr.count > 2 ? arr[2] : .stop
+        d = arr.count > 3 ? arr[3] : .stop
+    }
+    public subscript(_ i: Int) -> ActionType { switch i { case 0: a; case 1: b; case 2: c; default: d } }
+    public func contains(_ x: ActionType) -> Bool { a == x || b == x || c == x || d == x }
+    /// The four actions as an array — for *cold* consumers (UI menus, tests) only; allocates.
+    public var all: [ActionType] { [a, b, c, d] }
+}
+
 /// The static stats common to a unit and a structure. A literal port of OpenDUNE's `ObjectInfo`
 /// struct (`src/object.h`), embedded by both `UnitInfo` and `StructureInfo`.
 ///
@@ -38,7 +58,7 @@ public struct ObjectInfo: Sendable, Equatable {
     public let structuresRequired: UInt32   // FLAG_STRUCTURE_* bitmask; 0xFFFFFFFF = FLAG_STRUCTURE_NEVER
     public let sortPriority: UInt8
     public let upgradeLevelRequired: UInt8
-    public let actionsPlayer: [ActionType]  // 4 actions available to a player object
+    public let actionsPlayer: PlayerActions  // 4 actions available to a player object (POD, see PlayerActions)
     public let available: Int8              // ordered/available: 1+ = yes, 0 = no, -1 = upgrade-first
     public let hintStringID: UInt16
     public let priorityBuild: UInt16        // build priority when picking what to build next
@@ -63,7 +83,7 @@ func makeObjectInfo(
         fogUncoverRadius: fogUncoverRadius, spriteID: spriteID, buildCredits: buildCredits,
         buildTime: buildTime, availableCampaign: availableCampaign,
         structuresRequired: structuresRequired, sortPriority: sortPriority,
-        upgradeLevelRequired: upgradeLevelRequired, actionsPlayer: actionsPlayer,
+        upgradeLevelRequired: upgradeLevelRequired, actionsPlayer: PlayerActions(actionsPlayer),
         available: available, hintStringID: hintStringID, priorityBuild: priorityBuild,
         priorityTarget: priorityTarget, availableHouse: availableHouse)
 }

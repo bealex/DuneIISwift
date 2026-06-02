@@ -28,7 +28,11 @@ public struct Pathfinder: Sendable {
         public var packed: UInt16
         public var score: Int16
         public var routeSize: Int
-        public var buffer: [UInt8]
+        /// Route steps (0–7), `0xFF`-terminated. **Fixed inline POD storage** (was a heap `[UInt8]`) so a
+        /// pathfind does zero allocation and a `Data` copy is ARC-free — the pathfinder is on the per-tick
+        /// hot path (every moving unit). 102 matches the former max buffer (the `ccw`/`cw` wall-follow
+        /// buffers); the live route is bounded by `bufferSize` (40 at the call site).
+        public var buffer = Inline<102, UInt8>(repeating: 0xFF)
     }
 
     private func step(_ packed: UInt16, _ dir: Int) -> UInt16 {
@@ -46,7 +50,7 @@ public struct Pathfinder: Sendable {
 
     /// `Script_Unit_Pathfinder` — the entry point.
     public func pathfind(src: UInt16, dst: UInt16, unit: Unit, bufferSize: Int, in state: GameState) -> Data {
-        var res = Data(packed: src, score: 0, routeSize: 0, buffer: [UInt8](repeating: 0xFF, count: bufferSize + 2))
+        var res = Data(packed: src, score: 0, routeSize: 0)
         let limit = bufferSize - 1
         var packedCur = src
 
@@ -64,8 +68,8 @@ public struct Pathfinder: Sendable {
                 res.score += s
             } else {
                 var foundCCW = false, foundCW = false
-                var ccw = Data(packed: packedCur, score: 0, routeSize: 0, buffer: [UInt8](repeating: 0xFF, count: 102))
-                var cw = Data(packed: packedCur, score: 0, routeSize: 0, buffer: [UInt8](repeating: 0xFF, count: 102))
+                var ccw = Data(packed: packedCur, score: 0, routeSize: 0)
+                var cw = Data(packed: packedCur, score: 0, routeSize: 0)
 
                 while true {
                     if packedNext == dst { break }

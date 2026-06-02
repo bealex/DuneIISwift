@@ -16,8 +16,8 @@ public struct ScriptEngine: Sendable, Equatable, Codable {
     public var returnValue: UInt16 = 0      // return value from sub-routines
     public var framePointer: UInt8 = 0
     public var stackPointer: UInt8 = 0
-    public var variables: [UInt16] = Array(repeating: 0, count: 5)   // outside-stack storage
-    public var stack: [UInt16] = Array(repeating: 0, count: 15)      // engine stack (fills from the end)
+    public var variables = Inline<5, UInt16>(repeating: 0)   // outside-stack storage (POD, inline — no heap/ARC)
+    public var stack = Inline<15, UInt16>(repeating: 0)      // engine stack (fills from the end; POD, inline)
     public var isSubroutine: UInt8 = 0      // the executing script is a sub-routine
 
     public init() {}

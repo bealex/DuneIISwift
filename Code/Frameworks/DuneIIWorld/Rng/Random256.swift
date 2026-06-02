@@ -36,7 +36,9 @@ public struct Random256: Sendable {
         seed.1 = UInt8(val16 >> 8)
         seed.2 = UInt8(val16 & 0xFF)
         let result = seed.0 ^ seed.1
-        traceSink?.recordR256(result)
+        #if DEBUG
+        traceSink?.recordR256(result)   // parity/RNG-stream observation — stripped from release builds
+        #endif
         return result
     }
 }
