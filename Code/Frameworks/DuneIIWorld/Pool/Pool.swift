@@ -1,19 +1,7 @@
-import Foundation
-
 /// Pool sizing + sentinel constants, ported from OpenDUNE's `src/pool/*.h`. The pools are fixed-size
 /// arrays; these are their bounds and the "invalid" sentinels.
 public enum Pool {
-    /// `UNIT_INDEX_MAX`. Faithful default 102. **Benchmark-only escape hatch:** the `DUNEII_UNIT_POOL`
-    /// environment variable raises the cap so the parallelization benchmark can stress the unit phase with
-    /// far more than the faithful 102 units (units are what the tick parallelizes; structures stay capped).
-    /// Unset ⇒ 102, so every test/golden run is byte-identical to before. Clamped below `0x4000` because the
-    /// unit-index encoding is `index | 0x4000` (`GameState+Index.swift:26`). It is a *constant per process*
-    /// (read once at static init), so it introduces no mutable global state and stays deterministic.
-    public static let unitIndexMax: Int = {
-        guard let raw = ProcessInfo.processInfo.environment["DUNEII_UNIT_POOL"],
-              let n = Int(raw), n > 0 else { return 102 }
-        return min(n, 0x3FFF)
-    }()
+    public static let unitIndexMax = 102            // UNIT_INDEX_MAX
     public static let unitIndexInvalid: UInt16 = 0xFFFF
 
     public static let structureIndexMaxSoft = 79    // highest index for a normal structure

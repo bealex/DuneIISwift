@@ -69,11 +69,14 @@ public struct StructureScriptRunner: Sendable {
         var executed = 0
         while executed < budget && interpreter.isLoaded(engine) {
             // Tier-2a: emit the pre-execution decision-trace line for the watched structure (matches the
-            // oracle's per-`Script_Run` `--parity-script-trace` point).
+            // oracle's per-`Script_Run` `--parity-script-trace` point). Observation only — stripped from
+            // release builds (the decision-trace goldens run under `swift test`, i.e. debug).
+            #if DEBUG
             if let tracer, state.structures[slot].o.index == tracer.structureIndex,
                let line = ScriptTraceLine.decode(engine, info: scriptInfo) {
                 tracer.record(line.oracleFormat)
             }
+            #endif
             let ok = interpreter.run(&engine, info: scriptInfo) { index, eng in
                 // The VM runs on a *copy* of the engine, but a native may mutate this structure's **live**
                 // script through `state` (e.g. `Object_Script_Variable4_Clear` in the refinery's deploy

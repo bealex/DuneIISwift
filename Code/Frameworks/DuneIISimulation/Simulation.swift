@@ -128,7 +128,7 @@ public struct Simulation: Sendable {
     /// Realize the bloom detonations the explosion VM queued this tick (`Explosion_Func_BloomExplosion`):
     /// the World layer only records the tile, since `Map_Bloom_ExplodeSpice` (spice-fill + tremor) is a
     /// Simulation primitive. Runs only on the explosion-ticking (visual-app) path, so it's golden-neutral.
-    mutating func drainBloomDetonations() {
+    private mutating func drainBloomDetonations() {
         guard !state.pendingBloomDetonations.isEmpty, let movement = unitScript?.movement else {
             state.pendingBloomDetonations.removeAll(keepingCapacity: true)
             return
@@ -144,7 +144,7 @@ public struct Simulation: Sendable {
     /// in `pendingCraters`, stamp the sand/rock crater overlay (growing an existing crater, else a random one
     /// of two — one `Random_256` draw), deduct spice, and pop a bloom underneath. Gated to `tickExplosions`
     /// (off for goldens), so the `Random_256` draw never perturbs a parity run.
-    mutating func drainCraters() {
+    private mutating func drainCraters() {
         guard !state.pendingCraters.isEmpty, let movement = unitScript?.movement, let iconMap = state.iconMap else {
             state.pendingCraters.removeAll(keepingCapacity: true)
             return
@@ -206,28 +206,11 @@ extension Simulation {
     /// (movement / rotation / script / … on each unit) is the per-type state-machine port arriving in
     /// the later Phase-3 slices.
     mutating func gameLoopUnit() {
-        runUnitPhase(flags: advanceUnitCadence(), slots: nil)
-    }
-
-    /// The body of `GameLoop_Unit`: iterate units — the full pool when `slots == nil` (the faithful path),
-    /// or an explicit slot subset for the experimental parallel sharding in `Simulation+Parallel.swift` —
-    /// and run each unit's per-tick work. The cadence (`advanceUnitCadence`) is computed once by the caller
-    /// and passed in, so a sharded parallel run doesn't advance the tick cursors once per shard. With
-    /// `slots == nil` this is byte-identical to the previous inline loop (same `unitFind` order).
-    mutating func runUnitPhase(flags: UnitTickFlags, slots: [Int]?) {
+        let flags = advanceUnitCadence()
         let runner = unitScript
 
         var find = PoolFind()
-        var cursor = 0
-        while true {
-            let slot: Int
-            if let slots {
-                if cursor >= slots.count { break }
-                slot = slots[cursor]; cursor &+= 1
-            } else {
-                guard let s = state.unitFind(&find) else { break }
-                slot = s
-            }
+        while let slot = state.unitFind(&find) {
             guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { continue }
             let ui = UnitInfo[ut]
 
