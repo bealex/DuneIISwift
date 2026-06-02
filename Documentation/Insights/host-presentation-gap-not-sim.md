@@ -1,0 +1,12 @@
+# A missing cue/visual in the `duneii` client is almost always a host gap, not a sim bug
+
+**Finding:** when something is "missing" in the game client — a sound that doesn't play, a visual that doesn't show — the **simulation almost always already produces the data**; the gap is in the **host presentation layer** not surfacing it. The sim is the cross-engine-verified, faithful part; the host (`Apps/duneii`) is the thin, hand-wired, less-tested part. Check the host first.
+
+**Why it matters:** it's tempting to go spelunking in the EMC/`structureTickStructure`/`Unit_Move` port when a cue is absent, but that's the wrong end. This recurred repeatedly (2026-06-01): the **squish sound** was fully emitted by the sim (`Unit_Move` → `variables[1]=1` → `ACTION_DIE` → `Script_Unit_StartAnimation` picks the voice-bearing death animation → `animationTick` → `emitSound(35)`) — the only bug was the host `VoiceTable` not mapping voice 35 to `SQUISH2.VOC`. The **build-progress bar** "missing" was just that `FrameInfo.Structure` didn't expose the already-existing `countDown`/`state`, and `GameScene` drew no bar. Same shape for the radar/selection-cursor work.
+
+**Where the host surfaces live (check these in order):**
+- **Sound effects (`Voice_PlayAtTile`):** the sim calls `emitSound(voiceID, at:)` → `state.soundEvents`; the host plays them via `Apps/duneii/VoiceTable` (`g_table_voiceMapping[voiceID]` → `g_table_voices` index → VOC). A silent cue is usually a `VoiceTable.mapping`/`voc` entry that was never added (the table is an incremental first pass).
+- **Spoken feedback (`Sound_Output_Feedback`):** sim appends to `state.pendingFeedback`; host plays via `FeedbackVoice` + `GameModel.playFeedback`.
+- **Visuals:** the sim's per-frame truth is `FrameInfo` (`Simulation.makeFrameInfo`). If the renderer/HUD can't show something, the field may simply not be on `FrameInfo` yet (add it in `makeFrameInfo`) or the host overlay (`GameScene`) doesn't draw it.
+
+**How to apply:** for a "missing X" report in the client, first confirm the sim emits it (grep `emitSound`/`pendingFeedback`/the relevant `FrameInfo` field; the EMC/native chain is usually intact and oracle-verified). Then add/​fix the **host** mapping or overlay. Only suspect the sim if the data genuinely isn't produced. These host fixes are presentation seams → flag-off neutrality + unit/golden coverage of the data side (e.g. `UnitDeathAnimationTests`, `FrameInfoTests.buildProgress`), not a cross-engine golden.
