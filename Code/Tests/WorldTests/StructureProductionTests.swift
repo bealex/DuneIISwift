@@ -115,6 +115,60 @@ struct StructureProductionTests {
         #expect(s.structures[slot].countDown == 1000)   // no progress
     }
 
+    // MARK: - Player pause / resume (widget_click.c STR_D_DONE / STR_ON_HOLD)
+
+    @Test("pausing an in-progress build sets onHold and stops it advancing; resume continues it")
+    func pauseThenResume() {
+        var s = GameState(); _ = s.houseAllocate(index: 0)
+        s.playerHouseID = 0
+        let slot = place(&s, .lightVehicle, state: .busy)
+        s.structures[slot].o.linkedID = 0
+        s.structures[slot].objectType = UInt16(UnitType.trike.rawValue)
+        s.structures[slot].countDown = 1000
+        s.houses[0].credits = 5000
+
+        // Pause (the player clicking "%d%% DONE"): onHold set, and the next tick makes no progress.
+        let wasBuilding = s.structurePauseBuild(slot)
+        #expect(wasBuilding)
+        #expect(s.structures[slot].o.flags.contains(.onHold))
+        s.structureTickStructure(slot)
+        #expect(s.structures[slot].countDown == 1000)   // held → no progress, no billing
+        #expect(s.houses[0].credits == 5000)
+
+        // Resume (clicking "ON HOLD"): the hold clears and the build advances again.
+        let wasHeld = s.structureResumeBuild(slot)
+        #expect(wasHeld)
+        #expect(!s.structures[slot].o.flags.contains(.onHold))
+        s.structureTickStructure(slot)
+        #expect(s.structures[slot].countDown == 1000 - 256)
+        #expect(s.houses[0].credits < 5000)
+    }
+
+    @Test("resuming a build held for lack of money does nothing until credits return")
+    func resumeStillBrokeReholds() {
+        var s = GameState(); _ = s.houseAllocate(index: 0)
+        s.playerHouseID = 0
+        let slot = place(&s, .lightVehicle, state: .busy)
+        s.structures[slot].o.linkedID = 0
+        s.structures[slot].objectType = UInt16(UnitType.trike.rawValue)
+        s.structures[slot].countDown = 1000
+        s.houses[0].credits = 0
+        s.structureTickStructure(slot)                      // out of money → on hold
+        #expect(s.structures[slot].o.flags.contains(.onHold))
+
+        // Resume while still broke: the hold clears, but the very next tick re-holds it (no money).
+        s.structureResumeBuild(slot)
+        s.structureTickStructure(slot)
+        #expect(s.structures[slot].o.flags.contains(.onHold))
+        #expect(s.structures[slot].countDown == 1000)       // still no progress
+
+        // Credits arrive, resume again → it advances.
+        s.houses[0].credits = 5000
+        s.structureResumeBuild(slot)
+        s.structureTickStructure(slot)
+        #expect(s.structures[slot].countDown == 1000 - 256)
+    }
+
     @Test("an idle (not BUSY) factory does nothing")
     func factoryIdleNoop() {
         var s = GameState(); _ = s.houseAllocate(index: 0)

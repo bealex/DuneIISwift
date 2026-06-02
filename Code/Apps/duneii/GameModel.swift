@@ -162,6 +162,11 @@ final class GameModel {
     @ObservationIgnored private var pendingCommands: [Command] = []
     /// The latest frame — observed, so the minimap redraws each tick (units/viewport move).
     private(set) var lastFrame: FrameInfo?
+    /// Throttles the steady-state HUD derivations (economy/credits/build/structure-actions/tile-info/hints)
+    /// to ~10 Hz instead of the display rate, the bulk of the per-frame SwiftUI re-layout cost. Interaction
+    /// (a selection/order change) overrides it so the panels still respond instantly. ~6 of the ~60 display
+    /// frames per second; presentation-only, never gates sim state.
+    @ObservationIgnored private var hudThrottle = FrameThrottle(every: 6)
     @ObservationIgnored private(set) var minimapBase: CGImage?
     /// The decoded terrain source for the minimap base, built once (the asset tiles don't change).
     @ObservationIgnored private var minimapSource: DecodedSpriteSource?
@@ -465,8 +470,28 @@ final class GameModel {
         // (guarded so the per-tick refresh doesn't churn SwiftUI 60×/sec).
         if currentInfo() == nil && !controller.selection.isEmpty { controller.deselect() }
         let info = currentInfo()
-        if info != selection { selection = info }
-        if controller.pendingOrder != pendingOrder { pendingOrder = controller.pendingOrder }
+        let selectionChanged = info != selection
+        if selectionChanged { selection = info }
+        let orderChanged = controller.pendingOrder != pendingOrder
+        if orderChanged { pendingOrder = controller.pendingOrder }
+
+        // Level outcome: latch + show the banner, and pause the game once it ends. Kept immediate (above the
+        // HUD throttle) so victory/defeat never lags behind the tick that decided it.
+        let end = simulation?.state.gameEndState ?? .playing
+        if end != gameEnd {
+            gameEnd = end
+            if end != .playing {
+                paused = true
+                end == .won ? music.win(house: playerHouse) : music.lose(house: playerHouse)
+            }
+        }
+
+        // The steady-state panel derivations are expensive (they drive SwiftUI re-layout across every tool
+        // window) but only need ~10 Hz — a ticking credits/power/build readout is indistinguishable from 60
+        // Hz. Throttle them, but always refresh on an interaction (selection/order change) so panels respond
+        // instantly. `hudThrottle.tick()` is the left operand, so the cadence advances every frame.
+        guard hudThrottle.tick() || selectionChanged || orderChanged else { return }
+
         // Only houses actually present on the map (≥1 unit or structure) — drop merely-activated empty houses.
         let present = housesOnMap()
         let econ = frame.houses
@@ -482,16 +507,6 @@ final class GameModel {
         refreshStructureActions()
         refreshTileInfo()
         refreshHints(frame)
-
-        // Level outcome: latch + show the banner, and pause the game once it ends.
-        let end = simulation?.state.gameEndState ?? .playing
-        if end != gameEnd {
-            gameEnd = end
-            if end != .playing {
-                paused = true
-                end == .won ? music.win(house: playerHouse) : music.lose(house: playerHouse)
-            }
-        }
     }
 
     /// Drive the minimap radar from the player house's `radarActivated`: on a change, play the STATIC.WSA
@@ -852,6 +867,21 @@ final class GameModel {
         enqueue(.cancelBuild(structure: UInt16(slot)))
         placement = nil
         audio.play(.acknowledge)
+    }
+
+    /// Pause the selected factory's in-progress build (`widget_click.c:124`, `STR_D_DONE`).
+    func pauseBuild() {
+        guard let slot = selectedFactorySlot else { return }
+        enqueue(.pauseBuild(structure: UInt16(slot)))
+        audio.play(.select)
+    }
+
+    /// Resume the selected factory's held ("on hold") build — clears the hold so it continues once the house
+    /// has credits again (the faithful click-to-resume; `widget_click.c:107`, `STR_ON_HOLD`).
+    func resumeBuild() {
+        guard let slot = selectedFactorySlot else { return }
+        enqueue(.resumeBuild(structure: UInt16(slot)))
+        audio.play(.select)
     }
 
     /// Enter placement mode for the selected construction yard's finished structure.

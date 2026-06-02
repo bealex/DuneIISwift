@@ -176,6 +176,15 @@ struct InspectorPanel: View {
                                 .buttonStyle(.borderedProminent)
                         } else if bs.isReady {
                             Label("Deploying…", systemImage: "arrow.down.circle").font(.caption).foregroundStyle(.green)
+                        } else if bs.onHold {
+                            // Held (player paused it, or it ran out of money). Resume clears the hold; the build
+                            // continues next tick once the house can afford it (`widget_click.c:107`).
+                            Button { model.resumeBuild() } label: { Label("Resume", systemImage: "play.fill") }
+                                .buttonStyle(.borderedProminent)
+                        } else {
+                            // Building. Pause holds it where it is (`widget_click.c:124`).
+                            Button { model.pauseBuild() } label: { Label("Pause", systemImage: "pause.fill") }
+                                .buttonStyle(.bordered)
                         }
                         Button(role: .destructive) { model.cancelBuild() } label: { Label("Cancel", systemImage: "xmark") }
                             .buttonStyle(.bordered)

@@ -1,0 +1,9 @@
+# A presentation throttle stays golden-neutral by defaulting its interval to "every frame"
+
+**Finding:** to rate-limit per-frame presentation work (a texture rebuild, a HUD derivation) without disturbing the render/scenario goldens, make the throttle interval a *parameter* whose default (1) runs every frame — byte-identical to no throttle — and have only the live host opt into a coarser cadence. The golden harness uses the default, so it stays green with no regen; the speedup lives entirely in the app's configuration.
+
+**Why it matters:** this codebase's bar for a no-oracle presentation seam is *flag-off neutrality* — prove the existing goldens stay byte-identical with the feature off. A throttle that changes per-frame output (e.g. animating the worm shimmer at half rate) would otherwise force a golden regen and lose the neutrality proof. The neutral-default split turns "off" into the default code path the goldens already capture.
+
+**Evidence:** `DuneIIContracts/FrameThrottle.swift` (interval 1 fires every call, first call always fires); `SpriteKitRenderer.shimmerUpdateInterval` default 1, set to 2 in `Apps/duneii/GameScene.swift`; `GameModel.refreshDerived` gates the steady-state HUD block on `hudThrottle.tick() || selectionChanged || orderChanged`. Tests: `FrameThrottleTests`, `ShimmerThrottleTests` (interval 2 → half the rebuilds, default → every frame), and the `scena001-worm` render golden stays byte-identical at the default. See [[render-incremental-appearance-key]].
+
+**How to apply:** when adding a per-frame throttle for perf, default it to the every-frame/no-op value and configure the coarser cadence at the host call site — never bake the throttle into the path the goldens render. Add an interaction override (`|| selectionChanged`) so input still feels instant, and unit-test the throttle's cadence directly rather than through the golden.

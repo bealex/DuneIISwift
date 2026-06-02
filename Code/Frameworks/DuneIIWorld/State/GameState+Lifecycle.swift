@@ -490,6 +490,34 @@ public extension GameState {
         return true
     }
 
+    /// Pause an in-progress build — the player clicking the "%d%% DONE" item (`gui/widget_click.c:124`, the
+    /// `STR_D_DONE` case): set `.onHold` so `tickStructure`'s factory branch stops advancing (and billing)
+    /// the build. A no-op visible result unless a build is actually in progress (the client only offers Pause
+    /// then). Returns whether a build was in progress to pause.
+    @discardableResult
+    mutating func structurePauseBuild(_ slot: Int) -> Bool {
+        guard slot >= 0, slot < structures.count else { return false }
+        let building = structures[slot].o.linkedID != 0xFF && structures[slot].countDown != 0
+        structures[slot].o.flags.insert(.onHold)
+        return building
+    }
+
+    /// Resume a held structure — the player clicking the "ON HOLD" build/repair/upgrade item
+    /// (`gui/widget_click.c:107`, the `STR_ON_HOLD` case): clear `.repairing`/`.onHold`/`.upgrading` so the
+    /// next `tickStructure` continues. A build only actually advances once the house has credits again (the
+    /// `tickStructure` factory branch re-sets `.onHold` the same tick if still underfunded), so this is a
+    /// no-op for the player who's still broke — exactly as in the original. Returns whether anything was held.
+    @discardableResult
+    mutating func structureResumeBuild(_ slot: Int) -> Bool {
+        guard slot >= 0, slot < structures.count else { return false }
+        let held = structures[slot].o.flags.contains(.onHold)
+            || structures[slot].o.flags.contains(.repairing) || structures[slot].o.flags.contains(.upgrading)
+        structures[slot].o.flags.remove(.repairing)
+        structures[slot].o.flags.remove(.onHold)
+        structures[slot].o.flags.remove(.upgrading)
+        return held
+    }
+
     /// `Structure_CancelBuild` (`structure.c:1412`): abort the structure's in-progress build, free the
     /// queued (off-map) unit/structure, and refund the credits proportional to the unbuilt remainder. A
     /// no-op when nothing is being built (`linkedID == 0xFF`).

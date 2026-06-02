@@ -42,6 +42,10 @@ public struct UnitOrders: Sendable {
                 _ = state.structureSetUpgradingState(Int(structure), state: -1)    // toggle
             case let .cancelBuild(structure):
                 state.structureCancelBuild(Int(structure))
+            case let .pauseBuild(structure):
+                state.structurePauseBuild(Int(structure))
+            case let .resumeBuild(structure):
+                state.structureResumeBuild(Int(structure))
             case let .placeStructure(structure, tile):
                 combat.structurePlaceReady(factory: Int(structure), position: tile, in: &state)
             case .activateSuperWeapon, .launchHouseMissile:

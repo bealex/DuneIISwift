@@ -29,6 +29,13 @@ public enum Command: Sendable, Equatable {
     case upgrade(structure: UInt16)
     /// Cancel the factory `structure`'s in-progress build (`Structure_CancelBuild`; refunds the remainder).
     case cancelBuild(structure: UInt16)
+    /// Pause the `structure`'s in-progress build — the player clicking the "%d%% DONE" item
+    /// (`widget_click.c:124`, `STR_D_DONE`): sets `onHold` so the build stops advancing (and stops billing).
+    case pauseBuild(structure: UInt16)
+    /// Resume the `structure`'s held build/repair/upgrade — the player clicking the "ON HOLD" item
+    /// (`widget_click.c:107`, `STR_ON_HOLD`): clears `repairing`/`onHold`/`upgrading` so the next tick
+    /// continues (a build only progresses once credits are available again).
+    case resumeBuild(structure: UInt16)
     /// Place the construction yard `structure`'s finished (ready) structure at `tile` (a packed map
     /// position), then reset the factory (`Structure_Place` + the GUI place-flow reset).
     case placeStructure(structure: UInt16, tile: UInt16)

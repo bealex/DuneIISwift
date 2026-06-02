@@ -61,6 +61,18 @@ public final class SpriteKitRenderer {
     private var blurPool: [SKSpriteNode] = []
     private var blurIndex = 0
 
+    /// How often the sandworm heat-haze shimmer is rebuilt, in frames. `1` (the default) = every frame —
+    /// what the render goldens capture, byte-identical to no throttle. The host raises it (e.g. `2`) so the
+    /// per-frame `SKTexture(cgImage:)` upload of the worm displacement patch — the single biggest per-frame
+    /// texture cost — runs at a fraction of the rate; on skipped frames the existing patch nodes hold their
+    /// last texture/position, so the haze animates a touch slower, which is imperceptible. Clamped to ≥ 1.
+    public var shimmerUpdateInterval: Int = 1 {
+        didSet { shimmerThrottle = FrameThrottle(every: shimmerUpdateInterval) }
+    }
+    private var shimmerThrottle = FrameThrottle(every: 1)
+    /// Count of frames on which the shimmer was actually rebuilt — a test seam for verifying the throttle.
+    private(set) var shimmerRebuildCount = 0
+
     // Palette cycling, advanced incrementally (O(1) per tick).
     private var colours: [Palette.Color]
     private var cycle = PaletteAnimator.CycleState()
@@ -333,6 +345,11 @@ public final class SpriteKitRenderer {
     /// Lay one displacement patch per sandworm: sample the static terrain under the worm's silhouette,
     /// displaced horizontally by the cycling blur offset (`ShimmerEffect`), and place it on the blur layer.
     private func updateBlurs(_ frame: FrameInfo, palette: Palette) {
+        // Rebuild the shimmer at most once per `shimmerUpdateInterval` frames (default 1 = every frame). On a
+        // skipped frame the existing patch nodes keep their last texture and position — the heat-haze just
+        // animates a little slower, far cheaper than re-uploading an `SKTexture` per worm every frame.
+        guard shimmerThrottle.tick() else { return }
+        shimmerRebuildCount += 1
         let side = tileSize * frame.mapWidth
         blurIndex = (blurIndex + 1) % ShimmerEffect.blurOffsets.count   // advance the heat-haze each frame
         let offset = ShimmerEffect.blurOffsets[blurIndex]

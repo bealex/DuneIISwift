@@ -6,7 +6,8 @@ Do not rewrite a past entry; if one is wrong, add a dated correction. The period
 
 ## Days
 
-- [2026-06-01](2026-06-01.md) — 
+- [2026-06-02](2026-06-02.md) — faithful Pause/Resume buttons for a factory build in `duneii` (mirrors OpenDUNE's `STR_D_DONE`/`STR_ON_HOLD` GUI clicks): a held build resumes only once the house can afford it, never auto-resumes.
+- [2026-06-01](2026-06-01.md) — `duneii` presentation perf from a CPU-trace read: a shared `FrameThrottle` rate-limits the sandworm-shimmer texture rebuild and the steady-state HUD derivations (~10 Hz), both golden-neutral at the default.
 - [2026-05-31](2026-05-31.md) — a broad day. **Render:** `snapshot` capture + the pixel-exact `RenderGoldenTests` harness, tile-overlay transparency, partial fog soft edges, sandworm shimmer (CoreGraphics blur) — world content gap-free. **Parity:** wall-destruction + slab map-tile goldens (+ `[DUMPTILES]`), then **corrected** a wrong claim — concrete slabs ARE destructible (`TILE_DAMAGE`). **Phase 5 input:** `DuneIIInput` (selection + order controller) + mapview mouse/keyboard selection + a properties/commands inspector. **Phase 7 audio:** `SoundEvent` seam + `DuneIIAudio` low-latency polyphonic `AVAudioEngine` sink, wired into mapview. Also moved History to per-day files.
 - [2026-05-30](2026-05-30.md) — the big day: full unit-vs-unit combat parity; the entire structures + teams + house-economy subsystems → **Phase 3 closed**; then Phase 4 renderer brought up (`FrameInfo` seam → `FrameComposer` → `SpriteKitRenderer` → `mapview`), reported mapview-bug fixes, air-unit winger + tile-overlay/fog.
 - [2026-05-29](2026-05-29.md) — map-from-seed (`Map_CreateLandscape`); Phase 1 finish; native primitives + stat tables; the EMC VM + disassembler; unit movement bit-exact vs OpenDUNE; pathfinder; the `Script_Unit_Fire` projectile path.

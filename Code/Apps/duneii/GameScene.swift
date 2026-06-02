@@ -100,6 +100,9 @@ final class GameScene: SKScene {
         for child in children where !keep.contains(child) { child.removeFromParent() }
         let r = SpriteKitRenderer(source: SpriteSource.make(assets: assets), basePalette: assets.palette,
                                   showFog: model?.showFog ?? false)
+        // Rebuild the sandworm heat-haze every other frame, not every frame: the worm patch's per-frame
+        // SKTexture upload was the biggest per-frame texture cost, and halving it is imperceptible.
+        r.shimmerUpdateInterval = 2
         r.attach(to: self)
         r.render(simulation.makeFrameInfo())
         renderer = r

@@ -49,10 +49,29 @@ enum RenderHarness {
         }
     }
 
+    /// A prepared render-golden case: the live renderer + the frame to draw, plus the terrain tile size for
+    /// cropping. Lets a test render the same frame repeatedly (e.g. to exercise the shimmer throttle).
+    @MainActor
+    struct Prepared {
+        let renderer: SpriteKitRenderer
+        let frame: FrameInfo
+        let tileSize: Int
+    }
+
     /// Render `c` to a `CGImage`, or `nil` when the install is absent or no GPU context is available.
     /// `@MainActor` — drives the SpriteKit renderer.
     @MainActor
     static func capture(_ c: Case) -> CGImage? {
+        guard let p = prepare(c) else { return nil }
+        let crop = c.rect.map { CGRect(x: $0.x * p.tileSize, y: $0.y * p.tileSize,
+                                       width: $0.w * p.tileSize, height: $0.h * p.tileSize) }
+        return p.renderer.snapshot(p.frame, crop: crop)
+    }
+
+    /// Build the simulation + renderer for `c` without capturing — the shared setup behind `capture`, also
+    /// used by the shimmer-throttle test. `nil` when the install is absent.
+    @MainActor
+    static func prepare(_ c: Case) -> Prepared? {
         guard let installURL, let assets = Assets(installURL: installURL),
               let ini = assets.ini(c.scenario) else { return nil }
 
@@ -89,9 +108,7 @@ enum RenderHarness {
         // A graphics-session connection for off-screen SpriteKit rendering, without showing a window.
         NSApplication.shared.setActivationPolicy(.accessory)
         let renderer = SpriteKitRenderer(source: assets.spriteSource, basePalette: assets.palette, showFog: c.fog)
-        let ts = assets.spriteSource.terrainTileSize
-        let crop = c.rect.map { CGRect(x: $0.x * ts, y: $0.y * ts, width: $0.w * ts, height: $0.h * ts) }
-        return renderer.snapshot(sim.makeFrameInfo(), crop: crop)
+        return Prepared(renderer: renderer, frame: sim.makeFrameInfo(), tileSize: assets.spriteSource.terrainTileSize)
     }
 }
 
