@@ -42,7 +42,9 @@ struct PathfinderTests {
             }()
 
             let result = pf.pathfind(src: row.src, dst: row.dst, unit: state.units[slot], bufferSize: 40, in: state)
-            let dirs = Array(result.buffer.prefix(while: { $0 != 0xFF }))
+            var dirs: [UInt8] = []
+            var di = 0
+            while di < result.buffer.count, result.buffer[di] != 0xFF { dirs.append(result.buffer[di]); di += 1 }
             #expect(dirs == row.route, "seed \(row.seed) \(row.src)→\(row.dst) route")
             #expect(result.score == row.score, "seed \(row.seed) \(row.src)→\(row.dst) score")
             #expect(result.routeSize == row.routeSize, "seed \(row.seed) \(row.src)→\(row.dst) routeSize")
