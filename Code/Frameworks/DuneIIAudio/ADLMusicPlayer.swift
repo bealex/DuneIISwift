@@ -227,7 +227,7 @@ public final class ADLMusicPlayer: MusicEngine {
         var player: ADLPlayer?
         var loadedGeneration = Int.min
         var everAlive = false       // armed once the driver reports an active channel (ignore opening ticks)
-        var finished = false
+        var notifiedEnd = false     // fired the end-of-track rollover once (but keep playing — see below)
         var ticks = 0
         var emitted = 0
         let chunkFrames = 1024
@@ -239,7 +239,7 @@ public final class ADLMusicPlayer: MusicEngine {
 
             if command.generation != loadedGeneration {
                 loadedGeneration = command.generation
-                everAlive = false; finished = false; ticks = 0; emitted = 0
+                everAlive = false; notifiedEnd = false; ticks = 0; emitted = 0
                 shared.ring.withLock { $0.clear() }
                 if let data = command.data, !command.stopped {
                     let newChip = OPL3Chip(sampleRate: UInt32(outputRate))
@@ -258,7 +258,7 @@ public final class ADLMusicPlayer: MusicEngine {
             guard let chip, let player, !command.stopped else {
                 Thread.sleep(forTimeInterval: 0.02); continue
             }
-            if command.paused || finished {
+            if command.paused {
                 Thread.sleep(forTimeInterval: 0.01); continue
             }
             if shared.ring.withLock({ $0.freeFrames }) < chunkFrames {
@@ -267,21 +267,25 @@ public final class ADLMusicPlayer: MusicEngine {
 
             var produced = 0
             var hitEnd = false
-            for f in 0 ..< chunkFrames {
+            for _ in 0 ..< chunkFrames {
                 // Fire every driver tick due by this output sample (≈ 612.5 samples/tick at 44100/72).
                 while ticks * outputRate <= emitted * refresh {
                     let alive = player.update()
                     ticks += 1
                     if alive {
                         everAlive = true
-                    } else if everAlive && !command.loop {
-                        finished = true; hitEnd = true; break
+                    } else if everAlive && !command.loop && !notifiedEnd {
+                        // The track reached its end / loop point — ask the director to roll into the next
+                        // track (once). Crucially we do *not* stop here: the driver's channels are now
+                        // repeating, so the track keeps looping seamlessly while the (main-actor) rollover
+                        // resolves. So the music never goes silent waiting for the next track — even if the
+                        // main thread is briefly busy. The new track's command simply supersedes this one.
+                        notifiedEnd = true; hitEnd = true
                     }
                 }
-                if finished { break }
                 let s = chip.generateResampled()
-                scratch[f * 2] = Float(s.left) / 32768
-                scratch[f * 2 + 1] = Float(s.right) / 32768
+                scratch[produced * 2] = Float(s.left) / 32768
+                scratch[produced * 2 + 1] = Float(s.right) / 32768
                 emitted += 1
                 produced += 1
             }

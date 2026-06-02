@@ -1,5 +1,6 @@
 import AppKit
 import DuneIIContracts
+import DuneIIFormats
 import DuneIIInput
 import DuneIIRenderer
 import DuneIISimulation
@@ -31,7 +32,9 @@ final class GameScene: SKScene {
     private var lastUpdateTime: TimeInterval = 0
     private var tickAccumulator = 0.0
     private let selectionLayer = SKNode()          // outline(s) around the selected unit(s)/structure
-    private var selectionNodes: [SKShapeNode] = []
+    private var selectionNodes: [SKShapeNode] = []   // pulsating square outline(s) for a selected building
+    private var unitSelectNodes: [SKSpriteNode] = []   // the MOUSE.SHP[6] selection box around each selected unit
+    private lazy var unitSelectTexture: SKTexture? = makeUnitSelectTexture()   // MOUSE/006, built once
     private let dragBoxNode = SKShapeNode()         // the drag-select rubber-band box
     // Left-drag (drag-select) gesture state.
     private var leftDragStartWindow: CGPoint?
@@ -47,6 +50,7 @@ final class GameScene: SKScene {
     private var lastTargetingActive = false   // last cursor state, so we only `.set()` the cursor on change
     private let healthLayer = SKNode()
     private var healthBars: [SKSpriteNode] = []
+    private var buildBars: [SKSpriteNode] = []   // a white production-progress bar under a building's health bar
     private var stateChips: [SKShapeNode] = []   // a small shape+colour action chip per unit health bar
 
     init(model: GameModel) {
@@ -158,21 +162,59 @@ final class GameScene: SKScene {
 
     private func updateSelection() {
         let boxes = model?.selectionBoxes() ?? []
-        // Grow the outline-node pool to match the number of selected entities.
-        while selectionNodes.count < boxes.count {
+        var usedSquares = 0, usedSprites = 0
+        for box in boxes {
+            if box.isStructure {
+                // A building: a white square outline that pulsates (alpha 0↔1, 3 s period).
+                let node = pooledSelectionSquare(usedSquares); usedSquares += 1
+                let originX = box.centerX - box.width / 2
+                let bottomY = Double(Self.worldSidePx) - (box.centerY + box.height / 2)   // image y-down → scene y-up
+                node.path = CGPath(rect: CGRect(x: originX, y: bottomY, width: box.width, height: box.height), transform: nil)
+                node.isHidden = false
+            } else if let texture = unitSelectTexture {
+                // A unit: the original selection-box sprite (`MOUSE.SHP` frame 6 = `g_sprites[6]`), centred.
+                let node = pooledUnitSelect(usedSprites); usedSprites += 1
+                node.texture = texture
+                node.size = texture.size()
+                node.position = CGPoint(x: box.centerX, y: Double(Self.worldSidePx) - box.centerY)
+                node.isHidden = false
+            }
+        }
+        for i in usedSquares ..< selectionNodes.count { selectionNodes[i].isHidden = true }
+        for i in usedSprites ..< unitSelectNodes.count { unitSelectNodes[i].isHidden = true }
+    }
+
+    /// A pulsating white square-outline node for a selected building (alpha cycles 1→0→1 over 3 s).
+    private func pooledSelectionSquare(_ i: Int) -> SKShapeNode {
+        while i >= selectionNodes.count {
             let n = SKShapeNode()
             n.strokeColor = .white; n.lineWidth = 1.5; n.fillColor = .clear
+            n.run(.repeatForever(.sequence([.fadeAlpha(to: 0, duration: 1.5), .fadeAlpha(to: 1, duration: 1.5)])),
+                  withKey: "pulse")
             selectionNodes.append(n); selectionLayer.addChild(n)
         }
-        for (i, node) in selectionNodes.enumerated() {
-            guard i < boxes.count else { node.isHidden = true; continue }
-            let box = boxes[i]
-            // Image space (y-down) → scene (y-up): the rect's bottom-left in scene coords.
-            let originX = box.centerX - box.width / 2
-            let bottomY = Double(Self.worldSidePx) - (box.centerY + box.height / 2)
-            node.path = CGPath(rect: CGRect(x: originX, y: bottomY, width: box.width, height: box.height), transform: nil)
-            node.isHidden = false
+        return selectionNodes[i]
+    }
+
+    private func pooledUnitSelect(_ i: Int) -> SKSpriteNode {
+        while i >= unitSelectNodes.count {
+            let n = SKSpriteNode()
+            n.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+            unitSelectNodes.append(n); selectionLayer.addChild(n)
         }
+        return unitSelectNodes[i]
+    }
+
+    /// Decode `MOUSE.SHP` frame 6 (the original unit selection box, `g_sprites[6]`) into a nearest-filtered
+    /// texture through the asset palette (index 0 transparent). `nil` if the asset is missing.
+    private func makeUnitSelectTexture() -> SKTexture? {
+        guard let assets = model?.assets, let shp = assets.shp("MOUSE.SHP"), shp.frames.count > 6 else { return nil }
+        let f = shp.frames[6]
+        guard let cg = IndexedImage.cgImage(indices: f.pixels, width: f.width, height: f.height,
+                                            palette: assets.palette, transparentIndex: 0) else { return nil }
+        let texture = SKTexture(cgImage: cg)
+        texture.filteringMode = .nearest
+        return texture
     }
 
     /// Draw the drag-select rubber-band over the tile rectangle from `from` to `to` (inclusive).
@@ -196,7 +238,7 @@ final class GameScene: SKScene {
         let fog = model?.showFog ?? false
         let side = Double(Self.worldSidePx)
         let tile = Double(Self.tileSize)
-        var usedBars = 0, usedChips = 0
+        var usedBars = 0, usedChips = 0, usedBuildBars = 0
 
         // Real units (projectiles skipped). Smooth sub-tile position; bar a little above the sprite centre.
         for unit in frame.units where !Self.projectileTypes.contains(unit.type) {
@@ -228,13 +270,39 @@ final class GameScene: SKScene {
             let cornerX = Double(s.positionX) * tile / 256
             let cornerY = Double(s.positionY) * tile / 256
             let barW = max(8, widthPx - 4)
+            let barLeft = cornerX + (widthPx - barW) / 2
             // `cornerY` is the building's top edge (image space); +1 puts the bar on its first row of pixels.
-            placeBar(usedBars, left: cornerX + (widthPx - barW) / 2, y: side - (cornerY + 1), width: barW, frac: frac)
+            let healthY = side - (cornerY + 1)
+            placeBar(usedBars, left: barLeft, y: healthY, width: barW, frac: frac)
             usedBars += 1
+
+            // A white production-progress bar directly under the health bar (same width/height/rules) while
+            // the factory/CY is building or repairing something. `barHeight` lower in scene space = just below.
+            if let progress = s.buildProgress {
+                placeBuildBar(usedBuildBars, left: barLeft, y: healthY - Self.barHeight, width: barW, frac: progress)
+                usedBuildBars += 1
+            }
         }
 
         for i in usedBars ..< healthBars.count { healthBars[i].isHidden = true }
+        for i in usedBuildBars ..< buildBars.count { buildBars[i].isHidden = true }
         for i in usedChips ..< stateChips.count { stateChips[i].isHidden = true }
+    }
+
+    /// A white build-progress bar (`buildBars` pool), same geometry + rules as `placeBar` but a fixed white
+    /// colour: full width at 100% readiness, zero width at 0% — left-anchored, so it fills left→right.
+    private func placeBuildBar(_ i: Int, left: Double, y: Double, width: Double, frac: Double) {
+        while i >= buildBars.count {
+            let bar = SKSpriteNode(color: .white, size: CGSize(width: Self.barWidth, height: Self.barHeight))
+            bar.anchorPoint = CGPoint(x: 0, y: 0.5)
+            buildBars.append(bar); healthLayer.addChild(bar)
+        }
+        let bar = buildBars[i]
+        let clamped = min(1, max(0, frac))
+        bar.size = CGSize(width: width * clamped, height: Self.barHeight)
+        bar.position = CGPoint(x: left, y: y)
+        bar.color = .white
+        bar.isHidden = false
     }
 
     private func placeBar(_ i: Int, left: Double, y: Double, width: Double, frac: Double) {
@@ -251,6 +319,7 @@ final class GameScene: SKScene {
 
     private func hideAllHealth() {
         for bar in healthBars { bar.isHidden = true }
+        for bar in buildBars { bar.isHidden = true }
         for chip in stateChips { chip.isHidden = true }
     }
 
@@ -384,20 +453,23 @@ final class GameScene: SKScene {
                 else if model?.placement != nil { model?.cancelPlacement() }
                 else { model?.deselect() }
             default:
-                // Per-action shortcuts on the selected unit(s) — only the actions valid for that unit type
-                // fire (so `a`=Attack is ignored for a harvester, `r`=Return for a tank). Targeted actions
-                // (a/m/h) arm a crosshair click; the rest apply at once. `s` always stops.
+                // When a player **building** is selected, r/u/s drive its repair/upgrade (r and u toggle, so
+                // pressing them again stops; s stops whichever is in progress). Otherwise they're the per-unit
+                // action shortcuts — only the actions valid for that unit type fire (so `a`=Attack is ignored
+                // for a harvester, `r`=Return for a tank). Targeted actions (a/m/h) arm a crosshair click.
+                let building = model?.isBuildingSelected == true
                 switch event.charactersIgnoringModifiers?.lowercased() {
                     case "a": model?.issueAction(.attack)
                     case "m": model?.issueAction(.move)
                     case "h": model?.issueAction(.harvest)
-                    case "r": model?.issueAction(.return)
+                    case "r": if building { model?.repairSelected() } else { model?.issueAction(.return) }
+                    case "u": model?.upgradeSelected()   // buildings only (no-op otherwise)
                     case "e": model?.issueAction(.retreat)
                     case "g": model?.issueAction(.guard_)
                     case "d": model?.issueAction(.deploy)
                     case "b": model?.issueAction(.sabotage)
                     case "x": model?.issueAction(.destruct)
-                    case "s": model?.stopSelected()
+                    case "s": if building { model?.stopBuildingActivity() } else { model?.stopSelected() }
                     default:  super.keyDown(with: event)
                 }
         }

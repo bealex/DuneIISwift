@@ -337,6 +337,13 @@ public final class SpriteKitRenderer {
         blurIndex = (blurIndex + 1) % ShimmerEffect.blurOffsets.count   // advance the heat-haze each frame
         let offset = ShimmerEffect.blurOffsets[blurIndex]
         var used = 0
+        // When fog is shown, suppress shimmer pixels over/into veiled terrain (so the worm shows nothing in
+        // the fog and doesn't drag the dithered fog edge into its silhouette at a boundary). Pixel → tile.
+        let veiled: ((Int, Int) -> Bool)? = showFog ? { [tileSize] px, py in
+            let tx = px / tileSize, ty = py / tileSize
+            guard tx >= 0, tx < frame.mapWidth, ty >= 0, ty < frame.mapHeight else { return false }
+            return !frame.tiles[ty * frame.mapWidth + tx].isUnveiled
+        } : nil
         for blur in frame.blurs {
             // A sandworm in the fog is hidden, like any other unit (`viewport.c`'s sandworm pass masks by
             // `isUnveiled`).
@@ -350,7 +357,7 @@ public final class SpriteKitRenderer {
             guard let patch = ShimmerEffect.patch(
                 terrain: terrainIndices, terrainWidth: side, terrainHeight: side,
                 left: left, top: top, mask: mask, wormWidth: frameSprite.width, wormHeight: frameSprite.height,
-                offset: offset, palette: palette) else { continue }
+                offset: offset, palette: palette, veiled: veiled) else { continue }
             let node = pooledBlur(used); used += 1
             node.texture = nearest(patch)
             node.size = CGSize(width: frameSprite.width, height: frameSprite.height)

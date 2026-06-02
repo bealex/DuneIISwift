@@ -9,10 +9,12 @@ import SwiftUI
 /// The minimap: a downscaled terrain image with unit dots and the current viewport rectangle. Clicking
 /// recentres the main map on the clicked world point.
 enum Minimap {
-    /// A 64×64 terrain image: each pixel is the palette colour of its tile's centre pixel. Built once per
-    /// scenario (terrain barely changes); units + the viewport rect are drawn live over it.
+    /// A 64×64 terrain image: each pixel is the palette colour of its tile's centre pixel. Rebuilt by
+    /// `GameModel.refreshMinimapBase` whenever the terrain tiles change (structures baking in, walls, craters,
+    /// spice) — not just at load, or the minimap would show the starting map; units + the viewport rect are
+    /// drawn live over it.
     @MainActor
-    static func baseImage(frame: FrameInfo, source: DecodedSpriteSource, palette: Palette) -> CGImage? {
+    static func baseImage(frame: FrameInfo, source: DecodedSpriteSource, palette: Palette, showFog: Bool) -> CGImage? {
         let n = 64
         var rgba = [UInt8](repeating: 0, count: n * n * 4)
         let ts = source.terrainTileSize
@@ -24,6 +26,9 @@ enum Minimap {
                 // Outside the playable rectangle: the unused border is black (matches the main map).
                 guard frame.mapArea.contains(tileX: tx, tileY: ty) else { continue }
                 let tile = frame.tiles[ty * n + tx]
+                // Fog of war: an unexplored cell stays black (radar darkens what the player hasn't seen),
+                // matching the main map's veil. Gated by `showFog`, like the renderer (`FrameComposer.cell`).
+                if showFog && !tile.isUnveiled { continue }
                 let index = source.terrainTile(tile.groundSpriteIndex).map { $0[min(centre, $0.count - 1)] } ?? 0
                 let c = palette.rgba8(Int(index))
                 rgba[o] = c.red; rgba[o + 1] = c.green; rgba[o + 2] = c.blue
@@ -78,6 +83,7 @@ struct MinimapView: View {
         let staticFrames = model.radarStaticFrames
         let staticIndex = model.radarStaticFrameIndex
         let radarOn = model.forceMinimap || model.radarActive
+        let showFog = model.showFog   // read here so the Canvas redraws when the fog toggle flips
         GeometryReader { geo in
             let side = min(geo.size.width, geo.size.height)
             let scale = side / Viewport.worldSize    // world points → minimap points
@@ -103,14 +109,18 @@ struct MinimapView: View {
                         // blip. `mapArea` is the same clip the base terrain uses.
                         let area = frame.mapArea
                         // Buildings first (footprint-ish squares), then unit dots on top. Mine = bright, foes dim.
-                        for s in frame.structures where area.contains(tileX: s.positionX / 256, tileY: s.positionY / 256) {
+                        // Under fog (when shown), a blip on a still-veiled tile is hidden — the radar doesn't
+                        // reveal what the player can't see (`isHiddenByFog`, same masking as the main map).
+                        for s in frame.structures where area.contains(tileX: s.positionX / 256, tileY: s.positionY / 256)
+                            && !FrameComposer.isHiddenByFog(frame, worldX: s.positionX, worldY: s.positionY, showFog: showFog) {
                             let x = Double(s.positionX) * scale / 256
                             let y = Double(s.positionY) * scale / 256
                             let mine = s.house == playerHouse
                             context.fill(Path(CGRect(x: x, y: y, width: 3.5, height: 3.5)),
                                          with: .color(mine ? .cyan : .orange))
                         }
-                        for unit in frame.units where area.contains(tileX: unit.positionX / 256, tileY: unit.positionY / 256) {
+                        for unit in frame.units where area.contains(tileX: unit.positionX / 256, tileY: unit.positionY / 256)
+                            && !FrameComposer.isHiddenByFog(frame, worldX: unit.positionX, worldY: unit.positionY, showFog: showFog) {
                             let x = Double(unit.positionX) * scale / 256
                             let y = Double(unit.positionY) * scale / 256
                             let mine = unit.house == playerHouse
@@ -129,10 +139,17 @@ struct MinimapView: View {
                 // active while the radar is up + settled (a dark / tuning screen isn't clickable, as in Dune II).
                 if radarOn, staticIndex == nil {
                     MinimapMouse(side: side) { point in
+                        // Left click / drag: recentre the main map on the clicked world point.
                         let world = Viewport.worldSize / side
                         let x = min(max(0, Double(point.x)), side) * world
                         let y = min(max(0, Double(point.y)), side) * world
                         model.centerOn(worldX: x, worldY: y)
+                    } onRightPoint: { point in
+                        // Right click: order the selected unit(s) to that tile — same default order
+                        // (move / attack / harvest) as right-clicking the big map (`rightClickTile`).
+                        let tx = min(63, max(0, Int(Double(point.x) / side * 64)))
+                        let ty = min(63, max(0, Int(Double(point.y) / side * 64)))
+                        model.rightClickTile(tx, ty)
                     }
                     .frame(width: side, height: side)
                 }
@@ -151,23 +168,36 @@ struct MinimapView: View {
 private struct MinimapMouse: NSViewRepresentable {
     let side: CGFloat
     let onPoint: (CGPoint) -> Void
+    let onRightPoint: (CGPoint) -> Void
 
     func makeNSView(context: Context) -> MinimapMouseView {
         let view = MinimapMouseView()
         view.onPoint = onPoint
+        view.onRightPoint = onRightPoint
         return view
     }
 
-    func updateNSView(_ nsView: MinimapMouseView, context: Context) { nsView.onPoint = onPoint }
+    func updateNSView(_ nsView: MinimapMouseView, context: Context) {
+        nsView.onPoint = onPoint
+        nsView.onRightPoint = onRightPoint
+    }
 }
 
 final class MinimapMouseView: NSView {
     var onPoint: ((CGPoint) -> Void)?
+    var onRightPoint: ((CGPoint) -> Void)?
 
     override var isFlipped: Bool { true }   // top-left origin, matching the SwiftUI Canvas
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseDown(with event: NSEvent) { report(event) }
     override func mouseDragged(with event: NSEvent) { report(event) }
+    // Middle button click / drag recentres + follows the cursor too (like the big map's middle-button pan).
+    override func otherMouseDown(with event: NSEvent) { if event.buttonNumber == 2 { report(event) } }
+    override func otherMouseDragged(with event: NSEvent) { if event.buttonNumber == 2 { report(event) } }
+    // Right click / drag issues a unit order at that point (same as the big map's right-click).
+    override func rightMouseDown(with event: NSEvent) { reportRight(event) }
+    override func rightMouseDragged(with event: NSEvent) { reportRight(event) }
 
     private func report(_ event: NSEvent) { onPoint?(convert(event.locationInWindow, from: nil)) }
+    private func reportRight(_ event: NSEvent) { onRightPoint?(convert(event.locationInWindow, from: nil)) }
 }

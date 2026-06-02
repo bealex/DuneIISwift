@@ -86,7 +86,8 @@ public extension Simulation {
                 // power-degraded `s.hitpointsMax` — an under-powered structure keeps full hitpoints until it
                 // bleeds down, so dividing by the degraded cap shows an over-full / wrong-length bar (e.g.
                 // an outpost at 400/250 instead of 400/500).
-                hitpoints: Int(s.o.hitpoints), hitpointsMax: Int(StructureInfo[type].o.hitpoints)))
+                hitpoints: Int(s.o.hitpoints), hitpointsMax: Int(StructureInfo[type].o.hitpoints),
+                buildProgress: structureBuildProgress(s, type: type)))
         }
 
         // Active explosions (impacts / unit deaths / building destruction). `spriteID` is already a
@@ -143,5 +144,31 @@ public extension Simulation {
         if y == height - 1 || !isUnveiled(packed + width) { mask |= 1 << 2 } // S
         if x == 0 || !isUnveiled(packed - 1) { mask |= 1 << 3 }              // W
         return mask
+    }
+
+    /// Production readiness `0...1` for a factory/construction-yard actively building (or a repair pad
+    /// repairing) a queued object, else `nil`. The build advances `countDown` from `buildTime << 8` down to
+    /// 0 (`structureTickStructure`), so readiness = `(buildTime - countDown>>8) / buildTime`. Shown even while
+    /// on hold (out of money) — a paused build keeps its partial progress. Mirrors the build-branch gate
+    /// (BUSY factory with a queued object); the refinery is not a factory, so a docked harvester won't show.
+    private func structureBuildProgress(_ s: Structure, type: StructureType) -> Double? {
+        let si = StructureInfo[type]
+        guard s.state == .busy, s.o.linkedID != 0xFF, s.countDown != 0, si.o.flags.contains(.factory) else { return nil }
+        let buildTime: Int
+        switch type {
+            case .constructionYard:
+                guard let st = StructureType(rawValue: Int(s.objectType)) else { return nil }
+                buildTime = Int(StructureInfo[st].o.buildTime)
+            case .repair:
+                let lu = Int(s.o.linkedID)
+                guard lu < state.units.count, let ut = UnitType(rawValue: Int(state.units[lu].o.type)) else { return nil }
+                buildTime = Int(UnitInfo[ut].o.buildTime)
+            default:
+                guard let ut = UnitType(rawValue: Int(s.objectType)) else { return nil }
+                buildTime = Int(UnitInfo[ut].o.buildTime)
+        }
+        guard buildTime > 0 else { return nil }
+        let done = buildTime - (Int(s.countDown) >> 8)
+        return min(1, max(0, Double(done) / Double(buildTime)))
     }
 }

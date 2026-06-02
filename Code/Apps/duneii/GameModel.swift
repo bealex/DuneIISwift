@@ -51,7 +51,7 @@ final class GameModel {
     private(set) var playerHouse: HouseID = .atreides
 
     // Debug toggles (the Debug window binds these; the scene/economy/fog read them).
-    var showFog = false { didSet { scene?.applyFog() } }
+    var showFog = false { didSet { scene?.applyFog(); if let lastFrame { refreshMinimapBase(lastFrame) } } }
     /// Debug: give the AI a fog of war so it only attacks after the player makes contact (instead of
     /// knowing the base from turn one). Applied to the live sim and to every scenario (re)load. Best set
     /// before loading a scenario — toggling mid-game only affects objects placed/sighted afterwards.
@@ -163,6 +163,11 @@ final class GameModel {
     /// The latest frame — observed, so the minimap redraws each tick (units/viewport move).
     private(set) var lastFrame: FrameInfo?
     @ObservationIgnored private(set) var minimapBase: CGImage?
+    /// The decoded terrain source for the minimap base, built once (the asset tiles don't change).
+    @ObservationIgnored private var minimapSource: DecodedSpriteSource?
+    /// A cheap hash of the terrain tiles the current `minimapBase` was built from, so it's rebuilt only when
+    /// the map actually changes (structures baking into the ground, walls, craters, spice) — not every tick.
+    @ObservationIgnored private var minimapTilesHash = 0
 
     /// Which tool windows are open (mirrored by the window manager; the toolbar toggles read this).
     var openTools: Set<ToolKind> = Set(ToolKind.allCases)
@@ -245,7 +250,8 @@ final class GameModel {
         viewport.area = CGRect(x: Double(a.minX) * Viewport.tilePx, y: Double(a.minY) * Viewport.tilePx,
                                width: Double(a.width) * Viewport.tilePx, height: Double(a.height) * Viewport.tilePx)
         viewport.center(onWorldX: viewport.area.midX, worldY: viewport.area.midY, viewSize: viewSize)
-        minimapBase = Minimap.baseImage(frame: frame, source: SpriteSource.make(assets: assets), palette: assets.palette)
+        minimapSource = nil; minimapTilesHash = 0   // fresh scenario → rebuild the base from its tiles
+        refreshMinimapBase(frame)
         if radarStaticFrames.isEmpty { radarStaticFrames = Minimap.radarStaticFrames(assets: assets) }   // STATIC.WSA, once
         radarActive = frame.houses.first { $0.id == playerHouse }?.radarActivated ?? false
         radarStaticFrameIndex = nil
@@ -428,8 +434,29 @@ final class GameModel {
         simulation = sim
         let frame = sim.makeFrameInfo()
         lastFrame = frame
+        refreshMinimapBase(frame)   // keep the minimap terrain current (structures, walls, craters, spice)
         refreshDerived(frame)
         return frame
+    }
+
+    /// Rebuild the cached minimap terrain image when the map's tiles have changed since it was last built.
+    /// The base was previously built only at scenario load, so the minimap showed the *starting* map; the
+    /// terrain actually changes during play (structures bake into the ground tiles via `Structure_UpdateMap`,
+    /// plus walls / craters / spice depletion). A cheap rolling hash over the tiles gates the rebuild so we
+    /// don't re-extract 64×64 tiles (and allocate a `CGImage`) every tick when nothing moved.
+    private func refreshMinimapBase(_ frame: FrameInfo) {
+        var hash = 5381
+        hash = (hash &* 33) ^ (showFog ? 1 : 0)   // toggling fog re-tints the whole base
+        for t in frame.tiles {
+            hash = (hash &* 33) ^ t.groundSpriteIndex
+            hash = (hash &* 33) ^ t.overlaySpriteIndex
+            if showFog { hash = (hash &* 33) ^ (t.isUnveiled ? 0 : 0x5A5A) }   // reveals darken/clear cells
+        }
+        guard hash != minimapTilesHash || minimapBase == nil else { return }
+        minimapTilesHash = hash
+        let source = minimapSource ?? SpriteSource.make(assets: assets)
+        minimapSource = source
+        minimapBase = Minimap.baseImage(frame: frame, source: source, palette: assets.palette, showFog: showFog)
     }
 
     private func refreshDerived(_ frame: FrameInfo) {
@@ -566,7 +593,12 @@ final class GameModel {
         let actions = StructureActions(
             slot: slot,
             canRepair: s.o.hitpoints < StructureInfo[type].o.hitpoints,
-            canUpgrade: s.upgradeTimeLeft != 0 && !s.o.flags.contains(.upgrading),
+            // Upgrading is only offered at **full health** — mirrors OpenDUNE's factory-window gate
+            // `Structure_IsUpgradable(s) && si->o.hitpoints == s->o.hitpoints` (`structure.c:1466`). A damaged
+            // building must be repaired to full first. (The core `structureSetUpgradingState` itself doesn't
+            // re-check HP — the requirement lives in the GUI that surfaces the option.)
+            canUpgrade: s.upgradeTimeLeft != 0 && !s.o.flags.contains(.upgrading)
+                && s.o.hitpoints == StructureInfo[type].o.hitpoints,
             isRepairing: s.o.flags.contains(.repairing),
             isUpgrading: s.o.flags.contains(.upgrading))
         if actions != structureActions { structureActions = actions }
@@ -604,10 +636,24 @@ final class GameModel {
         return slot
     }
 
+    /// True when a player-owned building is the current selection (so the r/u/s keys drive repair/upgrade/stop
+    /// rather than unit orders).
+    var isBuildingSelected: Bool { selectedStructureSlot != nil }
+
     /// Toggle the selected structure's self-repair.
     func repairSelected() { if let slot = selectedStructureSlot { enqueue(.repair(structure: UInt16(slot))); audio.play(.select) } }
     /// Toggle the selected structure's upgrade.
     func upgradeSelected() { if let slot = selectedStructureSlot { enqueue(.upgrade(structure: UInt16(slot))); audio.play(.select) } }
+    /// The `s` key for a selected building: stop an in-progress repair or upgrade (a no-op otherwise). Sends
+    /// the repair/upgrade *toggle* command only when the matching flag is set, so it can only ever stop —
+    /// never start — the activity.
+    func stopBuildingActivity() {
+        guard let slot = selectedStructureSlot, let s = simulation?.state.structures[slot] else { return }
+        var acted = false
+        if s.o.flags.contains(.repairing) { enqueue(.repair(structure: UInt16(slot))); acted = true }
+        if s.o.flags.contains(.upgrading) { enqueue(.upgrade(structure: UInt16(slot))); acted = true }
+        if acted { audio.play(.acknowledge) }
+    }
     /// Order one `objectType` from the selected starport (CHOAM buy).
     func orderFromStarport(_ objectType: UInt16) {
         guard let slot = selectedStructureSlot else { return }
@@ -792,7 +838,10 @@ final class GameModel {
         // A locked item (missing prerequisites / campaign / upgrade) can't be started — the panel greys it,
         // but guard here too so a stale tap is a no-op.
         guard let option = buildOptions.first(where: { $0.item.objectType == objectType }), option.isAvailable else { return }
-        if option.item.cost > playerCredits { noticeInsufficientFunds(); return }
+        // No credit gate: construction may be *started* underfunded — like the original, the cost is billed
+        // incrementally and the build auto-pauses (`.onHold`) when the house runs out of money mid-build
+        // (`structureTickStructure`, `structure.c:266`). (Starport CHOAM orders, by contrast, are paid upfront
+        // and keep their affordability check in `starportOrder`.)
         enqueue(.build(structure: UInt16(slot), objectType: objectType))
         audio.play(.select)
     }
@@ -882,7 +931,7 @@ final class GameModel {
     /// The selection outline boxes, in **world pixels** (16 px/tile). A **structure** selection ⇒ one
     /// footprint box; a **unit (drag) group** ⇒ one tile-size box per live selected unit (each follows its
     /// sub-tile `position` smoothly). Empty when nothing live is selected.
-    func selectionBoxes() -> [(centerX: Double, centerY: Double, width: Double, height: Double)] {
+    func selectionBoxes() -> [(centerX: Double, centerY: Double, width: Double, height: Double, isStructure: Bool)] {
         guard let state = simulation?.state else { return [] }
         let tile = 16.0
         if case let .structure(slot) = controller.selection,
@@ -890,12 +939,12 @@ final class GameModel {
             let (w, h) = selectionFootprint()
             let cornerX = Double(state.structures[slot].o.position.x) * tile / 256
             let cornerY = Double(state.structures[slot].o.position.y) * tile / 256
-            return [(cornerX + Double(w) * tile / 2, cornerY + Double(h) * tile / 2, Double(w) * tile, Double(h) * tile)]
+            return [(cornerX + Double(w) * tile / 2, cornerY + Double(h) * tile / 2, Double(w) * tile, Double(h) * tile, true)]
         }
-        var boxes: [(centerX: Double, centerY: Double, width: Double, height: Double)] = []
+        var boxes: [(centerX: Double, centerY: Double, width: Double, height: Double, isStructure: Bool)] = []
         for slot in controller.selectedUnits where slot < state.units.count && state.units[slot].o.flags.contains(.used) {
             let p = state.units[slot].o.position
-            boxes.append((Double(p.x) * tile / 256, Double(p.y) * tile / 256, tile, tile))
+            boxes.append((Double(p.x) * tile / 256, Double(p.y) * tile / 256, tile, tile, false))
         }
         return boxes
     }
@@ -1000,6 +1049,8 @@ extension LandscapeType {
 struct StructureActions: Equatable {
     var slot: Int
     var canRepair: Bool
+    /// True only when a further upgrade exists *and* the building is at full health (the original only offers
+    /// the upgrade option to a fully-repaired structure — see `refreshStructureActions`).
     var canUpgrade: Bool
     var isRepairing: Bool
     var isUpgrading: Bool

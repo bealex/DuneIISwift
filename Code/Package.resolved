@@ -1,5 +1,5 @@
 {
-  "originHash" : "3a452638d9e504ea8aa996693e296c9977c43dd86d4e2eb4869a09a4d3ce6bdd",
+  "originHash" : "c16e843b9693a3f984a66e53785bff8e2a414965574fb4b7ec4b36f694e59902",
   "pins" : [
     {
       "identity" : "memoirs-ios",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/bealex/SwiftOLP3.git",
       "state" : {
-        "revision" : "83ddfe47ca6bb36fb49552044fe5b57f10bfd3b4",
-        "version" : "1.0.0"
+        "branch" : "main",
+        "revision" : "0cc22abc2afffb82632b1bee822f596b78fb8f35"
       }
     }
   ],

@@ -21,7 +21,8 @@ struct ContentView: View {
         MapSpriteView(scene: model.scene)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.black)
-            .ignoresSafeArea()
+            // Note: no `.ignoresSafeArea()` — that drew the map up *under* the toolbar (it sits in the
+            // title-bar safe area), so the map now fills the area below the toolbar.
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Button { showScenarioPicker.toggle() } label: {

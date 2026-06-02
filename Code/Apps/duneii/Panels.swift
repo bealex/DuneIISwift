@@ -99,18 +99,20 @@ struct InspectorPanel: View {
             Divider()
             HStack {
                 Button { model.repairSelected() } label: {
-                    Label(a.isRepairing ? "Repairing…" : "Repair", systemImage: "wrench.and.screwdriver")
+                    Label(a.isRepairing ? "Repairing… (R)" : "Repair (R)", systemImage: "wrench.and.screwdriver")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered).tint(a.isRepairing ? .accentColor : nil)
                 .disabled(!a.canRepair && !a.isRepairing)
+                .help(a.isRepairing ? "Stop repairing (R or S)" : "Repair to full health (R)")
 
                 Button { model.upgradeSelected() } label: {
-                    Label(a.isUpgrading ? "Upgrading…" : "Upgrade", systemImage: "arrow.up.circle")
+                    Label(a.isUpgrading ? "Upgrading… (U)" : "Upgrade (U)", systemImage: "arrow.up.circle")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered).tint(a.isUpgrading ? .accentColor : nil)
                 .disabled(!a.canUpgrade && !a.isUpgrading)
+                .help(a.isUpgrading ? "Stop upgrading (U or S)" : "Upgrade the building (U)")
             }
             if !model.starportStock.isEmpty {
                 Text("Order (Starport)").font(.headline).padding(.top, 4)
@@ -187,11 +189,13 @@ struct InspectorPanel: View {
                 Text("Nothing available to build.").font(.caption).foregroundStyle(.secondary)
             } else {
                 // Every item the factory could ever build; locked ones (missing prerequisites / campaign /
-                // upgrade) are greyed-out with a tooltip listing what's missing.
+                // upgrade) are greyed-out with a tooltip listing what's missing. An *affordable-only-later*
+                // item is still startable (the cost shows red as a heads-up): construction begins and pauses
+                // when the credits run out, as in the original.
                 VStack(spacing: 4) {
                     ForEach(model.buildOptions, id: \.item.objectType) { option in
                         let item = option.item
-                        let tooLowCredits = option.isAvailable && item.cost > model.playerCredits
+                        let underfunded = option.isAvailable && item.cost > model.playerCredits
                         Button { model.startBuild(item.objectType) } label: {
                             HStack {
                                 Text(item.displayName)
@@ -200,12 +204,12 @@ struct InspectorPanel: View {
                                 }
                                 Spacer()
                                 Text("\(item.cost) cr").monospacedDigit()
-                                    .foregroundStyle(tooLowCredits ? Color.red : Color.secondary)
+                                    .foregroundStyle(underfunded ? Color.red : Color.secondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.bordered)
-                        .disabled(!option.isAvailable || tooLowCredits)
+                        .disabled(!option.isAvailable)
                         .help(buildHelp(option))
                     }
                 }
@@ -214,15 +218,15 @@ struct InspectorPanel: View {
     }
 
     /// The tooltip for a build button: what an item costs, and — when locked — what's missing to unlock it
-    /// (prerequisite structures, campaign level, factory upgrade), or a low-credits note when it's affordable
-    /// only once you have more money.
+    /// (prerequisite structures, campaign level, factory upgrade), or a heads-up that an affordable-only-later
+    /// item will start but pause partway until there are credits.
     private func buildHelp(_ option: BuildOption) -> String {
         let item = option.item
         if !option.isAvailable {
             return "Requires: " + option.blockers.map(\.summary).joined(separator: ", ")
         }
         if item.cost > model.playerCredits {
-            return "Costs \(item.cost) cr — need \(item.cost - model.playerCredits) more."
+            return "Costs \(item.cost) cr — you have \(model.playerCredits); construction will start and pause until you can pay."
         }
         return "Build \(item.displayName) (\(item.cost) cr)"
     }

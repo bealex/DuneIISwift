@@ -163,9 +163,12 @@ public struct FrameInfo: Sendable, Equatable {
         public var positionY: Int
         public var hitpoints: Int
         public var hitpointsMax: Int
+        /// Production readiness `0...1` while this factory/construction-yard is actively building (or
+        /// repairing) a queued object — `nil` when it isn't building. `0` = just started, `1` = complete.
+        public var buildProgress: Double?
 
         public init(id: UInt16, type: StructureType, house: HouseID, positionX: Int, positionY: Int,
-                    hitpoints: Int, hitpointsMax: Int) {
+                    hitpoints: Int, hitpointsMax: Int, buildProgress: Double? = nil) {
             self.id = id
             self.type = type
             self.house = house
@@ -173,6 +176,7 @@ public struct FrameInfo: Sendable, Equatable {
             self.positionY = positionY
             self.hitpoints = hitpoints
             self.hitpointsMax = hitpointsMax
+            self.buildProgress = buildProgress
         }
     }
 

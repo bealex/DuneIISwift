@@ -30,19 +30,25 @@ public enum ShimmerEffect {
     public static func patch(terrain: [UInt8], terrainWidth: Int, terrainHeight: Int,
                              left: Int, top: Int,
                              mask: [UInt8], wormWidth: Int, wormHeight: Int,
-                             offset: Int, palette: Palette) -> CGImage? {
+                             offset: Int, palette: Palette,
+                             veiled: ((Int, Int) -> Bool)? = nil) -> CGImage? {
         guard let rgba = patchRGBA(terrain: terrain, terrainWidth: terrainWidth, terrainHeight: terrainHeight,
                                    left: left, top: top, mask: mask, wormWidth: wormWidth, wormHeight: wormHeight,
-                                   offset: offset, palette: palette) else { return nil }
+                                   offset: offset, palette: palette, veiled: veiled) else { return nil }
         return rgbaImage(rgba, width: wormWidth, height: wormHeight)
     }
 
     /// The patch's raw RGBA buffer (`wormWidth · wormHeight · 4`, premultipliedLast). Pure + GPU-free, so the
     /// displacement is directly testable. `nil` on degenerate input. See `patch`.
+    /// - Parameter veiled: when non-nil (fog of war shown), `veiled(px, py)` reports whether the terrain pixel
+    ///   `(px, py)` is under fog. A worm pixel is left transparent when either its own display position or its
+    ///   displaced source sample is veiled — so the shimmer never pulls the dithered fog edge into the worm
+    ///   silhouette at a boundary, and a worm sitting in the fog shows nothing (it's hidden, like other units).
     public static func patchRGBA(terrain: [UInt8], terrainWidth: Int, terrainHeight: Int,
                                  left: Int, top: Int,
                                  mask: [UInt8], wormWidth: Int, wormHeight: Int,
-                                 offset: Int, palette: Palette) -> [UInt8]? {
+                                 offset: Int, palette: Palette,
+                                 veiled: ((Int, Int) -> Bool)? = nil) -> [UInt8]? {
         guard wormWidth > 0, wormHeight > 0, mask.count >= wormWidth * wormHeight,
               terrain.count >= terrainWidth * terrainHeight else { return nil }
 
@@ -51,8 +57,11 @@ public enum ShimmerEffect {
             let ty = top + y
             if ty < 0 || ty >= terrainHeight { continue }
             for x in 0 ..< wormWidth where mask[y * wormWidth + x] != 0 {
+                let dispX = left + x                          // where this worm pixel is shown
                 let tx = left + x + offset                    // `buf[blurOffset]`: the pixel to the right
                 if tx < 0 || tx >= terrainWidth { continue }
+                // Fog: don't shimmer over or pull in veiled terrain.
+                if let veiled, (dispX >= 0 && dispX < terrainWidth && veiled(dispX, ty)) || veiled(tx, ty) { continue }
                 let colour = palette.rgba8(Int(terrain[ty * terrainWidth + tx]))
                 let o = (y * wormWidth + x) * 4
                 rgba[o] = colour.red; rgba[o + 1] = colour.green; rgba[o + 2] = colour.blue; rgba[o + 3] = 255

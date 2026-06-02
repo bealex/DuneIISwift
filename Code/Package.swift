@@ -37,7 +37,10 @@ let package = Package(
         // SwiftOPL3 — pure-Swift OPL3 (YMF262) chip + Westwood ADL music driver. Powers the authentic AdLib
         // FM music backend (DuneIIAudio/ADLMusicPlayer). The author's URL is SSH (git@github.com:bealex/
         // SwiftOLP3.git); we resolve the same repo over HTTPS so it works in sandboxed/CI builds without SSH.
-        .package(url: "https://github.com/bealex/SwiftOLP3.git", from: "1.0.0"),
+        // Tracking `main` while the synth is actively being optimised (the speedup work landed there ahead of a
+        // tagged release); `Package.resolved` still pins the exact commit, so builds stay reproducible. Switch
+        // back to `from: "1.x"` once a release ≥ the speedup is tagged.
+        .package(url: "https://github.com/bealex/SwiftOLP3.git", branch: "main"),
     ],
     targets: [
         // Frameworks (the engine) — dependencies point downward only.

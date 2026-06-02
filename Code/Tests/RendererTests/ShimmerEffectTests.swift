@@ -46,4 +46,26 @@ struct ShimmerEffectTests {
         // The displacement is a real shift: adjacent output columns differ (terrain isn't uniform here).
         #expect(px(1, 0).r != px(2, 0).r)
     }
+
+    @Test("fog: a worm pixel is transparent when its displaced sample falls on veiled terrain")
+    func fogSuppression() throws {
+        // Terrain 20×4, index == x. Worm 4×2 at left 5, offset 3 → pixel x samples column (5+x+3)=8+x.
+        let tw = 20, th = 4, ww = 4, wh = 2, left = 5, top = 1, offset = 3
+        let terrain = (0 ..< tw * th).map { UInt8($0 % tw) }
+        let mask = [UInt8](repeating: 1, count: ww * wh)
+        let pal = palette
+        // Mark columns ≥ 10 as veiled (fog to the right). Samples for x=2,3 are columns 10,11 → veiled.
+        let rgba = try #require(ShimmerEffect.patchRGBA(
+            terrain: terrain, terrainWidth: tw, terrainHeight: th,
+            left: left, top: top, mask: mask, wormWidth: ww, wormHeight: wh, offset: offset, palette: pal,
+            veiled: { px, _ in px >= 10 }))
+
+        func alpha(_ x: Int, _ y: Int) -> UInt8 { rgba[(y * ww + x) * 4 + 3] }
+        for y in 0 ..< wh {
+            #expect(alpha(0, y) == 255)   // disp 5 / sample 8  — revealed
+            #expect(alpha(1, y) == 255)   // disp 6 / sample 9  — revealed
+            #expect(alpha(2, y) == 0)     // disp 7 / sample 10 — sample veiled ⇒ no fog dragged in
+            #expect(alpha(3, y) == 0)     // disp 8 / sample 11 — sample veiled
+        }
+    }
 }

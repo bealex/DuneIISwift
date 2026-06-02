@@ -214,6 +214,42 @@ struct FrameInfoTests {
         // bar divides by the base, like OpenDUNE (`widget_draw.c:725`), so an under-powered structure isn't
         // shown over-full. Current HP (175) is reported as-is, even above the degraded cap.
         #expect(s.hitpoints == 175 && s.hitpointsMax == 200)
+        #expect(s.buildProgress == nil)   // the windtrap isn't building anything
+    }
+
+    @Test("a building factory surfaces build progress (0 at start → ~1 near done); else nil")
+    func buildProgress() throws {
+        var sim = Simulation(random256Seed: 0)
+        let buildTime = Int(UnitInfo[.tank].o.buildTime)
+        #expect(buildTime > 10)
+
+        var f = Structure()
+        f.o.index = 0
+        f.o.type = UInt8(StructureType.heavyVehicle.rawValue)
+        f.o.flags = [.used, .allocated]
+        f.o.houseID = UInt8(HouseID.atreides.rawValue)
+        f.o.position = Tile32(x: 10 * 256, y: 10 * 256)
+        f.o.hitpoints = 200
+        f.objectType = UInt16(UnitType.tank.rawValue)
+        f.o.linkedID = 5            // a queued object (any non-0xFF)
+        f.state = .busy
+        f.countDown = UInt16(buildTime << 8)   // just started ⇒ 0% (countDown == buildTime<<8)
+        sim.state.structures[0] = f
+        #expect(sim.makeFrameInfo().structures.first?.buildProgress == 0)
+
+        sim.state.structures[0].countDown = UInt16((buildTime << 8) / 2)   // half
+        let half = try #require(sim.makeFrameInfo().structures.first?.buildProgress)
+        #expect(abs(half - 0.5) < 0.05)
+
+        sim.state.structures[0].countDown = UInt16(1 << 8)                 // nearly done
+        #expect((sim.makeFrameInfo().structures.first?.buildProgress ?? 0) > 0.9)
+
+        sim.state.structures[0].state = .idle                              // not building ⇒ nil
+        #expect(sim.makeFrameInfo().structures.first?.buildProgress == nil)
+
+        sim.state.structures[0].state = .busy                              // busy but no queued object ⇒ nil
+        sim.state.structures[0].o.linkedID = 0xFF
+        #expect(sim.makeFrameInfo().structures.first?.buildProgress == nil)
     }
 
     @Test("house economy is surfaced for the game-info panel")

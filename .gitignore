@@ -7,3 +7,5 @@
 /Repositories/OpenDUNE/objs
 /Repositories/OpenDUNE/bin/opendune
 /Code/Tests/*/Fixtures/ParityGoldens/*.jsonl
+/Saves
+/SwiftOPL3
