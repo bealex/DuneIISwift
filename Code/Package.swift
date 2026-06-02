@@ -32,6 +32,7 @@ let package = Package(
         .executable(name: "duneii", targets: [ "duneii" ]),
         .executable(name: "rendercap", targets: [ "rendercap" ]),
         .executable(name: "scenariolab", targets: [ "scenariolab" ]),
+        .executable(name: "simbench", targets: [ "simbench" ]),
     ],
     dependencies: [
         // SwiftOPL3 — pure-Swift OPL3 (YMF262) chip + Westwood ADL music driver. Powers the authentic AdLib
@@ -142,6 +143,15 @@ let package = Package(
             name: "scenariolab",
             dependencies: [ "DuneIIScenarios", "DuneIISimulation", "DuneIIWorld", "DuneIIFormats", "DuneIIRenderer", "DuneIIContracts" ],
             path: "Apps/scenariolab"
+        ),
+
+        // Parallelization benchmark — builds a synthetic stress scenario and times the sequential tick vs
+        // the experimental parallel unit phase (and N independent sims in parallel). See
+        // Documentation/Architecture/Parallelization.md. Build `-c release` for meaningful numbers.
+        .executableTarget(
+            name: "simbench",
+            dependencies: [ "DuneIIContracts", "DuneIIFormats", "DuneIIWorld", "DuneIISimulation" ],
+            path: "Apps/simbench"
         ),
 
         // Tests (one per tested target; the DuneII prefix is dropped).
