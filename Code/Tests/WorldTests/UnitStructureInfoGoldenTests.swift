@@ -101,7 +101,7 @@ struct UnitStructureInfoGoldenTests {
         #expect(o.structuresRequired == r.structuresRequired)
         #expect(o.sortPriority == r.sortPriority)
         #expect(o.upgradeLevelRequired == r.upgradeLevelRequired)
-        #expect(o.actionsPlayer.map { $0.rawValue } == r.actionsPlayer)
+        #expect(o.actionsPlayer.all.map { $0.rawValue } == r.actionsPlayer)
         #expect(Int(o.available) == r.available)
         #expect(o.hintStringID == r.hintStringID)
         #expect(o.priorityBuild == r.priorityBuild)

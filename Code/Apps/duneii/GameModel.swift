@@ -1010,7 +1010,7 @@ final class GameModel {
                 var actions: [PanelAction] = []
                 if house == playerHouse {
                     var seen = Set<ActionType>()
-                    for a in UnitInfo[type].o.actionsPlayer where seen.insert(a).inserted {
+                    for a in UnitInfo[type].o.actionsPlayer.all where seen.insert(a).inserted {
                         actions.append(PanelAction(type: a, targeted: ActionInfo[a].selectionType == .target))
                     }
                 }

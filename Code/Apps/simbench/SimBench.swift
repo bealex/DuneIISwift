@@ -324,6 +324,42 @@ enum SimBench {
             print(String(format: "  sequential: %.2f ms | parallel: %.2f ms | %.2f× speedup", ms(seqTime), ms(parTime), speedup))
         }
 
+        // [7] Worker-count scaling sweep. "Effective parallelism" = (w · t1) / wall: w (perfect), 1 (no gain),
+        //     <1 (parallel slower than serial). The *shape* diagnoses the cause: a gradual plateau ⇒ memory
+        //     bandwidth saturation; slower even at 2 workers ⇒ a serialization point (lock / false sharing).
+        do {
+            @Sendable func oneSim() { var sim = buildScenario(deepCopyAssets(assets)); for _ in 0 ..< ticks { sim.tick() } }
+            let t1 = ms(timed { oneSim() })
+            print("\n[7] worker-count scaling (independent sims; build+tick per worker)")
+            print(String(format: "  1 worker baseline: %.2f ms/sim", t1))
+            for w in [2, 4, 8, cores] where w <= cores {
+                let t = ms(timed { DispatchQueue.concurrentPerform(iterations: w) { _ in oneSim() } })
+                print(String(format: "  %2d workers: %.2f ms wall | %.2f ms/sim | effective parallelism %.2f×",
+                             w, t, t / Double(w), Double(w) * t1 / max(0.0001, t)))
+            }
+        }
+
+        // [8] Memory-streaming sanity: each worker streams its OWN pre-allocated buffer (no allocation, no
+        //     sharing) in the hot loop. If THIS scales like [0], the sim's collapse is allocation/ARC, not raw
+        //     bandwidth. If this also collapses, the workload is memory-bandwidth-bound and no CPU-side fix helps.
+        do {
+            let words = 256 * 1024 / 8   // ~256 KB/worker, near a busy sim's hot working set
+            let sink = Mutex<Int>(0)
+            @Sendable func stream() -> Int {
+                var buf = [Int](repeating: 1, count: words)   // one alloc, then pure memory traffic
+                var acc = 0
+                for _ in 0 ..< 400 { for i in 0 ..< words { buf[i] &+= 1; acc &+= buf[i] } }
+                return acc
+            }
+            let t1 = ms(timed { sink.withLock { $0 &+= stream() } })
+            print("\n[8] memory-streaming scaling (256 KB/worker, no per-iteration alloc)")
+            print(String(format: "  1 worker baseline: %.2f ms", t1))
+            for w in [2, 4, 8, cores] where w <= cores {
+                let t = ms(timed { DispatchQueue.concurrentPerform(iterations: w) { _ in let r = stream(); sink.withLock { $0 &+= r } } })
+                print(String(format: "  %2d workers: %.2f ms wall | effective parallelism %.2f×", w, t, Double(w) * t1 / max(0.0001, t)))
+            }
+        }
+
         print("======================================================================")
     }
 }
