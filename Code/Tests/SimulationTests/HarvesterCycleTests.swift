@@ -39,9 +39,13 @@ struct HarvesterCycleTests {
             state.map[Int(Tile32.packXY(x: UInt16(x), y: UInt16(y)))].groundTileID = thickSpice
         } }
 
-        // An idle refinery a short drive east of the spice.
+        // An idle refinery built *adjacent* to the spice (its east edge), as a player actually places one.
+        // This matters: after refining, the harvester is redeployed onto a free ring tile nearest the spice
+        // and resumes HARVEST by searching within radius 3 (the escalating wider search is, per UNIT.EMC,
+        // for AI harvesters only). A refinery a long drive from spice would faithfully leave the deployed
+        // player harvester with nothing in range — it STOPs, exactly as OpenDUNE does.
         let ref = state.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(StructureType.refinery.rawValue))!
-        let refCorner = Tile32.unpack(Tile32.packXY(x: 28, y: 20))
+        let refCorner = Tile32.unpack(Tile32.packXY(x: 23, y: 20))
         state.structures[ref].o.houseID = 0
         state.structures[ref].o.position = Tile32(x: refCorner.x & 0xFF00, y: refCorner.y & 0xFF00)
         state.structures[ref].state = .idle
@@ -50,18 +54,16 @@ struct HarvesterCycleTests {
         state.structures[ref].o.linkedID = 0xFF
         state.structureUpdateMap(ref)
 
-        // A harvester sitting on the spice, ordered to HARVEST (loads its real script).
+        // A harvester just *west* of the spice, ordered to HARVEST (loads its real script). It must drive
+        // onto the spice — which is what sets `targetLast` (the remembered harvest spot, `unit.c:1453`), so
+        // the post-refine deploy summons a carryall back to it, exactly as in a real game. (Teleporting the
+        // harvester directly onto spice leaves `targetLast == 0`, an unreachable state that forces the
+        // walk-out deploy path.)
         let harv = state.unitAllocate(index: 0, type: UInt8(UnitType.harvester.rawValue), houseID: 0)!
-        state.units[harv].o.position = Tile32.unpack(Tile32.packXY(x: 20, y: 20))
+        state.units[harv].o.position = Tile32.unpack(Tile32.packXY(x: 16, y: 20))
         state.units[harv].o.hitpoints = UnitInfo[.harvester].o.hitpoints
         UnitActions().setAction(slot: harv, action: UInt8(ActionType.harvest.rawValue), scriptInfo: unitInfo, in: &state)
         state.unitUpdateMap(1, harv)
-
-        // DIAG: is the refinery stamped on the map so structureGetByPackedTile / the enter-trigger find it?
-        for (x, y) in [(28, 20), (29, 20), (30, 20), (28, 21), (29, 21), (30, 21)] {
-            let p = Tile32.packXY(x: UInt16(x), y: UInt16(y))
-            print("DIAG footprint (\(x),\(y)) hasStructure=\(state.map[Int(p)].hasStructure) getByTile=\(String(describing: state.structureGetByPackedTile(p)))")
-        }
 
         var sim = Simulation(state: state, scriptInfo: unitInfo, structureScriptInfo: buildInfo)
         let creditsStart = sim.state.houses[0].credits
@@ -87,12 +89,7 @@ struct HarvesterCycleTests {
         #expect(docked, "the harvester never returned + docked at the refinery")
         #expect(refined, "the refinery never converted spice into credits")
         #expect(emptiedAfterDock, "the harvester never redeployed empty after refining")
-        // The final leg — the deployed empty harvester resuming HARVEST — still stalls (it reaches
-        // Unit_SetActionDefault → STOP instead of searching for spice). That's a further harvester EMC
-        // state-machine issue beyond the script-VM engine-copy fix that unstuck dock/refine/deploy. See
-        // insight `sim-script-vm-engine-copy`.
-        withKnownIssue("deployed empty harvester goes STOP instead of resuming HARVEST") {
-            #expect(harvestedAgain)
-        }
+        // The full loop closes: the redeployed empty harvester resumes HARVEST and gathers spice again.
+        #expect(harvestedAgain, "the redeployed harvester never resumed harvesting (the loop didn't close)")
     }
 }
