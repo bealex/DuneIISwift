@@ -1,4 +1,5 @@
 import AVFoundation
+import DuneIIAudio
 import DuneIIExport
 import DuneIIFormats
 import DuneIIRenderer
@@ -20,6 +21,7 @@ final class AssetLibrary {
             case animation = "Animations"
             case font = "Fonts"
             case sound = "Sounds"
+            case music = "Music"            // synthetic: a DUNE<file>.ADL track (AdLib FM / OPL3 preview)
             case script = "Scripts"
             case iconGroup = "Icon Group"   // synthetic: an ICON.MAP icon group (building / terrain)
         }
@@ -32,6 +34,7 @@ final class AssetLibrary {
         let frameRange: Range<Int>?         // a sub-range of an SHP's frames, for unit groups
         let groupKind: SpriteCatalog.GroupKind?
         let iconGroup: Int?                 // an ICON.MAP group index, for building / terrain assets
+        let music: (file: Int, song: Int)?  // a music track's (DUNE<file>.ADL, subsong), for `.music` assets
 
         init(
             pak: String,
@@ -40,7 +43,8 @@ final class AssetLibrary {
             displayName: String? = nil,
             frameRange: Range<Int>? = nil,
             groupKind: SpriteCatalog.GroupKind? = nil,
-            iconGroup: Int? = nil
+            iconGroup: Int? = nil,
+            music: (file: Int, song: Int)? = nil
         ) {
             self.pak = pak
             self.name = name
@@ -49,9 +53,13 @@ final class AssetLibrary {
             self.frameRange = frameRange
             self.groupKind = groupKind
             self.iconGroup = iconGroup
-            let isSubAsset = frameRange != nil || iconGroup != nil
+            self.music = music
+            let isSubAsset = frameRange != nil || iconGroup != nil || music != nil
             self.id = isSubAsset ? "\(pak)/\(name)#\(self.displayName)" : "\(pak)/\(name)"
         }
+
+        static func == (lhs: Asset, rhs: Asset) -> Bool { lhs.id == rhs.id }
+        func hash(into hasher: inout Hasher) { hasher.combine(id) }
     }
 
     struct Category: Identifiable {
@@ -68,10 +76,41 @@ final class AssetLibrary {
     private var archives: [String: Pak.Archive] = [:]
     private var player: AVAudioPlayer?
 
+    /// Where the `DUNE<file>.ADL` music files live (separate from the PAK install), if found, plus the lazily
+    /// created OPL3 AdLib player that previews them.
+    private(set) var musicDirectory: URL?
+    private var musicPlayer: ADLMusicPlayer?
+
     init(installURL: URL) {
         self.installURL = installURL
         self.palette = AssetLibrary.loadPalette(installURL) ?? AssetLibrary.monochromePalette()
+        self.musicDirectory = AssetLibrary.locateMusicDirectory()
         loadCategories()
+    }
+
+    // MARK: - Music preview (AdLib FM / OPL3)
+
+    /// Preview a music track through the authentic AdLib FM (OPL3) synth. Lazily spins up the player + audio
+    /// engine on first use.
+    func playMusic(file: Int, song: Int, loop: Bool) {
+        guard let dir = musicDirectory else { return }
+        if musicPlayer == nil { musicPlayer = ADLMusicPlayer(musicDirectory: dir) }
+        musicPlayer?.play(file: file, song: song, loop: loop)
+    }
+
+    func stopMusic() { musicPlayer?.stop() }
+    func pauseMusic() { musicPlayer?.pause() }
+    func resumeMusic() { musicPlayer?.resume() }
+
+    /// Find the `Audio/Music` directory holding `DUNE<file>.ADL` — bundled next to the executable, or the
+    /// repo's `Resources/Audio/Music` (the `swift run rendertest`-from-`Code/` layout). Nil ⇒ no music preview.
+    private static func locateMusicDirectory() -> URL? {
+        var candidates: [URL] = []
+        if let resources = Bundle.main.resourceURL { candidates.append(resources.appendingPathComponent("Audio/Music")) }
+        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        candidates.append(cwd.appendingPathComponent("../Resources/Audio/Music"))
+        candidates.append(cwd.appendingPathComponent("Resources/Audio/Music"))
+        return candidates.first { FileManager.default.fileExists(atPath: $0.appendingPathComponent("DUNE1.ADL").path) }
     }
 
     func data(for asset: Asset) -> Data? {
@@ -157,6 +196,16 @@ final class AssetLibrary {
             let terrain = iconMap.groups.filter { !$0.isBuilding && !$0.tileIDs.isEmpty }.map(groupAsset)
             if !buildings.isEmpty { special.append(Category(id: "Buildings", title: "Buildings", assets: buildings)) }
             if !terrain.isEmpty { special.append(Category(id: "Terrain", title: "Terrain", assets: terrain)) }
+        }
+
+        // Music: every `g_table_musics` track whose `DUNE<file>.ADL` is present, as AdLib/OPL3 previews.
+        if let dir = musicDirectory {
+            let musicAssets: [Asset] = MusicDirector.previewTracks.compactMap { track in
+                guard FileManager.default.fileExists(atPath: dir.appendingPathComponent("DUNE\(track.file).ADL").path) else { return nil }
+                return Asset(pak: "MUSIC", name: "\(track.id)", kind: .music, displayName: track.name,
+                             music: (file: track.file, song: track.song))
+            }
+            if !musicAssets.isEmpty { special.append(Category(id: "Music", title: "Music", assets: musicAssets)) }
         }
 
         self.categories = special + categories

@@ -124,3 +124,39 @@ public final class MusicDirector {
         play(musicID: pick, loop: false)
     }
 }
+
+// MARK: - Track enumeration (for previews / tooling)
+
+public extension MusicDirector {
+    /// One selectable music track: its OpenDUNE `musicID`, the resolved `(file, song)` index (the `DUNE<file>`
+    /// number + XMI subsong), and a human-readable name. Used by tooling (e.g. `rendertest`'s music preview)
+    /// to list and play each track directly through a `MusicEngine`.
+    struct PreviewTrack: Identifiable, Sendable, Hashable {
+        public let id: Int      // musicID (`g_table_musics` index)
+        public let file: Int    // DUNE<file>.ADL
+        public let song: Int    // subsong (XMI sequence index)
+        public let name: String
+    }
+
+    /// Every non-silent entry of `g_table_musics`, with a descriptive name. Order = musicID.
+    static var previewTracks: [PreviewTrack] {
+        table.enumerated().compactMap { id, entry in
+            guard id > 0, let entry else { return nil }
+            return PreviewTrack(id: id, file: entry.file, song: entry.song, name: previewName(id: id, entry: entry))
+        }
+    }
+
+    private static func previewName(id: Int, entry: (file: Int, song: Int)) -> String {
+        let role: String?
+        switch id {
+        case 24: role = "Briefing · Harkonnen"
+        case 25: role = "Briefing · Atreides"
+        case 26: role = "Briefing · Ordos"
+        case mapTracks: role = "Map ambient"
+        case attackTracks: role = "Battle"
+        default: role = nil
+        }
+        let base = String(format: "ID %02d · DUNE%d · song %d", id, entry.file, entry.song)
+        return role.map { "\($0) — \(base)" } ?? base
+    }
+}

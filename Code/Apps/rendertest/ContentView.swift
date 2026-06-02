@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var house: House = .harkonnen
     @State private var scale = 2
     @State private var fps = 10.0
+    @State private var collapsed: Set<String> = []   // category ids the user has collapsed
 
     var body: some View {
         NavigationSplitView {
@@ -27,18 +28,28 @@ struct ContentView: View {
             } else {
                 List(selection: $selection) {
                     ForEach(library.categories) { category in
-                        Section("\(category.title) — \(category.assets.count)") {
+                        Section(isExpanded: expansion(category.id)) {
                             ForEach(category.assets) { asset in
                                 Text(asset.displayName)
                                     .font(.system(.body, design: .monospaced))
                                     .tag(asset)
                             }
+                        } header: {
+                            Text("\(category.title) — \(category.assets.count)")
                         }
                     }
                 }
             }
         }
         .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
+    }
+
+    /// A binding driving one category's disclosure state (expanded unless the user collapsed it).
+    private func expansion(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { !collapsed.contains(id) },
+            set: { isExpanded in if isExpanded { collapsed.remove(id) } else { collapsed.insert(id) } }
+        )
     }
 
     @ViewBuilder
@@ -108,6 +119,9 @@ struct AssetDetailView: View {
     @State private var frameIndex = 0
     @State private var animatePalette = true
 
+    @State private var musicPlaying = false
+    @State private var musicLoop = true
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -124,6 +138,7 @@ struct AssetDetailView: View {
                     }
                 }
                 if let sound { GroupBox("Sound") { soundView(sound) } }
+                if let music = asset.music { GroupBox("AdLib FM (OPL3) preview") { musicView(file: music.file, song: music.song) } }
                 if let scriptText {
                     GroupBox("Disassembly") {
                         Text(scriptText)
@@ -137,6 +152,7 @@ struct AssetDetailView: View {
         }
         .task(id: asset.id) { decode() }
         .onChange(of: isPlaying) { _, playing in if playing { startDate = Date() } }
+        .onDisappear { library.stopMusic() }
     }
 
     // MARK: - Preview
@@ -206,6 +222,28 @@ struct AssetDetailView: View {
                 }
             }
         }
+    }
+
+    private func musicView(file: Int, song: Int) -> some View {
+        HStack(spacing: 16) {
+            Button {
+                library.playMusic(file: file, song: song, loop: musicLoop)
+                musicPlaying = true
+            } label: {
+                Label(musicPlaying ? "Restart" : "Play", systemImage: "play.circle.fill")
+            }
+            Button {
+                library.stopMusic()
+                musicPlaying = false
+            } label: {
+                Label("Stop", systemImage: "stop.circle.fill")
+            }
+            .disabled(!musicPlaying)
+            Toggle("Loop", isOn: $musicLoop).toggleStyle(.switch)
+            Text("DUNE\(file).ADL · song \(song)").font(.callout).foregroundStyle(.secondary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func soundView(_ sound: Voc.Sound) -> some View {
@@ -292,6 +330,14 @@ struct AssetDetailView: View {
         isPlaying = false
         frameIndex = 0
         startDate = Date()
+        library.stopMusic()   // selecting any asset stops a music preview that was playing
+        musicPlaying = false
+
+        // Music tracks carry no PAK data — they're previewed from `asset.music` via the OPL3 player.
+        if asset.kind == .music, let track = asset.music {
+            info = "AdLib FM track · DUNE\(track.file).ADL · subsong \(track.song)"
+            return
+        }
 
         guard let data = library.data(for: asset) else { info = "(asset data missing)"; return }
 
@@ -337,6 +383,8 @@ struct AssetDetailView: View {
             case .sound:
                 sound = try? Voc.decode(data)
                 info = sound.map { "\($0.sampleRate) Hz · \($0.samples.count) samples" } ?? "(VOC decode failed)"
+            case .music:
+                break   // handled before the `guard let data` above (music has no PAK data)
             case .script:
                 scriptText = (try? Emc.Program(data)).map { emcText($0) }
                 info = "EMC script"

@@ -44,6 +44,19 @@ struct MusicDirectorTests {
         #expect(MusicDirector.table[24]! == (7, 2))            // Harkonnen briefing
     }
 
+    @Test("previewTracks lists every non-silent table entry with its (file, song)")
+    func previewTracks() {
+        let tracks = MusicDirector.previewTracks
+        let expectedCount = MusicDirector.table.dropFirst().compactMap { $0 }.count
+        #expect(tracks.count == expectedCount)
+        #expect(tracks.allSatisfy { $0.id > 0 })
+        // Each track resolves to its table entry, and IDs are unique + in order.
+        for track in tracks { #expect(MusicDirector.table[track.id]! == (track.file, track.song)) }
+        #expect(tracks.map(\.id) == tracks.map(\.id).sorted())
+        #expect(Set(tracks.map(\.id)).count == tracks.count)
+        #expect(tracks.first(where: { $0.id == 24 })?.name.contains("Briefing · Harkonnen") == true)
+    }
+
     @Test("per-house win/lose/briefing IDs match g_table_houseInfo")
     func houseMusic() {
         // Harkonnen, Atreides, Ordos, Fremen, Sardaukar, Mercenary

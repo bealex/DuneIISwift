@@ -127,7 +127,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "rendertest",
-            dependencies: [ "DuneIIFormats", "DuneIIRenderer", "DuneIIExport" ],
+            dependencies: [ "DuneIIFormats", "DuneIIRenderer", "DuneIIExport", "DuneIIAudio" ],
             path: "Apps/rendertest"
         ),
         // Headless render-capture tool: run a scenario to a tick, snapshot a region via the real renderer → PNG.
