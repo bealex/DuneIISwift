@@ -23,7 +23,7 @@ public struct Unit: Sendable, Equatable, Codable {
     public var deviatedHouse: UInt8 = 0         // house deviated to (valid only if deviated != 0)
     public var targetLast: Tile32 = Tile32(x: 0, y: 0)
     public var targetPreLast: Tile32 = Tile32(x: 0, y: 0)
-    public var orientation: [Dir24] = [Dir24(), Dir24()]   // [0] base, [1] top (turret)
+    public var orientation = Inline<2, Dir24>(repeating: Dir24())   // [0] base, [1] top (turret); POD, inline
     public var speedPerTick: UInt8 = 0
     public var speedRemainder: UInt8 = 0
     public var speed: UInt8 = 0
@@ -33,7 +33,7 @@ public struct Unit: Sendable, Equatable, Codable {
     public var blinkCounter: UInt8 = 0
     public var team: UInt8 = 0                  // 0 = none; value n means team n-1
     public var timer: UInt16 = 0
-    public var route: [UInt8] = Array(repeating: 0, count: 14)
+    public var route = Inline<14, UInt8>(repeating: 0)   // POD, inline — no heap/ARC on a Unit copy
 
     public init() {}
 }
