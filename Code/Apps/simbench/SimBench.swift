@@ -205,6 +205,7 @@ enum SimBench {
     // MARK: - Run
 
     static func run() {
+        _ = installMallocHook
         guard let assets = loadAssets() else {
             FileHandle.standardError.write(Data("simbench: could not load Resources/ (need ICON.MAP + Scripts).\n".utf8))
             exit(1)
@@ -360,6 +361,44 @@ enum SimBench {
             }
         }
 
+        // [9] Allocation counter: hook libmalloc's `malloc_logger` to count allocations across N in-place
+        //     ticks of ONE sim (single-threaded, so a plain counter is fine). Tells us definitively whether
+        //     the tick is allocation-free yet, and the per-tick alloc count if not.
+        do {
+            var sim = buildScenario(assets)
+            sim.tick()   // warm (let capacity-retaining buffers settle)
+            allocCount.store(0, ordering: .relaxed)
+            allocHookEnabled.store(true, ordering: .relaxed)
+            for _ in 0 ..< ticks { sim.tick() }
+            allocHookEnabled.store(false, ordering: .relaxed)
+            let n = allocCount.load(ordering: .relaxed)
+            print(String(format: "\n[9] heap allocations across %d in-place ticks: %d  (%.2f /tick)",
+                         ticks, n, Double(n) / Double(ticks)))
+        }
+
         print("======================================================================")
     }
 }
+
+// MARK: - malloc counter (diagnostic)
+//
+// Hooks libmalloc's `malloc_logger` to count allocations during a measured window — proves whether the tick
+// is allocation-free. Atomics (not `nonisolated(unsafe)`) so it respects the project's concurrency rules and
+// the @convention(c) hook stays signal-safe (a relaxed atomic add, no lock/alloc).
+
+let allocCount = Atomic<Int>(0)
+let allocHookEnabled = Atomic<Bool>(false)
+
+private let installMallocHook: Void = {
+    typealias Logger = @convention(c) (UInt32, UInt, UInt, UInt, UInt, UInt32) -> Void
+    let hook: Logger = { type, _, _, _, _, _ in
+        // libmalloc type flags: 2 = malloc, 8 = realloc (4 = free). Count allocations only.
+        if allocHookEnabled.load(ordering: .relaxed) && (type & 2 != 0 || type & 8 != 0) {
+            allocCount.add(1, ordering: .relaxed)
+        }
+    }
+    if let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "malloc_logger") {
+        sym.assumingMemoryBound(to: Optional<Logger>.self).pointee = hook
+    }
+}()
+

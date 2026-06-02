@@ -221,5 +221,12 @@ public struct GameState: Sendable, Codable {
         map = Array(repeating: MapTile(), count: 64 * 64)
         random256 = Random256(seed: random256Seed)
         randomLCG = RandomLCG(seed: randomLCGSeed)
+        // Pre-size the dense find-arrays to their pools' capacity so the per-tick `append`s in
+        // `unitCreate`/`structureCreate` (bullets, spawns) never reallocate mid-tick — keeps unit
+        // create/free off the allocator's hot path. Order-neutral: contents/iteration unchanged.
+        unitFindArray.reserveCapacity(Pool.unitIndexMax)
+        structureFindArray.reserveCapacity(Pool.structureIndexMaxHard)
+        houseFindArray.reserveCapacity(Pool.houseIndexMax)
+        teamFindArray.reserveCapacity(Pool.teamIndexMax)
     }
 }
