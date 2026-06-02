@@ -33,6 +33,12 @@ let package = Package(
         .executable(name: "rendercap", targets: [ "rendercap" ]),
         .executable(name: "scenariolab", targets: [ "scenariolab" ]),
     ],
+    dependencies: [
+        // SwiftOPL3 — pure-Swift OPL3 (YMF262) chip + Westwood ADL music driver. Powers the authentic AdLib
+        // FM music backend (DuneIIAudio/ADLMusicPlayer). The author's URL is SSH (git@github.com:bealex/
+        // SwiftOLP3.git); we resolve the same repo over HTTPS so it works in sandboxed/CI builds without SSH.
+        .package(url: "https://github.com/bealex/SwiftOLP3.git", from: "1.0.0"),
+    ],
     targets: [
         // Frameworks (the engine) — dependencies point downward only.
         .target(name: "DuneIIContracts", path: "Frameworks/DuneIIContracts", exclude: [ "CLAUDE.md" ]),
@@ -63,7 +69,11 @@ let package = Package(
         ),
         .target(
             name: "DuneIIAudio",
-            dependencies: [ "DuneIIContracts" ],
+            dependencies: [
+                "DuneIIContracts",
+                .product(name: "SwiftOPL3", package: "SwiftOLP3"),
+                .product(name: "WestwoodADL", package: "SwiftOLP3"),
+            ],
             path: "Frameworks/DuneIIAudio",
             exclude: [ "CLAUDE.md" ]
         ),
@@ -134,7 +144,15 @@ let package = Package(
         // Tests (one per tested target; the DuneII prefix is dropped).
         .testTarget(name: "ContractsTests", dependencies: [ "DuneIIContracts" ], path: "Tests/ContractsTests"),
         .testTarget(name: "InputTests", dependencies: [ "DuneIIInput", "DuneIIContracts" ], path: "Tests/InputTests"),
-        .testTarget(name: "AudioTests", dependencies: [ "DuneIIAudio", "DuneIIContracts" ], path: "Tests/AudioTests"),
+        .testTarget(
+            name: "AudioTests",
+            dependencies: [
+                "DuneIIAudio", "DuneIIContracts",
+                .product(name: "SwiftOPL3", package: "SwiftOLP3"),
+                .product(name: "WestwoodADL", package: "SwiftOLP3"),
+            ],
+            path: "Tests/AudioTests"
+        ),
         .testTarget(name: "FormatsTests", dependencies: [ "DuneIIFormats" ], path: "Tests/FormatsTests"),
         .testTarget(name: "WorldTests", dependencies: [ "DuneIIWorld" ], path: "Tests/WorldTests", exclude: [ "Fixtures" ]),
         .testTarget(name: "SimulationTests", dependencies: [ "DuneIISimulation" ], path: "Tests/SimulationTests"),

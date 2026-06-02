@@ -40,19 +40,47 @@ public final class MusicDirector {
     static let mapTracks = 8 ... 15      // in-mission ambient pool (Tools_RandomLCG_Range(0,8)+8)
     static let attackTracks = 17 ... 22  // in-battle pool (Tools_RandomLCG_Range(0,5)+17)
 
-    private let player: MusicPlayer
+    private let musicDirectory: URL
+    private let soundBank: URL?
+    private var player: MusicEngine
     private var rng: any RandomNumberGenerator
     public private(set) var currentMusicID = 0
+    private var currentLoop = false
     /// Master gate. Off ⇒ every entry point is a no-op and nothing ever plays (the neutrality toggle).
     public var enabled = true { didSet { if !enabled { player.stop() } } }
 
+    /// The synthesis backend. Swapping it live stops the current engine, builds the other, and resumes the
+    /// track that was playing — so the user hears the same song in the new timbre without a gap in the policy.
+    public var backend: MusicBackend { didSet { if backend != oldValue { switchEngine() } } }
+
     public init(musicDirectory: URL,
                 soundBank: URL? = nil,
+                backend: MusicBackend = .adlib,
                 rng: any RandomNumberGenerator = SystemRandomNumberGenerator()) {
-        self.player = MusicPlayer(musicDirectory: musicDirectory, soundBank: soundBank)
+        self.musicDirectory = musicDirectory
+        self.soundBank = soundBank
+        self.backend = backend
         self.rng = rng
+        self.player = Self.makeEngine(backend, musicDirectory: musicDirectory, soundBank: soundBank)
         // A finished ambient/attack track rolls into the next random map theme, so music never falls silent.
         player.onFinished = { [weak self] in self?.advanceAmbient() }
+    }
+
+    private static func makeEngine(_ backend: MusicBackend, musicDirectory: URL, soundBank: URL?) -> MusicEngine {
+        switch backend {
+        case .adlib: ADLMusicPlayer(musicDirectory: musicDirectory)
+        case .midi: MusicPlayer(musicDirectory: musicDirectory, soundBank: soundBank)
+        }
+    }
+
+    private func switchEngine() {
+        player.stop()
+        player = Self.makeEngine(backend, musicDirectory: musicDirectory, soundBank: soundBank)
+        player.onFinished = { [weak self] in self?.advanceAmbient() }
+        // Resume whatever was playing in the new timbre (no-op when nothing was, or when music is disabled).
+        if enabled, currentMusicID > 0, let track = Self.table[currentMusicID] {
+            player.play(file: track.file, song: track.song, loop: currentLoop)
+        }
     }
 
     /// `Music_Play` core: resolve a musicID to its track and start it. Invalid/none (`0xFFFF`, out-of-range,
@@ -67,6 +95,7 @@ public final class MusicDirector {
             return false
         }
         currentMusicID = musicID
+        currentLoop = loop
         player.play(file: track.file, song: track.song, loop: loop)
         return true
     }

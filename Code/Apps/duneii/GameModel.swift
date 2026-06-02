@@ -18,11 +18,21 @@ final class GameModel {
     let assets: AssetStore
     @ObservationIgnored let audio = EngineAudioSink()
     /// In-game music (host-side presentation — never touches the sim). Maps OpenDUNE's `g_table_musics`
-    /// selection to the extracted MIDI songs in `Resources/Audio/Music/`, played through `AVMIDIPlayer` + the
-    /// system DLS bank (or a bundled `.sf2` if present).
-    @ObservationIgnored let music = MusicDirector(musicDirectory: GameModel.musicURL(), soundBank: GameModel.soundBankURL())
+    /// selection to the music assets in `Resources/Audio/Music/` — either the Westwood `.ADL` files
+    /// synthesised on an emulated OPL3 chip (authentic AdLib FM, the default) or the extracted MIDI songs
+    /// through `AVMIDIPlayer` + a SoundFont/DLS bank. The backend is switchable live (Settings).
+    @ObservationIgnored let music = MusicDirector(musicDirectory: GameModel.musicURL(),
+                                                  soundBank: GameModel.soundBankURL(),
+                                                  backend: GameModel.savedMusicBackend())
     /// Master music toggle — also the neutrality switch for goldens (off ⇒ music never plays, sim untouched).
     var musicEnabled = true { didSet { music.enabled = musicEnabled } }
+    /// Synthesis backend for the music (AdLib FM vs MIDI). Applied live and persisted across launches.
+    var musicBackend: MusicBackend = GameModel.savedMusicBackend() {
+        didSet {
+            music.backend = musicBackend
+            UserDefaults.standard.set(musicBackend.rawValue, forKey: "musicBackend")
+        }
+    }
     /// Master sound-effects toggle (Settings). Off ⇒ no SFX play; the sim is untouched (presentation only).
     var soundEnabled = true { didSet { audio.enabled = soundEnabled } }
     @ObservationIgnored var scene: GameScene!
@@ -249,6 +259,11 @@ final class GameModel {
         if let bundled = Bundle.main.resourceURL?.appendingPathComponent("Audio/Music"),
            FileManager.default.fileExists(atPath: bundled.path) { return bundled }
         return URL(fileURLWithPath: "../Resources/Audio/Music")
+    }
+
+    /// The persisted music backend, defaulting to authentic AdLib FM (OPL3). Read once at init.
+    private static func savedMusicBackend() -> MusicBackend {
+        (UserDefaults.standard.string(forKey: "musicBackend")).flatMap(MusicBackend.init(rawValue:)) ?? .adlib
     }
 
     /// Optional SoundFont for the MIDI synth: a bundled/repo `Audio/music.sf2` if present, else `nil` ⇒ the

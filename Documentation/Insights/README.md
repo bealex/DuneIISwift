@@ -25,6 +25,7 @@ Capture an insight when something surprised you, cost real time to figure out, o
 - [swift-string-split](swift-string-split.md) — split file text with `components(separatedBy: .newlines)`, not `split(separator:)`.
 - [build-swiftpm-unhandled-files](build-swiftpm-unhandled-files.md) — non-source files in a target path warn; `exclude:` them, and audit warnings on a full clean build.
 - [swift-toplevel-mainactor-globals](swift-toplevel-mainactor-globals.md) — top-level `let` globals in an executable's main.swift are @MainActor-isolated; nonisolated helpers can't use them.
+- [swift-audio-render-thread-mutex](swift-audio-render-thread-mutex.md) — an AVAudioSourceNode render block that captures actor-isolated `self` compiles but crashes on the audio thread (`_dispatch_assert_queue_fail`); capture only a `Sendable` box, build it in a `nonisolated` factory, route callbacks through a `@Sendable` notifier.
 - [swift-spm-macos-gui](swift-spm-macos-gui.md) — native macOS SwiftUI apps run as SPM executables (`swift run`); set `.regular` activation policy so the window shows.
 - [render-palette-animation](render-palette-animation.md) — indices 223/239/255 are magenta placeholders meant to be palette-cycled; render with the time-cycled palette or animated tiles look wrong.
 - [sprite-global-indices](sprite-global-indices.md) — unit sprite IDs are global indices into a concatenated array (per-file local = global − base offset); frame grouping + directional/animation labels live only in unitInfo, not the SHP.

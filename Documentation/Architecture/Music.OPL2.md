@@ -1,6 +1,22 @@
-# Music — authentic AdLib OPL2/OPL3 FM synthesis (Tier C investigation)
+# Music — authentic AdLib OPL2/OPL3 FM synthesis (Tier C)
 
-**Status: investigation / design only. Not implemented.** This is the decision doc for the "authentic AdLib" route — the timbre-faithful alternative to the shipped SoundFont path (`Music.md`). Read `Music.md` first; this picks up where its "fidelity caveats" leave off.
+**Status: ✅ IMPLEMENTED (2026-06-01).** This was the decision doc for the "authentic AdLib" route — the timbre-faithful alternative to the SoundFont path (`Music.md`). It is now shipped, and is the **default** backend. The investigation/recommendation below is retained for the record; the **as-built** summary is here at the top.
+
+## As-built (2026-06-01)
+
+We took **strategy (A)** — a *pure-Swift* transcription of both halves — but as an **external package** rather than in-repo: **[SwiftOPL3](https://github.com/bealex/SwiftOLP3)** (the author's own, LGPL-2.1), which vends `SwiftOPL3` (the OPL3/YMF262 chip, transcribed from Nuked-OPL3) + `WestwoodADL` (the ADL driver, transcribed from AdPlug `CadlPlayer`). It is verified the way §9 prescribes — bit-exact PCM vs Nuked-OPL3 and register-write *trace equivalence* vs AdPlug. This sidesteps §8's licensing question (no GPL transcription in *our* tree; we depend on a separable LGPL library) and §6's "vendor a C core" choice (it's 100% Swift, Foundation-only).
+
+- **Dependency:** `https://github.com/bealex/SwiftOLP3.git` `from: "1.0.0"` (the author's URL is the SSH form `git@github.com:bealex/SwiftOLP3.git`; we resolve the same repo over HTTPS so it works without SSH in sandboxed/CI builds). Transitively pulls `memoirs-ios`, which `SwiftOPL3` only *compiles in* under its `OPL_TRACE` trait (off here). Wired into `DuneIIAudio` only.
+- **Player:** `Code/Frameworks/DuneIIAudio/ADLMusicPlayer.swift` — an `AVAudioSourceNode` pulls PCM from an `OPL3Chip` on the real-time audio thread, ticking the `ADLPlayer` driver at its 72 Hz refresh between sample boundaries (the `adlrender` host loop, inverted into a pull model). All cross-thread state (chip, driver, sample/tick cursors) lives inside a `Mutex` and the render path is `nonisolated` — no `nonisolated(unsafe)` (see insight `swift-audio-render-thread-mutex`).
+- **Selection unchanged:** `(file, song)` → `DUNE<file>.ADL`, subsong `song`. §7's "ADL track index == XMIDI sequence index" assumption is confirmed end-to-end by `ADLMusicTests.opl3RendersAudio` (a selected track produces non-silent PCM at that subsong).
+- **Backend seam:** `MusicEngine` protocol + `MusicBackend` enum (`.adlib`/`.midi`); `MusicDirector.backend` swaps live; `duneii` Settings exposes the picker (`GameModel.musicBackend`, persisted). Default `.adlib`.
+- **Tests:** `AudioTests/ADLMusicTests` (asset mapping, OPL3 non-silent render on real data, backend-switch keeps selection) + the existing `MusicDirectorTests` (now run under the `.adlib` default). Golden bar is the no-oracle **flag-off neutrality** one: music is host-side, all scenario/render goldens stay byte-identical.
+
+---
+
+## Original investigation (design only — retained for the record)
+
+This was the decision doc for the "authentic AdLib" route. Read `Music.md` first; this picks up where its "fidelity caveats" leave off.
 
 ## 1. Why this exists
 

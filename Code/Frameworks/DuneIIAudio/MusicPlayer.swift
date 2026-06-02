@@ -15,7 +15,7 @@ import os
 /// Music is host-side presentation only: it never touches the simulation, `GameState`, or sim RNG, and
 /// real-time playback is intentionally outside the deterministic-sim contract.
 @MainActor
-public final class MusicPlayer {
+public final class MusicPlayer: MusicEngine {
     private let musicDirectory: URL
     private let soundBank: URL?
     private var player: AVMIDIPlayer?

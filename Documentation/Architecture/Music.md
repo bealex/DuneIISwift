@@ -1,6 +1,11 @@
 # Music
 
-In-game music for the `duneii` client. This was the last "honest exception" in the audio port — the old note framed it as a missing "whole sequencer/synth port." It isn't: macOS *is* the synth, and the songs are already extracted.
+In-game music for the `duneii` client. Two interchangeable backends play the **same** OpenDUNE song selection (`MusicDirector` — unchanged), differing only in *how* they synthesise it:
+
+- **AdLib FM (OPL3)** — the default. The Westwood `.ADL` files synthesised on an emulated OPL3 chip, exactly as the DOS AdLib hardware did. Authentic timbre. See `Music.OPL2.md` (the design) + `ADLMusicPlayer`.
+- **MIDI (SoundFont)** — the original route: the extracted Standard-MIDI songs through `AVMIDIPlayer` + a SoundFont/DLS bank. `MusicPlayer`, documented below.
+
+The two share the `MusicEngine` protocol seam (`Code/Frameworks/DuneIIAudio/MusicEngine.swift`); `MusicDirector.backend` swaps between them live (Settings ⌘, → Audio → "Music engine"), stopping the current engine, building the other, and resuming the playing track in the new timbre. The choice is persisted (`UserDefaults` key `musicBackend`, default `.adlib`).
 
 ## Synth path — `AVMIDIPlayer`
 
