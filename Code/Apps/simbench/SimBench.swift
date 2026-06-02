@@ -71,6 +71,15 @@ enum SimBench {
         return Assets(iconMap: icon, unit: ScriptInfo(unit), build: ScriptInfo(build), team: team.map { ScriptInfo($0) })
     }
 
+    /// Deep-copy the script bytecode buffers so a sim built from this shares *no* COW storage with any
+    /// other — the test for the "cross-core refcount contention on shared `ScriptInfo`" hypothesis (§8.3).
+    static func deepCopyAssets(_ a: Assets) -> Assets {
+        Assets(iconMap: a.iconMap,
+               unit: ScriptInfo(program: Array(a.unit.program), offsets: Array(a.unit.offsets)),
+               build: ScriptInfo(program: Array(a.build.program), offsets: Array(a.build.offsets)),
+               team: a.team.map { ScriptInfo(program: Array($0.program), offsets: Array($0.offsets)) })
+    }
+
     // MARK: - Scenario construction
 
     /// Build the busy base scenario and return a Simulation ready to tick.
@@ -274,7 +283,44 @@ enum SimBench {
                 }
             }
             let speedup = ms(seqTime) / max(0.0001, ms(parTime))
-            print("\n[4] \(n) independent sims (§4a, fully correct)")
+            print("\n[4] \(n) independent sims, SHARED script data (§4a, fully correct)")
+            print(String(format: "  sequential: %.2f ms | parallel: %.2f ms | %.2f× speedup", ms(seqTime), ms(parTime), speedup))
+        }
+
+        // [5] §4a again, but each worker gets its OWN deep-copied ScriptInfo (no shared COW buffer). If this
+        //     parallelizes where [4] didn't, the cross-core refcount contention on shared `ScriptInfo` was
+        //     the cause — and per-worker data is the fix. Construction is excluded from timing (pre-built).
+        do {
+            let n = cores
+            let sims = (0 ..< n).map { _ in buildScenario(deepCopyAssets(assets)) }
+            let seqTime = timed {
+                for i in 0 ..< n { var sim = sims[i]; for _ in 0 ..< ticks { sim.tick() } }
+            }
+            let parTime = timed {
+                DispatchQueue.concurrentPerform(iterations: n) { i in
+                    var sim = sims[i]; for _ in 0 ..< ticks { sim.tick() }
+                }
+            }
+            let speedup = ms(seqTime) / max(0.0001, ms(parTime))
+            print("\n[5] \(n) independent sims, PER-WORKER de-shared script data (§4a)")
+            print(String(format: "  sequential: %.2f ms | parallel: %.2f ms | %.2f× speedup", ms(seqTime), ms(parTime), speedup))
+        }
+
+        // [6] Zero shared Swift objects between workers: each builds AND ticks its own sim (de-shared assets).
+        //     The only thing still shared is the global stat tables (UnitInfo/…) + the allocator. If this
+        //     still doesn't scale, the bottleneck is memory bandwidth / allocation, not any sharing we control.
+        do {
+            let n = cores
+            let seqTime = timed {
+                for _ in 0 ..< n { var sim = buildScenario(deepCopyAssets(assets)); for _ in 0 ..< ticks { sim.tick() } }
+            }
+            let parTime = timed {
+                DispatchQueue.concurrentPerform(iterations: n) { _ in
+                    var sim = buildScenario(deepCopyAssets(assets)); for _ in 0 ..< ticks { sim.tick() }
+                }
+            }
+            let speedup = ms(seqTime) / max(0.0001, ms(parTime))
+            print("\n[6] \(n) independent sims, BUILD+TICK per worker, nothing shared but global tables/allocator")
             print(String(format: "  sequential: %.2f ms | parallel: %.2f ms | %.2f× speedup", ms(seqTime), ms(parTime), speedup))
         }
 

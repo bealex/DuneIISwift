@@ -285,17 +285,22 @@ The user asked the direct question: build a busy scenario, run it sequentially, 
 
 ### 8.3 Diagnosis (this is the valuable part)
 
-Pure compute parallelizes 10–12× on the same machine, harness, and core count — so the slowdown is **intrinsic to the simulation workload**, not the test. Two causes, both confirmed by the shape of the numbers:
+Pure compute parallelizes 10–12× on the same machine, harness, and core count — so the slowdown is **intrinsic to the simulation workload**, not the test. The cause was narrowed by two controlled isolation runs (`simbench` `[5]`/`[6]`):
 
-1. **Cross-core ARC / COW refcount contention on shared immutable data.** Every unit-tick reads the global stat tables (`UnitInfo`/`StructureInfo`/…) and the shared `ScriptInfo` bytecode (`[UInt16]` COW buffers, one instance shared by all sims). Under concurrency, touching these reference-counted buffers spends atomic retain/release on a *shared* refcount — 16 cores ping-ponging one cache line. This alone makes even **§4a's embarrassingly-parallel independent sims ~7–10× slower**, with *zero* logical sharing between them. It is the dominant effect.
-2. **Per-tick heap allocation.** The tick allocates transient `Array`/`Set` (script VM, pathfinder, `PoolFind`, targeting) per unit. 16 cores hammering the allocator serialize on its locks/magazines and thrash memory bandwidth.
+- **`[5]` — de-shared `ScriptInfo`.** Gave each parallel worker its *own* deep copy of the script bytecode buffers (no shared COW). **No change** (still 0.11×/0.13×) ⇒ the contention is **not** the script buffers.
+- **`[6]` — nothing shared but the global tables + allocator.** Each worker builds *and* ticks a fully independent sim with de-shared assets. **Still ~0.15–0.27×** (4–7× slower) ⇒ the bottleneck is what remains shared/global, not anything per-sim.
+
+So the real causes are:
+
+1. **The sim is memory-/allocation-bound, not compute-bound.** Pure register-bound compute scales 12×; the moment work streams the large per-sim arrays (units, the 64×64 map, `mapBaseTileID`) and allocates transient `Array`/`Set` per unit (script VM, pathfinder, `PoolFind`, targeting), 16 cores saturate memory bandwidth and serialize on the allocator's locks/magazines. This is the dominant effect and it caps *all* threading.
+2. **Per-tick stat-table lookups copy reference-counted data.** Every unit-tick does `UnitInfo[ut]` / `StructureInfo[…]` etc. Those table structs embed ref-counted members (`String` names, nested arrays), so each lookup retains/releases *shared* storage — 16 cores ping-ponging the same refcount cache lines. (De-sharing `ScriptInfo` didn't help precisely because the hot shared data is the *stat tables*, not the script.)
 3. **Snapshot-per-shard COW tax (intra-tick only).** `gameLoopUnitParallel` copies the whole units/map arrays per shard per tick on first write → ~78× slower at 2000 units. The §4e.2 design (single shared output buffer + deferred effects) avoids this, but it is moot until 1–2 are fixed.
 
 ### 8.4 What the measurement says to do (reaffirms §3/§6, now with evidence)
 
 **Do not thread anything yet.** The ordering is now empirical, not theoretical:
 
-1. **§3 single-thread first, and it is a *prerequisite*, not an option.** Eliminate per-tick allocations (reuse buffers on the runner) **and** make the hot shared-data reads non-retaining — access the stat tables / script bytecode through `UnsafeBufferPointer`/`borrowing`, or give each worker its own copy, so a parallel read costs nothing atomic. Until both are done, *every* threading scheme (even §4a) loses.
+1. **§3 single-thread first, and it is a *prerequisite*, not an option — now with a measured target.** (a) Eliminate per-tick transient allocations (reuse buffers on the runner; the sim is allocation-bound). (b) Make the hot stat-table lookups **non-retaining**: `UnitInfo[ut]`/`StructureInfo[…]` copy structs that embed `String`/nested-array members, so every per-tick lookup does atomic retain/release on shared storage — the `[5]`/`[6]` runs proved this (not the script buffers) is the shared hot data. Fixes: read the few scalar fields the hot path needs without copying the whole struct, hold the tables via `UnsafeBufferPointer`/`borrowing`, or strip ref-counted members out of the hot-path struct. Until (a)+(b) are done, *every* threading scheme (even §4a) loses — and it loses to **memory bandwidth**, which also caps the eventual ceiling.
 2. **§2 SPEEDUP build** — the `-O`/strip win, independent of threading.
 3. **§4a (many independent sims)** is the highest-leverage parallelism *in principle*, but today it is ~7–10× **slower** because of cause 1. It only becomes the easy win the plan claims **after** step 1 removes the shared-refcount contention. Re-measure then.
 4. **§4e intra-tick** stays last and behind `SPEEDUP_UNORDERED`; the measurement-grade snapshot impl here is a worst case kept only for the A/B. A real attempt needs the deferred-effects single-buffer design — and is only worth building if a throughput use case still needs it after steps 1–3.
