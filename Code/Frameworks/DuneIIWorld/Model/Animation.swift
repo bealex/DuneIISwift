@@ -25,7 +25,7 @@ private func cmd(_ command: AnimationCommand, _ parameter: Int16) -> AnimationCo
 /// Which command table an animation runs: a structure's ground-cycle (`g_table_animation_structure`) or a
 /// dead unit's corpse overlay (`g_table_animation_unitScript1` for 3-frame infantry, `…unitScript2` else).
 public enum AnimationKind: UInt8, Sendable, Equatable, Codable {
-    case structure, unitScript1, unitScript2
+    case structure, unitScript1, unitScript2, unitMove, map
 }
 
 /// An active animation instance. A port of OpenDUNE's `Animation` (`src/animation.c`); lives in the
@@ -95,5 +95,38 @@ public enum AnimationTables {
         [ cmd(.setOverlayTile, 2), cmd(.pause, 600), cmd(.stop, 0) ],
         [ cmd(.setOverlayTile, 4), cmd(.playVoice, 35), cmd(.pause, 600), cmd(.stop, 0) ],
         [ cmd(.setOverlayTile, 5), cmd(.playVoice, 35), cmd(.pause, 600), cmd(.stop, 0) ],
+    ]
+
+    /// `g_table_animation_unitMove[8][8]` (`table/animation.c:13`) — the sand-track mark a tracked unit
+    /// leaves as it drives over sand/dune, indexed by the unit's 8-way facing. Each lays a track overlay
+    /// (icon-group "Sand Tracks" = 5), fades it to a fainter mark, then stops (clearing it). Started by
+    /// `Unit_Move` via `animationStart(kind: .unitMove, iconGroup: 5)`.
+    public static let unitMove: [[AnimationCommandStruct]] = [
+        [ cmd(.setOverlayTile, 0), cmd(.pause, 600), cmd(.setOverlayTile, 4), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 1), cmd(.pause, 600), cmd(.setOverlayTile, 5), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 2), cmd(.pause, 600), cmd(.setOverlayTile, 6), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 3), cmd(.pause, 600), cmd(.setOverlayTile, 7), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 0), cmd(.pause, 600), cmd(.setOverlayTile, 4), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 1), cmd(.pause, 600), cmd(.setOverlayTile, 5), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 2), cmd(.pause, 600), cmd(.setOverlayTile, 6), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 3), cmd(.pause, 600), cmd(.setOverlayTile, 7), cmd(.pause, 600), cmd(.stop, 0) ],
+    ]
+
+    /// `g_table_animation_map[16][8]` (`table/animation.c:201`) — map-effect overlays started by an
+    /// explosion's `EXPLOSION_SET_ANIMATION` command. Used by the two crash explosions: the **ornithopter
+    /// crash** (`g_table_animation_map[0]`) and the **carryall crash** (`[4]`) lay the "Flying-Machine
+    /// Crash" wreck (icon group 3), fade it, then stop. Rows 8–15 are empty (immediate stop). Started by
+    /// `animationStart(kind: .map, iconGroup: 3)`.
+    public static let map: [[AnimationCommandStruct]] = [
+        [ cmd(.setOverlayTile, 1), cmd(.pause, 600), cmd(.setOverlayTile, 2), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 1), cmd(.pause, 600), cmd(.setOverlayTile, 2), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 0), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 0), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 4), cmd(.pause, 600), cmd(.setOverlayTile, 5), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 4), cmd(.pause, 600), cmd(.setOverlayTile, 5), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 3), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.setOverlayTile, 3), cmd(.pause, 600), cmd(.stop, 0) ],
+        [ cmd(.stop, 0) ], [ cmd(.stop, 0) ], [ cmd(.stop, 0) ], [ cmd(.stop, 0) ],
+        [ cmd(.stop, 0) ], [ cmd(.stop, 0) ], [ cmd(.stop, 0) ], [ cmd(.stop, 0) ],
     ]
 }

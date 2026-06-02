@@ -124,7 +124,14 @@ public struct UnitMovement: Sendable {
             } else {
                 let type = map.landscapeType(state.map[Int(packed)], tileIDs: state.tileIDs)
                 if (type == .normalSand || type == .entirelyDune) && state.map[Int(packed)].overlayTileID == 0 {
-                    // SEAM: Animation_Start(g_table_animation_unitMove[orient8]) — render-only sand tracks.
+                    // Leave a sand track at the unit's *current* tile (it moves to `newPosition` later),
+                    // facing-selected: `Animation_Start(g_table_animation_unitMove[orient8], …, iconGroup 5)`.
+                    // RNG-free, so the golden draw stream is unchanged; the overlay only paints once
+                    // animations are ticked (the visual apps), like the structure/corpse animations.
+                    let orient8 = Orientation.to8(UInt8(bitPattern: state.units[slot].orientation[0].current))
+                    state.animationStart(tableIndex: Int(orient8), tile: state.units[slot].o.position,
+                                         tileLayout: 0, houseID: state.units[slot].o.houseID,
+                                         iconGroup: 5, kind: .unitMove)
                 }
             }
         }

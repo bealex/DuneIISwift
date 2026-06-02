@@ -90,6 +90,8 @@ public extension GameState {
                     case .structure:   table = AnimationTables.structure
                     case .unitScript1: table = AnimationTables.unitScript1
                     case .unitScript2: table = AnimationTables.unitScript2
+                    case .unitMove:    table = AnimationTables.unitMove
+                    case .map:         table = AnimationTables.map
                 }
                 let row = table[animations[i].tableIndex]
                 let cursor = Int(animations[i].current)

@@ -72,7 +72,12 @@ public extension GameState {
                     case .screenShake:
                         break   // SEAM: video
                     case .setAnimation:
-                        break   // SEAM: g_table_animation_map (only the two crash explosions use it)
+                        // `Explosion_Func_SetAnimation` (explosion.c:175): start a map-effect animation — the
+                        // crash wreck for the ornithopter (id 0) / carryall (id 4) crash explosions. Icon
+                        // group 3 = "Flying-Machine Crash". Runs only on the explosion-ticking (visual) path,
+                        // so it never perturbs a parity run.
+                        animationStart(tableIndex: Int(max(0, parameter)), tile: explosions[i].position,
+                                       tileLayout: 0, houseID: explosions[i].houseID, iconGroup: 3, kind: .map)
                     case .bloomExplosion:
                         // Explosion_Func_BloomExplosion (explosion.c:157): if the tile under the explosion is
                         // still the spice bloom, queue it for Map_Bloom_ExplodeSpice (a Simulation primitive,
