@@ -211,7 +211,7 @@ struct AssetDetailView: View {
     }
 
     private var framesGrid: some View {
-        LazyVGrid(columns: [ GridItem(.adaptive(minimum: 80), spacing: 12) ], spacing: 12) {
+        LazyVGrid(columns: [ GridItem(.adaptive(minimum: 80), spacing: 12, alignment: .top) ], alignment: .leading, spacing: 12) {
             ForEach(rawFrames.indices, id: \.self) { index in
                 let raw = rawFrames[index]
                 VStack(spacing: 4) {
@@ -222,6 +222,9 @@ struct AssetDetailView: View {
                 }
             }
         }
+        // Span the whole detail pane so `.adaptive` packs as many thumbnails per row as fit; without this the
+        // grid is the only non-greedy block here and collapses to its content width.
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func musicView(file: Int, song: Int) -> some View {
