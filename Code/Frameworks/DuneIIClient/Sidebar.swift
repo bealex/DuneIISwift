@@ -256,16 +256,24 @@ public struct GameSidebar: View {
 
     private var header: some View {
         let e = model.economy.first { $0.isPlayer }
+        let mission = model.currentScenario.flatMap { ScenarioID(fileName: $0)?.mission }
+        let powerOK = e.map { $0.power >= $0.powerUsed } ?? true
         return VStack(alignment: .leading, spacing: 4) {
-            Text(model.playerHouse.displayName).font(.title3.bold())
-            HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(model.playerHouse.displayName).font(.title3.bold())
+                if let mission {
+                    Text("Mission \(mission)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            // Credits and power each take half the width.
+            HStack(spacing: 8) {
                 Label("\(model.playerCredits)", systemImage: "dollarsign.circle.fill")
                     .monospacedDigit().foregroundStyle(.yellow)
-                if let e {
-                    Label("\(e.power)/\(e.powerUsed)", systemImage: "bolt.fill")
-                        .monospacedDigit().foregroundStyle(e.power >= e.powerUsed ? Color.secondary : Color.red)
-                        .help("Power produced / consumed")
-                }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Label("\(e?.power ?? 0)/\(e?.powerUsed ?? 0)", systemImage: "bolt.fill")
+                    .monospacedDigit().foregroundStyle(powerOK ? Color.secondary : Color.red)
+                    .help("Power produced / consumed")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .font(.callout)
         }
