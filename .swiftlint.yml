@@ -1,0 +1,105 @@
+# SwiftLint configuration for Dune II Swift.
+#
+# Tuned to match the project code style (~/Programming/_Scripts/Instructions/CLAUDE.CodeStyle.md).
+# Run via Scripts/lint.sh (which `cd`s to the repo root so the paths below resolve).
+# Formatting that swift-format already enforces (indentation, line breaks, brace placement) is left to
+# Scripts/format.sh; this file covers the lint-only concerns and a few rules that must agree with the
+# formatter (indented switch cases, mandatory trailing commas, 120-column lines).
+
+included:
+  - Code/Frameworks
+  - Code/Apps
+  - Code/Tools
+  - Code/Tests
+
+excluded:
+  - Code/.build
+  - Repositories          # OpenDUNE / dunepak references — not our code
+  - SwiftOPL3             # separate vendored package with its own conventions
+  - build                 # derived-data / iOS build output
+  - "**/*.pb.swift"       # generated — never lint generated files
+  - "**/*.grpc.swift"
+
+disabled_rules:
+  - todo                       # style permits TODO/FIXME notes where logic isn't obvious
+  - force_try                  # style allows try! when failure is impossible by design
+  # Metric rules — noisy and counterproductive on the faithful EMC transcriptions and big stat tables.
+  - function_body_length
+  - type_body_length
+  - cyclomatic_complexity
+  - function_parameter_count
+  - large_tuple
+
+opt_in_rules:
+  - sorted_imports                      # imports sorted alphabetically
+  - closure_spacing                     # `{ $0 }` with interior spaces
+  - vertical_whitespace_opening_braces  # no blank line after an opening brace
+  - vertical_whitespace_closing_braces  # no blank line before a closing brace
+  - multiline_parameters                # broken parameter lists: one per line (no partial breaks)
+  - multiline_arguments                 # broken argument lists: one per line (no partial breaks)
+
+# ── Rules that must agree with swift-format ────────────────────────────────────
+switch_case_alignment:
+  indented_cases: true          # `case` indented one level inside the `switch` body
+
+trailing_comma:
+  mandatory_comma: true         # require trailing commas on multiline collections (matches swift-format)
+
+# ── Metrics ───────────────────────────────────────────────────────────────────
+line_length:
+  warning: 120
+  error: 200                    # hard ceiling; the style allows >120 only for strings/generated/tests
+  ignores_urls: true
+  ignores_comments: true
+  ignores_interpolated_strings: true
+  ignores_function_declarations: false
+
+file_length:
+  warning: 1000                 # style: a file approaching 1000 lines should be split
+  error: 1500
+  ignore_comment_only_lines: true
+
+# ── Naming ────────────────────────────────────────────────────────────────────
+identifier_name:
+  min_length:
+    warning: 1                  # allow `i`, `id`, `x`, `y` — style permits short well-known names
+  max_length:
+    warning: 60
+    error: 80
+  allowed_symbols: ["_"]
+
+type_name:
+  min_length:
+    warning: 2
+  max_length:
+    warning: 50
+    error: 60
+
+# ── Custom rules (regex) for style points the built-in rules don't cover ───────
+# These encode project-specific conventions that neither SwiftLint's built-ins nor swift-format enforce.
+# Verified precise against the codebase (0 false positives); see Documentation/Architecture/Linting.md.
+custom_rules:
+  guard_break_keep_guard_alone:
+    name: "Guard layout"
+    # A guard that breaks across lines (the guard line ends in `,`, `{`, `&&` or `||`) must instead put
+    # `guard` alone on its line with the expression indented below. Single-line guards end in `}`.
+    regex: '^[ \t]*guard[ \t]+\S[^\n]*([,{]|&&|\|\|)[ \t]*$'
+    message: "A guard that breaks to multiple lines must stand alone: put `guard` on its own line and the expression(s) on the indented line(s) below."
+    severity: warning
+  collection_literal_open_space:
+    name: "Collection literal spacing"
+    # Interior space after `[` in a literal that starts with `.`, `"`, or a digit (excludes array types
+    # like `[Int]` and subscripts like `arr[0]`, which start with an identifier or follow one).
+    regex: '(?<![\w)\]?!])\[(?=[."0-9])'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Collection literals use interior spaces: write `[ .foo ]`, not `[.foo]`."
+    severity: warning
+  collection_literal_close_space:
+    name: "Collection literal spacing"
+    # Interior space before `]` on a single-line literal (same literal-vs-type/subscript guard as above).
+    regex: '(?<![\w)\]?!])\[ ?[."0-9][^\]\n]*\S\]'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Collection literals use interior spaces: write `[ .foo ]`, not `[.foo]`."
+    severity: warning
+
+reporter: "xcode"

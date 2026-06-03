@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+#
+# format.sh — reformat (or check) the Swift package sources to the project code style.
+#
+# Two passes per file:
+#   1. swift-format   — layout (4-space indent, 120 cols, indented switch cases, spaced ranges `0 ..< n`,
+#                       one-arg-per-line on wrapped calls, no blank lines hugging type braces).
+#   2. style-respace  — a SwiftSyntax post-pass (Code/Tools/StyleRespace) that re-inserts the interior
+#                       spaces swift-format strips from single-line collection literals (`[.foo]` → `[ .foo ]`),
+#                       which swift-format cannot preserve. Parser-aware: never touches array types,
+#                       subscripts, strings, or comments.
+#
+# Usage:
+#   Scripts/format.sh              # rewrite Code/ sources in place
+#   Scripts/format.sh --check      # report files that are NOT formatted; modify nothing (exit 1 if any)
+#   Scripts/format.sh PATH ...     # restrict to the given files/dirs (instead of the whole Code/ tree)
+#
+# Config: Code/.swift-format (also auto-discovered by editors/IDEs).
+# Override the binary with SWIFT_FORMAT=/path/to/swift-format if needed.
+#
+set -uo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CONFIG="$REPO/Code/.swift-format"
+RESPACE_PKG="$REPO/Code/Tools/StyleRespace"
+FORMAT_BIN="${SWIFT_FORMAT:-swift-format}"
+
+if ! command -v "$FORMAT_BIN" >/dev/null 2>&1; then
+  echo "format.sh: '$FORMAT_BIN' not found (install via the Swift toolchain or \`brew install swift-format\`)"; exit 2
+fi
+
+CHECK=0
+PATHS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check)   CHECK=1 ;;
+    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+    *)         PATHS+=("$1") ;;
+  esac
+  shift
+done
+
+if [ ${#PATHS[@]} -eq 0 ]; then
+  PATHS=("$REPO/Code/Frameworks" "$REPO/Code/Apps" "$REPO/Code/Tools" "$REPO/Code/Tests")
+fi
+
+# Build the collection-literal re-spacer once and resolve its binary (first build fetches swift-syntax).
+echo "format.sh: building style-respace…" >&2
+RESPACE_TMP="$RESPACE_PKG/.build/tmp"; mkdir -p "$RESPACE_TMP"
+if ! TMPDIR="$RESPACE_TMP" xcrun swift build --package-path "$RESPACE_PKG" --disable-sandbox >/dev/null 2>&1; then
+  echo "format.sh: failed to build style-respace (Code/Tools/StyleRespace) — run its build manually to see why"; exit 2
+fi
+RESPACE="$(TMPDIR="$RESPACE_TMP" xcrun swift build --package-path "$RESPACE_PKG" --disable-sandbox --show-bin-path 2>/dev/null)/style-respace"
+
+# Collect .swift files (defensively skip any .build tree under the given paths).
+FILES=()
+while IFS= read -r f; do FILES+=("$f"); done < <(
+  find "${PATHS[@]}" -name '*.swift' -not -path '*/.build/*' 2>/dev/null | sort
+)
+
+if [ ${#FILES[@]} -eq 0 ]; then echo "format.sh: no .swift files found"; exit 0; fi
+
+if [ "$CHECK" = 1 ]; then
+  bad=0
+  for f in "${FILES[@]}"; do
+    if ! "$FORMAT_BIN" format --configuration "$CONFIG" "$f" 2>/dev/null | "$RESPACE" - 2>/dev/null | diff -q "$f" - >/dev/null 2>&1; then
+      echo "✗ ${f#"$REPO/"}"
+      bad=$((bad + 1))
+    fi
+  done
+  if [ "$bad" = 0 ]; then echo "format ✅ all ${#FILES[@]} files already formatted"; exit 0; fi
+  echo "format ❌ $bad of ${#FILES[@]} file(s) need formatting — run Scripts/format.sh"
+  exit 1
+fi
+
+"$FORMAT_BIN" format --in-place --parallel --configuration "$CONFIG" "${FILES[@]}"
+"$RESPACE" "${FILES[@]}" >/dev/null
+echo "format ✅ reformatted ${#FILES[@]} files in place (swift-format + collection-literal respace)"
