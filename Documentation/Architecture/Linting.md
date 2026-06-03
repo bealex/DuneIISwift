@@ -30,6 +30,10 @@ A few style points are things swift-format actively gets *wrong* for this style 
 
 4. **Blank lines** — two placements swift-format has no option for, applied inside braced bodies / closures (not top level): a nested (local) `func` is surrounded by a blank line, and a `guard` is followed by a blank line — with a run of consecutive guards kept together and the single blank line only after the last one. It only changes the blank count on a statement that already starts its own line and preserves leading comments and indentation.
 
+5. **Expression `if`/`switch`** — turns a statement-form `switch` / `if` whose every branch is a single `return <value>` into the expression form `return switch … { case …: <value> }` (codestyle prefers expression `if`/`switch`). Fires only when every branch is exactly one `return` with a value, and an `if` is exhaustive (has a final `else`); anything else (a multi-statement branch, a bare `return`, a non-exhaustive `if`) is left as-is. SwiftLint regex can't tell whether every branch returns, so this is formatter-only.
+
+6. **Member attribute placement** — puts the attributes / property wrappers of a *member* property on their own line above the declaration (`@ObservationIgnored let x` → `@ObservationIgnored` ⏎ `let x`), keeping access modifiers on the `let`/`var` line. Multiple attributes stay as swift-format laid them out (one line, or wrapped if long); only the break before the declaration is inserted. Local variables inside function/closure bodies keep their attributes inline.
+
 ## Linter: SwiftLint
 
 Config: `.swiftlint.yml` (repo root). It owns the lint-only concerns and the few rules that must **agree** with the formatter:

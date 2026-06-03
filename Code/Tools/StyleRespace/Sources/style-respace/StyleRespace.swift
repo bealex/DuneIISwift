@@ -42,9 +42,11 @@ struct StyleRespace {
     private static func respaced(_ source: String) -> String {
         let tree = Parser.parse(source: source)
         let literals = CollectionLiteralSpacer().rewrite(tree)
-        let guards = GuardNormalizer().rewrite(literals)
+        let expressions = ExpressionReturnNormalizer().rewrite(literals)
+        let guards = GuardNormalizer().rewrite(expressions)
         let ternaries = TernaryNormalizer().rewrite(guards)
-        return BlankLineNormalizer().rewrite(ternaries).description
+        let blanks = BlankLineNormalizer().rewrite(ternaries)
+        return MemberAttributeNormalizer().rewrite(blanks).description
     }
 }
 
@@ -115,9 +117,9 @@ private final class CollectionLiteralSpacer: SyntaxRewriter {
 
     private func hasSpace(_ trivia: Trivia) -> Bool {
         trivia.contains { piece in
-            switch piece {
-                case .spaces, .tabs: return true
-                default: return false
+            return switch piece {
+                case .spaces, .tabs: true
+                default: false
             }
         }
     }
@@ -266,9 +268,9 @@ private final class TernaryNormalizer: SyntaxRewriter {
 
     private func containsNewline(_ trivia: Trivia) -> Bool {
         trivia.contains { piece in
-            switch piece {
-                case .newlines, .carriageReturns, .carriageReturnLineFeeds: return true
-                default: return false
+            return switch piece {
+                case .newlines, .carriageReturns, .carriageReturnLineFeeds: true
+                default: false
             }
         }
     }
@@ -319,9 +321,149 @@ private final class BlankLineNormalizer: SyntaxRewriter {
     }
 
     private func isNewline(_ piece: TriviaPiece) -> Bool {
-        switch piece {
-            case .newlines, .carriageReturns, .carriageReturnLineFeeds: return true
-            default: return false
+        return switch piece {
+            case .newlines, .carriageReturns, .carriageReturnLineFeeds: true
+            default: false
+        }
+    }
+}
+
+// Turns a statement-form `switch` / `if` whose every branch is a single `return <expr>` into the
+// expression form `return switch … { case …: <expr> }` (codestyle: prefer expression `if`/`switch`).
+// Only fires when every branch is exactly one `return` with a value; `if` must be exhaustive (have a final
+// `else`). swift-format can't do this and a SwiftLint regex can't tell whether every branch returns.
+private final class ExpressionReturnNormalizer: SyntaxRewriter {
+    override func visit(_ node: CodeBlockItemSyntax) -> CodeBlockItemSyntax {
+        let node = super.visit(node)
+
+        // A statement-position `switch` / `if` is an ExpressionStmt wrapping the expression.
+        guard
+            case .stmt(let statement) = node.item,
+            let expr = statement.as(ExpressionStmtSyntax.self)?.expression
+        else { return node }
+
+        let converted: ExprSyntax?
+        if let switchExpr = expr.as(SwitchExprSyntax.self) {
+            converted = expressionSwitch(switchExpr).map(ExprSyntax.init)
+        } else if let ifExpr = expr.as(IfExprSyntax.self) {
+            converted = expressionIf(ifExpr).map(ExprSyntax.init)
+        } else {
+            converted = nil
+        }
+
+        guard let body = converted else { return node }
+
+        var returnKeyword: TokenSyntax = .keyword(.return)
+        returnKeyword.leadingTrivia = expr.leadingTrivia
+        returnKeyword.trailingTrivia = .space
+        let returnStmt = ReturnStmtSyntax(returnKeyword: returnKeyword, expression: body.with(\.leadingTrivia, []))
+
+        var result = node
+        result.item = .stmt(StmtSyntax(returnStmt))
+        return result
+    }
+
+    private func expressionSwitch(_ node: SwitchExprSyntax) -> SwitchExprSyntax? {
+        guard !node.cases.isEmpty else { return nil }
+
+        var cases: [SwitchCaseListSyntax.Element] = []
+        for element in node.cases {
+            guard
+                let switchCase = element.as(SwitchCaseSyntax.self),
+                let value = singleReturnedValue(switchCase.statements)
+            else { return nil }
+
+            cases.append(.init(switchCase.with(\.statements, asExpression(value))))
+        }
+        return node.with(\.cases, SwitchCaseListSyntax(cases))
+    }
+
+    private func expressionIf(_ node: IfExprSyntax) -> IfExprSyntax? {
+        guard
+            let thenValue = singleReturnedValue(node.body.statements),
+            let elseBody = node.elseBody
+        else { return nil }
+
+        let newElse: IfExprSyntax.ElseBody
+        switch elseBody {
+            case .codeBlock(let block):
+                guard let value = singleReturnedValue(block.statements) else { return nil }
+
+                newElse = .codeBlock(block.with(\.statements, asExpression(value)))
+            case .ifExpr(let elseIf):
+                guard let converted = expressionIf(elseIf) else { return nil }
+
+                newElse = .ifExpr(converted)
+        }
+
+        return
+            node
+            .with(\.body, node.body.with(\.statements, asExpression(thenValue)))
+            .with(\.elseBody, newElse)
+    }
+
+    // The single `return <expr>`'s value, carrying the `return` keyword's leading trivia (its indentation).
+    private func singleReturnedValue(_ statements: CodeBlockItemListSyntax) -> ExprSyntax? {
+        guard
+            statements.count == 1,
+            let only = statements.first,
+            let returnStmt = only.item.as(ReturnStmtSyntax.self),
+            let value = returnStmt.expression
+        else { return nil }
+
+        return value.with(\.leadingTrivia, returnStmt.returnKeyword.leadingTrivia)
+    }
+
+    private func asExpression(_ value: ExprSyntax) -> CodeBlockItemListSyntax {
+        CodeBlockItemListSyntax([ CodeBlockItemSyntax(item: .expr(value)) ])
+    }
+}
+
+// Puts the attributes / property wrappers of a *member* property on their own line, above the declaration
+// (`@ObservationIgnored let x` → `@ObservationIgnored` ⏎ `let x`). swift-format keeps them inline and has no
+// option otherwise. Multiple attributes stay as swift-format laid them out (one line, or wrapped if long);
+// only the break between the attribute list and the `let`/`var` (or its access modifier) is inserted. Local
+// variables inside function/closure bodies keep their attributes inline, per the code style.
+private final class MemberAttributeNormalizer: SyntaxRewriter {
+    override func visit(_ node: VariableDeclSyntax) -> DeclSyntax {
+        let isMember = node.parent?.is(MemberBlockItemSyntax.self) == true
+        guard let node = super.visit(node).as(VariableDeclSyntax.self) else { return super.visit(node) }
+        guard isMember, let lastAttribute = node.attributes.last else { return DeclSyntax(node) }
+
+        let indent = leadingIndentation(node)
+        let breakTrivia: Trivia = .newline + .spaces(indent.count)
+
+        // Skip if the break is already there (idempotent).
+        guard !lastAttribute.trailingTrivia.contains(where: \.isNewline) else { return DeclSyntax(node) }
+
+        var result = node
+        result.attributes = node.attributes.with(\.trailingTrivia, breakTrivia)
+        if result.modifiers.isEmpty {
+            result.bindingSpecifier.leadingTrivia = []
+        } else {
+            result.modifiers = result.modifiers.with(\.leadingTrivia, [])
+        }
+        return DeclSyntax(result)
+    }
+
+    private func leadingIndentation(_ node: some SyntaxProtocol) -> String {
+        var indent = ""
+        for piece in node.leadingTrivia.reversed() {
+            switch piece {
+                case .spaces(let count): indent = String(repeating: " ", count: count) + indent
+                case .tabs(let count): indent = String(repeating: "\t", count: count) + indent
+                default: return indent
+            }
+        }
+        return indent
+    }
+}
+
+extension TriviaPiece {
+    fileprivate var isNewline: Bool {
+        return switch self {
+            case .newlines, .carriageReturns, .carriageReturnLineFeeds: true
+            default: false
         }
     }
 }

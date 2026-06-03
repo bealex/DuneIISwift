@@ -98,6 +98,7 @@ identifier_name:
     - rhs
     - id                        # well-known terms (see code style)
     - url
+    - raw                       # raw value before wrapping (`let raw = word & 0xFF`)
 
 type_name:
   min_length:
@@ -111,6 +112,16 @@ type_name:
     - T                         # conventional generic placeholders
     - U
     - V
+    - Pak                       # DOS file-format names (domain vocabulary)
+    - Shp
+    - Wsa
+    - Cps
+    - Icn
+    - Fnt
+    - Emc
+    - Voc
+    - Iff
+    - Ini
 
 # ── Custom rules (regex) for style points the built-in rules don't cover ───────
 # These encode project-specific conventions that neither SwiftLint's built-ins nor swift-format enforce.
