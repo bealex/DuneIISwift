@@ -21,14 +21,20 @@ app reads them from `Bundle.main/GameData`, where macOS reads the install dir.
 ## Build & deploy
 
 ```sh
-Scripts/build-ios.sh sim        # build + install + launch on the iOS Simulator (no signing)
-Scripts/build-ios.sh device     # build + sign (team REDACTED_TEAM) + install on a connected iPhone/iPad
-Scripts/build-ios.sh archive    # Release archive + export a signed .ipa for TestFlight / Ad-Hoc
+Scripts/build-ios.sh sim                      # build + install + launch on the iOS Simulator (no signing)
+Scripts/build-ios.sh device                   # … on the first connected iPhone/iPad
+Scripts/build-ios.sh device "a specific device"  # … on a specific device (name substring or UDID; or DUNEII_DEVICE=…)
+Scripts/deploy-iphone17.sh                    # convenience wrapper for `device "a specific device"`
+Scripts/build-ios.sh archive                  # Release archive + export a signed .ipa for TestFlight / Ad-Hoc
 ```
 
 The script stages the PAKs, runs `xcodegen`, then `xcodebuild`. Override the install dir with
-`DUNEII_INSTALL=/path/to/dune2`. Bundle id `com.lonelybytes.duneii`, team `REDACTED_TEAM`, automatic signing
-(`device`/`archive` need your Apple ID logged into Xcode).
+`DUNEII_INSTALL=/path/to/dune2`. Bundle id `com.lonelybytes.duneii`, team `REDACTED_TEAM`, automatic signing.
+
+**`device`/`archive` prereqs:** `xcodegen` installed (the script offers `brew install xcodegen`), **and** your
+developer Apple ID for team `REDACTED_TEAM` logged into **Xcode ▸ Settings ▸ Accounts** — `-allowProvisioningUpdates`
+then mints a development certificate + provisioning profile automatically (a one-time interactive trust/sign-in
+may be needed). The **`sim`** path needs neither and is the quickest smoke test.
 
 ## Verify iOS-compat without a device
 

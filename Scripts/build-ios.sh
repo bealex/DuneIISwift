@@ -2,11 +2,13 @@
 #
 # Build + deploy the Dune II iOS app (Code/Apps/duneii-ios).
 #
-#   Scripts/build-ios.sh [sim|device|archive]   (default: sim)
+#   Scripts/build-ios.sh [sim|device|archive] ["<device name|UDID>"]   (default: sim)
 #
 #     sim      Build for the iOS Simulator, then install + launch on a booted/first simulator.
-#     device   Build for the first connected iPhone/iPad, then install + launch (needs your Apple ID
-#              logged into Xcode for automatic signing — team REDACTED_TEAM).
+#     device   Build for a connected iPhone/iPad, then install + launch (needs your Apple ID logged into
+#              Xcode for automatic signing — team REDACTED_TEAM). Pass a device name substring or UDID as the
+#              2nd arg (or set DUNEII_DEVICE); default = the first connected device.
+#              e.g.  Scripts/build-ios.sh device "a specific device"
 #     archive  Release archive + export a signed .ipa under build/ios/export (for TestFlight / Ad-Hoc).
 #
 # Prereqs: Xcode, and `xcodegen` (the script offers to `brew install` it if missing). The original game
@@ -89,10 +91,23 @@ print(best or "")')
   say "Launched $BUNDLE_ID on the simulator."
 }
 
+# Resolve a device name-substring (or pass a UDID through) to its hardware UDID via `xctrace`.
+resolve_device() {
+  local q="$1"
+  if printf '%s' "$q" | grep -qiE '^[0-9A-F]{8}-[0-9A-F]{16}$|^[0-9a-f]{40}$'; then echo "$q"; return; fi
+  xcrun xctrace list devices 2>/dev/null | grep -v "Simulator" | grep -i "$q" \
+    | grep -oE '\([0-9A-Fa-f-]{20,}\)[[:space:]]*$' | tr -d '()' | head -1
+}
+
 # ---------------------------------------------------------------- device ----
+# $1 (optional) = device name substring or UDID. Defaults to DUNEII_DEVICE, else the first connected one.
 deploy_device() {
-  local udid
-  udid=$(xcrun devicectl list devices -j /dev/stdout 2>/dev/null | /usr/bin/python3 -c '
+  local want="${1:-${DUNEII_DEVICE:-}}" udid
+  if [ -n "$want" ]; then
+    udid=$(resolve_device "$want")
+    [ -n "$udid" ] || die "Device '$want' not found. List devices: xcrun xctrace list devices"
+  else
+    udid=$(xcrun devicectl list devices -j /dev/stdout 2>/dev/null | /usr/bin/python3 -c '
 import json,sys
 try: d=json.load(sys.stdin)
 except Exception: sys.exit()
@@ -100,6 +115,7 @@ for x in d.get("result",{}).get("devices",[]):
     cp=x.get("connectionProperties",{})
     if cp.get("tunnelState")!="unavailable" and x.get("hardwareProperties",{}).get("platform","")=="iOS":
         print(x["hardwareProperties"]["udid"]); break' || true)
+  fi
   [ -n "$udid" ] || die "No connected iPhone/iPad found. Plug one in, unlock it, and Trust this Mac."
   say "Building + signing for device $udid (team $TEAM)…"
   xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
@@ -145,7 +161,7 @@ stage_assets
 generate
 case "$MODE" in
   sim)     deploy_sim ;;
-  device)  deploy_device ;;
+  device)  deploy_device "${2:-}" ;;       # e.g.  build-ios.sh device "a specific device"
   archive|testflight) archive ;;
   *) die "Unknown mode '$MODE'. Use: sim | device | archive" ;;
 esac
