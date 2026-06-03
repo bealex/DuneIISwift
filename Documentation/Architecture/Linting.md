@@ -37,7 +37,8 @@ Config: `.swiftlint.yml` (repo root). It owns the lint-only concerns and the few
 - `switch_case_alignment: indented_cases` and `trailing_comma: mandatory_comma` — kept consistent with swift-format's indented cases and trailing commas.
 - Opt-in: `sorted_imports`, `closure_spacing`, `vertical_whitespace_opening/closing_braces`, `multiline_parameters`, `multiline_arguments`.
 - Disabled: `todo`, `force_try` (style permits them), and the noisy metric rules (`function_body_length`, `type_body_length`, `cyclomatic_complexity`, `function_parameter_count`, `large_tuple`) — counterproductive on the faithful EMC transcriptions and big stat tables.
-- `line_length` warns at 120; `file_length` warns at 1000 (the guide's split-the-file threshold); `identifier_name` min length 1 (the style allows `i`, `id`, `x`, `y`).
+- `line_length` warns at 120; `file_length` warns at 1000 (the guide's split-the-file threshold).
+- **Naming length** — no 1-3 letter identifiers (the style spells names out). `identifier_name` and `type_name` warn under 4 characters, each with an `excluded` allow-list for the sanctioned short names: loop indices (`i`/`j`/`k`/`n`), coordinates and deltas (`x`/`y`/`z`/`dx`/`dy`/`dz`), velocity (`vX`/`vY`/`vZ`), operator operands (`lhs`/`rhs`), well-known terms (`id`/`url`/`ID`/`API`), and generic placeholders (`T`/`U`/`V`). Math/formula single letters that aren't on the list are suppressed inline with an explanatory comment. Function names — which `identifier_name` doesn't cover — are caught by the `short_function_name` custom rule.
 
 ### Custom (regex) rules
 
@@ -45,6 +46,7 @@ SwiftLint user rules are regex-only (no AST). Three encode style points the buil
 
 - `guard_break_keep_guard_alone` — a `guard` that breaks across lines (its line ends in `,`, `{`, `&&`, or `||`) must instead stand alone with the expression indented below. swift-format preserves the correct form but won't auto-fix the broken one, so the linter flags it.
 - `collection_literal_open_space` / `collection_literal_close_space` — require the interior spaces (`[ .foo ]`). They key off a literal start (`.`, `"`, or a digit after `[`) so array types and subscripts (which start with / follow an identifier) are never matched. This is the lint side of the `style-respace` formatter pass.
+- `short_function_name` — flags 1-3 letter function names, which `identifier_name` does not cover. Operators (symbol-led, not letter-led) are not matched.
 
 ## How the two stay consistent
 
