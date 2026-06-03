@@ -289,7 +289,7 @@ public struct GameSidebar: View {
                                 height: 44, provider: sprites, assets: model.assets)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
-                        Text(s.name).font(.headline).lineLimit(2).lineSpacing(0)
+                        Text(s.name).font(.headline).lineLimit(2).lineHeight(.tight)
                         if model.selectedUnitCount > 1 {
                             Text("×\(model.selectedUnitCount)").font(.caption.bold())
                                 .padding(.horizontal, 5).padding(.vertical, 1)
@@ -416,7 +416,7 @@ public struct GameSidebar: View {
             HStack(spacing: 10) {
                 SpriteThumbnail(objectType: bs.objectType, isStructure: bs.isStructure, house: model.playerHouse,
                                 height: 44, provider: sprites, assets: model.assets)
-                Text(bs.displayName).font(.headline).lineLimit(2)
+                Text(bs.displayName).font(.headline).lineLimit(2).lineHeight(.tight)
                 Spacer(minLength: 0)
             }
             ProgressView(value: bs.progress).tint(bs.onHold ? .orange : .accentColor)
