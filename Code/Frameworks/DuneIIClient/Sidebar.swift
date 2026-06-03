@@ -259,8 +259,9 @@ public struct GameSidebar: View {
         let mission = model.currentScenario.flatMap { ScenarioID(fileName: $0)?.mission }
         let powerOK = e.map { $0.power >= $0.powerUsed } ?? true
         return VStack(alignment: .leading, spacing: 4) {
-            VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
                 Text(model.playerHouse.displayName).font(.title3.bold())
+                Spacer()
                 if let mission {
                     Text("Mission \(mission)").font(.caption).foregroundStyle(.secondary)
                 }
