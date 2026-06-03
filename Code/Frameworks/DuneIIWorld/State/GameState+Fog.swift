@@ -47,6 +47,7 @@ public extension GameState {
     /// if it had scouted the player out. Idempotent (a no-op once `h` has already found the player).
     mutating func aiFogReveal(toEnemyHouse h: UInt8) {
         guard aiFogOfWar else { return }
+
         let bit = UInt8(1 << h)
         if housesFoundPlayer & bit != 0 { return }
         housesFoundPlayer |= bit
@@ -114,6 +115,7 @@ public extension GameState {
         if (pos.x == 0xFFFF && pos.y == 0xFFFF) || (pos.x == 0 && pos.y == 0) { return }
         if !House.areAllied(unitHouseID(u), playerHouseID, playerHouseID: playerHouseID) { return }
         guard let ut = UnitType(rawValue: Int(u.o.type)) else { return }
+
         let radius = UInt16(UnitInfo[ut].o.fogUncoverRadius)
         if radius == 0 { return }
         tileRemoveFogInRadius(pos, radius: radius)
@@ -125,6 +127,7 @@ public extension GameState {
     mutating func structureRemoveFog(_ slot: Int) {
         guard structures[slot].o.houseID == playerHouseID else { return }
         guard let st = StructureType(rawValue: Int(structures[slot].o.type)) else { return }
+
         tileRemoveFogInRadius(structures[slot].o.position, radius: UInt16(StructureInfo[st].o.fogUncoverRadius))
     }
 }

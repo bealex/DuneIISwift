@@ -32,6 +32,7 @@ enum RenderCap {
         else {
             fail("usage: rendercap <installDir> [--scenario NAME] [--tick N] [--rect x,y,w,h] [--fog] [--out FILE]")
         }
+
         let installURL = URL(fileURLWithPath: installDir)
 
         guard
@@ -129,12 +130,14 @@ enum RenderCap {
     static func parseRect(_ s: String) -> (x: Int, y: Int, w: Int, h: Int)? {
         let p = s.split(separator: ",").compactMap { Int($0) }
         guard p.count == 4 else { return nil }
+
         return (p[0], p[1], p[2], p[3])
     }
 
     static func parsePair(_ s: String) -> (x: Int, y: Int)? {
         let p = s.split(separator: ",").compactMap { Int($0) }
         guard p.count == 2 else { return nil }
+
         return (p[0], p[1])
     }
 
@@ -194,6 +197,7 @@ private struct Assets {
         guard
             let entries = try? FileManager.default.contentsOfDirectory(at: installURL, includingPropertiesForKeys: nil)
         else { return nil }
+
         var archives: [Pak.Archive] = []
         for url in entries where url.pathExtension.uppercased() == "PAK" {
             if let data = try? Data(contentsOf: url), let archive = try? Pak.Archive(data) { archives.append(archive) }
@@ -208,6 +212,7 @@ private struct Assets {
             }
             return nil
         }
+
         guard
             let pal = data("IBM.PAL").flatMap({ try? Palette($0) }),
             let map = data("ICON.MAP").flatMap({ try? IconMap($0) }),

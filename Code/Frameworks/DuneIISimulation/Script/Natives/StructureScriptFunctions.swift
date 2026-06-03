@@ -53,6 +53,7 @@ struct StructureScriptFunctions: Sendable {
             Tools.indexType(encoded) == .unit,
             let u = state.indexGetUnit(encoded)
         else { return 0 }
+
         state.objectScriptVariable4Clear(.unit(u))
         state.units[u].targetMove = 0
         return 0
@@ -81,6 +82,7 @@ struct StructureScriptFunctions: Sendable {
             found = u
         }
         guard let f = found else { return 0 }  // IT_NONE
+
         return state.indexEncode(UInt16(state.units[f].o.index), type: .unit)
     }
 
@@ -94,6 +96,7 @@ struct StructureScriptFunctions: Sendable {
             let iconMap = state.iconMap,
             let st = StructureType(rawValue: Int(state.structures[slot].o.type))
         else { return 1 }
+
         let group = (st == .rocketTurret) ? 24 : 23  // ICM_ICONGROUP_BASE_ROCKET / DEFENSE_TURRET
         guard let baseTileID = iconMap.tileID(group: group, offset: 2) else { return 1 }
 
@@ -165,6 +168,7 @@ struct StructureScriptFunctions: Sendable {
                 in: &state
             )
         else { return 0 }
+
         state.units[bullet].originEncoded = state.indexEncode(UInt16(state.structures[slot].o.index), type: .structure)
         return fireDelay
     }
@@ -175,6 +179,7 @@ struct StructureScriptFunctions: Sendable {
     /// tile. Returns the packed tile, or 0 if none is free.
     func findFreePosition(slot: Int, checkForSpice: Bool, in state: inout GameState) -> UInt16 {
         guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return 0 }
+
         let layout = StructureLayoutInfo[StructureInfo[st].layout]
         let map = combat.movement.map
         let packed = state.structures[slot].o.position.centered.packed
@@ -307,8 +312,10 @@ struct StructureScriptFunctions: Sendable {
             return 0
         }
         guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return 0 }
+
         let maxHP = UInt32(StructureInfo[st].o.hitpoints)
         guard maxHP > 0 else { return 0 }
+
         let u = Int(linkedID)
 
         var harvesterStep = UInt16((UInt32(state.structures[slot].o.hitpoints) &* 256 / maxHP) &* 3 / 256)
@@ -348,6 +355,7 @@ struct StructureScriptFunctions: Sendable {
     /// radius with 0 damage, i.e. a no-op beyond the render seam).
     func explode(slot: Int, in state: inout GameState) -> UInt16 {
         guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return 0 }
+
         let layout = StructureLayoutInfo[StructureInfo[st].layout]
         let base = Int(state.structures[slot].o.position.packed)
         for i in 0 ..< Int(layout.tileCount) {
@@ -364,6 +372,7 @@ struct StructureScriptFunctions: Sendable {
     /// GUI text is a seam (player-only).
     func destroy(slot: Int, in state: inout GameState) -> UInt16 {
         guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return 0 }
+
         let si = StructureInfo[st]
         let layout = StructureLayoutInfo[si.layout]
         let base = Int(state.structures[slot].o.position.packed)

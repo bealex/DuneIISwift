@@ -25,7 +25,7 @@ struct ShimmerEffectTests {
         let terrain = (0 ..< tw * th).map { UInt8($0 % tw) }
         // A 4×2 worm at (left 5, top 1), fully opaque except the top-left pixel (to test transparency).
         let ww = 4, wh = 2, left = 5, top = 1, offset = 3
-        var mask = [ UInt8 ](repeating: 1, count: ww * wh)
+        var mask = [UInt8](repeating: 1, count: ww * wh)
         mask[0] = 0
         let pal = palette
 
@@ -46,6 +46,7 @@ struct ShimmerEffectTests {
         #expect(rgba.count == ww * wh * 4)
 
         func px(_ x: Int, _ y: Int) -> (r: UInt8, a: UInt8) { let o = (y * ww + x) * 4; return (rgba[o], rgba[o + 3]) }
+
         // The masked-out top-left pixel is transparent.
         #expect(px(0, 0).a == 0)
         // Every other pixel samples terrain[left + x + offset] = index (5 + x + 3) = 8 + x, fully opaque.
@@ -64,7 +65,7 @@ struct ShimmerEffectTests {
         // Terrain 20×4, index == x. Worm 4×2 at left 5, offset 3 → pixel x samples column (5+x+3)=8+x.
         let tw = 20, th = 4, ww = 4, wh = 2, left = 5, top = 1, offset = 3
         let terrain = (0 ..< tw * th).map { UInt8($0 % tw) }
-        let mask = [ UInt8 ](repeating: 1, count: ww * wh)
+        let mask = [UInt8](repeating: 1, count: ww * wh)
         let pal = palette
         // Mark columns ≥ 10 as veiled (fog to the right). Samples for x=2,3 are columns 10,11 → veiled.
         let rgba = try #require(
@@ -84,6 +85,7 @@ struct ShimmerEffectTests {
         )
 
         func alpha(_ x: Int, _ y: Int) -> UInt8 { rgba[(y * ww + x) * 4 + 3] }
+
         for y in 0 ..< wh {
             #expect(alpha(0, y) == 255)  // disp 5 / sample 8  — revealed
             #expect(alpha(1, y) == 255)  // disp 6 / sample 9  — revealed

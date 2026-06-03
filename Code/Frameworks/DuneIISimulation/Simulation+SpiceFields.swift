@@ -14,6 +14,7 @@ public extension Simulation {
         let fields = state.scenario.spiceFields
         state.scenario.spiceFields = []
         guard let movement = unitScript?.movement else { return }
+
         for packed in fields {
             movement.mapBloomExplodeSpice(packed: packed, houseID: Pool.houseInvalid, in: &state)
         }

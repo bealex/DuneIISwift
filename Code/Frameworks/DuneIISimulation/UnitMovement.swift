@@ -49,6 +49,7 @@ public struct UnitMovement: Sendable {
     public func movementTick(slot: Int, in state: inout GameState) {
         if state.units[slot].speed == 0 { return }
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return }
+
         let ui = UnitInfo[ut]
 
         var speed = UInt16(state.units[slot].speedRemainder)
@@ -86,6 +87,7 @@ public struct UnitMovement: Sendable {
         var distance = distance0
         guard state.units[slot].o.flags.contains(.used) else { return false }
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
+
         let ui = UnitInfo[ut]
 
         var newPosition = Tile32.moveByDirection(
@@ -365,6 +367,7 @@ public struct UnitMovement: Sendable {
     @discardableResult
     public func startMovement(slot: Int, engine: inout ScriptEngine, in state: inout GameState) -> Bool {
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
+
         let ui = UnitInfo[ut]
 
         let orientation = Int8(truncatingIfNeeded: (Int(state.units[slot].orientation[0].current) + 16) & 0xE0)
@@ -437,6 +440,7 @@ public struct UnitMovement: Sendable {
     ) -> Bool {
         if state.units[slot].deviated == 0 { return false }
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
+
         let ui = UnitInfo[ut]
         if !ui.flags.contains(.isNormalUnit) { return false }
 

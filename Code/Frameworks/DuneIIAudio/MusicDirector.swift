@@ -100,6 +100,7 @@ public final class MusicDirector {
             player.stop()
             return false
         }
+
         currentMusicID = musicID
         currentLoop = loop
         player.play(file: track.file, song: track.song, loop: loop)
@@ -124,6 +125,7 @@ public final class MusicDirector {
 
     private func playRandom(in range: ClosedRange<Int>) {
         guard enabled else { return }
+
         // Manual range-reduce off the RNG's raw word (not `Int.random(in:using:)`, which can't take an
         // `any RandomNumberGenerator` inout) — selection bias is irrelevant for picking a music track.
         let pick = range.lowerBound + Int(rng.next() % UInt64(range.count))
@@ -148,6 +150,7 @@ public extension MusicDirector {
     static var previewTracks: [PreviewTrack] {
         table.enumerated().compactMap { id, entry in
             guard id > 0, let entry else { return nil }
+
             return PreviewTrack(id: id, file: entry.file, song: entry.song, name: previewName(id: id, entry: entry))
         }
     }

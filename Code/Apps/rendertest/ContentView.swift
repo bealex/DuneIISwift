@@ -366,6 +366,7 @@ struct AssetDetailView: View {
         switch asset.kind {
             case .sprite:
                 guard let set = try? Shp.FrameSet(data) else { info = "(SHP decode failed)"; return }
+
                 let selected =
                     asset.frameRange.map { Array(set.frames[$0.clamped(to: set.frames.indices)]) } ?? set.frames
                 rawFrames = selected.compactMap { frame in
@@ -385,6 +386,7 @@ struct AssetDetailView: View {
                 info = "\(selected.count) frames\(kindLabel)"
             case .image:
                 guard let image = try? Cps.decode(data) else { info = "(CPS decode failed)"; return }
+
                 rawFrames = [
                     RawFrame(indices: image.pixels, width: image.width, height: image.height, hasLookup: false)
                 ]
@@ -392,6 +394,7 @@ struct AssetDetailView: View {
                 info = "\(image.width)×\(image.height)"
             case .tiles:
                 guard let tiles = try? Icn.TileSet(data) else { info = "(ICN decode failed)"; return }
+
                 let sheet = tileSheet(tiles)
                 rawFrames = [
                     RawFrame(indices: sheet.indices, width: sheet.width, height: sheet.height, hasLookup: false)
@@ -400,6 +403,7 @@ struct AssetDetailView: View {
                 info = "\(tiles.tileCount) tiles · \(tiles.tileWidth)×\(tiles.tileHeight) (16 per row)"
             case .animation:
                 guard let animation = try? Wsa.Animation(data) else { info = "(WSA decode failed)"; return }
+
                 rawFrames = animation.frames.map {
                     RawFrame(indices: $0, width: animation.width, height: animation.height, hasLookup: false)
                 }
@@ -407,6 +411,7 @@ struct AssetDetailView: View {
                 info = "\(animation.frames.count) frames · \(animation.width)×\(animation.height)"
             case .font:
                 guard let font = try? Fnt.Font(data) else { info = "(FNT decode failed)"; return }
+
                 let sheet = fontSheet(font)
                 rawFrames = [
                     RawFrame(indices: sheet.indices, width: sheet.width, height: sheet.height, hasLookup: false)
@@ -430,6 +435,7 @@ struct AssetDetailView: View {
                     let index = asset.iconGroup,
                     let group = iconMap.group(index)
                 else { info = "(icon group decode failed)"; return }
+
                 remapKind = .tile
                 // A multi-tile structure: assemble each build/animation state into a whole building.
                 if let layout = StructureCatalog.layout(iconGroup: index),
@@ -483,7 +489,7 @@ struct AssetDetailView: View {
         let frameH = height * tileH
         var frames: [RawFrame] = []
         for state in 0 ..< (tileIDs.count / perState) {
-            var indices = [ UInt8 ](repeating: 0, count: frameW * frameH)
+            var indices = [UInt8](repeating: 0, count: frameW * frameH)
             for i in 0 ..< perState {
                 let pixels = tiles.tile(tileIDs[state * perState + i])
                 guard !pixels.isEmpty else { continue }
@@ -507,7 +513,7 @@ struct AssetDetailView: View {
         let rows = max((tiles.tileCount + perRow - 1) / perRow, 1)
         let width = tiles.tileWidth * perRow
         let height = tiles.tileHeight * rows
-        var indices = [ UInt8 ](repeating: 0, count: width * height)
+        var indices = [UInt8](repeating: 0, count: width * height)
         for tile in 0 ..< tiles.tileCount {
             let pixels = tiles.tile(tile)
             let originX = (tile % perRow) * tiles.tileWidth
@@ -529,7 +535,7 @@ struct AssetDetailView: View {
         let rows = max((font.glyphs.count + perRow - 1) / perRow, 1)
         let width = cellWidth * perRow
         let height = cellHeight * rows
-        var indices = [ UInt8 ](repeating: 0, count: width * height)
+        var indices = [UInt8](repeating: 0, count: width * height)
         for (glyphIndex, glyph) in font.glyphs.enumerated() {
             let originX = (glyphIndex % perRow) * cellWidth
             let originY = (glyphIndex / perRow) * cellHeight + glyph.topRows
@@ -568,7 +574,7 @@ struct AssetDetailView: View {
 
     /// A 2-entry palette (index 1 = white) for rendering font glyphs as white-on-transparent.
     static let monochrome: Palette = {
-        var bytes = [ UInt8 ](repeating: 0, count: 768)
+        var bytes = [UInt8](repeating: 0, count: 768)
         bytes[3] = 63
         bytes[4] = 63
         bytes[5] = 63

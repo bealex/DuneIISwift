@@ -56,6 +56,7 @@ public extension GameState {
     /// `Tools_Index_GetUnit`: the unit slot index, or `nil`.
     func indexGetUnit(_ encoded: UInt16) -> Int? {
         guard Tools.indexType(encoded) == .unit else { return nil }
+
         let index = Tools.indexDecode(encoded)
         return index < UInt16(Pool.unitIndexMax) ? Int(index) : nil
     }
@@ -63,6 +64,7 @@ public extension GameState {
     /// `Tools_Index_GetStructure`: the structure slot index, or `nil`.
     func indexGetStructure(_ encoded: UInt16) -> Int? {
         guard Tools.indexType(encoded) == .structure else { return nil }
+
         let index = Tools.indexDecode(encoded)
         return index < UInt16(Pool.structureIndexMaxHard) ? Int(index) : nil
     }
@@ -102,6 +104,7 @@ public extension GameState {
                 if index >= UInt16(Pool.structureIndexMaxHard) { return Tile32(x: 0, y: 0) }
                 let s = structures[Int(index)]
                 guard let st = StructureType(rawValue: Int(s.o.type)) else { return Tile32(x: 0, y: 0) }
+
                 let diff = StructureLayoutInfo[StructureInfo[st].layout].tileDiff
                 return Tile32.addDiff(s.o.position, diff)
             case .none:

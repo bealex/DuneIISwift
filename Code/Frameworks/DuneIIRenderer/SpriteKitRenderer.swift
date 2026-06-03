@@ -125,8 +125,10 @@ public final class SpriteKitRenderer {
         render(frame)
         let view = SKView(frame: CGRect(x: 0, y: 0, width: side, height: side))
         guard let texture = view.texture(from: scene) else { return nil }
+
         let full = texture.cgImage()
         guard let crop else { return full }
+
         // `texture(from:)` rasterizes at the host backing scale (2× on a Retina display), so the CGImage is
         // larger than the logical `side`. `crop` is in logical points (image-space, y-down) — scale it to
         // pixels by the measured ratio so the requested tile region is captured at any backing scale.
@@ -251,6 +253,7 @@ public final class SpriteKitRenderer {
             // fractional camera at zoom, so toggling between them made an animating tile (e.g. the
             // construction yard's corner) jitter by a pixel frame-to-frame.
             guard let texture = tileTexture(frame.tiles[i], palette: palette) else { continue }
+
             let node = overlayNodes[i] ?? makeCellNode(i)
             node.texture = texture
             overlayNodes[i] = node
@@ -291,6 +294,7 @@ public final class SpriteKitRenderer {
             let pixels = FrameComposer.cell(tile, veiledTileIndex: veiledTileIndex, showFog: showFog, source: source),
             let image = IndexedImage.cgImage(indices: pixels, width: tileSize, height: tileSize, palette: palette)
         else { return nil }
+
         let texture = nearest(image)
         tileCache[key] = texture
         return texture
@@ -311,6 +315,7 @@ public final class SpriteKitRenderer {
         var used = 0
         for sprite in sprites {
             guard let texture = spriteTexture(sprite, palette: palette) else { continue }
+
             let node = pooledSprite(used); used += 1
             node.texture = texture
             node.size = texture.size()
@@ -352,6 +357,7 @@ public final class SpriteKitRenderer {
                 remap: remap
             )
         else { return nil }
+
         let texture = nearest(image)
         spriteCache[key] = texture
         return texture
@@ -367,6 +373,7 @@ public final class SpriteKitRenderer {
         vertical: Bool
     ) -> [UInt8] {
         guard width > 0, height > 0, pixels.count >= width * height, horizontal || vertical else { return pixels }
+
         var out = pixels
         for y in 0 ..< height {
             let sy = vertical ? (height - 1 - y) : y
@@ -395,6 +402,7 @@ public final class SpriteKitRenderer {
         // skipped frame the existing patch nodes keep their last texture and position — the heat-haze just
         // animates a little slower, far cheaper than re-uploading an `SKTexture` per worm every frame.
         guard shimmerThrottle.tick() else { return }
+
         shimmerRebuildCount += 1
         let side = tileSize * frame.mapWidth
         blurIndex = (blurIndex + 1) % ShimmerEffect.blurOffsets.count  // advance the heat-haze each frame
@@ -406,6 +414,7 @@ public final class SpriteKitRenderer {
             ? { [tileSize] px, py in
                 let tx = px / tileSize, ty = py / tileSize
                 guard tx >= 0, tx < frame.mapWidth, ty >= 0, ty < frame.mapHeight else { return false }
+
                 return !frame.tiles[ty * frame.mapWidth + tx].isUnveiled
             } : nil
         for blur in frame.blurs {
@@ -415,6 +424,7 @@ public final class SpriteKitRenderer {
                 continue
             }
             guard let frameSprite = source.unitFrame(globalIndex: blur.sprite.spriteIndex) else { continue }
+
             let mask = Self.mirror(
                 frameSprite.pixels,
                 width: frameSprite.width,
@@ -440,6 +450,7 @@ public final class SpriteKitRenderer {
                     veiled: veiled
                 )
             else { continue }
+
             let node = pooledBlur(used); used += 1
             node.texture = nearest(patch)
             node.size = CGSize(width: frameSprite.width, height: frameSprite.height)
@@ -463,6 +474,7 @@ public final class SpriteKitRenderer {
     /// normally 1). Reseeds from base on a backward seek (a scenario reload).
     private func advancePalette(to tick: Int) {
         guard colours.count > PaletteAnimator.selectionIndex else { return }
+
         if tick < lastTick {
             colours = basePalette.colors
             PaletteAnimator.seedAnimatedColours(&colours)
@@ -470,6 +482,7 @@ public final class SpriteKitRenderer {
             lastTick = 0
         }
         guard tick > lastTick else { return }
+
         for step in (lastTick + 1) ... tick {
             PaletteAnimator.stepTick(&colours, tick: step, state: &cycle)
         }
@@ -478,6 +491,7 @@ public final class SpriteKitRenderer {
 
     private func packedWindColour() -> Int {
         guard colours.count > PaletteAnimator.windTrapIndex else { return 0 }
+
         let c = colours[PaletteAnimator.windTrapIndex]
         return (Int(c.red) << 16) | (Int(c.green) << 8) | Int(c.blue)
     }

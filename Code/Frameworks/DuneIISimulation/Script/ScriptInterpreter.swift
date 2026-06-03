@@ -88,6 +88,7 @@ public struct DefaultScriptInterpreter: ScriptInterpreter {
 
         // OpenDUNE trusts the program bounds; we guard to fail cleanly on a malformed program.
         guard Int(s.scriptPC) < program.count else { s.scriptPC = ScriptEngine.scriptNull; return false }
+
         let current = program[Int(s.scriptPC)]
         s.scriptPC &+= 1
 
@@ -101,6 +102,7 @@ public struct DefaultScriptInterpreter: ScriptInterpreter {
             parameter = UInt16(bitPattern: Int16(Int8(bitPattern: UInt8(current & 0xFF))))  // sign-extend
         } else if current & 0x2000 != 0 {
             guard Int(s.scriptPC) < program.count else { s.scriptPC = ScriptEngine.scriptNull; return false }
+
             parameter = program[Int(s.scriptPC)]
             s.scriptPC &+= 1
         }
@@ -175,6 +177,7 @@ public struct DefaultScriptInterpreter: ScriptInterpreter {
                 // A ported native returns its value; an unported one (`nil`) halts the script cleanly —
                 // null the PC so it stays stopped rather than silently resuming past the call next tick.
                 guard let value = callFunction(p & 0xFF, &s) else { s.scriptPC = ScriptEngine.scriptNull; return false }
+
                 s.returnValue = value
 
             case 15:  // JUMP_NE

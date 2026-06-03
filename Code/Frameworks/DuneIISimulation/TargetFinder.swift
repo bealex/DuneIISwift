@@ -26,6 +26,7 @@ public struct TargetFinder: Sendable {
                 return state.indexEncode(state.structures[s].o.index, type: .structure)
             }
             guard let u = findBestTargetUnit(slot: slot, mode: mode, in: &state) else { return 0 }
+
             return state.indexEncode(state.units[u].o.index, type: .unit)
         }
 
@@ -56,6 +57,7 @@ public struct TargetFinder: Sendable {
         }
 
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return nil }
+
         var distance = UInt16(UnitInfo[ut].fireDistance) << 8
         if mode == 2 { distance <<= 1 }
 
@@ -149,6 +151,7 @@ public struct TargetFinder: Sendable {
             let uType = UnitType(rawValue: Int(state.units[unitSlot].o.type)),
             let tType = UnitType(rawValue: Int(target.o.type))
         else { return 0 }
+
         let unitInfo = UnitInfo[uType]
         let targetInfo = UnitInfo[tType]
 
@@ -180,6 +183,7 @@ public struct TargetFinder: Sendable {
     func findBestTargetStructure(slot: Int, mode: UInt16, in state: GameState) -> Int? {
         let position = state.indexGetTile(state.units[slot].originEncoded)
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return nil }
+
         let distance = UInt16(UnitInfo[ut].fireDistance) << 8
 
         var best: Int? = nil
@@ -187,6 +191,7 @@ public struct TargetFinder: Sendable {
         var find = PoolFind()
         while let sSlot = state.structureFind(&find) {
             guard let st = StructureType(rawValue: Int(state.structures[sSlot].o.type)) else { continue }
+
             if st == .slab1x1 || st == .slab2x2 || st == .wall { continue }
 
             let diff = StructureLayoutInfo[StructureInfo[st].layout].tileDiff
@@ -216,6 +221,7 @@ public struct TargetFinder: Sendable {
         if house.areAllied(unitHouse, s.o.houseID, playerHouseID: state.playerHouseID) { return 0 }
         if s.o.seenByHouses & (1 << unitHouse) == 0 { return 0 }
         guard let st = StructureType(rawValue: Int(s.o.type)) else { return 0 }
+
         let si = StructureInfo[st]
         var priority = UInt16(truncatingIfNeeded: Int(si.o.priorityBuild) + Int(si.o.priorityTarget))
         let distance = Tile32.distanceRoundedUp(from: state.units[unitSlot].o.position, to: s.o.position)

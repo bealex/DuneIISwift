@@ -81,6 +81,7 @@ public struct InputController: InputSource {
                 l.value.count != r.value.count ? l.value.count < r.value.count : l.key > r.key
             })
         else { return [] }
+
         return best.value.sorted()
     }
 
@@ -99,6 +100,7 @@ public struct InputController: InputSource {
     /// attack, else move. The same kind is issued to the whole group.
     public mutating func rightClick(tileX x: Int, tileY y: Int, enemyTarget: Bool, harvester: Bool) {
         guard !selectedUnits.isEmpty else { return }
+
         let kind: OrderKind = harvester ? .harvest : (enemyTarget ? .attack : .move)
         for slot in selectedUnits { queue.append(order(kind, slot: slot, tileX: x, tileY: y)) }
         pendingOrder = nil

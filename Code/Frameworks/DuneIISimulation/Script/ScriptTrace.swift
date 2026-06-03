@@ -24,6 +24,7 @@ public struct ScriptTraceLine: Sendable, Equatable {
         let program = info.program
         let pc = Int(engine.scriptPC)
         guard pc < program.count else { return nil }
+
         let current = program[pc]
 
         var op = Int((current >> 8) & 0x1F)

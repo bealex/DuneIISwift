@@ -51,6 +51,7 @@ public final class MusicPlayer: MusicEngine {
             log.warning("music file missing: \(url.lastPathComponent, privacy: .public)")
             return
         }
+
         looping = loop
         current = (file, song)
         pausedPosition = nil
@@ -68,6 +69,7 @@ public final class MusicPlayer: MusicEngine {
     /// Freeze playback, remembering the position so `resume()` continues seamlessly.
     public func pause() {
         guard let player, player.isPlaying else { return }
+
         generation &+= 1  // invalidate the completion handler this stop may fire
         pausedPosition = player.currentPosition
         player.stop()
@@ -75,6 +77,7 @@ public final class MusicPlayer: MusicEngine {
 
     public func resume() {
         guard let current, let pausedPosition else { return }
+
         let url = musicDirectory.appendingPathComponent(Self.filename(file: current.file, song: current.song))
         start(url: url, from: pausedPosition)
         self.pausedPosition = nil
@@ -103,6 +106,7 @@ public final class MusicPlayer: MusicEngine {
 
     private func finished(token: Int) {
         guard token == generation else { return }  // a stop/pause/new-play happened after this one started
+
         if looping, let current {
             let url = musicDirectory.appendingPathComponent(Self.filename(file: current.file, song: current.song))
             start(url: url, from: nil)

@@ -30,6 +30,7 @@ final class ScenarioAssets {
             error = "Cannot read install directory: \(installURL.path)"
             return
         }
+
         for url in entries where url.pathExtension.uppercased() == "PAK" {
             if let data = try? Data(contentsOf: url), let archive = try? Pak.Archive(data) { archives.append(archive) }
         }
@@ -54,6 +55,7 @@ final class ScenarioAssets {
         else {
             error = "Missing BUILD.EMC."; return
         }
+
         builder = ScenarioBuilder(
             iconMap: iconMap,
             unitScript: ScriptInfo(program),
@@ -74,6 +76,7 @@ final class ScenarioAssets {
     func shp(_ name: String) -> Shp.FrameSet? {
         if let cached = shpCache[name] { return cached }
         guard let data = data(name), let set = try? Shp.FrameSet(data) else { return nil }
+
         shpCache[name] = set
         return set
     }

@@ -9,7 +9,7 @@ import Testing
 /// See `Documentation/Architecture/BuildGUI.md`.
 @Suite("Structure build GUI seam")
 struct StructureBuildTests {
-    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func sim() -> Simulation {
         var s = GameState(); s.playerHouseID = 0

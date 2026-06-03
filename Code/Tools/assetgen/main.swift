@@ -99,7 +99,7 @@ func defaultPalette(_ installDir: URL) -> Palette {
 }
 
 func grayscalePalette() -> Palette {
-    var bytes = [ UInt8 ](repeating: 0, count: 768)
+    var bytes = [UInt8](repeating: 0, count: 768)
     for index in 0 ..< 256 {
         let value = UInt8(index >> 2)
         bytes[index * 3] = value
@@ -225,7 +225,7 @@ func tileSheet(_ tiles: Icn.TileSet) -> (indices: [UInt8], width: Int, height: I
     let rows = max((tiles.tileCount + perRow - 1) / perRow, 1)
     let width = tiles.tileWidth * perRow
     let height = tiles.tileHeight * rows
-    var indices = [ UInt8 ](repeating: 0, count: width * height)
+    var indices = [UInt8](repeating: 0, count: width * height)
     for tile in 0 ..< tiles.tileCount {
         let pixels = tiles.tile(tile)
         let originX = (tile % perRow) * tiles.tileWidth
@@ -247,7 +247,7 @@ func fontSheet(_ font: Fnt.Font) -> (indices: [UInt8], width: Int, height: Int) 
     let rows = max((font.glyphs.count + perRow - 1) / perRow, 1)
     let width = cellWidth * perRow
     let height = cellHeight * rows
-    var indices = [ UInt8 ](repeating: 0, count: width * height)
+    var indices = [UInt8](repeating: 0, count: width * height)
     for (glyphIndex, glyph) in font.glyphs.enumerated() {
         let originX = (glyphIndex % perRow) * cellWidth
         let originY = (glyphIndex / perRow) * cellHeight + glyph.topRows

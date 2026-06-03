@@ -22,8 +22,8 @@ public enum Format80 {
     public static func decode(_ source: Data, destinationLength: Int) throws -> Data {
         guard destinationLength > 0 else { return Data() }
 
-        let bytes = [ UInt8 ](source)
-        var dest = [ UInt8 ](repeating: 0, count: destinationLength)
+        let bytes = [UInt8](source)
+        var dest = [UInt8](repeating: 0, count: destinationLength)
         var sourceIndex = 0
         var written = 0
 
@@ -103,7 +103,7 @@ public enum Format80 {
     /// not known up front (CPS image bodies, ICN tile data); mirrors a `Format80_Decode` call with an
     /// effectively unbounded destination (`destLength = 0xFFFF` in OpenDUNE's `Sprites_Decode`).
     public static func decodeToEnd(_ source: Data) throws -> Data {
-        let bytes = [ UInt8 ](source)
+        let bytes = [UInt8](source)
         var dest: [UInt8] = []
         var sourceIndex = 0
 

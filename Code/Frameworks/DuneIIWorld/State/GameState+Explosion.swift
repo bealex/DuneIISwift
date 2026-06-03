@@ -10,6 +10,7 @@ public extension GameState {
     /// Draws no RNG (golden-neutral; the oracle calls this in the scenario harness too).
     mutating func explosionStart(type: Int, position: Tile32, houseID: UInt8 = 0) {
         guard type >= 0, type < ExplosionType.max else { return }
+
         let packed = Int(position.packed)
         explosionStopAtPosition(position.packed)
 
@@ -32,6 +33,7 @@ public extension GameState {
     /// `Explosion_StopAtPosition` (`explosion.c:252`): stop any explosion currently on `packed`.
     mutating func explosionStopAtPosition(_ packed: UInt16) {
         guard map[Int(packed)].hasExplosion else { return }
+
         for i in explosions.indices where explosions[i].active && explosions[i].position.packed == packed {
             explosionFuncStop(i)
             return
@@ -50,6 +52,7 @@ public extension GameState {
                 let row = ExplosionTables.commands[explosions[i].tableIndex]
                 let cursor = Int(explosions[i].current)
                 guard cursor < row.count else { explosionFuncStop(i); continue }
+
                 let command = row[cursor]
                 explosions[i].current = explosions[i].current &+ 1
                 let parameter = command.parameter
@@ -112,6 +115,7 @@ public extension GameState {
     mutating func explosionTileDamage(_ packed: UInt16) {
         let pos = Int(packed)
         guard pos >= 0, pos < map.count, mapIsPositionUnveiled(pos) else { return }
+
         // Skip a structure tile (LST_STRUCTURE) or an already-destroyed wall (LST_DESTROYED_WALL).
         if map[pos].hasStructure { return }
         if UInt16(map[pos].overlayTileID) == tileIDs.wall { return }
@@ -128,6 +132,7 @@ public extension GameState {
     /// `Map_IsPositionUnveiled` (`map.c`): the tile is revealed and its overlay isn't the fog veil.
     private func mapIsPositionUnveiled(_ pos: Int) -> Bool {
         guard map[pos].isUnveiled else { return false }
+
         let o = UInt16(map[pos].overlayTileID)
         return o > tileIDs.veiled || o < tileIDs.veiled &- 15  // Tile_IsUnveiled
     }

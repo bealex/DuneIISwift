@@ -34,18 +34,18 @@ public enum Icn {
                 let palettes = reader.chunk("RPAL")
             else { throw DecodeError.missingChunk }
 
-            let info = [ UInt8 ](sinf)
+            let info = [UInt8](sinf)
             let bytesPerRow = Int(info[0]) << 2
             let height = Int(info[1]) << 3
             let bytesPerTile = bytesPerRow * height
-            let pixels = try ImageBlock.decode([ UInt8 ](sset))
+            let pixels = try ImageBlock.decode([UInt8](sset))
 
             self.tileWidth = bytesPerRow * 2
             self.tileHeight = height
             self.bytesPerTile = bytesPerTile
             self.pixels4bpp = pixels
-            self.rtbl = [ UInt8 ](table)
-            self.rpal = [ UInt8 ](palettes)
+            self.rtbl = [UInt8](table)
+            self.rpal = [UInt8](palettes)
             self.tileCount = bytesPerTile > 0 ? pixels.count / bytesPerTile : 0
         }
 

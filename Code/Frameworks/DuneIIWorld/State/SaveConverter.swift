@@ -29,6 +29,7 @@ public enum SaveConverter {
     public static func convert(_ data: Data, iconMap: IconMap) throws -> GameState {
         var r = Reader(data)
         guard r.remaining >= 12, r.tag() == "FORM" else { throw ConvertError.notForm }
+
         _ = r.u32be()  // FORM length (we read to the chunks' own lengths)
         guard r.tag() == "SCEN" else { throw ConvertError.notForm }
 
@@ -38,6 +39,7 @@ public enum SaveConverter {
             let tag = r.tag()
             let len = Int(r.u32be())
             guard r.pos + len <= r.bytes.count else { throw ConvertError.truncated }
+
             chunks[tag] = (r.pos, len)
             r.skip(len + (len & 1))  // chunks pad to an even length
         }
@@ -48,6 +50,7 @@ public enum SaveConverter {
 
         // INFO — scenario + the globals we resume (seed/scale drive the map; campaign/credits/score the rest).
         guard let info = chunks["INFO"], info.len >= infoSize else { throw ConvertError.badChunk }
+
         let mapSeed = readInfo(Reader(data, info.start), into: &state)
 
         // Regenerate the landscape from the seed, then apply the MAP chunk's sparse tile overrides.
@@ -116,6 +119,7 @@ public enum SaveConverter {
             let idx = Int(r.u16())
             let b0 = r.u8(), b1 = r.u8(), b2 = r.u8(), b3 = r.u8()
             guard idx < state.map.count else { continue }
+
             state.map[idx].groundTileID = UInt16(b0) | (UInt16(b1 & 1) << 8)
             state.map[idx].overlayTileID = b1 >> 1
             state.map[idx].houseID = b2 & 0x7
@@ -164,6 +168,7 @@ public enum SaveConverter {
             h.starportTimeLeft = r.u16(); h.starportLinkedID = r.u16()
             for i in 0 ..< 5 { h.aiStructureRebuild[i] = [ r.u16(), r.u16() ] }
             guard h.index < UInt8(state.houses.count), state.houseAllocate(index: h.index) != nil else { continue }
+
             state.houses[Int(h.index)] = h
         }
     }
@@ -184,6 +189,7 @@ public enum SaveConverter {
             s.state = StructureState(rawValue: r.i16()) ?? .idle
             s.hitpointsMax = r.u16()
             guard let slot = state.structureAllocate(index: s.o.index, type: s.o.type) else { continue }
+
             state.structures[slot] = s
         }
     }
@@ -213,6 +219,7 @@ public enum SaveConverter {
             u.timer = r.u16()
             for i in 0 ..< 14 { u.route[i] = r.u8() }
             guard state.unitAllocate(index: u.o.index, type: u.o.type, houseID: u.o.houseID) != nil else { continue }
+
             state.units[Int(u.o.index)] = u
         }
     }
@@ -222,9 +229,9 @@ public enum SaveConverter {
         let bytes: [UInt8]
         var pos: Int
         let end: Int
-        init(_ data: Data) { bytes = [ UInt8 ](data); pos = 0; end = bytes.count }
+        init(_ data: Data) { bytes = [UInt8](data); pos = 0; end = bytes.count }
         init(_ data: Data, _ start: Int, _ len: Int? = nil) {
-            bytes = [ UInt8 ](data); pos = start; end = len.map { start + $0 } ?? bytes.count
+            bytes = [UInt8](data); pos = start; end = len.map { start + $0 } ?? bytes.count
         }
         var remaining: Int { end - pos }
         mutating func u8() -> UInt8 { defer { pos += 1 }; return bytes[pos] }

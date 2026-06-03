@@ -22,7 +22,7 @@ public enum Wsa {
         public let frames: [[UInt8]]
 
         public init(_ data: Data) throws {
-            let bytes = [ UInt8 ](data)
+            let bytes = [UInt8](data)
             guard bytes.count >= 18 else { throw DecodeError.truncated }
 
             let rawFrames = bytes.u16LE(at: 0)
@@ -57,7 +57,7 @@ public enum Wsa {
             }
 
             let frameSize = width * height
-            var current = [ UInt8 ](repeating: 0, count: frameSize)
+            var current = [UInt8](repeating: 0, count: frameSize)
             var frames: [[UInt8]] = []
             frames.reserveCapacity(frameCount)
             for index in 0 ..< frameCount {

@@ -79,6 +79,7 @@ struct UnitSpriteTests {
             u.spriteOffset = spriteOffset
             return u
         }
+
         // Harvesting on spice, North (o8 0): overlay index = (spriteOffset % 3) + 0xDF + values_32A4[0]*3,
         // offset values_334E[0] = (0, 7), the body's H-flip (none for North).
         let north = try #require(

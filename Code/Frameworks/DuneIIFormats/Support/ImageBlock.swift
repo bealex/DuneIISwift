@@ -33,7 +33,7 @@ enum ImageBlock {
                 p += source.u16LE(at: p) + 2
                 guard p <= source.count else { throw DecodeError.truncated }
 
-                return [ UInt8 ](try Format80.decodeToEnd(Data(source[p...])))
+                return [UInt8](try Format80.decodeToEnd(Data(source[p...])))
             default:
                 throw DecodeError.unsupportedCompression
         }

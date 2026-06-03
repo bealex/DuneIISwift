@@ -9,7 +9,7 @@ public extension Simulation {
     func makeFrameInfo() -> FrameInfo {
         let width = 64, height = 64  // `g_map` is a fixed 64×64 grid
 
-        var tiles = [ FrameInfo.Tile ]()
+        var tiles = [FrameInfo.Tile]()
         tiles.reserveCapacity(state.map.count)
         // Partial fog edges: for a revealed tile bordering the unknown, pick the fog-edge sprite for its
         // 4-neighbour veil bitmask (computed from the binary `isUnveiled` grid — the sim models fog as
@@ -33,19 +33,21 @@ public extension Simulation {
             )
         }
 
-        var units = [ FrameInfo.Unit ]()
-        var effects = [ FrameInfo.Effect ]()
-        var blurs = [ FrameInfo.Blur ]()
+        var units = [FrameInfo.Unit]()
+        var effects = [FrameInfo.Effect]()
+        var blurs = [FrameInfo.Blur]()
         for u in state.units where u.o.flags.contains(.used) {
             // Hidden units (in transport, inside a structure, off-map) are never drawn by `viewport.c`;
             // drawing them leaves a phantom at the unit's stale position (e.g. a harvester frozen at its
             // pickup spot while the carryall flies off, or a carried harvester showing before the drop).
             if u.o.flags.contains(.isNotOnMap) { continue }
             guard let type = UnitType(rawValue: Int(u.o.type)) else { continue }
+
             // The harvesting overlay is gated on the harvester standing on a spice tile.
             let landscape = mapPrimitives.landscapeType(state.map[Int(u.o.position.packed)], tileIDs: state.tileIDs)
             let onSpice = landscape == .spice || landscape == .thickSpice
             guard let sprites = UnitSprites.info(for: u, onSpice: onSpice) else { continue }
+
             // A sandworm (`blurTile`) is not a normal SHP draw: the renderer displaces the terrain under
             // its silhouette (`DRAWSPRITE_FLAG_BLUR`). Carry it as a Blur — its body frame is the mask.
             if UnitInfo[type].o.flags.contains(.blurTile) {
@@ -93,7 +95,7 @@ public extension Simulation {
             }
         }
 
-        var structures = [ FrameInfo.Structure ]()
+        var structures = [FrameInfo.Structure]()
         for s in state.structures where s.o.flags.contains(.used) {
             // Created-but-not-yet-placed structures (`Structure_Create` parks them off-map at (0,0) until
             // they are built onto the map) must not be drawn — otherwise they leave a phantom blip at world
@@ -101,6 +103,7 @@ public extension Simulation {
             // off-map objects).
             if s.o.flags.contains(.isNotOnMap) { continue }
             guard let type = StructureType(rawValue: Int(s.o.type)) else { continue }
+
             let house = HouseID(rawValue: Int(s.o.houseID)) ?? .harkonnen
             structures.append(
                 FrameInfo.Structure(
@@ -133,9 +136,10 @@ public extension Simulation {
             )
         }
 
-        var houses = [ FrameInfo.House ]()
+        var houses = [FrameInfo.House]()
         for h in state.houses where h.flags.contains(.used) {
             guard let id = HouseID(rawValue: Int(h.index)) else { continue }
+
             houses.append(
                 FrameInfo.House(
                     id: id,
@@ -215,10 +219,12 @@ public extension Simulation {
         else {
             return nil
         }
+
         let buildTime: Int
         switch type {
             case .constructionYard:
                 guard let st = StructureType(rawValue: Int(s.objectType)) else { return nil }
+
                 buildTime = Int(StructureInfo[st].o.buildTime)
             case .repair:
                 let lu = Int(s.o.linkedID)
@@ -228,12 +234,15 @@ public extension Simulation {
                 else {
                     return nil
                 }
+
                 buildTime = Int(UnitInfo[ut].o.buildTime)
             default:
                 guard let ut = UnitType(rawValue: Int(s.objectType)) else { return nil }
+
                 buildTime = Int(UnitInfo[ut].o.buildTime)
         }
         guard buildTime > 0 else { return nil }
+
         let done = buildTime - (Int(s.countDown) >> 8)
         return min(1, max(0, Double(done) / Double(buildTime)))
     }

@@ -79,6 +79,7 @@ public struct UnitOrders: Sendable {
     /// `Unit_SetAction` — its script's action handler computes any destination itself. `stop` is this with GUARD.
     public func setUnitAction(slot: Int, action: UInt8, in state: inout GameState) {
         guard slot >= 0, slot < state.units.count else { return }
+
         state.objectScriptVariable4Clear(.unit(slot))
         state.units[slot].targetAttack = 0
         state.units[slot].targetMove = 0
@@ -134,6 +135,7 @@ public struct UnitOrders: Sendable {
         for offset in around {
             let p = Int(packed) + offset
             guard p >= 0, p < state.map.count else { continue }
+
             if let u = state.unitGetByPackedTile(UInt16(p)) { return state.units[u].o.position.packed }
         }
         return packed

@@ -26,6 +26,7 @@ public extension MovementType {
     static func named(_ name: String) -> MovementType? {
         let names = [ "Foot", "Tracked", "Harvester", "Wheeled", "Winged", "Slither" ]
         guard let i = names.firstIndex(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return nil }
+
         return MovementType(rawValue: i)
     }
 }
@@ -35,6 +36,7 @@ public extension TeamActionType {
     static func named(_ name: String) -> TeamActionType? {
         let names = [ "Normal", "Staging", "Flee", "Kamikaze", "Guard" ]
         guard let i = names.firstIndex(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return nil }
+
         return TeamActionType(rawValue: i)
     }
 }
@@ -93,6 +95,7 @@ public extension GameState {
         // `[CHOAM]` = "<UnitType>=<stock>" → seed the starport stock (`Scenario_Load_Choam`, `scenario.c:300`).
         for key in ini.keys(section: "CHOAM") {
             guard let type = UnitType.named(key), type.rawValue < starportAvailable.count else { continue }
+
             starportAvailable[type.rawValue] = Int16(clamping: ini.integer(section: "CHOAM", key: key))
         }
 
@@ -128,6 +131,7 @@ public extension GameState {
                 let brain = ini.string(section: name, key: "Brain")?.uppercased(),
                 brain == "HUMAN" || brain == "CPU"
             else { continue }
+
             let h = houseAllocate(index: UInt8(house.rawValue)) ?? Int(house.rawValue)
             houses[h].credits = UInt16(clamping: ini.integer(section: name, key: "Credits"))
             houses[h].creditsQuota = UInt16(clamping: ini.integer(section: name, key: "Quota"))
@@ -144,6 +148,7 @@ public extension GameState {
         }
         for key in ini.keys(section: "HOUSES") {
             guard let house = HouseID.named(key) else { continue }
+
             let h = houseAllocate(index: UInt8(house.rawValue)) ?? Int(house.rawValue)
             houses[h].credits = UInt16(clamping: Int(ini.string(section: "HOUSES", key: key) ?? "") ?? 0)
         }
@@ -190,6 +195,7 @@ public extension GameState {
                 houseID: UInt8(house.rawValue)
             )
         else { return }
+
         units[i].o.hitpoints = UInt16(hpPercent * Int(UnitInfo[type].o.hitpoints) / 256)
         units[i].o.position = Tile32.unpack(packed)
         units[i].orientation[0].current = orientation
@@ -221,6 +227,7 @@ public extension GameState {
             packed = UInt16(clamping: Int(key.dropFirst(3)) ?? 0)
         } else {
             guard parts.count >= 4 else { return }
+
             packed = UInt16(clamping: Int(parts[3]) ?? 0)
         }
 
@@ -233,6 +240,7 @@ public extension GameState {
         }
 
         guard let i = structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(type.rawValue)) else { return }
+
         structures[i].o.houseID = UInt8(house.rawValue)
         // A structure stores its tile *corner*, not the centred sub-tile — `Structure_Place` zeroes the
         // 0x80 (`s->o.position &= 0xFF00`). Units centre; structures don't. The 128px offset matters for
@@ -256,6 +264,7 @@ public extension GameState {
             let action = TeamActionType.named(parts[1]),
             let movement = MovementType.named(parts[2])
         else { return }
+
         let minMembers = UInt16(clamping: Int(parts[3]) ?? 0)
         let maxMembers = UInt16(clamping: Int(parts[4]) ?? 0)
         let scriptPC = action.rawValue < offsets.count ? offsets[action.rawValue] : ScriptEngine.scriptNull
@@ -279,8 +288,10 @@ public extension GameState {
     /// see `Reinforcement.repeats`). We store the spawn *recipe*; the Simulation creates the unit at deploy.
     private mutating func loadReinforcement(key: String, value: String?) {
         guard let index = Int(key), index >= 0, index < scenario.reinforcements.count else { return }
+
         let parts = fields(value)
         guard parts.count >= 4, let house = HouseID.named(parts[0]), let type = UnitType.named(parts[1]) else { return }
+
         let locations = [ "NORTH", "EAST", "SOUTH", "WEST", "AIR", "VISIBLE", "ENEMYBASE", "HOMEBASE" ]
         guard let locationID = locations.firstIndex(of: parts[2].uppercased()) else { return }
 

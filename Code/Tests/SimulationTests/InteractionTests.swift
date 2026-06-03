@@ -26,6 +26,7 @@ struct InteractionTests {
             let build = try? Emc.Program(buildData),
             let iconMap = try? IconMap(iconData)
         else { return nil }
+
         return Assets(unit: ScriptInfo(unit), build: ScriptInfo(build), iconMap: iconMap)
     }
 
@@ -34,6 +35,7 @@ struct InteractionTests {
     @Test("a killed foot soldier leaves a corpse that lingers, then clears", .timeLimit(.minutes(1)))
     func soldierLeavesCorpse() throws {
         guard let a = load() else { return }
+
         var state = GameState(random256Seed: 0x1234)
         state.playerHouseID = 0
         _ = state.houseAllocate(index: 0); state.houses[0].unitCountMax = 100
@@ -80,6 +82,7 @@ struct InteractionTests {
     @Test("destroying a building spawns soldiers from the debris and leaves rubble", .timeLimit(.minutes(1)))
     func buildingDestructionSpawnsSoldiers() throws {
         guard let a = load() else { return }
+
         var state = GameState(random256Seed: 0x51234)
         state.playerHouseID = 0
         _ = state.houseAllocate(index: 1); state.houses[1].unitCountMax = 100  // an enemy-owned palace

@@ -19,6 +19,7 @@ struct ShimmerThrottleTests {
     @Test("interval 2 rebuilds the shimmer every other frame")
     func throttledHalvesRebuilds() {
         guard let p = RenderHarness.prepare(Self.wormCase) else { return }
+
         p.renderer.shimmerUpdateInterval = 2
         for _ in 0 ..< 4 { p.renderer.render(p.frame) }
         // Frames fire on calls 0 and 2 → 2 rebuilds across 4 renders.
@@ -29,6 +30,7 @@ struct ShimmerThrottleTests {
     @Test("default interval 1 rebuilds every frame (golden-neutral)")
     func defaultRebuildsEveryFrame() {
         guard let p = RenderHarness.prepare(Self.wormCase) else { return }
+
         #expect(p.renderer.shimmerUpdateInterval == 1)
         for _ in 0 ..< 4 { p.renderer.render(p.frame) }
         #expect(p.renderer.shimmerRebuildCount == 4)

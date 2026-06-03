@@ -8,7 +8,7 @@ import Testing
 /// `House_EnsureHarvesterAvailable`, the starport stock bump, and the frigate delivery.
 @Suite("GameLoop_House tails")
 struct GameLoopHouseTailsTests {
-    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func combatBase() -> (GameState, UnitCombat) {
         var s = GameState(random256Seed: 0x55, randomLCGSeed: 0x55)

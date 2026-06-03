@@ -20,6 +20,7 @@ public struct DecodedSpriteSource: WorldSpriteSource {
 
     public func terrainTile(_ id: Int) -> [UInt8]? {
         guard let tileSet, id >= 0, id < tileSet.tileCount else { return nil }
+
         return tileSet.tile(id)
     }
 
@@ -30,6 +31,7 @@ public struct DecodedSpriteSource: WorldSpriteSource {
             frame >= 0,
             frame < set.frames.count
         else { return nil }
+
         let f = set.frames[frame]
         return SpriteFrame(width: f.width, height: f.height, pixels: f.pixels)
     }

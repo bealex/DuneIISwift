@@ -24,7 +24,7 @@ public enum PngWriter {
     ) throws -> Data {
         guard width > 0, height > 0, indices.count >= width * height else { throw WriteError.invalidDimensions }
 
-        var rgba = [ UInt8 ](repeating: 0, count: width * height * 4)
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
         for pixel in 0 ..< (width * height) {
             let index = Int(indices[pixel])
             if let transparentIndex, index == transparentIndex { continue }  // leave (0,0,0,0)
@@ -101,8 +101,10 @@ public enum PngWriter {
                 nil
             )
         else { throw WriteError.encodeFailed }
+
         CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else { throw WriteError.encodeFailed }
+
         return output as Data
     }
 

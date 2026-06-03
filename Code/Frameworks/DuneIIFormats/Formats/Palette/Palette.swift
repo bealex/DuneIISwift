@@ -33,7 +33,7 @@ public struct Palette: Equatable {
     public init(_ data: Data) throws {
         guard data.count >= Palette.colorCount * 3 else { throw DecodeError.wrongSize }
 
-        let bytes = [ UInt8 ](data)
+        let bytes = [UInt8](data)
         var colors: [Color] = []
         colors.reserveCapacity(Palette.colorCount)
         for index in 0 ..< Palette.colorCount {

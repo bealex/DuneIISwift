@@ -154,6 +154,7 @@ public struct Simulation: Sendable {
             state.pendingBloomDetonations.removeAll(keepingCapacity: true)
             return
         }
+
         let blooms = state.pendingBloomDetonations
         state.pendingBloomDetonations.removeAll(keepingCapacity: true)
         for packed in blooms {
@@ -174,11 +175,13 @@ public struct Simulation: Sendable {
             state.pendingCraters.removeAll(keepingCapacity: true)
             return
         }
+
         let craters = state.pendingCraters
         state.pendingCraters.removeAll(keepingCapacity: true)
         for packed in craters {
             let pos = Int(packed)
             guard pos >= 0, pos < state.map.count else { continue }
+
             let type = movement.map.landscapeType(state.map[pos], tileIDs: state.tileIDs)
             let craterType = Int(LandscapeInfo[type].craterType)
             if craterType == 0 { continue }  // mountain / structure / etc. take no crater
@@ -188,6 +191,7 @@ public struct Simulation: Sendable {
                 let base = iconMap.tileID(group: group, offset: 0),
                 let top = iconMap.tileID(group: group, offset: 10)
             else { continue }
+
             let existing = Int(state.map[pos].overlayTileID)
             var overlay: Int
             if existing >= base, existing <= top {  // there's already a crater → make it bigger
@@ -244,6 +248,7 @@ extension Simulation {
         var find = PoolFind()
         while let slot = state.unitFind(&find) {
             guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { continue }
+
             let ui = UnitInfo[ut]
 
             if state.units[slot].o.flags.contains(.isNotOnMap) { continue }
@@ -510,6 +515,7 @@ extension Simulation {
 
             if tickScript {
                 guard let runner = structureScript else { continue }
+
                 if state.structures[slot].o.script.delay != 0 {
                     state.structures[slot].o.script.delay &-= 1
                     continue
@@ -523,6 +529,7 @@ extension Simulation {
                     // (Re)load the type's script — the start path and the death-script restart (Structure_Destroy
                     // resets the script, so its death branch loads here with the death flag already set).
                     guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { continue }
+
                     state.structures[slot].o.script.reset()  // Script_Reset
                     var engine = state.structures[slot].o.script
                     runner.interpreter.load(&engine, info: runner.scriptInfo, typeID: Int(st.rawValue))  // Script_Load

@@ -22,6 +22,7 @@ struct HarvesterCycleTests {
             let buildData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc")),
             let iconData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP"))
         else { return }
+
         let unitInfo = ScriptInfo(try Emc.Program(unitData))
         let buildInfo = ScriptInfo(try Emc.Program(buildData))
         let iconMap = try IconMap(iconData)

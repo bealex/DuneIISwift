@@ -18,7 +18,7 @@ public enum Format40 {
     /// XOR `source` (a Format40 delta) onto `destination` in place. `destination` must already hold
     /// the previous frame and be sized for the full frame.
     public static func decodeXOR(into destination: inout [UInt8], source: Data) throws {
-        let src = [ UInt8 ](source)
+        let src = [UInt8](source)
         var i = 0
         var d = 0
 

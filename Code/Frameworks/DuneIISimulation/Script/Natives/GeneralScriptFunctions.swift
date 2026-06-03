@@ -82,9 +82,11 @@ public struct GeneralScriptFunctions: Sendable {
         switch Tools.indexType(encoded) {
             case .unit:
                 guard let slot = state.indexGetUnit(encoded) else { return 0 }
+
                 return state.unitHouseID(state.units[slot]) != currentHouseID ? 1 : 0
             case .structure:
                 guard let slot = state.indexGetStructure(encoded) else { return 0 }
+
                 return state.structures[slot].o.houseID != currentHouseID ? 1 : 0
             default:
                 return 0
@@ -95,6 +97,7 @@ public struct GeneralScriptFunctions: Sendable {
     /// the index resolves to no usable object.
     public func isFriendly(currentHouseID: UInt8, encoded: UInt16, in state: GameState) -> UInt16 {
         guard let ref = state.indexGetObject(encoded) else { return 0 }
+
         let o = state.object(ref)
         if o.flags.contains(.isNotOnMap) || !o.flags.contains(.used) { return 0 }
         return isEnemy(currentHouseID: currentHouseID, encoded: encoded, in: state) == 0 ? 1 : 0xFFFF
@@ -116,6 +119,7 @@ public struct GeneralScriptFunctions: Sendable {
     /// `encoded` points at, or 128 if it is not a unit.
     public func getOrientation(encoded: UInt16, in state: GameState) -> UInt16 {
         guard let slot = state.indexGetUnit(encoded) else { return 128 }
+
         return UInt16(bitPattern: Int16(state.units[slot].orientation[0].current))
     }
 

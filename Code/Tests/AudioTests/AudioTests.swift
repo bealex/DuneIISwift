@@ -57,7 +57,7 @@ struct AudioTests {
     @Test("EngineAudioSink registers + plays without crashing, even with no audio device")
     func engineGraceful() {
         let sink = EngineAudioSink(voices: 4)
-        sink.register(SoundID(7), sampleRate: 22_050, pcm8: [ UInt8 ](repeating: 128, count: 100))
+        sink.register(SoundID(7), sampleRate: 22_050, pcm8: [UInt8](repeating: 128, count: 100))
         // start() may fail (no output device on a CI box); either way play must be safe.
         _ = sink.start()
         sink.play(SoundEvent(sound: SoundID(7)))  // registered

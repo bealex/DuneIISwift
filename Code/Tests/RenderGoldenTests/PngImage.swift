@@ -14,7 +14,7 @@ struct PngImage: Equatable {
     /// Rasterize a `CGImage` into a tightly-packed RGBA8 buffer.
     init(_ image: CGImage) {
         let w = image.width, h = image.height
-        var buffer = [ UInt8 ](repeating: 0, count: w * h * 4)
+        var buffer = [UInt8](repeating: 0, count: w * h * 4)
         buffer.withUnsafeMutableBytes { raw in
             let space = CGColorSpaceCreateDeviceRGB()
             let info = CGImageAlphaInfo.premultipliedLast.rawValue
@@ -42,6 +42,7 @@ struct PngImage: Equatable {
             let src = CGImageSourceCreateWithData(data as CFData, nil),
             let image = CGImageSourceCreateImageAtIndex(src, 0, nil)
         else { return nil }
+
         self.init(image)
     }
 
@@ -51,8 +52,10 @@ struct PngImage: Equatable {
         guard
             let dest = CGImageDestinationCreateWithData(out as CFMutableData, UTType.png.identifier as CFString, 1, nil)
         else { throw Err.encode }
+
         CGImageDestinationAddImage(dest, image, nil)
         guard CGImageDestinationFinalize(dest) else { throw Err.encode }
+
         try (out as Data).write(to: url)
     }
 
@@ -76,6 +79,7 @@ struct PngImage: Equatable {
         else {
             return Diff(mismatches: width * height, first: (0, 0), maxDelta: 255)
         }
+
         var mismatches = 0
         var first: (x: Int, y: Int)?
         var maxDelta = 0

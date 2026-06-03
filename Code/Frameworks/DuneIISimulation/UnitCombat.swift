@@ -50,6 +50,7 @@ public struct UnitCombat: Sendable {
                 return 1
             case .structure:
                 guard let s = state.indexGetStructure(encoded) else { return 0 }
+
                 if state.structures[s].o.houseID == state.unitHouseID(state.units[slot]) { return 0 }
                 let linked = state.units[slot].o.linkedID
                 if linked == 0xFF { return 1 }
@@ -103,6 +104,7 @@ public struct UnitCombat: Sendable {
         switch Tools.indexType(state.units[slot].targetMove) {
             case .structure:
                 guard let s = state.indexGetStructure(state.units[slot].targetMove) else { return 0 }
+
                 if state.structures[s].state != .ready {
                     state.objectScriptVariable4Clear(.unit(slot))
                     state.units[slot].targetMove = 0
@@ -134,6 +136,7 @@ public struct UnitCombat: Sendable {
                     let u2 = state.indexGetUnit(state.units[slot].targetMove),
                     state.units[u2].o.flags.contains(.allocated)
                 else { return 0 }
+
                 let isHarvester = state.units[u2].o.type == UInt8(UnitType.harvester.rawValue)
 
                 var best = -1
@@ -159,6 +162,7 @@ public struct UnitCombat: Sendable {
                     if isHarvester { break loop }  // a harvester takes the first idle refinery
                 }
                 guard best != -1 else { return 0 }
+
                 // SEAM: Unit_Select(NULL) deselect (GUI).
 
                 state.units[slot].o.linkedID = UInt8(truncatingIfNeeded: Int(state.units[u2].o.index))
@@ -288,6 +292,7 @@ public struct UnitCombat: Sendable {
                 if offset == 0 { break }
                 let curPos = Int(position) + Int(offset)
                 guard curPos >= 0, curPos < state.map.count else { continue }
+
                 if let s = state.structureGetByPackedTile(UInt16(curPos)) {
                     if state.structures[s].o.houseID != state.playerHouseID { continue }
                     adjacent = true; break
@@ -308,6 +313,7 @@ public struct UnitCombat: Sendable {
     /// the wall/slab specials are seams. Returns false if the location is invalid (caller frees the slot).
     func structurePlace(_ slot: Int, position: UInt16, in state: inout GameState) -> Bool {
         guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return false }
+
         let si = StructureInfo[st]
         let houseID = state.structures[slot].o.houseID
 
@@ -378,6 +384,7 @@ public struct UnitCombat: Sendable {
         else {
             return nil
         }
+
         let si = StructureInfo[type]
         state.structures[slot].o.houseID = houseID
         state.structures[slot].creatorHouseID = UInt16(houseID)
@@ -421,12 +428,14 @@ public struct UnitCombat: Sendable {
             StructureType(rawValue: Int(state.structures[slot].o.type)) == .constructionYard,
             state.structures[slot].state == .ready
         else { return false }
+
         let product = Int(state.structures[slot].o.linkedID)
         guard
             product != 0xFF,
             product < state.structures.count,
             state.structures[product].o.flags.contains(.used)
         else { return false }
+
         let placedType = StructureType(rawValue: Int(state.structures[product].o.type))
         if !structurePlace(product, position: position, in: &state) { return false }
         // The factory released the product and is free to build again (the `Structure_BuildObject(s, 0xFFFE)`
@@ -465,6 +474,7 @@ public struct UnitCombat: Sendable {
     @discardableResult
     public func structureBuildObject(slot: Int, objectType: UInt16, in state: inout GameState) -> Bool {
         guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return false }
+
         if !StructureInfo[st].o.flags.contains(.factory) { return false }
 
         state.structureSetRepairingState(slot, state: 0)
@@ -497,6 +507,7 @@ public struct UnitCombat: Sendable {
                 state.structures[slot].o.flags.remove(.onHold)
                 return false  // SEAM (player): GUI "unable to create more".
             }
+
             objIndex = state.units[u].o.index
             buildTime = UnitInfo[ut].o.buildTime
         } else {
@@ -507,6 +518,7 @@ public struct UnitCombat: Sendable {
                 state.structures[slot].o.flags.remove(.onHold)
                 return false
             }
+
             objIndex = state.structures[sNew].o.index
             buildTime = StructureInfo[st2].o.buildTime
         }
@@ -541,6 +553,7 @@ public struct UnitCombat: Sendable {
             StructureType(rawValue: Int(state.structures[slot].o.type)) == .starport,
             UnitType(rawValue: Int(objectType)) != nil
         else { return false }
+
         let typeIndex = Int(objectType)
         if typeIndex >= state.starportAvailable.count || state.starportAvailable[typeIndex] <= 0 { return false }
 
@@ -602,6 +615,7 @@ public struct UnitCombat: Sendable {
     /// (the soldier's facing) — that order.
     public func randomSoldier(slot: Int, action: UInt16, in state: inout GameState) -> UInt16 {
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
+
         if UInt16(state.random256.next()) >= UnitInfo[ut].o.spawnChance { return 0 }
         let position = Tile32.moveByRandom(
             state.units[slot].o.position,
@@ -620,6 +634,7 @@ public struct UnitCombat: Sendable {
                 in: &state
             )
         else { return 0 }
+
         state.units[nu].deviated = state.units[slot].deviated
         movement.actions.setAction(
             slot: nu,
@@ -638,6 +653,7 @@ public struct UnitCombat: Sendable {
         let var4 = state.units[slot].o.script.variables[4]
         if var4 != 0 { return var4 }
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
+
         if !UnitInfo[ut].o.flags.contains(.canBePickedUp) || state.units[slot].deviated != 0 { return 0 }
 
         let encoded = state.indexEncode(state.units[slot].o.index, type: .unit)
@@ -650,6 +666,7 @@ public struct UnitCombat: Sendable {
                 in: &state
             )
         else { return 0 }
+
         let encoded2 = state.indexEncode(state.units[u2].o.index, type: .unit)
         state.objectScriptVariable4Link(encoded, encoded2)
         state.units[u2].targetMove = encoded
@@ -663,6 +680,7 @@ public struct UnitCombat: Sendable {
     /// on it. Sandworms and air units are never blocked. Read-only; composes the map + house primitives.
     public func unitIsTileOccupied(slot: Int, in state: GameState) -> Bool {
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return true }
+
         let ui = UnitInfo[ut]
         let packed = state.units[slot].o.position.packed
 
@@ -696,6 +714,7 @@ public struct UnitCombat: Sendable {
     @discardableResult
     public func unitSetPosition(slot: Int, position: Tile32, in state: inout GameState) -> Bool {
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
+
         let ui = UnitInfo[ut]
 
         state.units[slot].o.flags.remove(.isNotOnMap)
@@ -788,9 +807,11 @@ public struct UnitCombat: Sendable {
     ) -> Int? {
         if houseID >= 6 { return nil }  // HOUSE_MAX
         guard let ut = UnitType(rawValue: Int(type)) else { return nil }  // typeID >= UNIT_MAX
+
         let ui = UnitInfo[ut]
 
         guard let slot = state.unitAllocate(index: index, type: type, houseID: houseID) else { return nil }
+
         state.units[slot].o.houseID = houseID
 
         var u = state.units[slot]
@@ -888,6 +909,7 @@ public struct UnitCombat: Sendable {
             )
             state.validateStrictIfZero &-= 1
             guard let u else { return nil }
+
             state.units[u].o.flags.insert(.byScenario)
             if destination != 0 { setDest.unitSetDestination(slot: u, destination, in: &state) }
             return u
@@ -965,6 +987,7 @@ public struct UnitCombat: Sendable {
         if state.unitIsTypeOnMap(houseID: houseID, typeID: UInt8(UnitType.harvester.rawValue)) { return }
         var rf = PoolFind(houseID: houseID, type: UInt16(StructureType.refinery.rawValue))
         guard let refinery = state.structureFind(&rf) else { return }
+
         _ = unitCreateWrapper(
             houseID: houseID,
             type: .harvester,
@@ -990,6 +1013,7 @@ public struct UnitCombat: Sendable {
     ) -> Int? {
         if !state.indexIsValid(target) { return nil }
         guard let ut = UnitType(rawValue: Int(type)) else { return nil }
+
         let ui = UnitInfo[ut]
         let tile = state.indexGetTile(target)
 
@@ -1006,6 +1030,7 @@ public struct UnitCombat: Sendable {
                         in: &state
                     )
                 else { return nil }
+
                 // SEAM: Voice_PlayAtTile(bulletSound) audio.
                 state.units[bullet].targetAttack = target
                 state.units[bullet].o.hitpoints = damage
@@ -1054,6 +1079,7 @@ public struct UnitCombat: Sendable {
                         in: &state
                     )
                 else { return nil }
+
                 if ut == .sonicBlast { state.units[bullet].fireDelay = ui.fireDistance & 0xFF }
                 state.units[bullet].currentDestination = tile
                 state.units[bullet].o.hitpoints = damage
@@ -1080,6 +1106,7 @@ public struct UnitCombat: Sendable {
         if target == 0 || !state.indexIsValid(target) { return 0 }
 
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
+
         let ui = UnitInfo[ut]
         let fns = UnitScriptFunctions(unitPrimitives: movement.unit)
         let aimLevel = ui.o.flags.contains(.hasTurret) ? 1 : 0
@@ -1169,6 +1196,7 @@ public struct UnitCombat: Sendable {
                         in: &state
                     )
                 else { return 0 }
+
                 state.units[bullet].originEncoded = state.indexEncode(state.units[slot].o.index, type: .unit)
                 // `Voice_PlayAtTile(ui->bulletSound, u->o.position)` (`script/unit.c:99`): the weapon sound.
                 // The sim only emits the id; the host maps it to a VOC and plays it.

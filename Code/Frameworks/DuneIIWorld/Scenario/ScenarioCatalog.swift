@@ -19,6 +19,7 @@ public struct ScenarioID: Sendable, Equatable, Hashable {
     public init?(fileName: String) {
         let upper = fileName.uppercased()
         guard upper.hasPrefix("SCEN"), upper.hasSuffix(".INI") else { return nil }
+
         let core = upper.dropFirst(4).dropLast(4)  // "SCENA001.INI" → "A001"
         guard let initial = core.first, let mission = Int(core.dropFirst()), mission >= 1 else { return nil }
         guard
@@ -26,6 +27,7 @@ public struct ScenarioID: Sendable, Equatable, Hashable {
         else {
             return nil
         }
+
         self.fileName = upper
         self.house = house
         self.mission = mission
@@ -36,6 +38,7 @@ public struct ScenarioID: Sendable, Equatable, Hashable {
     /// scenarios per campaign (2–4 → 2, 5–7 → 3, …), capped at the final campaign 9.
     public static func campaign(forMission mission: Int) -> Int {
         guard mission > 1 else { return 1 }
+
         return min(9, (mission - 2) / 3 + 2)
     }
 }

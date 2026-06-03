@@ -9,7 +9,7 @@ import Testing
 /// (`landscapeSpriteMap`: 0 → sand, 49 → spice, 65 → thick spice).
 @Suite("Harvester loop")
 struct HarvesterTests {
-    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func tileIDs() -> TileIDs {
         var t = TileIDs(); t.landscape = 0; t.builtSlab = 1000; t.bloom = 2000; t.wall = 3000; t.veiled = 4000

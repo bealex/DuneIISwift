@@ -12,6 +12,7 @@ public extension GameState {
         for i in 0 ..< Int(layout.tileCount) {
             let pos = Int(packed) + Int(layout.tiles[i])
             guard pos >= 0, pos < map.count else { continue }
+
             map[pos].groundTileID = tileIDs.builtSlab
             map[pos].houseID = houseID
             // SEAM: Tile_RemoveFogInRadius (player fog) + the unveiled-overlay clear (render-only).
@@ -23,6 +24,7 @@ public extension GameState {
     mutating func placeWall(houseID: UInt8, at packed: UInt16) {
         let pos = Int(packed)
         guard pos >= 0, pos < map.count else { return }
+
         map[pos].groundTileID = tileIDs.wall &+ 1
         map[pos].houseID = houseID
         structureConnectWall(packed, recurse: true)
@@ -37,6 +39,7 @@ public extension GameState {
     mutating func mapUpdateWall(_ packed: UInt16) -> Bool {
         let pos = Int(packed)
         guard pos >= 0, pos < map.count, wallTileIsWall(pos) else { return false }
+
         map[pos].groundTileID = mapBaseTileID[pos] & 0x1FF
         if mapPositionUnveiled(pos) { map[pos].overlayTileID = UInt8(truncatingIfNeeded: tileIDs.wall) }
         structureConnectWall(packed, recurse: true)
@@ -47,6 +50,7 @@ public extension GameState {
     /// `Map_IsPositionUnveiled` (`map.c`): the tile is revealed and its overlay isn't the fog veil.
     private func mapPositionUnveiled(_ pos: Int) -> Bool {
         guard map[pos].isUnveiled else { return false }
+
         let o = UInt16(map[pos].overlayTileID)
         return o > tileIDs.veiled || o < tileIDs.veiled &- 15  // Tile_IsUnveiled
     }
@@ -58,12 +62,14 @@ public extension GameState {
     mutating func structureConnectWall(_ packed: UInt16, recurse: Bool) -> Bool {
         let pos = Int(packed)
         guard pos >= 0, pos < map.count else { return false }
+
         let isDestroyed = wallTileIsDestroyed(pos)
 
         var bits = 0
         for i in 0 ..< 4 {
             let cur = pos + GameState.wallMapDiff[i]
             guard cur >= 0, cur < map.count else { continue }
+
             if recurse && wallTileIsWall(cur) { structureConnectWall(UInt16(cur), recurse: false) }
             if isDestroyed { continue }
             if wallTileIsDestroyed(cur) {

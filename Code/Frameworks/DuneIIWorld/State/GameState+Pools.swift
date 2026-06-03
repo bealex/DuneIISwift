@@ -262,6 +262,7 @@ public extension GameState {
         scriptPC: UInt16
     ) -> Int? {
         guard let slot = teamAllocate(index: Pool.teamIndexInvalid) else { return nil }
+
         teams[slot].houseID = houseID
         teams[slot].action = UInt16(teamActionType)
         teams[slot].actionStart = UInt16(teamActionType)

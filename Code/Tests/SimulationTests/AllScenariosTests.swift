@@ -73,6 +73,7 @@ struct AllScenariosTests {
     private func field(_ value: String?, _ index: Int) -> UInt16? {
         let parts = (value ?? "").split(separator: ",", omittingEmptySubsequences: false)
         guard index < parts.count, let n = Int(parts[index].trimmingCharacters(in: .whitespaces)) else { return nil }
+
         return UInt16(clamping: n)
     }
 }

@@ -29,8 +29,10 @@ public enum SaveGame {
     public static func load(_ data: Data) throws -> GameState {
         guard data.count >= magic.count + 1 else { throw SaveError.truncated }
         guard Array(data.prefix(magic.count)) == magic else { throw SaveError.badMagic }
+
         let versionByte = data[data.startIndex + magic.count]
         guard versionByte == version else { throw SaveError.badVersion(versionByte) }
+
         let body = Data(data.suffix(from: data.startIndex + magic.count + 1))
         do { return try PropertyListDecoder().decode(GameState.self, from: body) } catch { throw SaveError.decode }
     }

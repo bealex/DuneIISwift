@@ -15,7 +15,7 @@ struct IncrementalFogTests {
     private struct FakeSource: WorldSpriteSource {
         var terrainTileSize: Int { 4 }
         func terrainTile(_ id: Int) -> [UInt8]? {
-            id == 0 ? nil : [ UInt8 ](repeating: UInt8(truncatingIfNeeded: id), count: 16)
+            id == 0 ? nil : [UInt8](repeating: UInt8(truncatingIfNeeded: id), count: 16)
         }
         func unitFrame(globalIndex: Int) -> SpriteFrame? { nil }
     }

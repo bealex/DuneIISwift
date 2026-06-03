@@ -24,7 +24,7 @@ struct RendererTests {
 
     @Test("indexed image is the right size and applies the remap before palette lookup")
     func image() throws {
-        var bytes = [ UInt8 ](repeating: 0, count: 768)
+        var bytes = [UInt8](repeating: 0, count: 768)
         bytes[0xA0 * 3] = 63  // palette index 0xA0 = red
         let palette = try Palette(Data(bytes))
         let indices: [UInt8] = [ 0x90, 0x90, 0x90, 0x90 ]  // house-color block
@@ -50,7 +50,7 @@ struct RendererTests {
 
     @Test("palette animation shifts the wind-trap index toward its target each 5 ticks")
     func paletteAnimation() throws {
-        var bytes = [ UInt8 ](repeating: 0, count: 768)
+        var bytes = [UInt8](repeating: 0, count: 768)
         bytes[10 * 3] = 20; bytes[10 * 3 + 1] = 20; bytes[10 * 3 + 2] = 63  // entry 10 = blue
         bytes[223 * 3] = 10; bytes[223 * 3 + 1] = 10; bytes[223 * 3 + 2] = 10  // wind-trap entry, mid
         let base = try Palette(bytes: bytes)
@@ -72,7 +72,7 @@ struct RendererTests {
 
     @Test("seedAnimatedColours replaces the magenta windtrap placeholder with its cycle reference (#4)")
     func paletteSeed() throws {
-        var bytes = [ UInt8 ](repeating: 0, count: 768)
+        var bytes = [UInt8](repeating: 0, count: 768)
         bytes[12 * 3] = 9; bytes[12 * 3 + 1] = 9; bytes[12 * 3 + 2] = 9  // windtrap reference (entry 12)
         bytes[15 * 3] = 30; bytes[15 * 3 + 1] = 30; bytes[15 * 3 + 2] = 30  // selection/repair reference
         bytes[223 * 3] = 63; bytes[223 * 3 + 2] = 63  // entry 223 = magenta placeholder
@@ -91,7 +91,7 @@ struct RendererTests {
 
     @Test("incremental stepTick reproduces animatedPalette exactly")
     func paletteIncremental() throws {
-        var bytes = [ UInt8 ](repeating: 0, count: 768)
+        var bytes = [UInt8](repeating: 0, count: 768)
         for i in 0 ..< 256 {  // distinct-ish entries so cycling moves
             bytes[i * 3] = UInt8(i % 64)
             bytes[i * 3 + 1] = UInt8((i * 2) % 64)
@@ -138,6 +138,7 @@ struct RendererTests {
         func layout(_ group: Int) -> (Int, Int)? {
             StructureCatalog.layout(iconGroup: group).map { ($0.width, $0.height) }
         }
+
         #expect(layout(19).map { $0 == (2, 2) } == true)  // Windtrap
         #expect(layout(11).map { $0 == (3, 3) } == true)  // Palace
         #expect(layout(21).map { $0 == (3, 2) } == true)  // Refinery

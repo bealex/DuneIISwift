@@ -11,6 +11,7 @@ public extension Simulation {
     mutating func evaluateLevelEnd() {
         guard !state.disableLevelEnd else { return }  // debug/UI: play indefinitely (no win/lose latch)
         guard state.gameEndState == .playing else { return }
+
         if state.timerGame &- state.tickScenarioStart < 7200 { return }
         if levelIsFinished() {
             state.gameEndState = levelIsWon() ? .won : .lost
@@ -61,6 +62,7 @@ public extension Simulation {
     private func playerReachedQuota() -> Bool {
         let h = Int(state.playerHouseID)
         guard h < state.houses.count else { return false }
+
         let quota = state.houses[h].creditsQuota
         return quota != 0 && state.houses[h].credits >= quota
     }

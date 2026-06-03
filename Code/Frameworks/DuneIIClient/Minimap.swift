@@ -20,7 +20,7 @@ enum Minimap {
     @MainActor
     static func baseImage(frame: FrameInfo, source: DecodedSpriteSource, palette: Palette, showFog: Bool) -> CGImage? {
         let n = 64
-        var rgba = [ UInt8 ](repeating: 0, count: n * n * 4)
+        var rgba = [UInt8](repeating: 0, count: n * n * 4)
         let ts = source.terrainTileSize
         let centre = (ts / 2) * ts + (ts / 2)
         for ty in 0 ..< n {
@@ -29,6 +29,7 @@ enum Minimap {
                 rgba[o + 3] = 255
                 // Outside the playable rectangle: the unused border is black (matches the main map).
                 guard frame.mapArea.contains(tileX: tx, tileY: ty) else { continue }
+
                 let tile = frame.tiles[ty * n + tx]
                 // Fog of war: an unexplored cell stays black (radar darkens what the player hasn't seen),
                 // matching the main map's veil. Gated by `showFog`, like the renderer (`FrameComposer.cell`).
@@ -41,6 +42,7 @@ enum Minimap {
             }
         }
         guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
+
         return CGImage(
             width: n,
             height: n,
@@ -61,6 +63,7 @@ enum Minimap {
     @MainActor
     static func radarStaticFrames(assets: AssetStore) -> [CGImage] {
         guard let data = assets.data("STATIC.WSA"), let anim = try? Wsa.Animation(data) else { return [] }
+
         let palette = anim.palette ?? assets.palette
         return anim.frames.compactMap {
             rgbaImage(indices: $0, width: anim.width, height: anim.height, palette: palette)
@@ -77,7 +80,8 @@ enum Minimap {
     /// Build a `CGImage` from `width×height` row-major palette indices.
     static func rgbaImage(indices: [UInt8], width: Int, height: Int, palette: Palette) -> CGImage? {
         guard width > 0, height > 0, indices.count >= width * height else { return nil }
-        var rgba = [ UInt8 ](repeating: 0, count: width * height * 4)
+
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
         for i in 0 ..< width * height {
             let c = palette.rgba8(Int(indices[i]))
             let o = i * 4
@@ -87,6 +91,7 @@ enum Minimap {
             rgba[o + 3] = 255
         }
         guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
+
         return CGImage(
             width: width,
             height: height,

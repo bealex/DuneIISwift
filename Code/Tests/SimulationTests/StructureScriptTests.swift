@@ -21,6 +21,7 @@ struct StructureScriptTests {
             let data = try? Data(contentsOf: repo.appendingPathComponent(relative)),
             let program = try? Emc.Program(data)
         else { return nil }
+
         return ScriptInfo(program)
     }
 
@@ -117,7 +118,7 @@ struct StructureScriptTests {
         s.playerHouseID = 0
         _ = s.houseAllocate(index: 0); s.houses[0].unitCountMax = 200
         _ = s.houseAllocate(index: 1); s.houses[1].unitCountMax = 200
-        let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+        let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
         return (s, UnitCombat(movement: UnitMovement(scriptInfo: info)))
     }
 
@@ -225,6 +226,7 @@ struct StructureScriptTests {
             let unit = emc("Resources/Scripts/UNIT/UNIT.emc"),
             let build = emc("Resources/Scripts/BUILD/BUILD.emc")
         else { return }
+
         var repo = URL(fileURLWithPath: #filePath)
         for _ in 0 ..< 4 { repo.deleteLastPathComponent() }
         guard
@@ -436,6 +438,7 @@ struct StructureScriptTests {
             let unit = emc("Resources/Scripts/UNIT/UNIT.emc"),
             let build = emc("Resources/Scripts/BUILD/BUILD.emc")
         else { return }
+
         var repo = URL(fileURLWithPath: #filePath)
         for _ in 0 ..< 4 { repo.deleteLastPathComponent() }
         guard
@@ -523,6 +526,7 @@ struct StructureScriptTests {
     @Test("Script_Structure_SetState resolves DETECT, GetState reports it")
     func setStateDetect() throws {
         guard var (sim, slot, _) = setup() else { return }
+
         let combat = sim.unitScript!.combat
         let fns = StructureScriptFunctions(combat: combat)
 

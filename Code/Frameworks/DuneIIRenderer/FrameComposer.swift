@@ -105,11 +105,13 @@ public enum FrameComposer {
         let ts = source.terrainTileSize
         // Fully-veiled cell: a black square (OpenDUNE never draws the veil sprite, it fills colour 12).
         if showFog && tile.overlaySpriteIndex != 0 && tile.overlaySpriteIndex == veiledTileIndex {
-            return [ UInt8 ](repeating: fogColourIndex, count: ts * ts)
+            return [UInt8](repeating: fogColourIndex, count: ts * ts)
         }
         guard let ground = source.terrainTile(tile.groundSpriteIndex), ground.count >= ts * ts else { return nil }
+
         // House-recolour owned (structure / house-coloured wall) tiles; terrain / Harkonnen is identity.
         let house = tile.houseID == 0 ? nil : House(rawValue: Int(tile.houseID))
+
         func recolour(_ p: UInt8) -> UInt8 { house.map { HouseRemap.tile(p, house: $0) } ?? p }
 
         var out = house == nil ? ground : ground.map(recolour)
@@ -137,8 +139,8 @@ public enum FrameComposer {
     public static func terrainBuffer(_ frame: FrameInfo, source: WorldSpriteSource, showFog: Bool = false) -> [UInt8] {
         let ts = source.terrainTileSize
         let side = ts * frame.mapWidth
-        var buffer = [ UInt8 ](repeating: 0, count: side * (ts * frame.mapHeight))
-        let border = [ UInt8 ](repeating: borderColourIndex, count: ts * ts)
+        var buffer = [UInt8](repeating: 0, count: side * (ts * frame.mapHeight))
+        let border = [UInt8](repeating: borderColourIndex, count: ts * ts)
         for ty in 0 ..< frame.mapHeight {
             for tx in 0 ..< frame.mapWidth {
                 // Outside the scenario's playable rectangle: the unused border draws solid black, never the
@@ -173,8 +175,10 @@ public enum FrameComposer {
     /// of range is treated as visible (no spurious hide).
     public static func isHiddenByFog(_ frame: FrameInfo, worldX: Int, worldY: Int, showFog: Bool) -> Bool {
         guard showFog else { return false }
+
         let tx = worldX / 256, ty = worldY / 256
         guard (0 ..< frame.mapWidth).contains(tx), (0 ..< frame.mapHeight).contains(ty) else { return false }
+
         return !frame.tiles[ty * frame.mapWidth + tx].isUnveiled
     }
 
@@ -194,6 +198,7 @@ public enum FrameComposer {
         var result: [ComposedSprite] = []
 
         func imageX(_ worldX: Int) -> Int { worldX * ts / 256 }
+
         func imageY(_ worldY: Int) -> Int { worldY * ts / 256 }
 
         for u in frame.units {
@@ -254,6 +259,7 @@ public enum FrameComposer {
             if isOutsideMapArea(frame, worldX: e.positionX, worldY: e.positionY) { continue }
             if isHiddenByFog(frame, worldX: e.positionX, worldY: e.positionY, showFog: showFog) { continue }
             guard let f = source.unitFrame(globalIndex: e.sprite.spriteIndex) else { continue }
+
             result.append(
                 ComposedSprite(
                     spriteIndex: e.sprite.spriteIndex,

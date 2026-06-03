@@ -162,7 +162,7 @@ public struct GameState: Sendable, Codable {
     public var iconMap: IconMap?
 
     /// Active structure animations (`g_animations`, 112 slots).
-    public var animations = [ Animation ](repeating: Animation(), count: 112)
+    public var animations = [Animation](repeating: Animation(), count: 112)
 
     /// `s_animationTimer`: the next tick the animation pass needs to run.
     public var animationTimer: UInt32 = 0
@@ -170,7 +170,7 @@ public struct GameState: Sendable, Codable {
     /// Active explosions (`g_explosions`, `EXPLOSION_MAX` = 32 slots) — the short visual sprite
     /// animations for impacts/deaths/destruction. Started by `Map_MakeExplosion`; ticked (gated) by
     /// `explosionTick()`. See `Documentation/Algorithms/Explosion.md`.
-    public var explosions = [ Explosion ](repeating: Explosion(), count: 32)
+    public var explosions = [Explosion](repeating: Explosion(), count: 32)
 
     /// `s_explosionTimer`: the next tick the explosion pass needs to run.
     public var explosionTimer: UInt32 = 0
@@ -203,12 +203,13 @@ public struct GameState: Sendable, Codable {
     /// the `0xFFFF` "no sound" sentinel. RNG-free, so it doesn't perturb the golden/parity path.
     public mutating func emitSound(_ voiceID: Int, at position: Tile32) {
         guard voiceID >= 0, voiceID < 120 else { return }
+
         soundEvents.append(SoundEvent(sound: SoundID(voiceID), positionX: Int(position.x), positionY: Int(position.y)))
     }
 
     /// The seed-generated base ground tile of each cell (`g_mapTileID`), so an animation `STOP` can
     /// restore it. Snapshotted by `createLandscape`.
-    public var mapBaseTileID = [ UInt16 ](repeating: 0, count: 64 * 64)
+    public var mapBaseTileID = [UInt16](repeating: 0, count: 64 * 64)
 
     /// Set whenever an animation changes a map ground tile, so a renderer knows to re-blit.
     public var mapDirty = false

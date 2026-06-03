@@ -36,6 +36,7 @@ struct SaveConverterTests {
                 encoding: .utf8
             )
         else { return }
+
         let oracle = try JSONDecoder().decode(Frame.self, from: Data(goldenText.split(separator: "\n")[0].utf8))
 
         let state = try SaveConverter.convert(sav, iconMap: try IconMap(iconData))

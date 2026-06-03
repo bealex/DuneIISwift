@@ -27,11 +27,13 @@ public extension Simulation {
             let actions = unitScript?.actions,
             let scriptInfo = unitScript?.scriptInfo
         else { return }
+
         let houseID = state.structures[slot].o.houseID
         guard
             let house = HouseID(rawValue: Int(houseID)),
             state.houses[Int(houseID)].flags.contains(.used)
         else { return }
+
         let countDown = HouseInfo[house].specialCountDown
 
         switch HouseInfo[house].specialWeapon {
@@ -47,6 +49,7 @@ public extension Simulation {
                         in: &state
                     )
                 else { break }
+
                 state.structures[slot].countDown = countDown
                 // An AI launch warns the player ("missile approaching", `Unit_LaunchHouseMissile` feedback 39);
                 // the human's own launch is silent here (it enters target-selection in the original).
@@ -134,6 +137,7 @@ public extension Simulation {
                             in: &state
                         )
                     else { continue }
+
                     actions.setAction(
                         slot: u,
                         action: UInt8(ActionType.hunt.rawValue),
@@ -145,6 +149,7 @@ public extension Simulation {
 
             case 3:  // HOUSE_WEAPON_SABOTEUR
                 guard let functions = structureScript?.structure else { return }
+
                 let position = functions.findFreePosition(slot: slot, checkForSpice: false, in: &state)
                 if position == 0 { state.structures[slot].countDown = 1; return }
                 let orientation = Int8(truncatingIfNeeded: Int(state.random256.next()))
@@ -158,6 +163,7 @@ public extension Simulation {
                         in: &state
                     )
                 else { return }
+
                 actions.setAction(
                     slot: u,
                     action: UInt8(ActionType.sabotage.rawValue),
@@ -193,6 +199,7 @@ public extension Simulation {
 
     private func palaceReadyForPlayer(_ slot: Int) -> Bool {
         guard slot >= 0, slot < state.structures.count else { return false }
+
         let s = state.structures[slot]
         return s.o.flags.contains(.used)
             && s.o.type == UInt8(StructureType.palace.rawValue)

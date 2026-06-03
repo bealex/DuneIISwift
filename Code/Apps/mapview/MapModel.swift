@@ -49,6 +49,7 @@ final class MapModel {
 
     private func register(_ voc: String, as id: SoundID) {
         guard let sound = assets.data(voc).flatMap({ try? Voc.decode($0) }) else { return }
+
         audio.register(id, sampleRate: sound.sampleRate, pcm8: sound.samples)
     }
 

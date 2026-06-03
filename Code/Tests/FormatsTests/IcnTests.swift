@@ -7,7 +7,7 @@ import Testing
 struct IcnTests {
     // Synthetic ICN: 8x8 tiles (SINF 1,1 => 4 bytes/row * 8 rows = 32 bytes/tile), one tile, raw SSET.
     static func synthetic() -> Data {
-        var tile = [ UInt8 ](repeating: 0, count: 32)
+        var tile = [UInt8](repeating: 0, count: 32)
         tile[0] = 0x10  // first byte: high nibble 1 (left), low nibble 0 (right)
         // Raw image block (type 0): [type u16][size u32 LE = 32][skip u16][32-byte payload].
         var sset: [UInt8] = [ 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00 ]

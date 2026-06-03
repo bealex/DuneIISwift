@@ -14,7 +14,7 @@ import Testing
 /// explosion→bloom-on-sand path is a separate documented seam (`GameState+Explosion`).
 @Suite("Spice-bloom destruction")
 struct BloomInteractionTests {
-    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
     private static let bloomID: UInt16 = 200  // synthetic non-zero bloom sprite id
     private static let sandID: UInt16 = 100  // the generated base under the bloom
 

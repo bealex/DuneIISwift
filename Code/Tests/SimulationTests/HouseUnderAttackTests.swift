@@ -11,7 +11,7 @@ import Testing
 /// `structureDamage` directly and must leave `pendingFeedback` empty).
 @Suite("Structure_HouseUnderAttack")
 struct HouseUnderAttackTests {
-    let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     /// Allocate a structure for `house`, give it full HP, and stamp it on the map at `packed` so
     /// `structureGetByPackedTile` resolves it (mirrors the minimal placement used by other sim tests).

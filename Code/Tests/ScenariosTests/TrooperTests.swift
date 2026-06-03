@@ -19,6 +19,7 @@ struct TrooperTests {
             let emc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
             let build = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc"))
         else { return nil }
+
         return ScenarioBuilder(
             iconMap: try IconMap(icon),
             unitScript: ScriptInfo(try Emc.Program(emc)),
@@ -29,6 +30,7 @@ struct TrooperTests {
     @Test("a walking trooper animates — spriteOffset advances through the walk cycle")
     func walkAnimates() throws {
         guard let builder = try loadBuilder() else { return }
+
         var world = builder.build(TestScenario(kind: .moving, unit1: .troopers, unit2: .tank, terrainSeed: 42))
         let slot = world.unitSlots[0]
         var sawNonZero = false, moved = false
@@ -45,6 +47,7 @@ struct TrooperTests {
     @Test("a trooper actually dies: the DIE branch (StartAnimation 0x04 → Die 0x0F) removes it")
     func trooperDies() throws {
         guard let builder = try loadBuilder() else { return }
+
         var world = builder.build(TestScenario(kind: .closeAttack, unit1: .troopers, unit2: .tank, terrainSeed: 42))
         let victim = world.unitSlots[0]
         let victimType = world.state.units[victim].o.type

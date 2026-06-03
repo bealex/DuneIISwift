@@ -34,6 +34,7 @@ public enum PaletteAnimator {
     /// (repair) — the initial reference colours in `GUI_PaletteAnimate` (`gui/gui.c:643`).
     public static func seedAnimatedColours(_ colors: inout [Palette.Color]) {
         guard colors.count > selectionIndex else { return }
+
         colors[windTrapIndex] = colors[12]
         colors[selectionIndex] = colors[15]
         colors[repairIndex] = colors[15]
@@ -46,8 +47,10 @@ public enum PaletteAnimator {
     /// the game runs.
     public static func animatedPalette(base: Palette, tick: Int) -> Palette {
         guard tick > 0 else { return base }
+
         var colors = base.colors
         guard colors.count > selectionIndex else { return base }
+
         var state = CycleState()
         for step in 1 ... tick { _ = stepTick(&colors, tick: step, state: &state) }
         return Palette(colors: colors)
@@ -60,6 +63,7 @@ public enum PaletteAnimator {
     @discardableResult
     public static func stepTick(_ colors: inout [Palette.Color], tick: Int, state: inout CycleState) -> Bool {
         guard tick > 0, colors.count > selectionIndex else { return false }
+
         var changed = false
 
         if tick % 5 == 0 {

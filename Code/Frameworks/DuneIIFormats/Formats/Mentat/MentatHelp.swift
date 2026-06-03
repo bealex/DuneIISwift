@@ -60,7 +60,8 @@ public enum MentatHelp {
         else {
             throw DecodeError.noNameChunk
         }
-        let bytes = [ UInt8 ](data)
+
+        let bytes = [UInt8](data)
         var result: [Topic] = []
         var i = nameRange.lowerBound
         while i < nameRange.upperBound {
@@ -96,6 +97,7 @@ public enum MentatHelp {
     /// Split a decompressed description `"<wsa>*<title>\r<attr>…\u{0C}<body>"` into its parts.
     static func parseDescription(_ text: String) -> (wsa: String, title: String, attrs: [String], body: String) {
         guard let star = text.firstIndex(of: "*") else { return ("", text.trimmed, [], "") }
+
         let wsa = String(text[..<star])
         let rest = String(text[text.index(after: star)...])
         let header: String, body: String
@@ -115,6 +117,7 @@ public enum MentatHelp {
     /// the next byte to `0x7F + b`.
     static func decompress(_ bytes: [UInt8], at offset: Int) -> String {
         guard offset >= 0, offset < bytes.count else { return "" }
+
         let couples = Self.couples
         var out: [UInt8] = []
         var i = offset
@@ -129,6 +132,7 @@ public enum MentatHelp {
             } else if c == 0x1B {
                 i += 1
                 guard i < bytes.count else { break }
+
                 c = 0x7F &+ bytes[i]
             }
             out.append(c)

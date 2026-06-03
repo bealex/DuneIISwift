@@ -12,7 +12,7 @@ struct UnitScriptRunnerTests {
     private func ut(_ t: UnitType) -> UInt8 { UInt8(t.rawValue) }
 
     // offsets[typeID] = typeID, so a script load for type T parks the PC at T.
-    let typeOffsets = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    let typeOffsets = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func setup(_ type: UnitType, scriptInfo: ScriptInfo) -> (GameState, Int, UnitScriptRunner) {
         var s = GameState()

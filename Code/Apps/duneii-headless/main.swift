@@ -75,17 +75,21 @@ func runDemo(_ builder: ScenarioBuilder, _ kind: ScenarioKind, ticks: Int) {
 /// its credits, build/repair countdown, HP, upgrade timer, and state at t0 → completion.
 func runEconomyDemo(_ builder: ScenarioBuilder, _ kind: ScenarioKind, type: StructureType, ticks: Int) {
     var world = builder.build(TestScenario(kind: kind, unit1: .tank, unit2: .tank, terrainSeed: 42))
+
     func find() -> Structure? {
         world.state.structures.first { $0.o.flags.contains(.used) && $0.o.type == UInt8(type.rawValue) }
     }
+
     func line(_ label: String) {
         guard let s = find() else { return }
+
         let credits = world.state.houses[Int(HouseID.harkonnen.rawValue)].credits
         print(
             "  \(label) credits \(credits)  hp \(s.o.hitpoints)  countDown \(s.countDown)  "
                 + "upgrade \(s.upgradeLevel)/\(s.upgradeTimeLeft)  state \(s.state.rawValue)"
         )
     }
+
     print("── \(kind.title) ──")
     line("t0  ")
     for _ in 1 ... ticks { world.tick() }

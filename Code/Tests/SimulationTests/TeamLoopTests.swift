@@ -19,6 +19,7 @@ struct TeamLoopTests {
             let data = try? Data(contentsOf: repo.appendingPathComponent(relative)),
             let program = try? Emc.Program(data)
         else { return nil }
+
         return ScriptInfo(program)
     }
 
@@ -44,6 +45,7 @@ struct TeamLoopTests {
     /// script. Returns the sim + the team slot, or nil if the EMC is absent (short-circuit).
     private func setup(aiActive: Bool = true) -> (Simulation, Int)? {
         guard let teamEMC = emc("Resources/Scripts/TEAM/TEAM.emc") else { return nil }
+
         var s = GameState(random256Seed: 0x1234)
         _ = s.houseAllocate(index: 0)
         if aiActive { s.houses[0].flags.insert(.isAIActive) }
@@ -61,6 +63,7 @@ struct TeamLoopTests {
     @Test("the loop fires on tick 1, re-arms the cursor to +5…12, and advances an AI team's script")
     func loopRunsAITeam() throws {
         guard var (sim, slot) = setup() else { return }
+
         let loadedPC = sim.state.teams[slot].script.scriptPC
 
         sim.tick()  // timerGame 1; cursor starts 0 → fires
@@ -75,6 +78,7 @@ struct TeamLoopTests {
     @Test("a non-AI house's team is skipped even though the loop fires")
     func loopSkipsNonAITeam() throws {
         guard var (sim, slot) = setup(aiActive: false) else { return }
+
         let loaded = sim.state.teams[slot].script
 
         sim.tick()
@@ -86,6 +90,7 @@ struct TeamLoopTests {
     @Test("a suspended team has its script delay decremented, not run")
     func loopDecrementsDelay() throws {
         guard var (sim, slot) = setup() else { return }
+
         sim.state.teams[slot].script.delay = 3
         let loadedPC = sim.state.teams[slot].script.scriptPC
 
@@ -101,6 +106,7 @@ struct TeamLoopTests {
             let teamEMC = emc("Resources/Scripts/TEAM/TEAM.emc"),
             let unitEMC = emc("Resources/Scripts/UNIT/UNIT.emc")
         else { return }
+
         var s = GameState(random256Seed: 0xBEEF)
         s.playerHouseID = 1  // house 0 is the AI; house 1 is the (human) enemy
         _ = s.houseAllocate(index: 0); s.houses[0].unitCountMax = 100; s.houses[0].flags.insert(.isAIActive)
@@ -115,6 +121,7 @@ struct TeamLoopTests {
             s.unitUpdateMap(1, u)
             return u
         }
+
         // Three recruitable AI tanks, clustered, plus a (seen) enemy tank to target. (Tanks allocate into
         // their type band, not slots 0…3, so capture the real slots.)
         let members = [

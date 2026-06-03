@@ -16,10 +16,10 @@ struct FrameComposerTests {
             if id == 0 { return nil }
             // Tile 7 is a "wall": its top half is opaque (id 7), its bottom half transparent (index 0),
             // so the overlay-composite test can see the ground show through the transparent pixels.
-            if id == 7 { return [ UInt8 ](repeating: 7, count: 8) + [ UInt8 ](repeating: 0, count: 8) }
+            if id == 7 { return [UInt8](repeating: 7, count: 8) + [UInt8](repeating: 0, count: 8) }
             // Tile 8 is a "fog edge": top half opaque fog colour 12, bottom half transparent.
-            if id == 8 { return [ UInt8 ](repeating: 12, count: 8) + [ UInt8 ](repeating: 0, count: 8) }
-            return [ UInt8 ](repeating: UInt8(truncatingIfNeeded: id), count: 16)
+            if id == 8 { return [UInt8](repeating: 12, count: 8) + [UInt8](repeating: 0, count: 8) }
+            return [UInt8](repeating: UInt8(truncatingIfNeeded: id), count: 16)
         }
         func unitFrame(globalIndex: Int) -> SpriteFrame? {
             globalIndex < 111
@@ -27,7 +27,7 @@ struct FrameComposerTests {
                 : SpriteFrame(
                     width: 2,
                     height: 2,
-                    pixels: [ UInt8 ](repeating: UInt8(truncatingIfNeeded: 100 + globalIndex), count: 4)
+                    pixels: [UInt8](repeating: UInt8(truncatingIfNeeded: 100 + globalIndex), count: 4)
                 )
         }
     }
@@ -44,7 +44,7 @@ struct FrameComposerTests {
             tick: 0,
             mapWidth: w,
             mapHeight: h,
-            tiles: tiles ?? [ FrameInfo.Tile ](repeating: blank, count: w * h),
+            tiles: tiles ?? [FrameInfo.Tile](repeating: blank, count: w * h),
             units: units,
             structures: [],
             effects: effects,
@@ -90,7 +90,7 @@ struct FrameComposerTests {
     func terrainBuffer() {
         // A 3×2 map; tile (1,0) = id 5, tile (2,1) = id 9, rest 0 (→ left as index 0).
         let blank = FrameInfo.Tile(groundSpriteIndex: 0, overlaySpriteIndex: 0, houseID: 0, isUnveiled: false)
-        var tiles = [ FrameInfo.Tile ](repeating: blank, count: 6)
+        var tiles = [FrameInfo.Tile](repeating: blank, count: 6)
         tiles[0 * 3 + 1] = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 0, houseID: 0, isUnveiled: true)
         tiles[1 * 3 + 2] = FrameInfo.Tile(groundSpriteIndex: 9, overlaySpriteIndex: 0, houseID: 0, isUnveiled: true)
         let frame = emptyFrame(tiles: tiles)
@@ -166,7 +166,7 @@ struct FrameComposerTests {
             tick: 0,
             mapWidth: 3,
             mapHeight: 2,
-            tiles: [ FrameInfo.Tile ](repeating: blank, count: 6),
+            tiles: [FrameInfo.Tile](repeating: blank, count: 6),
             units: [],
             structures: [],
             effects: [],
@@ -189,7 +189,7 @@ struct FrameComposerTests {
     func terrainBufferMapArea() {
         // A 3×2 map with ground id 5 everywhere, but the playable area is only tile (1,0): the rest is border.
         let g = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 0, houseID: 0, isUnveiled: true)
-        var frame = emptyFrame(tiles: [ FrameInfo.Tile ](repeating: g, count: 6))
+        var frame = emptyFrame(tiles: [FrameInfo.Tile](repeating: g, count: 6))
         frame.mapArea = FrameInfo.MapArea(minX: 1, minY: 0, width: 1, height: 1)
         let buf = FrameComposer.terrainBuffer(frame, source: FakeSource())
         let side = 4 * 3
@@ -214,6 +214,7 @@ struct FrameComposerTests {
                 hitpointsMax: 100
             )
         }
+
         // 3×1 map; the playable area is just tile (1,0) — units on tiles 0 and 2 are in the border.
         var frame = emptyFrame(units: [ unit(tileX: 0), unit(tileX: 1), unit(tileX: 2) ], w: 3, h: 1)
         frame.mapArea = FrameInfo.MapArea(minX: 1, minY: 0, width: 1, height: 1)
@@ -232,11 +233,11 @@ struct FrameComposerTests {
         let neutral = FrameInfo.Tile(groundSpriteIndex: 0x91, overlaySpriteIndex: 0, houseID: 0, isUnveiled: true)
         let blank = FrameInfo.Tile(groundSpriteIndex: 0, overlaySpriteIndex: 0, houseID: 0, isUnveiled: false)
 
-        var tilesO = [ FrameInfo.Tile ](repeating: blank, count: 6); tilesO[0] = owned
+        var tilesO = [FrameInfo.Tile](repeating: blank, count: 6); tilesO[0] = owned
         let bufO = FrameComposer.terrainBuffer(emptyFrame(tiles: tilesO), source: FakeSource())
         #expect(bufO[0] == 161)  // recoloured to Atreides
 
-        var tilesN = [ FrameInfo.Tile ](repeating: blank, count: 6); tilesN[0] = neutral
+        var tilesN = [FrameInfo.Tile](repeating: blank, count: 6); tilesN[0] = neutral
         let bufN = FrameComposer.terrainBuffer(emptyFrame(tiles: tilesN), source: FakeSource())
         #expect(bufN[0] == 145)  // Harkonnen/terrain left as-is
     }
@@ -277,6 +278,7 @@ struct FrameComposerTests {
         // Two tiles on a 2×1 map: tile (0,0) revealed, tile (1,0) veiled.
         let revealed = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 0, houseID: 0, isUnveiled: true)
         let veiled = FrameInfo.Tile(groundSpriteIndex: 5, overlaySpriteIndex: 99, houseID: 0, isUnveiled: false)
+
         func unit(tileX: Int) -> FrameInfo.Unit {
             FrameInfo.Unit(
                 id: UInt16(tileX),
@@ -291,6 +293,7 @@ struct FrameComposerTests {
                 hitpointsMax: 100
             )
         }
+
         let frame = FrameInfo(
             tick: 0,
             mapWidth: 2,

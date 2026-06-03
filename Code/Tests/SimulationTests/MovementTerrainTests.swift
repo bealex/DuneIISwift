@@ -36,7 +36,7 @@ struct MovementTerrainTests {
         s.units[slot].orientation[0].current = 0  // faces north ⇒ entered tile = packed − 64
         s.map[Int(packed)].groundTileID = currentTile
         s.map[Int(packed) - 64].groundTileID = enteredTile
-        let movement = UnitMovement(scriptInfo: ScriptInfo(program: [ 0 ], offsets: [ UInt16 ](repeating: 0, count: 64)))
+        let movement = UnitMovement(scriptInfo: ScriptInfo(program: [ 0 ], offsets: [UInt16](repeating: 0, count: 64)))
         var engine = s.units[slot].o.script
         let started = movement.startMovement(slot: slot, engine: &engine, in: &s)
         return (started, s.units[slot].speedPerTick)

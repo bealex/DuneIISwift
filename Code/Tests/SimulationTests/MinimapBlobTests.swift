@@ -69,11 +69,13 @@ struct MinimapBlobTests {
             if t > 0 { sim.tick() }
             let f = sim.makeFrameInfo()
             let area = f.mapArea
+
             func note(_ kind: String, _ type: String, _ px: Int, _ py: Int) {
                 let tx = px / 256, ty = py / 256
                 let item = "\(kind) \(type) tile=(\(tx),\(ty))"
                 if area.contains(tileX: tx, tileY: ty) { drawn.insert(item) } else { clipped.insert(item) }
             }
+
             for u in f.units { note("UNIT", "\(u.type)", u.positionX, u.positionY) }
             for s in f.structures { note("STRUCT", "\(s.type)", s.positionX, s.positionY) }
         }
@@ -89,6 +91,7 @@ struct MinimapBlobTests {
     @Test("SCENO020: the Fremen palace wave can land in the border, and the minimap clips it")
     func reproducerClipped() throws {
         guard let r = try run(scenario: "SCENO020.INI", ticks: 1500) else { return }
+
         // The border spawn really happens (the corner blob's source) — and it lands in the clipped set, so the
         // fixed minimap never plots it.
         #expect(
@@ -101,6 +104,7 @@ struct MinimapBlobTests {
     @Test("SCENA020 (Atreides): the minimap never plots a corner blip over a run")
     func requestedScenario() throws {
         guard let r = try run(scenario: "SCENA020.INI", ticks: 1500) else { return }
+
         assertNoBorderBlip(r, "SCENA020")
     }
 

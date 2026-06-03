@@ -20,6 +20,7 @@ public extension Simulation {
             let st = StructureType(rawValue: Int(state.structures[slot].o.type)),
             let combat = unitScript?.combat
         else { return }
+
         let hID = Int(state.structures[slot].o.houseID)
         let si = StructureInfo[st]
 
@@ -73,6 +74,7 @@ public extension Simulation {
     /// and the harvester/MCV at the Heavy-Vehicle.
     mutating func structureAIPickNextToBuild(_ slot: Int) -> UInt16? {
         guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return nil }
+
         let hID = Int(state.structures[slot].o.houseID)
         let buildable = buildables(forStructure: slot)
 

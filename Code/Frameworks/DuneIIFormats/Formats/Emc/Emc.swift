@@ -32,7 +32,7 @@ public enum Emc {
                 throw DecodeError.missingChunk
             }
 
-            let ordrBytes = [ UInt8 ](ordr)
+            let ordrBytes = [UInt8](ordr)
             var offsets: [Int] = []
             var o = 0
             while o + 2 <= ordrBytes.count {
@@ -40,7 +40,7 @@ public enum Emc {
                 o += 2
             }
 
-            let codeBytes = [ UInt8 ](code)
+            let codeBytes = [UInt8](code)
             var words: [UInt16] = []
             var c = 0
             while c + 2 <= codeBytes.count {
@@ -48,7 +48,7 @@ public enum Emc {
                 c += 2
             }
 
-            self.text = [ UInt8 ](reader.chunk("TEXT") ?? Data())
+            self.text = [UInt8](reader.chunk("TEXT") ?? Data())
             self.offsets = offsets
             self.data = words
         }

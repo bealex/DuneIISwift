@@ -30,6 +30,7 @@ public final class EngineAudioSink: AudioSink {
     /// linearly to `minVolume` by ~`falloff` tiles. A position-less event (or no listener) is full volume.
     private func volume(for event: SoundEvent) -> Float {
         guard let listener, let px = event.positionX, let py = event.positionY else { return 1 }
+
         let dx = Double(px - listener.x), dy = Double(py - listener.y)
         let dist = (dx * dx + dy * dy).squareRoot()
         let near = 2.0 * 256, falloff = 18.0 * 256  // sub-tile units
@@ -62,6 +63,7 @@ public final class EngineAudioSink: AudioSink {
     @discardableResult
     public func start() -> Bool {
         guard !running else { return true }
+
         engine.prepare()
         do {
             try engine.start()
@@ -81,6 +83,7 @@ public final class EngineAudioSink: AudioSink {
 
     public func play(_ event: SoundEvent) {
         guard running, enabled, let buffer = buffers[event.sound] else { return }
+
         let node = nodes[next]
         next = (next + 1) % nodes.count
         node.volume = volume(for: event)  // distance attenuation (1 for a position-less / UI sound)
@@ -99,6 +102,7 @@ public final class EngineAudioSink: AudioSink {
     /// linear-resampling when the rates differ (adequate for these low-fi VOC samples). `nil` on empty input.
     static func makeBuffer(pcm8: [UInt8], sampleRate: Int, target: AVAudioFormat) -> AVAudioPCMBuffer? {
         guard !pcm8.isEmpty, sampleRate > 0 else { return nil }
+
         let source = pcm8.map(Pcm8.toFloat)
         let n = source.count
 
@@ -112,6 +116,7 @@ public final class EngineAudioSink: AudioSink {
         else {
             return nil
         }
+
         output.frameLength = AVAudioFrameCount(outCount)
         let out = output.floatChannelData![0]
 

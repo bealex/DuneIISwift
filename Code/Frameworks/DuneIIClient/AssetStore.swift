@@ -36,6 +36,7 @@ public final class AssetStore {
             error = "Cannot read install directory: \(installURL.path)"
             return
         }
+
         for url in entries where url.pathExtension.uppercased() == "PAK" {
             if let data = try? Data(contentsOf: url), let archive = try? Pak.Archive(data) { archives.append(archive) }
         }
@@ -68,6 +69,7 @@ public final class AssetStore {
     func shp(_ name: String) -> Shp.FrameSet? {
         if let cached = shpCache[name] { return cached }
         guard let data = data(name), let set = try? Shp.FrameSet(data) else { return nil }
+
         shpCache[name] = set
         return set
     }

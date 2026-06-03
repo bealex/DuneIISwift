@@ -72,6 +72,7 @@ enum RenderHarness {
     @MainActor
     static func capture(_ c: Case) -> CGImage? {
         guard let p = prepare(c) else { return nil }
+
         let crop = c.rect.map {
             CGRect(
                 x: $0.x * p.tileSize,
@@ -147,6 +148,7 @@ private struct Assets {
         guard
             let entries = try? FileManager.default.contentsOfDirectory(at: installURL, includingPropertiesForKeys: nil)
         else { return nil }
+
         var archives: [Pak.Archive] = []
         for url in entries where url.pathExtension.uppercased() == "PAK" {
             if let data = try? Data(contentsOf: url), let archive = try? Pak.Archive(data) { archives.append(archive) }
@@ -161,6 +163,7 @@ private struct Assets {
             }
             return nil
         }
+
         guard
             let pal = data("IBM.PAL").flatMap({ try? Palette($0) }),
             let map = data("ICON.MAP").flatMap({ try? IconMap($0) }),

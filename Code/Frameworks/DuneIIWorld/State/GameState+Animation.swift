@@ -15,6 +15,7 @@ public extension GameState {
             let type = StructureType(rawValue: Int(s.o.type)),
             let iconMap
         else { return }
+
         let si = StructureInfo[type]
         let layout = StructureLayoutInfo[si.layout]
         let count = Int(layout.tileCount)
@@ -23,6 +24,7 @@ public extension GameState {
         for i in 0 ..< count {
             let pos = packed + Int(layout.tiles[i])
             guard pos >= 0, pos < map.count else { continue }
+
             let tile = UInt16(iconMap.tileID(group: Int(si.iconGroup), offset: count * 2 + i) ?? 0)
             map[pos].houseID = s.o.houseID
             map[pos].hasStructure = true
@@ -100,6 +102,7 @@ public extension GameState {
     /// `Animation_Stop_ByTile`.
     mutating func animationStopByTile(_ packed: UInt16) {
         guard map[Int(packed)].hasAnimation else { return }
+
         for i in animations.indices where animations[i].active && animations[i].tile.packed == packed {
             animationStop(i)
             return
@@ -124,6 +127,7 @@ public extension GameState {
                 let row = table[animations[i].tableIndex]
                 let cursor = Int(animations[i].current)
                 guard cursor < row.count else { animationStop(i); continue }
+
                 let command = row[cursor]
                 animations[i].current = animations[i].current &+ 1
 
@@ -160,6 +164,7 @@ public extension GameState {
         for k in 0 ..< Int(layout.tileCount) {
             let pos = packed + Int(layout.tiles[k])
             guard pos >= 0, pos < map.count else { continue }
+
             if a.tileLayout != 0 { map[pos].groundTileID = mapBaseTileID[pos] }
             // Clear a corpse/overlay the animation laid down (`Animation_Func_Stop`, only on revealed tiles).
             if map[pos].isUnveiled { map[pos].overlayTileID = 0 }
@@ -171,9 +176,11 @@ public extension GameState {
     /// tile, from `iconGroup` + `parameter`. Only on a revealed tile (the renderer composites the overlay).
     private mutating func animationSetOverlayTile(_ i: Int, _ parameter: Int16) {
         guard let iconMap, parameter >= 0 else { return }
+
         let a = animations[i]
         let packed = Int(a.tile.packed)
         guard map[packed].isUnveiled else { return }
+
         let tile = iconMap.tileID(group: Int(a.iconGroup), offset: Int(parameter)) ?? 0
         map[packed].overlayTileID = UInt8(truncatingIfNeeded: tile)
         map[packed].houseID = a.houseID
@@ -187,6 +194,7 @@ public extension GameState {
 
     private mutating func animationSetGroundTile(_ i: Int, _ parameter: Int16) {
         guard let iconMap else { return }
+
         let a = animations[i]
         let layout = StructureLayoutInfo[StructureLayout(rawValue: Int(a.tileLayout)) ?? .layout1x1]
         let count = Int(layout.tileCount)
@@ -194,6 +202,7 @@ public extension GameState {
         for k in 0 ..< count {
             let pos = packed + Int(layout.tiles[k])
             guard pos >= 0, pos < map.count else { continue }
+
             let tile = UInt16(iconMap.tileID(group: Int(a.iconGroup), offset: count * Int(parameter) + k) ?? 0)
             if map[pos].groundTileID == tile { continue }
             map[pos].groundTileID = tile

@@ -87,6 +87,7 @@ public struct DefaultUnitPrimitives: UnitPrimitives {
         unit.speedPerTick = 0
 
         guard let type = UnitType(rawValue: Int(unit.o.type)) else { return }
+
         let info = UnitInfo[type]
 
         var speed = rawSpeed
@@ -130,6 +131,7 @@ public struct DefaultUnitPrimitives: UnitPrimitives {
             let st = StructureType(rawValue: Int(s.o.type)),
             let ut = UnitType(rawValue: Int(unit.o.type))
         else { return 0 }
+
         let si = StructureInfo[st]
         let ui = UnitInfo[ut]
 
@@ -166,6 +168,7 @@ public struct DefaultUnitPrimitives: UnitPrimitives {
         house: any HousePrimitives
     ) -> Int16 {
         guard let ut = UnitType(rawValue: Int(unit.o.type)) else { return 0 }
+
         let ui = UnitInfo[ut]
 
         if !map.isValidPosition(packed, mapScale: state.mapScale) && ui.movementType != .winger {

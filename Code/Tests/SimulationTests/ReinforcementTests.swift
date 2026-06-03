@@ -10,7 +10,7 @@ import Testing
 @Suite("Reinforcements")
 struct ReinforcementTests {
     // A synthetic unit script (so `unitScript`/`combat` exist and `setAction` resolves a default action).
-    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func base() -> Simulation {
         var s = GameState(); s.playerHouseID = 0; s.mapScale = 0

@@ -54,6 +54,7 @@ final class MapScene: SKScene {
     var showFog: Bool = false {
         didSet {
             guard let renderer, let simulation, showFog != oldValue else { return }
+
             renderer.showFog = showFog
             renderer.rebuildTerrain(simulation.makeFrameInfo())
         }
@@ -75,6 +76,7 @@ final class MapScene: SKScene {
     /// The game loop: apply queued player commands, advance the sim, redraw, then refresh the selection.
     override func update(_ currentTime: TimeInterval) {
         guard simulation != nil, let renderer else { return }
+
         applyCommands()
         simulation!.tick()
         renderer.render(simulation!.makeFrameInfo())
@@ -84,6 +86,7 @@ final class MapScene: SKScene {
     private func applyCommands() {
         let commands = controller.drainCommands()
         guard !commands.isEmpty, let unitScript else { return }
+
         let orders = UnitOrders(scriptInfo: unitScript)
         for command in commands { orders.apply(command, in: &simulation!.state) }
     }
@@ -92,6 +95,7 @@ final class MapScene: SKScene {
 
     override func mouseDown(with event: NSEvent) {
         guard let (x, y) = tile(at: event) else { return }
+
         let hit = pick(tileX: x, tileY: y)
         let wasArmedOrder = controller.pendingOrder != nil && controller.selection.unitSlot != nil
         controller.leftClick(tileX: x, tileY: y, hit: hit)
@@ -106,6 +110,7 @@ final class MapScene: SKScene {
 
     override func rightMouseDown(with event: NSEvent) {
         guard let (x, y) = tile(at: event) else { return }
+
         let willOrder = controller.selection.unitSlot != nil
         controller.rightClick(
             tileX: x,
@@ -132,12 +137,14 @@ final class MapScene: SKScene {
         let x = Int(p.x) / Self.tileSize
         let y = (Self.worldSidePx - Int(p.y)) / Self.tileSize
         guard (0 ..< 64).contains(x), (0 ..< 64).contains(y) else { return nil }
+
         return (x, y)
     }
 
     /// The selectable entity at a tile: the unit there, else a structure, else nothing.
     private func pick(tileX x: Int, tileY y: Int) -> Selection {
         guard let state = simulation?.state else { return .none }
+
         let packed = UInt16(y * 64 + x)
         if let u = state.unitGetByPackedTile(packed) { return .unit(slot: u) }
         if let s = state.structureGetByPackedTile(packed) { return .structure(slot: s) }
@@ -151,6 +158,7 @@ final class MapScene: SKScene {
             let slot = controller.selection.unitSlot,
             slot < state.units.count
         else { return false }
+
         return state.units[slot].o.type == UInt8(UnitType.harvester.rawValue)
     }
 
@@ -160,6 +168,7 @@ final class MapScene: SKScene {
             let slot = controller.selection.unitSlot,
             slot < state.units.count
         else { return false }
+
         let myHouse = state.unitHouseID(state.units[slot])
         let packed = UInt16(y * 64 + x)
         if let u = state.unitGetByPackedTile(packed) { return state.unitHouseID(state.units[u]) != myHouse }
@@ -185,6 +194,7 @@ final class MapScene: SKScene {
             publishState()
             return
         }
+
         // Place the outline over the entity's footprint in scene (y-up) coordinates.
         let (tilesW, tilesH) = footprint()
         let w = tilesW * Self.tileSize, h = tilesH * Self.tileSize
@@ -202,6 +212,7 @@ final class MapScene: SKScene {
             slot < state.structures.count,
             let type = StructureType(rawValue: Int(state.structures[slot].o.type))
         else { return (1, 1) }
+
         let layout = StructureLayoutInfo[StructureInfo[type].layout]
         return (Int(layout.size.width), Int(layout.size.height))
     }
@@ -209,6 +220,7 @@ final class MapScene: SKScene {
     /// The live properties of the current selection, or `nil` if nothing valid is selected.
     private func currentInfo() -> SelectionInfo? {
         guard let state = simulation?.state else { return nil }
+
         switch controller.selection {
             case .none: return nil
             case let .unit(slot):
@@ -217,6 +229,7 @@ final class MapScene: SKScene {
                     state.units[slot].o.flags.contains(.used),
                     let type = UnitType(rawValue: Int(state.units[slot].o.type))
                 else { return nil }
+
                 let u = state.units[slot]
                 let house = HouseID(rawValue: Int(state.unitHouseID(u))) ?? .harkonnen
                 let packed = Int(u.o.position.packed)
@@ -235,6 +248,7 @@ final class MapScene: SKScene {
                     state.structures[slot].o.flags.contains(.used),
                     let type = StructureType(rawValue: Int(state.structures[slot].o.type))
                 else { return nil }
+
                 let s = state.structures[slot]
                 let house = HouseID(rawValue: Int(s.o.houseID)) ?? .harkonnen
                 let packed = Int(s.o.position.packed)

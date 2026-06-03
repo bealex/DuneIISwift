@@ -67,6 +67,7 @@ struct ScriptVMTests {
             runProgram([ inlineOp(PUSH, a), inlineOp(PUSH, b), inlineOp(BINARY, op), bareOp(POP_RET) ], steps: 4)
                 .returnValue
         }
+
         #expect(eval(7, 3, 9) == 4)  // 7 - 3
         #expect(eval(6, 7, 10) == 42)  // 6 * 7
         #expect(eval(5, 5, 2) == 1)  // 5 == 5
@@ -97,6 +98,7 @@ struct ScriptVMTests {
         func prog(_ top: Int) -> [UInt16] {
             [ inlineOp(PUSH, top), inlineOp(JUMP_NE, 4), inlineOp(SETRV, 5), goto(5), inlineOp(SETRV, 9), bareOp(SETRV) ]
         }
+
         // top == 0 ⇒ pops 0 ⇒ jump to [4] ⇒ SETRV 9
         #expect(runProgram(prog(0), steps: 3).returnValue == 9)
         // top == 1 ⇒ pops 1 ⇒ fall through to [2] ⇒ SETRV 5

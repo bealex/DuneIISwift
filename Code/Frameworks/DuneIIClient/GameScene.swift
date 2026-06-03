@@ -137,12 +137,14 @@ public final class GameScene: SKScene {
 
     func applyFog() {
         guard let renderer, let frame = model?.lastFrame else { return }
+
         renderer.showFog = model?.showFog ?? false
         renderer.rebuildTerrain(frame)
     }
 
     override public func update(_ currentTime: TimeInterval) {
         guard let model, let renderer else { return }
+
         // Pace sim ticks against real elapsed time × the speed multiplier, so 0.5× runs half as fast and
         // 4× four times. The accumulator carries fractional ticks across frames; the per-frame step count
         // is capped so a hitch (or a tab-out) can't trigger a long catch-up spiral.
@@ -153,6 +155,7 @@ public final class GameScene: SKScene {
         if steps > 0 { tickAccumulator -= Double(steps) }
         steps = min(steps, 16)
         guard let frame = model.advance(ticks: steps) else { return }
+
         model.viewSize = size  // keep the model's view size current for clamping
         renderer.render(frame)
         applyViewport()
@@ -174,6 +177,7 @@ public final class GameScene: SKScene {
         else {
             placementNode.isHidden = true; return
         }
+
         let valid = model.placementValidity(tileX: tx, tileY: ty) != 0
         let tile = Self.tileSize
         let originX = Double(tx * tile)
@@ -189,6 +193,7 @@ public final class GameScene: SKScene {
     /// Camera = the model's viewport: scale `1/zoom`, centred on the world point (image y-down → scene y-up).
     private func applyViewport() {
         guard let v = model?.viewport else { return }
+
         cam.setScale(1 / v.zoom)
         cam.position = CGPoint(x: v.centerX, y: Double(Self.worldSidePx) - v.centerY)
     }
@@ -249,6 +254,7 @@ public final class GameScene: SKScene {
     /// texture through the asset palette (index 0 transparent). `nil` if the asset is missing.
     private func makeUnitSelectTexture() -> SKTexture? {
         guard let assets = model?.assets, let shp = assets.shp("MOUSE.SHP"), shp.frames.count > 6 else { return nil }
+
         let f = shp.frames[6]
         guard
             let cg = IndexedImage.cgImage(
@@ -259,6 +265,7 @@ public final class GameScene: SKScene {
                 transparentIndex: 0
             )
         else { return nil }
+
         let texture = SKTexture(cgImage: cg)
         texture.filteringMode = .nearest
         return texture
@@ -282,6 +289,7 @@ public final class GameScene: SKScene {
     /// and never over entities hidden in the fog (they aren't drawn, so neither is their bar).
     private func updateHealth(_ frame: FrameInfo, show: Bool) {
         guard show else { hideAllHealth(); return }
+
         let fog = model?.showFog ?? false
         let side = Double(Self.worldSidePx)
         let tile = Double(Self.tileSize)
@@ -428,18 +436,21 @@ public final class GameScene: SKScene {
         let x = Int(p.x) / Self.tileSize
         let y = (Self.worldSidePx - Int(p.y)) / Self.tileSize
         guard (0 ..< 64).contains(x), (0 ..< 64).contains(y) else { return nil }
+
         return (x, y)
     }
 
     /// Convert a point in the presenting `SKView`'s coordinate space to a map tile (iOS gestures use this).
     public func tile(fromView viewPoint: CGPoint) -> (Int, Int)? {
         guard view != nil else { return nil }
+
         return tile(atScenePoint: convertPoint(fromView: viewPoint))
     }
 
     /// Convert a view point to a world point (image space, y-down) — e.g. to recentre the camera on a tap.
     public func worldPoint(fromView viewPoint: CGPoint) -> CGPoint? {
         guard view != nil else { return nil }
+
         let p = convertPoint(fromView: viewPoint)
         return CGPoint(x: p.x, y: Double(Self.worldSidePx) - p.y)
     }
@@ -454,6 +465,7 @@ public final class GameScene: SKScene {
     /// iOS has no hardware cursor, so the body is a no-op there.
     private func refreshCursor() {
         guard targetingActive != lastTargetingActive else { return }
+
         lastTargetingActive = targetingActive
         #if os(macOS)
             (targetingActive ? NSCursor.crosshair : NSCursor.arrow).set()
@@ -479,6 +491,7 @@ public final class GameScene: SKScene {
                 model?.placement == nil,
                 model?.pendingOrder == nil
             else { return }
+
             let cur = event.locationInWindow
             if hypot(cur.x - start.x, cur.y - start.y) > 4 { leftDragging = true }
             if leftDragging, let from = leftDragStartTile, let to = tile(at: event) { setDragBox(from: from, to: to) }
@@ -493,6 +506,7 @@ public final class GameScene: SKScene {
                 return
             }
             guard let (x, y) = tile(at: event) else { return }
+
             if model?.missileTargeting != nil {
                 model?.launchMissileAt(tileX: x, tileY: y)
             } else if model?.placement != nil {
@@ -513,6 +527,7 @@ public final class GameScene: SKScene {
         /// during the drag doesn't feed back into the delta.
         override public func otherMouseDown(with event: NSEvent) {
             guard event.buttonNumber == 2 else { return }
+
             middleDragLastWindow = event.locationInWindow
             middleDidDrag = false
             middleDownScene = event.location(in: self)
@@ -520,6 +535,7 @@ public final class GameScene: SKScene {
 
         override public func otherMouseDragged(with event: NSEvent) {
             guard event.buttonNumber == 2, let last = middleDragLastWindow else { return }
+
             let cur = event.locationInWindow
             let dx = Double(cur.x - last.x), dy = Double(cur.y - last.y)
             middleDragLastWindow = cur
@@ -531,6 +547,7 @@ public final class GameScene: SKScene {
 
         override public func otherMouseUp(with event: NSEvent) {
             guard event.buttonNumber == 2 else { return }
+
             defer { middleDragLastWindow = nil; middleDownScene = nil }
             if !middleDidDrag, let p = middleDownScene {
                 model?.centerOn(worldX: Double(p.x), worldY: Double(Self.worldSidePx) - Double(p.y))
@@ -539,6 +556,7 @@ public final class GameScene: SKScene {
 
         override public func mouseMoved(with event: NSEvent) {
             guard model?.placement != nil, let (x, y) = tile(at: event) else { return }
+
             model?.placementHover(tileX: x, tileY: y)
         }
 
@@ -599,10 +617,12 @@ public final class GameScene: SKScene {
                 return
             }
             guard let p = touches.first?.location(in: self) else { return }
+
             touchStartScene = p; touchLastScene = p; touchDidPan = false; longPressFired = false
             // A stationary long-press = the macOS right-click (default order / cancel a mode).
             let work = DispatchWorkItem { [weak self] in
                 guard let self, !self.touchDidPan, let start = self.touchStartScene else { return }
+
                 self.longPressFired = true
                 if self.model?.missileTargeting != nil {
                     self.model?.cancelMissileTargeting()
@@ -633,6 +653,7 @@ public final class GameScene: SKScene {
                 let last = touchLastScene,
                 let start = touchStartScene
             else { return }
+
             touchLastScene = cur
             if hypot(cur.x - start.x, cur.y - start.y) > 10 { touchDidPan = true; cancelLongPress() }
             // Hand-tool pan: drag content with the finger (only when not in a target-select / placement mode).
@@ -649,6 +670,7 @@ public final class GameScene: SKScene {
             if pinchStartDistance != nil || touchDidPan || longPressFired { return }
             // A plain tap = the macOS left-click: place / launch in a mode, else select / apply an armed order.
             guard let p = touchStartScene, let (x, y) = tile(atScenePoint: p) else { return }
+
             if model?.missileTargeting != nil {
                 model?.launchMissileAt(tileX: x, tileY: y)
             } else if model?.placement != nil {
@@ -665,6 +687,7 @@ public final class GameScene: SKScene {
         private func pinchDistance(_ event: UIEvent?) -> CGFloat? {
             let pts = (event?.allTouches.map { Array($0) } ?? []).prefix(2).map { $0.location(in: self) }
             guard pts.count == 2 else { return nil }
+
             return hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
         }
         private func cancelLongPress() { longPressWork?.cancel(); longPressWork = nil }

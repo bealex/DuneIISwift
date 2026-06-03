@@ -278,6 +278,7 @@ struct UnitScriptFunctionsTests {
     func findStructure() {
         var (s, slot) = stateWithUnit(.tank, house: 0)
         let type = UInt16(StructureType.refinery.rawValue)
+
         func addRefinery(house: UInt8) -> Int {
             let i = s.structureAllocate(
                 index: Pool.structureIndexInvalid,

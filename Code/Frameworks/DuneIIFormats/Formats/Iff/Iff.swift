@@ -22,7 +22,7 @@ public enum Iff {
         private let bytes: [UInt8]
 
         public init(_ data: Data) throws {
-            let bytes = [ UInt8 ](data)
+            let bytes = [UInt8](data)
             guard bytes.count >= 12, bytes.fourCC(at: 0) == "FORM" else { throw DecodeError.notForm }
 
             let formType = bytes.fourCC(at: 8)

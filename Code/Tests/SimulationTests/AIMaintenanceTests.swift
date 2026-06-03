@@ -10,7 +10,7 @@ import Testing
 /// player and for houses that aren't `isAIActive`.
 @Suite("AI structure maintenance")
 struct AIMaintenanceTests {
-    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     /// An `isAIActive`, non-player house (1) with money + capacity.
     private func aiState() -> GameState {

@@ -13,7 +13,7 @@ import Testing
 /// loop is `HarvesterCycleTests`.
 @Suite("Harvester delivery")
 struct HarvesterDeliveryTests {
-    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func base() -> (GameState, UnitCombat) {
         var s = GameState(); s.playerHouseID = 0; s.mapScale = 0
@@ -100,6 +100,7 @@ struct HarvesterDeliveryTests {
             let buildData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc")),
             let iconData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP"))
         else { return }
+
         let unitInfo = ScriptInfo(try Emc.Program(unitData))
         let buildInfo = ScriptInfo(try Emc.Program(buildData))
         let iconMap = try IconMap(iconData)

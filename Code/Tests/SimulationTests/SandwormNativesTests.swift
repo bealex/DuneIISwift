@@ -64,7 +64,7 @@ struct SandwormNativesTests {
 
     @Test("eating a unit starts the swallow explosion + plays the worm voice")
     func eatStartsSwallowExplosion() {
-        let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+        let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
         var s = base()
         s.playerHouseID = 0
         // Worm and prey on the same tile ⇒ distance 0, so the worm (fireDistance 0) bites this tick.

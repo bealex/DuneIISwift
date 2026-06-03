@@ -25,6 +25,7 @@ extension UnitMovement {
     public func damage(slot: Int, damage: UInt16, range: UInt16, in state: inout GameState) -> Bool {
         guard state.units[slot].o.flags.contains(.allocated) else { return false }
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
+
         let ui = UnitInfo[ut]
         if !ui.flags.contains(.isNormalUnit) && ut != .sandworm { return false }
 
@@ -107,6 +108,7 @@ extension UnitMovement {
         }
 
         guard let utNow = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
+
         let mt = UnitInfo[utNow].movementType
         if mt != .tracked && mt != .harvester && mt != .wheeled { return false }
 
@@ -125,6 +127,7 @@ extension UnitMovement {
     @discardableResult
     public func deviate(slot: Int, probability prob0: UInt16, houseID: UInt8, in state: inout GameState) -> Bool {
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
+
         let ui = UnitInfo[ut]
         if !ui.flags.contains(.isNormalUnit) { return false }
         if state.units[slot].deviated != 0 { return false }
@@ -217,6 +220,7 @@ extension UnitMovement {
             var find = PoolFind()
             while let u = state.unitFind(&find) {
                 guard let uType = UnitType(rawValue: Int(state.units[u].o.type)) else { continue }
+
                 let ui = UnitInfo[uType]
 
                 let distance = Tile32.distance(from: position, to: state.units[u].o.position) >> 4
@@ -230,6 +234,7 @@ extension UnitMovement {
                 if state.units[u].o.houseID == state.playerHouseID { continue }
 
                 guard let us = state.indexGetUnit(origin) else { continue }
+
                 if us == u { continue }
                 if house.areAllied(
                     state.unitHouseID(state.units[u]),
@@ -256,6 +261,7 @@ extension UnitMovement {
                         let target = state.indexGetUnit(state.teams[t].target),
                         let tType = UnitType(rawValue: Int(state.units[target].o.type))
                     else { continue }
+
                     if UnitInfo[tType].bulletType == 0xFF { state.teams[t].target = origin }
                     continue
                 }
@@ -335,6 +341,7 @@ extension UnitMovement {
     /// The first half of a ground unit's DIE branch (`ExplosionSingle(type)` → `Die`).
     public func explosionSingle(slot: Int, type: UInt16, in state: inout GameState) -> UInt16 {
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
+
         mapMakeExplosion(
             type: type,
             position: state.units[slot].o.position,
@@ -381,6 +388,7 @@ extension UnitMovement {
     /// `Random256` draws (the `& 1` fill, then the `& 0x1F` deplete gate) — order matches the oracle.
     public func harvest(slot: Int, in state: inout GameState) -> UInt16 {
         guard state.units[slot].o.type == UInt8(UnitType.harvester.rawValue) else { return 0 }
+
         if state.units[slot].amount >= 100 { return 0 }
         let packed = state.units[slot].o.position.packed
         let type = map.landscapeType(state.map[Int(packed)], tileIDs: state.tileIDs)

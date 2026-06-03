@@ -8,7 +8,7 @@ import Testing
 /// (`Map_Bloom_ExplodeSpice`), and the `Map_FillCircleWithSpice` map primitive.
 @Suite("Map area effects — deviator + spice bloom")
 struct MapEffectTests {
-    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func base(seed: UInt32 = 0x12345) -> (GameState, UnitMovement) {
         var s = GameState(random256Seed: seed)

@@ -23,7 +23,7 @@ public struct Scenario: Sendable, Equatable, Codable {
     /// `[REINFORCEMENTS]` — the timed-spawn table (`g_scenario.reinforcement[16]`). A loaded slot
     /// counts down `timeLeft` (every 600 ticks, in the house loop); at zero it deploys `unitType` for
     /// `houseID` at `locationID`. See `Reinforcement`.
-    public var reinforcements = [ Reinforcement ](repeating: Reinforcement(), count: 16)
+    public var reinforcements = [Reinforcement](repeating: Reinforcement(), count: 16)
 
     /// `[MAP] Field` — explicit hand-placed spice-field tiles (packed). The original detonates a spice bloom
     /// at each (`Scenario_Load_Map_Field` → `Map_Bloom_ExplodeSpice`) **at load**; we can't reach the sim's

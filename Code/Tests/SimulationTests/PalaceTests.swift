@@ -12,7 +12,7 @@ import Testing
 /// saboteur. A fresh palace starts at `countDown == 0`, so an AI one fires on its first palace tick.
 @Suite("Palace special weapon")
 struct PalaceTests {
-    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func addPalace(_ s: inout GameState, house: UInt8) -> Int {
         let slot = s.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(StructureType.palace.rawValue))!
@@ -150,6 +150,7 @@ struct PalaceTests {
         else {
             return
         }
+
         let iconMap = try IconMap(iconData)
         // A Harkonnen (Brain=Human) palace + an Ordos target. The [TEAMS] entry flips Harkonnen isAIActive —
         // the *other* half of the `!human && isAIActive` auto-fire gate — so only the human flag stops the launch.
@@ -187,6 +188,7 @@ struct PalaceTests {
             s.structureTick.palace = 0
             s.structureTick.structure = 30000; s.structureTick.script = 30000; s.structureTick.degrade = 30000
         }
+
         armPalaceCursorOnly(&state)
 
         var sm = Simulation(state: state, scriptInfo: info, structureScriptInfo: info)

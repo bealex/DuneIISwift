@@ -340,6 +340,7 @@ struct ScenarioGoldenTests {
         let rngSink = RngTraceSink()
         sim.state.random256.traceSink = rngSink
         sim.state.randomLCG.traceSink = rngSink
+
         func frame() -> Frame {
             Frame(
                 tick: 0,
@@ -349,6 +350,7 @@ struct ScenarioGoldenTests {
                 tiles: tilesSnapshot(sim.state, dumpTiles)
             )
         }
+
         var ours: [Frame] = [ frame() ]
         for t in 1 ..< max(oracle.count, 1) {
             rngSink.setTick(UInt32(t))

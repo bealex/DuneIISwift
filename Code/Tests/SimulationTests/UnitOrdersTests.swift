@@ -11,7 +11,7 @@ import Testing
 struct UnitOrdersTests {
     let orders = UnitOrders(
         scriptInfo: ScriptInfo(
-            program: [ UInt16 ](repeating: 0, count: 64),
+            program: [UInt16](repeating: 0, count: 64),
             offsets: (0 ..< 30).map { UInt16($0) }
         )
     )

@@ -26,7 +26,7 @@ public struct IconMap: Sendable, Codable {
     private let values: [Int]
 
     public init(_ data: Data) throws {
-        let bytes = [ UInt8 ](data)
+        let bytes = [UInt8](data)
         guard bytes.count >= 2 else { throw DecodeError.truncated }
 
         var values: [Int] = []
@@ -56,9 +56,11 @@ public struct IconMap: Sendable, Codable {
     /// the base computations (e.g. fog-of-war + 16) rely on. Returns nil if out of range.
     public func tileID(group: Int, offset: Int) -> Int? {
         guard group >= 1, group < values.count else { return nil }
+
         let base = values[group]
         let index = base + offset
         guard base > 0, index >= 0, index < values.count else { return nil }
+
         return values[index]
     }
 

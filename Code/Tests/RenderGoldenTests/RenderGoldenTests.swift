@@ -65,6 +65,7 @@ struct RenderGoldenTests {
             )
             return
         }
+
         let actual = PngImage(image)
         let d = actual.diff(expected)
         let firstPx = d.first.map { "(\($0.x),\($0.y))" } ?? "-"

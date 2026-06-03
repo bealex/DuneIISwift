@@ -48,6 +48,7 @@ final class ScenarioLabModel {
     /// initial setup can be assessed before running.
     private func rebuild() {
         guard let builder = assets.builder else { return }
+
         running = false
         let scenario = TestScenario(kind: kind, unit1: unit1, unit2: unit2, terrainSeed: seed)
         var world = builder.build(scenario)

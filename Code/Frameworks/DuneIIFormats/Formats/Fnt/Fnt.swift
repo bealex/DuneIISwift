@@ -32,7 +32,7 @@ public enum Fnt {
         }
 
         public init(_ data: Data) throws {
-            let bytes = [ UInt8 ](data)
+            let bytes = [UInt8](data)
             guard bytes.count >= 14 else { throw DecodeError.truncated }
             guard bytes[2] == 0x00, bytes[3] == 0x05 else { throw DecodeError.invalidMagic }
 

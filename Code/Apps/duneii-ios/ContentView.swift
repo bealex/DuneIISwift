@@ -60,6 +60,7 @@ struct ContentView: View {
             .filter { $0.pathExtension == "duneiisave" }
             .max { date($0) < date($1) }
         guard let latest else { flash("No saved games"); return }
+
         flash(model.loadGame(from: latest) ? "Game loaded" : "Load failed")
     }
 

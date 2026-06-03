@@ -14,6 +14,7 @@ final class ToolWindowManager: NSObject {
     /// position persist. Idempotent — `WindowAccessor` may call it repeatedly with the same window.
     func attachToMain(_ window: NSWindow) {
         guard mainWindow !== window else { return }
+
         mainWindow = window
         if window.frameAutosaveName != "DuneII.main" {
             window.setFrameUsingName("DuneII.main")

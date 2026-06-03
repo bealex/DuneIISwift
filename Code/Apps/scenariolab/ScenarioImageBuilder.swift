@@ -21,13 +21,15 @@ enum ScenarioImageBuilder {
     /// The 128×128 palette-indexed terrain buffer (ground tiles of the 8×8 region, incl. building tiles).
     static func terrainIndices(_ world: ScenarioWorld, _ assets: ScenarioAssets) -> [UInt8]? {
         guard let tiles = assets.tileSet else { return nil }
+
         let side = sidePx
-        var buffer = [ UInt8 ](repeating: 0, count: side * side)
+        var buffer = [UInt8](repeating: 0, count: side * side)
         let terrain = world.terrain
         for ly in 0 ..< size {
             for lx in 0 ..< size {
                 let tileID = Int(world.state.map[Int(terrain.mapPacked(lx: lx, ly: ly))].groundTileID)
                 guard tileID >= 0, tileID < tiles.tileCount else { continue }
+
                 let pixels = tiles.tile(tileID)
                 let ox = lx * tilePx, oy = ly * tilePx
                 for py in 0 ..< tilePx {
@@ -50,6 +52,7 @@ enum ScenarioImageBuilder {
         var result: [UnitSprite] = []
         for u in world.state.units where u.o.flags.contains(.used) {
             guard let type = UnitType(rawValue: Int(u.o.type)) else { continue }
+
             if UnitInfo[type].o.flags.contains(.blurTile) { continue }  // sandworm shimmer not drawn here
             guard let sprites = UnitSprites.info(for: u) else { continue }
 
@@ -116,6 +119,7 @@ enum ScenarioImageBuilder {
             frame >= 0,
             frame < frames.frames.count
         else { return nil }
+
         let f = frames.frames[frame]
         return IndexedImage.cgImage(
             indices: f.pixels,
@@ -137,6 +141,7 @@ enum ScenarioImageBuilder {
             frame >= 0,
             frame < frames.frames.count
         else { return nil }
+
         let f = frames.frames[frame]
         return IndexedImage.cgImage(
             indices: f.pixels,

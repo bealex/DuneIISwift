@@ -83,6 +83,7 @@ public final class ADLMusicPlayer: MusicEngine {
             log.warning("ADL music file missing: \(url.lastPathComponent, privacy: .public)")
             return
         }
+
         generation &+= 1
         let gen = generation
         shared.command.withLock {
@@ -124,6 +125,7 @@ public final class ADLMusicPlayer: MusicEngine {
     /// `EngineAudioSink`) rather than throwing into the host.
     private func ensureRunning() {
         guard !running else { return }
+
         engine.prepare()
         do {
             try engine.start()
@@ -138,6 +140,7 @@ public final class ADLMusicPlayer: MusicEngine {
     /// `cancelled`).
     private func ensureProducer() {
         guard !producerStarted else { return }
+
         producerStarted = true
         Self.makeProducerThread(shared: shared).start()
     }
@@ -152,6 +155,7 @@ public final class ADLMusicPlayer: MusicEngine {
     /// Main-actor end-of-track handoff from the producer. Dropped if a newer `play`/`stop` superseded it.
     private func trackFinished(generation gen: Int) {
         guard gen == generation else { return }
+
         onFinished?()
     }
 
@@ -190,7 +194,7 @@ public final class ADLMusicPlayer: MusicEngine {
     /// (synthesis thread) / single consumer (audio thread), each holding the `Mutex` only for the brief copy.
     private struct Ring {
         static let capacityFrames = ADLMusicPlayer.outputRate  // 1 second
-        private var buffer = [ Float ](repeating: 0, count: capacityFrames * ADLMusicPlayer.channels)
+        private var buffer = [Float](repeating: 0, count: capacityFrames * ADLMusicPlayer.channels)
         private var head = 0  // read cursor (in floats; always even)
         private var tail = 0  // write cursor (in floats; always even)
         private var available = 0  // floats ready to read
@@ -258,7 +262,7 @@ public final class ADLMusicPlayer: MusicEngine {
         var ticks = 0
         var emitted = 0
         let chunkFrames = 1024
-        var scratch = [ Float ](repeating: 0, count: chunkFrames * channels)
+        var scratch = [Float](repeating: 0, count: chunkFrames * channels)
 
         while true {
             if shared.cancelled.withLock({ $0 }) { return }
@@ -289,6 +293,7 @@ public final class ADLMusicPlayer: MusicEngine {
             else {
                 Thread.sleep(forTimeInterval: 0.02); continue
             }
+
             if command.paused {
                 Thread.sleep(forTimeInterval: 0.01); continue
             }

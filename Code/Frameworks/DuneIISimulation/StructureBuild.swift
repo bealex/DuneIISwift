@@ -105,6 +105,7 @@ public extension Simulation {
             slot < state.structures.count,
             let st = StructureType(rawValue: Int(state.structures[slot].o.type))
         else { return [] }
+
         let s = state.structures[slot]
         let structuresBuilt = state.houses[Int(s.o.houseID)].structuresBuilt
         let player = state.playerHouseID
@@ -121,6 +122,7 @@ public extension Simulation {
                         unitRaw = UInt8(UnitType.raiderTrike.rawValue)
                     }
                     guard let ut = UnitType(rawValue: Int(unitRaw)) else { continue }
+
                     let ui = UnitInfo[ut].o
                     var upgradeRequired = UInt16(ui.upgradeLevelRequired)
                     if ut == .siegeTank && s.creatorHouseID == ordos { upgradeRequired &-= 1 }
@@ -141,6 +143,7 @@ public extension Simulation {
             case .constructionYard:
                 for i in 0 ..< StructureType.allCases.count {
                     guard let stType = StructureType(rawValue: i) else { continue }
+
                     let lsi = StructureInfo[stType].o
                     var availableCampaign = lsi.availableCampaign
                     var structuresRequired = lsi.structuresRequired
@@ -153,6 +156,7 @@ public extension Simulation {
                     else {
                         continue
                     }
+
                     if s.o.houseID != harkonnen && stType == .lightVehicle { availableCampaign = 2 }
                     guard
                         campaign >= availableCampaign &- 1,
@@ -160,6 +164,7 @@ public extension Simulation {
                     else {
                         continue
                     }
+
                     if UInt16(s.upgradeLevel) >= UInt16(lsi.upgradeLevelRequired) || s.o.houseID != player {
                         result.append(
                             Buildable(
@@ -189,6 +194,7 @@ public extension Simulation {
             slot < state.structures.count,
             let st = StructureType(rawValue: Int(state.structures[slot].o.type))
         else { return [] }
+
         let s = state.structures[slot]
         let structuresBuilt = state.houses[Int(s.o.houseID)].structuresBuilt
         let campaign = UInt16(state.campaignID)
@@ -204,6 +210,7 @@ public extension Simulation {
                         unitRaw = UInt8(UnitType.raiderTrike.rawValue)
                     }
                     guard let ut = UnitType(rawValue: Int(unitRaw)) else { continue }
+
                     let ui = UnitInfo[ut].o
                     if (ui.availableHouse & (1 << s.creatorHouseID)) == 0 { continue }
                     var upgradeRequired = UInt16(ui.upgradeLevelRequired)
@@ -229,6 +236,7 @@ public extension Simulation {
             case .constructionYard:
                 for i in 0 ..< StructureType.allCases.count {
                     guard let stType = StructureType(rawValue: i) else { continue }
+
                     let lsi = StructureInfo[stType].o
                     // The construction yard itself (FLAG_STRUCTURE_NEVER) is never a build item.
                     if lsi.structuresRequired == 0xFFFF_FFFF { continue }
@@ -269,6 +277,7 @@ public extension Simulation {
     static func missingStructureBlockers(required: UInt32, built: UInt32) -> [BuildBlocker] {
         let missing = required & ~built
         guard missing != 0 else { return [] }
+
         var out: [BuildBlocker] = []
         for i in 0 ..< StructureType.allCases.count where (missing & (UInt32(1) << i)) != 0 {
             if let t = StructureType(rawValue: i) { out.append(.structure(t)) }
@@ -279,6 +288,7 @@ public extension Simulation {
     /// Factory `slot`'s in-progress build, or `nil` when it isn't building (no linked product).
     func buildState(structureSlot slot: Int) -> BuildState? {
         guard slot >= 0, slot < state.structures.count else { return nil }
+
         let s = state.structures[slot]
         guard
             let st = StructureType(rawValue: Int(s.o.type)),
@@ -286,6 +296,7 @@ public extension Simulation {
             s.o.linkedID != 0xFF,
             s.objectType != 0xFFFF
         else { return nil }
+
         let isStructure = (st == .constructionYard)
         let buildTime: Int = isStructure
             ? StructureType(rawValue: Int(s.objectType)).map { Int(StructureInfo[$0].o.buildTime) } ?? 0
@@ -306,6 +317,7 @@ public extension Simulation {
     /// layer (no `UNIT.EMC` bridged).
     func placementValidity(type: StructureType, tile: UInt16) -> Int16? {
         guard let combat = unitScript?.combat else { return nil }
+
         return combat.structureIsValidBuildLocation(tile, type: type, in: state)
     }
 }

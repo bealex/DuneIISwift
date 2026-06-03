@@ -33,6 +33,7 @@ struct TeamScriptFunctions: Sendable {
             if !state.units[u].o.flags.contains(.byScenario) { continue }
             if state.units[u].o.type == UInt8(UnitType.saboteur.rawValue) { continue }
             guard let ut = UnitType(rawValue: Int(state.units[u].o.type)) else { continue }
+
             if UnitInfo[ut].movementType.rawValue != teamMove { continue }
 
             if state.units[u].team == 0 {
@@ -164,6 +165,7 @@ struct TeamScriptFunctions: Sendable {
             if Int(state.units[u].team) - 1 != slot { continue }
             // (OpenDUNE re-checks `t->target == 0 → GUARD` here; we returned above and target is constant.)
             guard let ut = UnitType(rawValue: Int(state.units[u].o.type)) else { continue }
+
             let distance = UnitInfo[ut].fireDistance &<< 8
 
             if state.units[u].actionID == UInt8(ActionType.attack.rawValue) && state.units[u].targetAttack == target {

@@ -25,9 +25,11 @@ struct UnveilTests {
     @Test("Map_IsPositionUnveiled: needs the flag and a non-veil overlay")
     func isPositionUnveiled() {
         var ids = TileIDs(); ids.veiled = veiled
+
         func tile(unveiled: Bool, overlay: UInt8) -> MapTile {
             var t = MapTile(); t.isUnveiled = unveiled; t.overlayTileID = overlay; return t
         }
+
         // overlay 0 is below the veil run → an unveiled overlay; combined with the flag → visible.
         #expect(map.isPositionUnveiled(tile(unveiled: true, overlay: 0), tileIDs: ids))
         // Flag clear → never unveiled, whatever the overlay.

@@ -59,6 +59,7 @@ public final class RngTraceSink: Sendable {
             for field in line.split(separator: " ") {
                 let kv = field.split(separator: "=", maxSplits: 1)
                 guard kv.count == 2 else { continue }
+
                 let (k, v) = (String(kv[0]), String(kv[1]))
                 switch k {
                     case "tick": tick = UInt32(v)
@@ -70,6 +71,7 @@ public final class RngTraceSink: Sendable {
                 }
             }
             guard let tick, let idx, let value else { return nil }
+
             return OracleDraw(tick: tick, idx: idx, value: value, ctx: ctx)
         }
     }

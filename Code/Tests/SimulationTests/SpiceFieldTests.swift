@@ -9,7 +9,7 @@ import Testing
 /// fills them once, before the first GameLoop (driven from `tick()` while the list is non-empty).
 @Suite("Scenario spice fields")
 struct SpiceFieldTests {
-    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func base() -> GameState {
         var s = GameState()

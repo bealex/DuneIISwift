@@ -10,7 +10,7 @@ import Testing
 @Suite("Unit_Damage")
 struct UnitCombatTests {
     // offsets[typeID] = typeID, so a script load for type T parks the PC at T.
-    let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func setup(_ type: UnitType, hp: UInt16, house: UInt8 = 0, player: UInt8 = 0)
         -> (GameState, Int, UnitCombat)

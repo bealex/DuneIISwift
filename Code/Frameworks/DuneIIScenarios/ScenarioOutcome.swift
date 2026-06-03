@@ -16,7 +16,9 @@ public extension ScenarioWorld {
     /// declares its own natural endpoint so `scenariolab` can flag it.
     func outcome() -> ScenarioOutcome {
         func unitUsed(_ slot: Int) -> Bool { state.units[slot].o.flags.contains(.used) }
+
         func structUsed(_ slot: Int) -> Bool { state.structures[slot].o.flags.contains(.used) }
+
         // A moving unit is "arrived" once its position packs to the destination tile.
         func arrived(_ slot: Int, _ lx: Int, _ ly: Int) -> Bool {
             unitUsed(slot) && state.units[slot].o.position.packed == terrain.mapPacked(lx: lx, ly: ly)

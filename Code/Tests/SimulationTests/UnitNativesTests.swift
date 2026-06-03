@@ -8,7 +8,7 @@ import Testing
 /// `SetActionDefault` (0x0A), and `MoveToTarget` (0x16, the fine-approach homing).
 @Suite("Unit natives (set-sprite / blink / default-action / move-to-target)")
 struct UnitNativesTests {
-    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func setup(_ type: UnitType = .carryall) -> (GameState, Int, UnitMovement, UnitScriptFunctions) {
         var s = GameState()

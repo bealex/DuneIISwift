@@ -20,6 +20,7 @@ struct ScenarioBuilderTests {
             let emc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
             let build = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc"))
         else { return nil }
+
         return ScenarioBuilder(
             iconMap: try IconMap(icon),
             unitScript: ScriptInfo(try Emc.Program(emc)),
@@ -30,6 +31,7 @@ struct ScenarioBuilderTests {
     @Test("moving: the mover starts at 0:0 with Move + targetMove 7:7, then actually crosses the terrain")
     func moving() throws {
         guard let builder = try loadBuilder() else { return }
+
         var world = builder.build(TestScenario(kind: .moving, unit1: .tank, unit2: .trike, terrainSeed: 1))
         #expect(world.unitSlots.count == 1)
         let slot = world.unitSlots[0]
@@ -53,6 +55,7 @@ struct ScenarioBuilderTests {
     @Test("closeAttack: two enemy-house units adjacent; the attacker targets the defender")
     func closeAttack() throws {
         guard let builder = try loadBuilder() else { return }
+
         let world = builder.build(TestScenario(kind: .closeAttack, unit1: .tank, unit2: .tank, terrainSeed: 1))
         #expect(world.unitSlots.count == 2)
         let (u1, u2) = (world.unitSlots[0], world.unitSlots[1])
@@ -68,6 +71,7 @@ struct ScenarioBuilderTests {
     @Test("guarding: the guard sits at 2:2 in Guard; the mover heads toward it")
     func guarding() throws {
         guard let builder = try loadBuilder() else { return }
+
         let world = builder.build(TestScenario(kind: .guarding, unit1: .tank, unit2: .trike, terrainSeed: 1))
         let (u1, u2) = (world.unitSlots[0], world.unitSlots[1])
         #expect(world.state.units[u1].actionID == UInt8(ActionType.guard_.rawValue))
@@ -81,6 +85,7 @@ struct ScenarioBuilderTests {
     @Test("moveAroundBuilding: a building is stamped in the centre and the mover starts at 0:0")
     func moveAroundBuilding() throws {
         guard let builder = try loadBuilder() else { return }
+
         let world = builder.build(TestScenario(kind: .moveAroundBuilding, unit1: .tank, unit2: .tank, terrainSeed: 1))
         let centre = Int(world.terrain.mapPacked(lx: 3, ly: 3))
         #expect(world.state.map[centre].hasStructure)
@@ -90,6 +95,7 @@ struct ScenarioBuilderTests {
     @Test("deviate: the enemy deviator mind-controls the player unit, which flips to the enemy house")
     func deviate() throws {
         guard let builder = try loadBuilder() else { return }
+
         let world = builder.build(TestScenario(kind: .deviate, unit1: .tank, unit2: .deviator, terrainSeed: 1))
         let victim = world.unitSlots[0]
         #expect(world.state.units[victim].o.houseID == UInt8(HouseID.harkonnen.rawValue))  // still owned by player
@@ -102,6 +108,7 @@ struct ScenarioBuilderTests {
     @Test("attackStructure: the tank damages the enemy windtrap (Structure_Damage runs in the loop)")
     func attackStructureRuns() throws {
         guard let builder = try loadBuilder() else { return }
+
         var world = builder.build(TestScenario(kind: .attackStructure, unit1: .tank, unit2: .tank, terrainSeed: 42))
         let fullHP = try #require(world.state.structures.first(where: { $0.o.flags.contains(.used) })).o.hitpoints
         for _ in 0 ..< 250 { world.tick() }
@@ -117,6 +124,7 @@ struct ScenarioBuilderTests {
     @Test("factoryProduce: the factory drains credits, advances the build, and completes to READY")
     func factoryProduces() throws {
         guard let builder = try loadBuilder() else { return }
+
         var world = builder.build(TestScenario(kind: .factoryProduce, unit1: .tank, unit2: .tank, terrainSeed: 42))
         let f = try #require(structure(world.state, .lightVehicle))
         let credits0 = world.state.houses[Int(HouseID.harkonnen.rawValue)].credits
@@ -132,6 +140,7 @@ struct ScenarioBuilderTests {
     @Test("repairBuilding: the damaged windtrap heals over ticks")
     func repairHeals() throws {
         guard let builder = try loadBuilder() else { return }
+
         var world = builder.build(TestScenario(kind: .repairBuilding, unit1: .tank, unit2: .tank, terrainSeed: 42))
         let w = try #require(structure(world.state, .windtrap))
         let hp0 = world.state.structures[w].o.hitpoints
@@ -146,6 +155,7 @@ struct ScenarioBuilderTests {
     @Test("upgradeBuilding: the barracks completes its upgrade (level 0 → 1)")
     func upgradeLevels() throws {
         guard let builder = try loadBuilder() else { return }
+
         var world = builder.build(TestScenario(kind: .upgradeBuilding, unit1: .tank, unit2: .tank, terrainSeed: 42))
         let b = try #require(structure(world.state, .barracks))
         #expect(world.state.structures[b].upgradeLevel == 0)
@@ -159,6 +169,7 @@ struct ScenarioBuilderTests {
     @Test("turretDefense: the turret's script fires — a bullet spawns over ticks")
     func turretFires() throws {
         guard let builder = try loadBuilder() else { return }
+
         var world = builder.build(TestScenario(kind: .turretDefense, unit1: .tank, unit2: .tank, terrainSeed: 42))
         var fired = false
         for _ in 0 ..< 300 where !fired {

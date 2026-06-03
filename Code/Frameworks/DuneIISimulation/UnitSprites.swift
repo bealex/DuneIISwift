@@ -64,6 +64,7 @@ public enum UnitSprites {
     /// type (`UnitSprites` has no map); it is ignored for non-harvesters.
     public static func info(for unit: Unit, onSpice: Bool = false) -> UnitSpriteInfo? {
         guard let type = UnitType(rawValue: Int(unit.o.type)) else { return nil }
+
         let info = UnitInfo[type]
 
         let bodyO8 = Int(Orientation.to8(UInt8(bitPattern: unit.orientation[0].current)))

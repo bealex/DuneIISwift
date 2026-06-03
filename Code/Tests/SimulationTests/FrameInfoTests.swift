@@ -129,9 +129,11 @@ struct FrameInfoTests {
             }
         }
         let f = sim.makeFrameInfo()
+
         func edge(_ x: Int, _ y: Int) -> Int {
             f.tiles[Int(Tile32.packXY(x: UInt16(x), y: UInt16(y)))].fogEdgeSpriteIndex
         }
+
         #expect(edge(10, 10) == 0)  // interior: all neighbours revealed ⇒ no edge
         #expect(edge(10, 9) == 500 + 0b0001)  // top-middle: only N veiled ⇒ mask 1
         #expect(edge(9, 9) == 500 + 0b1001)  // top-left corner: N and W veiled ⇒ mask 9
@@ -141,6 +143,7 @@ struct FrameInfoTests {
     @Test("a unit's actionID collapses to the right UI activity (for the state chip)")
     func activityMapping() {
         func a(_ t: ActionType) -> FrameInfo.UnitActivity { Simulation.activity(forActionID: UInt8(t.rawValue)) }
+
         #expect(a(.attack) == .attacking && a(.hunt) == .attacking && a(.ambush) == .attacking)
         #expect(a(.move) == .moving && a(.retreat) == .moving)
         #expect(a(.guard_) == .guarding && a(.areaGuard) == .guarding)

@@ -29,6 +29,7 @@ public struct TileIDs: Sendable, Equatable, Codable {
             let l = iconMap.tileID(group: 9, offset: 0),
             let w = iconMap.tileID(group: 6, offset: 0)
         else { return nil }
+
         veiled = UInt16(v); bloom = UInt16(b); builtSlab = UInt16(s); landscape = UInt16(l); wall = UInt16(w)
         fogEdges = (0 ..< 16).compactMap { iconMap.tileID(group: 7, offset: $0).map(UInt16.init) }
         if fogEdges.count != 16 { fogEdges = [] }

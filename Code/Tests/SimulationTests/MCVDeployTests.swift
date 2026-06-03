@@ -9,7 +9,7 @@ import Testing
 /// which `isValidForStructure2` — structures build on rock, not sand).
 @Suite("MCV deploy + RandomSoldier + CallUnitByType")
 struct MCVDeployTests {
-    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func base(rock: Bool = false) -> (GameState, UnitCombat) {
         var s = GameState()

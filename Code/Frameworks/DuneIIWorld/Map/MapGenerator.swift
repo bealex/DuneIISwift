@@ -34,7 +34,7 @@ public extension GameState {
         random256.reseed(seed)
 
         // Place random data on a 4×4 grid.
-        var memory = [ UInt8 ](repeating: 0, count: 273)
+        var memory = [UInt8](repeating: 0, count: 273)
         for i in 0 ..< 272 {
             var m = random256.next() & 0xF
             if m > 0xA { m = 0xA }
@@ -82,8 +82,8 @@ public extension GameState {
         }
 
         // Average each tile with its (up to 8) neighbours.
-        var currentRow = [ UInt16 ](repeating: 0, count: 64)
-        var previousRow = [ UInt16 ](repeating: 0, count: 64)
+        var currentRow = [UInt16](repeating: 0, count: 64)
+        var previousRow = [UInt16](repeating: 0, count: 64)
         for j in 0 ..< 64 {
             let row = j * 64
             previousRow = currentRow
@@ -242,6 +242,7 @@ public extension GameState {
     /// `g_table_landscapeInfo[id].canBecomeSpice` with an out-of-range guard.
     private func canBecomeSpice(_ id: UInt16) -> Bool {
         guard let type = LandscapeType(rawValue: Int(id)) else { return false }
+
         return LandscapeInfo[type].canBecomeSpice
     }
 }

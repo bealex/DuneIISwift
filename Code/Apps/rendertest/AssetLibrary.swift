@@ -94,6 +94,7 @@ final class AssetLibrary {
     /// engine on first use.
     func playMusic(file: Int, song: Int, loop: Bool) {
         guard let dir = musicDirectory else { return }
+
         if musicPlayer == nil { musicPlayer = ADLMusicPlayer(musicDirectory: dir) }
         musicPlayer?.play(file: file, song: song, loop: loop)
     }
@@ -220,6 +221,7 @@ final class AssetLibrary {
                 guard
                     FileManager.default.fileExists(atPath: dir.appendingPathComponent("DUNE\(track.file).ADL").path)
                 else { return nil }
+
                 return Asset(
                     pak: "MUSIC",
                     name: "\(track.id)",
@@ -259,7 +261,7 @@ final class AssetLibrary {
     }
 
     private static func monochromePalette() -> Palette {
-        var bytes = [ UInt8 ](repeating: 0, count: 768)
+        var bytes = [UInt8](repeating: 0, count: 768)
         for index in 0 ..< 256 {
             let value = UInt8(index >> 2)
             bytes[index * 3] = value

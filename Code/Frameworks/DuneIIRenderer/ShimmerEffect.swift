@@ -55,6 +55,7 @@ public enum ShimmerEffect {
                 veiled: veiled
             )
         else { return nil }
+
         return rgbaImage(rgba, width: wormWidth, height: wormHeight)
     }
 
@@ -84,7 +85,7 @@ public enum ShimmerEffect {
             terrain.count >= terrainWidth * terrainHeight
         else { return nil }
 
-        var rgba = [ UInt8 ](repeating: 0, count: wormWidth * wormHeight * 4)  // transparent by default
+        var rgba = [UInt8](repeating: 0, count: wormWidth * wormHeight * 4)  // transparent by default
         for y in 0 ..< wormHeight {
             let ty = top + y
             if ty < 0 || ty >= terrainHeight { continue }
@@ -111,6 +112,7 @@ public enum ShimmerEffect {
             rgba.count >= width * height * 4,
             let provider = CGDataProvider(data: Data(rgba) as CFData)
         else { return nil }
+
         let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
         return CGImage(
             width: width,

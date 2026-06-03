@@ -20,7 +20,7 @@ public enum IndexedImage {
     ) -> CGImage? {
         guard width > 0, height > 0, indices.count >= width * height else { return nil }
 
-        var rgba = [ UInt8 ](repeating: 0, count: width * height * 4)
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
         for pixel in 0 ..< (width * height) {
             let original = indices[pixel]
             if let transparentIndex, Int(original) == transparentIndex { continue }  // leave (0,0,0,0)

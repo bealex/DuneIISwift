@@ -35,22 +35,25 @@ import SwiftUI
             frame >= 0,
             frame < set.frames.count
         else { return nil }
+
         let f = set.frames[frame]
         return DecodedFrame(pixels: f.pixels, w: f.width, h: f.height, hasLookup: f.hasLookup)
     }
 
     private static func unitImage(_ objectType: UInt16, house: HouseID, assets: AssetStore) -> CGImage? {
         guard let type = UnitType(rawValue: Int(objectType)) else { return nil }
+
         let info = UnitInfo[type]
         let remapHouse = DuneIIRenderer.House(rawValue: house.rawValue) ?? .harkonnen
+
         // House recolour, gated by the frame's lookup flag (a frame without house pixels passes through).
         func resolve(_ idx: UInt8, _ hasLookup: Bool) -> UInt8 {
             hasLookup ? HouseRemap.sprite(idx, house: remapHouse) : idx
         }
+
         // North-facing (orientation 0): the body frame is `groundSpriteID` for every display mode
         // (`UnitSprites.info` adds 0 at orientation 0 for directional/infantry/air alike).
         guard let body = unitFrame(Int(info.groundSpriteID), assets: assets) else { return nil }
-
         // Units with a turret (tanks, launcher, sonic, deviator, …) composite it on top at its
         // orientation-0 pixel offset (`UnitSprites.turretOffset`, `viewport.c`).
         guard
@@ -66,6 +69,7 @@ import SwiftUI
                 remap: { resolve($0, body.hasLookup) }
             )
         }
+
         let (tdx, tdy) = turretOffset0(info.turretSpriteID)
         // Bounding box of body (centred) + turret (centred + offset) so the gun barrel isn't clipped.
         let bx0 = -body.w / 2, by0 = -body.h / 2
@@ -73,18 +77,22 @@ import SwiftUI
         let minX = min(bx0, tx0), minY = min(by0, ty0)
         let cw = max(bx0 + body.w, tx0 + turret.w) - minX, ch = max(by0 + body.h, ty0 + turret.h) - minY
         guard cw > 0, ch > 0 else { return nil }
-        var canvas = [ UInt8 ](repeating: 0, count: cw * ch)
+
+        var canvas = [UInt8](repeating: 0, count: cw * ch)
+
         func blit(_ f: DecodedFrame, atX ox: Int, atY oy: Int) {
             for y in 0 ..< f.h {
                 for x in 0 ..< f.w {
                     let s = y * f.w + x
                     guard s < f.pixels.count else { continue }
+
                     let idx = f.pixels[s]
                     if idx == 0 { continue }  // transparent
                     canvas[(oy + y) * cw + (ox + x)] = resolve(idx, f.hasLookup)
                 }
             }
         }
+
         blit(body, atX: bx0 - minX, atY: by0 - minY)
         blit(turret, atX: tx0 - minX, atY: ty0 - minY)  // gun on top
         return IndexedImage.cgImage(
@@ -114,8 +122,10 @@ import SwiftUI
             let tiles = assets.tileSet,
             let iconMap = assets.iconMap
         else { return nil }
+
         let groupIndex = Int(StructureInfo[type].iconGroup)
         guard let group = iconMap.group(groupIndex), let first = group.tileIDs.first else { return nil }
+
         // The structure's footprint in tiles (from its layout) — works for every group, including the special
         // 1×1 ones (walls = group 6, concrete = group 8, turrets = 23/24) that aren't in `StructureCatalog`.
         let layout = StructureLayoutInfo[StructureInfo[type].layout].size
@@ -146,11 +156,13 @@ import SwiftUI
                 remap: remap
             )
         }
+
         let fw = w * tw, fh = h * th
-        var indices = [ UInt8 ](repeating: 0, count: fw * fh)
+        var indices = [UInt8](repeating: 0, count: fw * fh)
         for i in 0 ..< perState {
             let pixels = tiles.tile(group.tileIDs[base + i])
             guard !pixels.isEmpty else { continue }
+
             let originX = (i % w) * tw, originY = (i / w) * th
             for y in 0 ..< th {
                 for x in 0 ..< tw {

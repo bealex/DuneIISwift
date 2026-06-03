@@ -58,6 +58,7 @@ final class ScenarioScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         guard running, var w = world else { return }
+
         // Advance the simulation `ticksPerFrame` times, then render once. `mapDirty` is only ever set by
         // `tick()` (cleared here), so after the loop it reflects whether any of those ticks dirtied terrain.
         for _ in 0 ..< ticksPerFrame { w.tick() }
@@ -87,6 +88,7 @@ final class ScenarioScene: SKScene {
             let buffer = ScenarioImageBuilder.terrainIndices(world, assets),
             let image = ScenarioImageBuilder.colorize(buffer, palette: assets.palette)
         else { return }
+
         let texture = SKTexture(cgImage: image)
         texture.filteringMode = .nearest
         if let terrainNode {
@@ -110,6 +112,7 @@ final class ScenarioScene: SKScene {
         for node in spriteNodes { node.removeFromParent() }
         spriteNodes = []
         guard let world, let assets else { return }
+
         let side = ScenarioImageBuilder.sidePx
         let sprites =
             ScenarioImageBuilder.unitSprites(world, assets) + ScenarioImageBuilder.effectSprites(world, assets)

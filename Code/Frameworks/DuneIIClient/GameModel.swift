@@ -99,6 +99,7 @@ public final class GameModel {
     /// A friendly label for the current scenario (house + mission), for the toolbar button.
     public var scenarioTitle: String {
         guard let name = currentScenario, let s = ScenarioID(fileName: name) else { return "Scenario" }
+
         return "\(s.house.displayName) · Mission \(s.mission)"
     }
 
@@ -122,6 +123,7 @@ public final class GameModel {
     public private(set) var paused = false {
         didSet {
             guard paused != oldValue else { return }
+
             simulation?.state.paused = paused
             paused ? music.pause() : music.resume()
         }
@@ -224,6 +226,7 @@ public final class GameModel {
 
     func load(_ scenarioName: String) {
         guard let ini = assets.scenarioINI(scenarioName), let iconMap = assets.iconMap else { return }
+
         unitScript = assets.data("UNIT.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
         structureScript = assets.data("BUILD.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
 
@@ -359,6 +362,7 @@ public final class GameModel {
     @discardableResult
     public func saveGame(to url: URL) -> Bool {
         guard let sim = simulation, let data = try? SaveGame.save(sim.state) else { return false }
+
         do { try data.write(to: url); return true } catch { return false }
     }
 
@@ -367,6 +371,7 @@ public final class GameModel {
     @discardableResult
     public func loadGame(from url: URL) -> Bool {
         guard let data = try? Data(contentsOf: url), let state = try? SaveGame.load(data) else { return false }
+
         unitScript = assets.data("UNIT.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
         structureScript = assets.data("BUILD.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
         finishLoad(state: state, scenarioName: "Saved game")
@@ -410,6 +415,7 @@ public final class GameModel {
             if let f = name.first, "?+-/".contains(f) { name.removeFirst() }
             let voc = name.replacingOccurrences(of: "%c", with: prefix)
             guard let s = assets.voc(voc) else { continue }
+
             let id = FeedbackVoice.id(voice)
             audio.register(id, sampleRate: s.sampleRate, pcm8: s.samples)
             speechDuration[id] = s.sampleRate > 0 ? Double(s.samples.count) / Double(s.sampleRate) : 0
@@ -422,15 +428,19 @@ public final class GameModel {
     /// overlapping voices (mirrors OpenDUNE's single-speech / priority behaviour).
     private func playFeedback(_ feedback: UInt16) {
         guard let seq = FeedbackVoice.sequences[feedback] else { return }
+
         if FeedbackVoice.battleMusic.contains(feedback) { music.enterBattle() }
         if let text = FeedbackVoice.notice[feedback] { postNotice(text) }
         guard !speaking else { return }
+
         let ids = seq.map { FeedbackVoice.id($0) }.filter { speechDuration[$0] != nil }
         guard !ids.isEmpty else { return }
+
         speaking = true
         Task { @MainActor [weak self] in
             for id in ids {
                 guard let self else { return }
+
                 self.audio.play(id)
                 try? await Task.sleep(for: .seconds(self.speechDuration[id] ?? 0.4))
             }
@@ -442,6 +452,7 @@ public final class GameModel {
     /// to `unit.c:1730`. A structure selection keeps the plain CLICK (`.select`).
     private func playSelectVoice(unitSlot: Int?) {
         guard let slot = unitSlot else { audio.play(.select); return }
+
         audio.play(isFootUnit(slot) ? .report1 : .report2)
     }
 
@@ -450,6 +461,7 @@ public final class GameModel {
     /// touches the sim RNG) REPORT3 / AFFIRM. Falls back to AFFIRM.
     private func playOrderVoice(unitSlot: Int?, kind: OrderKind?) {
         guard let slot = unitSlot else { audio.play(.acknowledge); return }
+
         if isFootUnit(slot) {
             switch kind {
                 case .move: audio.play(.moveOut)
@@ -468,6 +480,7 @@ public final class GameModel {
             slot < state.units.count,
             let ut = UnitType(rawValue: Int(state.units[slot].o.type))
         else { return false }
+
         return UnitInfo[ut].movementType == .foot
     }
 
@@ -479,6 +492,7 @@ public final class GameModel {
     func advance(ticks: Int) -> FrameInfo? {
         guard var sim = simulation else { return nil }
         guard ticks > 0 else { return lastFrame }
+
         if let unitScript {
             let commands = controller.drainCommands() + drainPending()
             if !commands.isEmpty {
@@ -530,6 +544,7 @@ public final class GameModel {
             if showFog { hash = (hash &* 33) ^ (t.isUnveiled ? 0 : 0x5A5A) }  // reveals darken/clear cells
         }
         guard hash != minimapTilesHash || minimapBase == nil else { return }
+
         minimapTilesHash = hash
         let source = minimapSource ?? SpriteSource.make(assets: assets)
         minimapSource = source
@@ -606,6 +621,7 @@ public final class GameModel {
         }
         // Advance the tuning animation one WSA frame every couple of render frames (~Dune II's cadence).
         guard let idx = radarStaticFrameIndex else { return }
+
         radarStaticTick += 1
         if radarStaticTick >= 2 {
             radarStaticTick = 0
@@ -627,6 +643,7 @@ public final class GameModel {
     private func refreshHints(_ frame: FrameInfo) {
         if noticeFrames > 0 { noticeFrames -= 1; if noticeFrames == 0 { notice = nil } }
         guard let sim = simulation else { return }
+
         let state = sim.state
         let ph = UInt8(playerHouse.rawValue)
 
@@ -646,6 +663,7 @@ public final class GameModel {
                 let type = StructureType(rawValue: Int(s.o.type)),
                 StructureInfo[type].o.flags.contains(.factory)
             else { continue }
+
             if let bs = sim.buildState(structureSlot: i), bs.isReady {
                 nowReady.insert(i)
                 if !readyFactories.contains(i) { postNotice("\(bs.displayName) ready"); audio.play(.houseConstruct) }
@@ -667,6 +685,7 @@ public final class GameModel {
     /// merely activated for the economy via `[HOUSES]`, which the Economy panel should not list).
     private func housesOnMap() -> Set<UInt8> {
         guard let state = simulation?.state else { return [] }
+
         var present = Set<UInt8>()
         for u in state.units where u.o.flags.contains(.used) { present.insert(u.o.houseID) }
         for s in state.structures where s.o.flags.contains(.used) { present.insert(s.o.houseID) }
@@ -690,6 +709,7 @@ public final class GameModel {
             if missileTargeting != nil { missileTargeting = nil }  // selection gone ⇒ abandon a pending target-select
             return
         }
+
         let s = sim.state.structures[slot]
 
         // A selected player palace: surface its house super-weapon + readiness (countdown at 0 = ready).
@@ -727,6 +747,7 @@ public final class GameModel {
                 starportCart = [:]
                 for t in sim.state.starportAvailable.indices where sim.state.starportAvailable[t] > 0 {
                     guard let ut = UnitType(rawValue: t) else { continue }
+
                     let base = UInt16(clamping: Int(UnitInfo[ut].o.buildCredits))
                     starportPriceByType[t] = simulation?.state.starportPrice(buildCredits: base) ?? base
                 }
@@ -735,6 +756,7 @@ public final class GameModel {
             // greyed). `0` = never offered here (hidden), as in OpenDUNE (`g_starportAvailable` semantics).
             for t in sim.state.starportAvailable.indices where sim.state.starportAvailable[t] != 0 {
                 guard let ut = UnitType(rawValue: t) else { continue }
+
                 let price = starportPriceByType[t] ?? UInt16(clamping: Int(UnitInfo[ut].o.buildCredits))
                 stock.append(
                     StarportItem(
@@ -777,6 +799,7 @@ public final class GameModel {
             state.structures[slot].o.flags.contains(.used),
             state.structures[slot].o.houseID == UInt8(playerHouse.rawValue)
         else { return nil }
+
         return slot
     }
 
@@ -797,6 +820,7 @@ public final class GameModel {
     /// never start — the activity.
     func stopBuildingActivity() {
         guard let slot = selectedStructureSlot, let s = simulation?.state.structures[slot] else { return }
+
         var acted = false
         if s.o.flags.contains(.repairing) { enqueue(.repair(structure: UInt16(slot))); acted = true }
         if s.o.flags.contains(.upgrading) { enqueue(.upgrade(structure: UInt16(slot))); acted = true }
@@ -806,8 +830,10 @@ public final class GameModel {
     /// legacy inspector panel; the sidebar uses the `cart*` batch API below.
     func orderFromStarport(_ objectType: UInt16) {
         guard let slot = selectedStructureSlot else { return }
+
         let price = starportPriceByType[Int(objectType)] ?? 0
         guard playerCredits >= Int(price) else { noticeInsufficientFunds(); return }
+
         enqueue(.starportOrder(structure: UInt16(slot), objectType: objectType, price: price))
         audio.play(.select)
     }
@@ -848,12 +874,14 @@ public final class GameModel {
             }
             return
         }
+
         starportCart[objectType, default: 0] += 1
         audio.play(.select)
     }
     /// Remove one staged `objectType` from the cart.
     func cartRemove(_ objectType: UInt16) {
         guard let n = starportCart[objectType], n > 0 else { return }
+
         if n == 1 { starportCart[objectType] = nil } else { starportCart[objectType] = n - 1 }
         audio.play(.select)
     }
@@ -863,6 +891,7 @@ public final class GameModel {
     /// frigate-delivery countdown per unit, batching them into one delivery). Clears the cart.
     func sendStarportOrder() {
         guard let slot = selectedStructureSlot, cartUnitCount > 0 else { return }
+
         for (objectType, count) in starportCart {
             let price = UInt16(clamping: starportPrice(objectType))
             for _ in 0 ..< count {
@@ -877,6 +906,7 @@ public final class GameModel {
     /// `launchMissileAt`); the Fremen call / saboteur fire immediately (no target).
     func launchSuperWeapon() {
         guard let sw = superWeapon, sw.ready else { return }
+
         switch sw.weapon {
             case .missile: missileTargeting = sw.slot; audio.play(.select)
             case .fremen, .saboteur:
@@ -888,6 +918,7 @@ public final class GameModel {
     /// The death-hand target-select click: launch the missile at the clicked tile and leave targeting mode.
     func launchMissileAt(tileX: Int, tileY: Int) {
         guard let slot = missileTargeting else { return }
+
         enqueue(.launchHouseMissile(structure: UInt16(slot), tile: UInt16(tileY * 64 + tileX)))
         missileTargeting = nil
         audio.play(.acknowledge)
@@ -908,6 +939,7 @@ public final class GameModel {
             if placement != nil { placement = nil }
             return
         }
+
         if !isFactorySelected { isFactorySelected = true }
         // Hide items the current campaign level hasn't unlocked yet (as the original does — they appear only
         // once the mission reaches their tier). Prerequisite/upgrade-locked items stay, greyed, since they're
@@ -926,6 +958,7 @@ public final class GameModel {
             StructureInfo[type].o.flags.contains(.factory), type != .starport,  // the starport orders, not builds
             state.structures[slot].o.houseID == UInt8(playerHouse.rawValue)
         else { return nil }
+
         return slot
     }
 
@@ -957,6 +990,7 @@ public final class GameModel {
     /// (a verification-client convenience; the original selects one unit at a time). Replaces the selection.
     func dragSelect(fromTileX: Int, fromTileY: Int, toTileX: Int, toTileY: Int) {
         guard let state = simulation?.state else { return }
+
         let minX = min(fromTileX, toTileX), maxX = max(fromTileX, toTileX)
         let minY = min(fromTileY, toTileY), maxY = max(fromTileY, toTileY)
         let ph = UInt8(playerHouse.rawValue)
@@ -969,6 +1003,7 @@ public final class GameModel {
                 let ut = UnitType(rawValue: Int(u.o.type)),
                 UnitInfo[ut].flags.contains(.isNormalUnit)
             else { continue }
+
             let tx = Int(u.o.position.x) / 256, ty = Int(u.o.position.y) / 256
             if tx >= minX, tx <= maxX, ty >= minY, ty <= maxY { slots.append(i) }
         }
@@ -999,8 +1034,10 @@ public final class GameModel {
     /// the tile and harvest/seek spice). A multi-unit group gets a plain move/attack instead.
     private func isSelectedHarvester() -> Bool {
         guard controller.selectedUnits.count == 1, let state = simulation?.state else { return false }
+
         let slot = controller.selectedUnits[0]
         guard slot < state.units.count else { return false }
+
         return state.units[slot].o.type == UInt8(UnitType.harvester.rawValue)
     }
 
@@ -1035,6 +1072,7 @@ public final class GameModel {
             let ut = UnitType(rawValue: Int(state.units[slot].o.type)),
             UnitInfo[ut].o.actionsPlayer.contains(type)
         else { return }
+
         issue(PanelAction(type: type, targeted: ActionInfo[type].selectionType == .target))
     }
     func deselect() { controller.deselect(); selection = nil; pendingOrder = nil; inspectedTile = nil; tileInfo = nil }
@@ -1050,6 +1088,7 @@ public final class GameModel {
             if tileInfo != nil { tileInfo = nil }
             return
         }
+
         let packed = UInt16(y * 64 + x)
         let tile = sim.state.map[Int(packed)]
         let land = DefaultMapPrimitives().landscapeType(tile, tileIDs: sim.state.tileIDs)
@@ -1086,6 +1125,7 @@ public final class GameModel {
         else {
             return
         }
+
         // No credit gate: construction may be *started* underfunded — like the original, the cost is billed
         // incrementally and the build auto-pauses (`.onHold`) when the house runs out of money mid-build
         // (`structureTickStructure`, `structure.c:266`). (Starport CHOAM orders, by contrast, are paid upfront
@@ -1097,6 +1137,7 @@ public final class GameModel {
     /// Cancel the selected factory's in-progress build (refunds the remainder).
     func cancelBuild() {
         guard let slot = selectedFactorySlot else { return }
+
         enqueue(.cancelBuild(structure: UInt16(slot)))
         placement = nil
         audio.play(.acknowledge)
@@ -1105,6 +1146,7 @@ public final class GameModel {
     /// Pause the selected factory's in-progress build (`widget_click.c:124`, `STR_D_DONE`).
     func pauseBuild() {
         guard let slot = selectedFactorySlot else { return }
+
         enqueue(.pauseBuild(structure: UInt16(slot)))
         audio.play(.select)
     }
@@ -1113,6 +1155,7 @@ public final class GameModel {
     /// has credits again (the faithful click-to-resume; `widget_click.c:107`, `STR_ON_HOLD`).
     func resumeBuild() {
         guard let slot = selectedFactorySlot else { return }
+
         enqueue(.resumeBuild(structure: UInt16(slot)))
         audio.play(.select)
     }
@@ -1127,6 +1170,7 @@ public final class GameModel {
             bs.isStructure,
             let type = StructureType(rawValue: Int(bs.objectType))
         else { return }
+
         let layout = StructureLayoutInfo[StructureInfo[type].layout]
         // Seed the hover tile to the viewport centre so the footprint projection shows immediately on the
         // button click (before the mouse moves over the map), then follows the cursor.
@@ -1148,6 +1192,7 @@ public final class GameModel {
     /// Update the placement preview's hovered tile (from the map's mouse-move).
     func placementHover(tileX: Int, tileY: Int) {
         guard var p = placement, p.hoverTileX != tileX || p.hoverTileY != tileY else { return }
+
         p.hoverTileX = tileX; p.hoverTileY = tileY
         placement = p
     }
@@ -1155,12 +1200,14 @@ public final class GameModel {
     /// `Structure_IsValidBuildLocation` at a tile for the current placement (≥1 ok, 0 blocked, <0 ok-with-penalty).
     func placementValidity(tileX: Int, tileY: Int) -> Int16 {
         guard let p = placement, let sim = simulation else { return 0 }
+
         return sim.placementValidity(type: p.type, tile: UInt16(tileY * 64 + tileX)) ?? 0
     }
 
     /// Commit the placement at the clicked tile (no-op on a blocked spot, so the player can click again).
     func placeAt(tileX: Int, tileY: Int) {
         guard let p = placement, placementValidity(tileX: tileX, tileY: tileY) != 0 else { return }
+
         enqueue(.placeStructure(structure: UInt16(p.factorySlot), tile: UInt16(tileY * 64 + tileX)))
         placement = nil
         audio.play(.acknowledge)
@@ -1168,6 +1215,7 @@ public final class GameModel {
 
     private func pick(_ x: Int, _ y: Int) -> Selection {
         guard let state = simulation?.state else { return .none }
+
         let packed = UInt16(y * 64 + x)
         if let u = state.unitGetByPackedTile(packed) { return .unit(slot: u) }
         if let s = state.structureGetByPackedTile(packed) { return .structure(slot: s) }
@@ -1182,6 +1230,7 @@ public final class GameModel {
         else {
             return false
         }
+
         let mine = state.unitHouseID(state.units[slot])
         let packed = UInt16(y * 64 + x)
         if let u = state.unitGetByPackedTile(packed) { return state.unitHouseID(state.units[u]) != mine }
@@ -1208,6 +1257,7 @@ public final class GameModel {
             slot < state.structures.count,
             let type = StructureType(rawValue: Int(state.structures[slot].o.type))
         else { return (1, 1) }
+
         let layout = StructureLayoutInfo[StructureInfo[type].layout]
         return (Int(layout.size.width), Int(layout.size.height))
     }
@@ -1217,6 +1267,7 @@ public final class GameModel {
     /// sub-tile `position` smoothly). Empty when nothing live is selected.
     func selectionBoxes() -> [(centerX: Double, centerY: Double, width: Double, height: Double, isStructure: Bool)] {
         guard let state = simulation?.state else { return [] }
+
         let tile = 16.0
         if case let .structure(slot) = controller.selection,
             slot < state.structures.count, state.structures[slot].o.flags.contains(.used)
@@ -1256,6 +1307,7 @@ public final class GameModel {
 
     private func currentInfo() -> SelectionInfo? {
         guard let state = simulation?.state else { return nil }
+
         switch controller.selection {
             case .none: return nil
             case let .unit(slot):
@@ -1264,6 +1316,7 @@ public final class GameModel {
                     state.units[slot].o.flags.contains(.used),
                     let type = UnitType(rawValue: Int(state.units[slot].o.type))
                 else { return nil }
+
                 let u = state.units[slot]
                 let house = HouseID(rawValue: Int(state.unitHouseID(u))) ?? .harkonnen
                 let p = Int(u.o.position.packed)
@@ -1298,6 +1351,7 @@ public final class GameModel {
                     state.structures[slot].o.flags.contains(.used),
                     let type = StructureType(rawValue: Int(state.structures[slot].o.type))
                 else { return nil }
+
                 let s = state.structures[slot]
                 let house = HouseID(rawValue: Int(s.o.houseID)) ?? .harkonnen
                 let p = Int(s.o.position.packed)

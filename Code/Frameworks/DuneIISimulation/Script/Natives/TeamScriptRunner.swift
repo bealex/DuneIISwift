@@ -38,9 +38,11 @@ public struct TeamScriptRunner: Sendable {
             case 0x04: return team.getAverageDistance(slot: slot, in: &state)
             case 0x06:
                 guard let targets = unit?.targets else { return nil }
+
                 return team.findBestTarget(slot: slot, targets: targets, in: &state)
             case 0x05:
                 guard let u = unit else { return nil }  // needs the unit-action layer
+
                 return team.moveOrGuardMembers(
                     slot: slot,
                     distance: engine.peek(1),
@@ -51,6 +53,7 @@ public struct TeamScriptRunner: Sendable {
                 )
             case 0x07:
                 guard let u = unit else { return nil }
+
                 return team.issueAttackOrders(
                     slot: slot,
                     unitScript: u.scriptInfo,

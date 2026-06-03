@@ -18,6 +18,7 @@ public struct UnitScriptFunctions: Sendable {
     public func getInfo(slot: Int, field: UInt16, in state: inout GameState) -> UInt16 {
         let u = state.units[slot]
         guard let utype = UnitType(rawValue: Int(u.o.type)) else { return 0 }
+
         let ui = UnitInfo[utype]
 
         switch field {
@@ -86,6 +87,7 @@ public struct UnitScriptFunctions: Sendable {
     public func rotate(slot: Int, in state: inout GameState) -> UInt16 {
         let u = state.units[slot]
         guard let ut = UnitType(rawValue: Int(u.o.type)) else { return 0 }
+
         let ui = UnitInfo[ut]
         if ui.movementType != .winger && (u.currentDestination.x != 0 || u.currentDestination.y != 0) { return 1 }
 
@@ -139,6 +141,7 @@ public struct UnitScriptFunctions: Sendable {
         let orientation = Tile32.direction(from: state.units[slot].o.position, to: state.indexGetTile(target))
         state.units[slot].targetAttack = target
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return target }
+
         if !UnitInfo[ut].o.flags.contains(.hasTurret) {
             state.units[slot].targetMove = target
             unitPrimitives.setOrientation(
@@ -157,6 +160,7 @@ public struct UnitScriptFunctions: Sendable {
     public func setDestinationDirect(slot: Int, encoded: UInt16, in state: inout GameState) -> UInt16 {
         if !state.indexIsValid(encoded) { return 0 }
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
+
         let dest = state.units[slot].currentDestination
         if (dest.x == 0 && dest.y == 0) || UnitInfo[ut].flags.contains(.isNormalUnit) {
             state.units[slot].currentDestination = state.indexGetTile(encoded)
@@ -251,6 +255,7 @@ public struct UnitScriptFunctions: Sendable {
                 state.units[slot].route[0] = 0xFF
                 return 0
             }
+
             if state.structures[sSlot].o.script.variables[4] != 0 { return 0 }
         }
 
@@ -284,6 +289,7 @@ public struct UnitScriptFunctions: Sendable {
     public func idleAction(slot: Int, in state: inout GameState) -> UInt16 {
         let random = state.randomLCG.range(0, 10)
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
+
         let movementType = UnitInfo[ut].movementType
         if movementType != .foot && movementType != .tracked && movementType != .wheeled { return 0 }
 
@@ -327,6 +333,7 @@ public struct UnitScriptFunctions: Sendable {
         state.map[packed].houseID = houseID
 
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 1 }
+
         let lst = DefaultMapPrimitives().landscapeType(state.map[packed], tileIDs: state.tileIDs)
         var row = LandscapeInfo[lst].isSand ? 0 : 1
         if state.units[slot].o.script.variables[1] == 1 { row += 2 }
@@ -352,6 +359,7 @@ public struct UnitScriptFunctions: Sendable {
                 return 0
             case .structure:
                 guard let s = state.indexGetStructure(index) else { return 0 }
+
                 if state.structures[s].o.houseID != houseID { return 0 }
                 return state.structures[s].state == .idle ? 1 : 0
             case .none:
@@ -374,6 +382,7 @@ public struct UnitScriptFunctions: Sendable {
         in state: inout GameState
     ) -> UInt16 {
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
+
         actions.setAction(
             slot: slot,
             action: UInt8(UnitInfo[ut].o.actionsPlayer[3].rawValue),
@@ -477,6 +486,7 @@ public struct UnitScriptFunctions: Sendable {
             let u2 = state.indexGetUnit(link),
             state.units[u2].o.type == UInt8(UnitType.carryall.rawValue)
         else { return 0 }
+
         state.objectScriptVariable4Clear(.unit(slot))
         state.units[u2].targetMove = 0
         return 0

@@ -21,6 +21,7 @@ struct ScenarioExplosionTests {
             let emc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
             let build = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc"))
         else { return nil }
+
         return ScenarioBuilder(
             iconMap: try IconMap(icon),
             unitScript: ScriptInfo(try Emc.Program(emc)),
@@ -32,6 +33,7 @@ struct ScenarioExplosionTests {
     /// the highest explosion `spriteID` seen across the run.
     private func run(tickExplosions: Bool) throws -> (started: Bool, maxSprite: Int)? {
         guard let builder = try loadBuilder() else { return nil }
+
         var world = builder.build(TestScenario(kind: .attackStructure, unit1: .tank, unit2: .tank, terrainSeed: 42))
         world.tickExplosions = tickExplosions
         var started = false, maxSprite = 0
@@ -48,6 +50,7 @@ struct ScenarioExplosionTests {
     @Test("lab (tickExplosions on): the building destruction starts + animates a structure explosion")
     func animatesWhenTicked() throws {
         guard let r = try run(tickExplosions: true) else { return }
+
         #expect(r.started)  // explosionStart fired from the explode native
         #expect(r.maxSprite >= 188)  // and it animated into the structure sprite range (188…192)
     }
@@ -55,6 +58,7 @@ struct ScenarioExplosionTests {
     @Test("golden path (tickExplosions off): the explosion is started but never animates (spriteID stays 0)")
     func gatedOffDoesNotAnimate() throws {
         guard let r = try run(tickExplosions: false) else { return }
+
         #expect(r.started)  // still started (RNG-free, golden-neutral)
         #expect(r.maxSprite == 0)  // but never ticked → no sprite ever set
     }
@@ -62,6 +66,7 @@ struct ScenarioExplosionTests {
     @Test("a killed unit actually dies: combat → ACTION_DIE → the DIE branch (0x0E→0x0F) removes it")
     func killedUnitIsRemoved() throws {
         guard let builder = try loadBuilder() else { return }
+
         var world = builder.build(TestScenario(kind: .closeAttack, unit1: .trike, unit2: .tank, terrainSeed: 42))
         world.tickExplosions = true
         let victim = world.unitSlots[0]  // the defender being attacked

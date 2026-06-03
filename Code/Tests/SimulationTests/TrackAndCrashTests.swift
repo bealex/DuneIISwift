@@ -33,6 +33,7 @@ struct TrackAndCrashTests {
             let build = try? Emc.Program(buildData),
             let iconMap = try? IconMap(iconData)
         else { return nil }
+
         return Assets(unit: ScriptInfo(unit), build: ScriptInfo(build), iconMap: iconMap)
     }
 
@@ -58,6 +59,7 @@ struct TrackAndCrashTests {
     @Test("a tracked unit (tank) leaves sand-track overlays as it drives over sand", .timeLimit(.minutes(1)))
     func sandTracks() throws {
         guard let a = load() else { return }
+
         var state = sandWorld(a)
 
         // A combat tank (tracked) at (20,20), ordered to drive far east across the sand.
@@ -91,6 +93,7 @@ struct TrackAndCrashTests {
     )
     func ornithopterCrash() throws {
         guard let a = load() else { return }
+
         var state = sandWorld(a)
 
         // An ornithopter mid-map, sent to its death (the path a shot-down winger takes: hp 0 → ACTION_DIE).

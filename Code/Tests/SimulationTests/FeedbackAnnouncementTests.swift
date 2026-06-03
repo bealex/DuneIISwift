@@ -9,7 +9,7 @@ import Testing
 /// presentation seams — not dumped + RNG-free, so golden-neutral — verified here at the primitive level.
 @Suite("Feedback announcements")
 struct FeedbackAnnouncementTests {
-    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func base(player: UInt8 = 0) -> GameState {
         var s = GameState(random256Seed: 0x1234)

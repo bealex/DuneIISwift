@@ -36,6 +36,7 @@ public struct UnitActions: Sendable {
             return
         }
         guard let actionType = ActionType(rawValue: Int(action)) else { return }
+
         let type = Int(state.units[slot].o.type)
 
         switch ActionInfo[actionType].switchType {

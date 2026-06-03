@@ -13,6 +13,7 @@ struct ScenarioTerrainTests {
         guard
             let data = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP"))
         else { return nil }
+
         return try IconMap(data)
     }
 

@@ -58,6 +58,7 @@ struct SaveGameTests {
             let iconData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")),
             let iniData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scenarios/SCENA001.INI"))
         else { return }
+
         let unitInfo = ScriptInfo(try Emc.Program(unitData))
         let buildInfo = ScriptInfo(try Emc.Program(buildData))
 

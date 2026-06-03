@@ -20,6 +20,7 @@ struct BootstrapScenarioTests {
                     .deletingLastPathComponent().appendingPathComponent("Fixtures/bootstrap.ini")
             )
         else { return nil }
+
         var state = GameState()
         state.loadScenario(ini: Ini(iniData), iconMap: try IconMap(icon))
         return state
