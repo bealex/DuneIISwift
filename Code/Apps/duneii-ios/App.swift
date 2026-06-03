@@ -6,7 +6,8 @@ import SwiftUI
 /// install's PAKs are bundled in the app under `GameData/` (the macOS app reads them from disk instead).
 @main
 struct DuneIIiOSApp: App {
-    @State private var model = GameModel(assets: AssetStore(installURL: DuneIIiOSApp.gameDataURL))
+    @State
+    private var model = GameModel(assets: AssetStore(installURL: DuneIIiOSApp.gameDataURL))
 
     var body: some Scene {
         WindowGroup {

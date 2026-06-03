@@ -27,12 +27,12 @@ public enum Tools {
         var speed = Int(gameSpeed)
         if inverseSpeed { speed = 4 - speed }
 
-        switch speed {
-            case 0: return UInt16(truncatingIfNeeded: minValue)
-            case 1: return UInt16(truncatingIfNeeded: n - (n - minValue) / 2)
-            case 3: return UInt16(truncatingIfNeeded: n + (maxValue - n) / 2)
-            case 4: return UInt16(truncatingIfNeeded: maxValue)
-            default: return normal
+        return switch speed {
+            case 0: UInt16(truncatingIfNeeded: minValue)
+            case 1: UInt16(truncatingIfNeeded: n - (n - minValue) / 2)
+            case 3: UInt16(truncatingIfNeeded: n + (maxValue - n) / 2)
+            case 4: UInt16(truncatingIfNeeded: maxValue)
+            default: normal
         }
     }
 }

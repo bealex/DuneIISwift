@@ -7,8 +7,10 @@ import SwiftUI
 /// `swift run scenariolab [installDir]`.
 @main
 struct ScenarioLabApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var model = ScenarioLabModel(assets: ScenarioAssets(installURL: ScenarioLabApp.installURL()))
+    @NSApplicationDelegateAdaptor(AppDelegate.self)
+    private var delegate
+    @State
+    private var model = ScenarioLabModel(assets: ScenarioAssets(installURL: ScenarioLabApp.installURL()))
 
     var body: some Scene {
         WindowGroup("Dune II — Scenario Lab") {

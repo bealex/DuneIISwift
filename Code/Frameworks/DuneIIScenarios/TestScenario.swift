@@ -16,27 +16,27 @@ public enum ScenarioKind: String, Sendable, CaseIterable {
     case sandwormEating
 
     public var title: String {
-        switch self {
-            case .moving: return "Moving (0:0 → 7:7)"
-            case .closeAttack: return "Close attack"
-            case .farAttack: return "Far attack"
-            case .guarding: return "Guarding (react at 2:2)"
-            case .moveAroundBuilding: return "Move around building"
-            case .deviate: return "Deviate (enemy steals the unit)"
-            case .attackStructure: return "Attack a building (→ destroyed)"
-            case .turretDefense: return "Turret defends (fires at an attacker)"
-            case .factoryProduce: return "Factory builds a unit (credits drain → READY)"
-            case .repairBuilding: return "Building self-repairs (HP climbs)"
-            case .upgradeBuilding: return "Building upgrades (level up)"
-            case .sandwormEating: return "Sandworm eats a unit (swallow animation)"
+        return switch self {
+            case .moving: "Moving (0:0 → 7:7)"
+            case .closeAttack: "Close attack"
+            case .farAttack: "Far attack"
+            case .guarding: "Guarding (react at 2:2)"
+            case .moveAroundBuilding: "Move around building"
+            case .deviate: "Deviate (enemy steals the unit)"
+            case .attackStructure: "Attack a building (→ destroyed)"
+            case .turretDefense: "Turret defends (fires at an attacker)"
+            case .factoryProduce: "Factory builds a unit (credits drain → READY)"
+            case .repairBuilding: "Building self-repairs (HP climbs)"
+            case .upgradeBuilding: "Building upgrades (level up)"
+            case .sandwormEating: "Sandworm eats a unit (swallow animation)"
         }
     }
 
     /// Whether the scenario uses a second *unit*. The single-unit / structure-only scenarios don't.
     public var usesSecondUnit: Bool {
-        switch self {
-            case .moving, .attackStructure, .factoryProduce, .repairBuilding, .upgradeBuilding: return false
-            default: return true
+        return switch self {
+            case .moving, .attackStructure, .factoryProduce, .repairBuilding, .upgradeBuilding: false
+            default: true
         }
     }
 }

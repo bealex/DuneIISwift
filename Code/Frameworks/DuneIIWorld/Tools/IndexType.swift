@@ -10,11 +10,11 @@ public enum IndexType: Int, Sendable {
 public extension Tools {
     /// `Tools_Index_GetType` (`tools.c:48`): the type tag in the top two bits of an encoded index.
     static func indexType(_ encoded: UInt16) -> IndexType {
-        switch encoded & 0xC000 {
-            case 0x4000: return .unit
-            case 0x8000: return .structure
-            case 0xC000: return .tile
-            default: return .none
+        return switch encoded & 0xC000 {
+            case 0x4000: .unit
+            case 0x8000: .structure
+            case 0xC000: .tile
+            default: .none
         }
     }
 

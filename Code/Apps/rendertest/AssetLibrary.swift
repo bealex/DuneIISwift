@@ -238,15 +238,15 @@ final class AssetLibrary {
     }
 
     private static func kind(for name: String) -> Asset.Kind? {
-        switch (name as NSString).pathExtension.uppercased() {
-            case "SHP": return .sprite
-            case "CPS": return .image
-            case "ICN": return .tiles
-            case "WSA": return .animation
-            case "FNT": return .font
-            case "VOC": return .sound
-            case "EMC": return .script
-            default: return nil
+        return switch (name as NSString).pathExtension.uppercased() {
+            case "SHP": .sprite
+            case "CPS": .image
+            case "ICN": .tiles
+            case "WSA": .animation
+            case "FNT": .font
+            case "VOC": .sound
+            case "EMC": .script
+            default: nil
         }
     }
 

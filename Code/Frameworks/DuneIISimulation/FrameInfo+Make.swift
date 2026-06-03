@@ -185,12 +185,12 @@ public extension Simulation {
     /// 16 fog-edge sprites (`TileIDs.fogEdges`). Mask 0 = fully surrounded by revealed tiles ⇒ no edge.
     /// Collapse a unit's `ActionType` (`actionID`) to the UI activity category for the state chip.
     static func activity(forActionID actionID: UInt8) -> FrameInfo.UnitActivity {
-        switch ActionType(rawValue: Int(actionID)) {
-            case .attack, .hunt, .ambush, .sabotage: return .attacking
-            case .move, .retreat: return .moving
-            case .guard_, .areaGuard: return .guarding
-            case .harvest, .return: return .harvesting
-            default: return .idle  // stop / deploy / die / destruct / none
+        return switch ActionType(rawValue: Int(actionID)) {
+            case .attack, .hunt, .ambush, .sabotage: .attacking
+            case .move, .retreat: .moving
+            case .guard_, .areaGuard: .guarding
+            case .harvest, .return: .harvesting
+            default: .idle  // stop / deploy / die / destruct / none
         }
     }
 

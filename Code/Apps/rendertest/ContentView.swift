@@ -4,12 +4,18 @@ import DuneIIRenderer
 import SwiftUI
 
 struct ContentView: View {
-    @Environment(AssetLibrary.self) private var library
-    @State private var selection: AssetLibrary.Asset?
-    @State private var house: House = .harkonnen
-    @State private var scale = 2
-    @State private var fps = 10.0
-    @State private var collapsed: Set<String> = []  // category ids the user has collapsed
+    @Environment(AssetLibrary.self)
+    private var library
+    @State
+    private var selection: AssetLibrary.Asset?
+    @State
+    private var house: House = .harkonnen
+    @State
+    private var scale = 2
+    @State
+    private var fps = 10.0
+    @State
+    private var collapsed: Set<String> = []  // category ids the user has collapsed
 
     var body: some View {
         NavigationSplitView {
@@ -102,29 +108,44 @@ struct AssetDetailView: View {
         case tile
     }
 
-    @Environment(AssetLibrary.self) private var library
+    @Environment(AssetLibrary.self)
+    private var library
 
     let asset: AssetLibrary.Asset
     let house: House
     let scale: Int
     let fps: Double
 
-    @State private var rawFrames: [RawFrame] = []
-    @State private var displayPalette: Palette?
-    @State private var transparentIndex: Int?
-    @State private var remapKind: RemapKind = .none
-    @State private var paletteAnimatable = false
-    @State private var sound: Voc.Sound?
-    @State private var scriptText: String?
-    @State private var info = ""
+    @State
+    private var rawFrames: [RawFrame] = []
+    @State
+    private var displayPalette: Palette?
+    @State
+    private var transparentIndex: Int?
+    @State
+    private var remapKind: RemapKind = .none
+    @State
+    private var paletteAnimatable = false
+    @State
+    private var sound: Voc.Sound?
+    @State
+    private var scriptText: String?
+    @State
+    private var info = ""
 
-    @State private var startDate = Date()
-    @State private var isPlaying = false
-    @State private var frameIndex = 0
-    @State private var animatePalette = true
+    @State
+    private var startDate = Date()
+    @State
+    private var isPlaying = false
+    @State
+    private var frameIndex = 0
+    @State
+    private var animatePalette = true
 
-    @State private var musicPlaying = false
-    @State private var musicLoop = true
+    @State
+    private var musicPlaying = false
+    @State
+    private var musicLoop = true
 
     var body: some View {
         ScrollView {

@@ -8,9 +8,12 @@ import SwiftUI
 /// the +/- and arrow keys). The window is normally resizable + fullscreen-able; the tool windows float over
 /// it (even in fullscreen) via the `ToolWindowManager`.
 struct ContentView: View {
-    @State var model: GameModel
-    @State private var tools: ToolWindowManager
-    @State private var isFullScreen = false
+    @State
+    var model: GameModel
+    @State
+    private var tools: ToolWindowManager
+    @State
+    private var isFullScreen = false
 
     init(model: GameModel) {
         _model = State(initialValue: model)

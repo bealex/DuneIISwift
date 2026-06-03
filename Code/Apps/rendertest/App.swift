@@ -6,8 +6,10 @@ import SwiftUI
 /// `installDir` defaults to `../Repositories/patched_107_unofficial` (relative to the package).
 @main
 struct RenderTestApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var library = AssetLibrary(installURL: RenderTestApp.installURL())
+    @NSApplicationDelegateAdaptor(AppDelegate.self)
+    private var delegate
+    @State
+    private var library = AssetLibrary(installURL: RenderTestApp.installURL())
 
     var body: some Scene {
         WindowGroup {

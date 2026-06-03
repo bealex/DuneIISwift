@@ -6,8 +6,10 @@ import SwiftUI
 /// `Code/`:  `swift run mapview [installDir]`  (installDir defaults to the bundled install).
 @main
 struct MapViewApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var model = MapModel(assets: AssetStore(installURL: MapViewApp.installURL()))
+    @NSApplicationDelegateAdaptor(AppDelegate.self)
+    private var delegate
+    @State
+    private var model = MapModel(assets: AssetStore(installURL: MapViewApp.installURL()))
 
     var body: some Scene {
         WindowGroup("Dune II — Map Viewer") {

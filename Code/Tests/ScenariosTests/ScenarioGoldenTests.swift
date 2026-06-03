@@ -380,19 +380,15 @@ struct ScenarioGoldenTests {
         }
         let msg: String =
             firstMismatch.map { t in
-                switch what {
+                return switch what {
                     case "structures":
-                        return
-                            "\(spec.name): structures diverge at tick \(t): ours=\(ours[t].structures ?? []) oracle=\((oracle[t].structures ?? []).sorted(by: { $0.index < $1.index }))"
+                        "\(spec.name): structures diverge at tick \(t): ours=\(ours[t].structures ?? []) oracle=\((oracle[t].structures ?? []).sorted(by: { $0.index < $1.index }))"
                     case "houses":
-                        return
-                            "\(spec.name): houses diverge at tick \(t): ours=\(ours[t].houses ?? []) oracle=\((oracle[t].houses ?? []).sorted(by: { $0.index < $1.index }))"
+                        "\(spec.name): houses diverge at tick \(t): ours=\(ours[t].houses ?? []) oracle=\((oracle[t].houses ?? []).sorted(by: { $0.index < $1.index }))"
                     case "tiles":
-                        return
-                            "\(spec.name): tiles diverge at tick \(t): ours=\((ours[t].tiles ?? []).sorted(by: { $0.packed < $1.packed })) oracle=\((oracle[t].tiles ?? []).sorted(by: { $0.packed < $1.packed }))"
+                        "\(spec.name): tiles diverge at tick \(t): ours=\((ours[t].tiles ?? []).sorted(by: { $0.packed < $1.packed })) oracle=\((oracle[t].tiles ?? []).sorted(by: { $0.packed < $1.packed }))"
                     default:
-                        return
-                            "\(spec.name): units diverge at tick \(t): ours=\(ours[t].units) oracle=\(oracle[t].units.sorted(by: { $0.index < $1.index }))"
+                        "\(spec.name): units diverge at tick \(t): ours=\(ours[t].units) oracle=\(oracle[t].units.sorted(by: { $0.index < $1.index }))"
                 }
             } ?? "\(spec.name): no divergence"
         #expect(firstMismatch == nil, "\(msg)")

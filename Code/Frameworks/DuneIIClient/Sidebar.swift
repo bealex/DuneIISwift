@@ -107,12 +107,12 @@ import SwiftUI
 
     /// Orientation-0 turret pixel offset — the north-facing slice of `UnitSprites.turretOffset` (`viewport.c`).
     private static func turretOffset0(_ turretSpriteID: UInt16) -> (Int, Int) {
-        switch turretSpriteID {
-            case 141: return (0, -2)  // sonic tank
-            case 146: return (0, -3)  // launcher / deviator
-            case 126: return (0, -5)  // siege tank
-            case 136: return (0, -4)  // devastator
-            default: return (0, 0)  // combat tank, …
+        return switch turretSpriteID {
+            case 141: (0, -2)  // sonic tank
+            case 146: (0, -3)  // launcher / deviator
+            case 126: (0, -5)  // siege tank
+            case 136: (0, -4)  // devastator
+            default: (0, 0)  // combat tank, …
         }
     }
 
@@ -233,22 +233,28 @@ struct ActionIcon: View {
 /// HP, command icons), a build/order list for a selected factory/starport, and a bottom button row
 /// (Mentat / Options / Save / Load). Replaces the old floating Inspector + Economy + Minimap tool windows.
 public struct GameSidebar: View {
-    @State var model: GameModel
+    @State
+    var model: GameModel
     /// Save/Load are platform-specific (macOS `NSSavePanel` ↔ iOS `UIDocumentPicker`), so the app shell
     /// injects them. Everything else is shared.
     let onSave: () -> Void
     let onLoad: () -> Void
-    @State private var sprites = SpriteImageProvider()
-    @State private var showOptions = false
-    @State private var showMentat = false
+    @State
+    private var sprites = SpriteImageProvider()
+    @State
+    private var showOptions = false
+    @State
+    private var showMentat = false
     /// The locked build row whose "what's needed" popover is open (by object type), or nil.
-    @State private var requirementsFor: UInt16?
+    @State
+    private var requirementsFor: UInt16?
 
     /// True when the host window is full-screen (macOS) or there is no window chrome (iOS): the sidebar then
     /// goes black-on-white to blend with the black map. Windowed (macOS), it uses the system window
     /// background + adaptive text so it blends with the title-bar chrome.
     let fullScreen: Bool
-    @Environment(\.colorScheme) private var systemScheme
+    @Environment(\.colorScheme)
+    private var systemScheme
 
     public init(
         model: GameModel,
@@ -335,7 +341,8 @@ public struct GameSidebar: View {
 
     // MARK: Selection
 
-    @ViewBuilder private var selectionSection: some View {
+    @ViewBuilder
+    private var selectionSection: some View {
         if let s = model.selection {
             HStack(alignment: .top, spacing: 12) {
                 SpriteThumbnail(
@@ -429,7 +436,8 @@ public struct GameSidebar: View {
 
     // MARK: Build / order
 
-    @ViewBuilder private var buildSection: some View {
+    @ViewBuilder
+    private var buildSection: some View {
         if model.isFactorySelected {
             if let bs = model.buildProgress {
                 buildProgress(bs)
@@ -718,8 +726,10 @@ public struct GameSidebar: View {
 /// AI fog, force-minimap, unit limit, …) — the same `DebugPanel` controls — plus a link to the macOS Settings
 /// window (audio). This is the only place the scenario is chosen now (there's no window toolbar).
 struct OptionsPopover: View {
-    @State var model: GameModel
-    @State private var showScenario = false
+    @State
+    var model: GameModel
+    @State
+    private var showScenario = false
 
     var body: some View {
         VStack(spacing: 0) {

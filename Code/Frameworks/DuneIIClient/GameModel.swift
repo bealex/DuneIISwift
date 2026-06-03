@@ -16,12 +16,14 @@ import Foundation
 @Observable
 public final class GameModel {
     public let assets: AssetStore
-    @ObservationIgnored let audio = EngineAudioSink()
+    @ObservationIgnored
+    let audio = EngineAudioSink()
     /// In-game music (host-side presentation — never touches the sim). Maps OpenDUNE's `g_table_musics`
     /// selection to the music assets in `Resources/Audio/Music/` — either the Westwood `.ADL` files
     /// synthesised on an emulated OPL3 chip (authentic AdLib FM, the default) or the extracted MIDI songs
     /// through `AVMIDIPlayer` + a SoundFont/DLS bank. The backend is switchable live (Settings).
-    @ObservationIgnored let music = MusicDirector(
+    @ObservationIgnored
+    let music = MusicDirector(
         musicDirectory: GameModel.musicURL(),
         soundBank: GameModel.soundBankURL(),
         backend: GameModel.savedMusicBackend()
@@ -37,18 +39,23 @@ public final class GameModel {
     }
     /// Master sound-effects toggle (Settings). Off ⇒ no SFX play; the sim is untouched (presentation only).
     var soundEnabled = true { didSet { audio.enabled = soundEnabled } }
-    @ObservationIgnored public var scene: GameScene!
+    @ObservationIgnored
+    public var scene: GameScene!
 
     public private(set) var currentScenario: String?
     public private(set) var simulation: Simulation?
-    @ObservationIgnored private var unitScript: ScriptInfo?
-    @ObservationIgnored private var structureScript: ScriptInfo?
-    @ObservationIgnored private var controller = InputController(mapWidth: 64)
+    @ObservationIgnored
+    private var unitScript: ScriptInfo?
+    @ObservationIgnored
+    private var structureScript: ScriptInfo?
+    @ObservationIgnored
+    private var controller = InputController(mapWidth: 64)
 
     /// Camera. The scene applies it; the minimap reads it.
     var viewport = Viewport()
     /// The map view's pixel size in points (the scene keeps this current for scroll/zoom clamping).
-    @ObservationIgnored var viewSize = CGSize(width: 1024, height: 768)
+    @ObservationIgnored
+    var viewSize = CGSize(width: 1024, height: 768)
 
     private(set) var playerHouse: HouseID = .atreides
 
@@ -107,11 +114,14 @@ public final class GameModel {
     /// The player house's radar is active (outpost built + powered) — the minimap shows live content.
     private(set) var radarActive = false
     /// The decoded STATIC.WSA "tuning" frames, played on each radar on/off transition. Loaded once.
-    @ObservationIgnored private(set) var radarStaticFrames: [CGImage] = []
+    @ObservationIgnored
+    private(set) var radarStaticFrames: [CGImage] = []
     /// The static frame currently showing during a transition (`nil` ⇒ no transition in progress).
     private(set) var radarStaticFrameIndex: Int?
-    @ObservationIgnored private var radarStaticForward = true  // play forward (on) or backward (off)
-    @ObservationIgnored private var radarStaticTick = 0  // sub-frame counter (a few render frames per WSA frame)
+    @ObservationIgnored
+    private var radarStaticForward = true  // play forward (on) or backward (off)
+    @ObservationIgnored
+    private var radarStaticTick = 0  // sub-frame counter (a few render frames per WSA frame)
 
     /// Wall-clock speed multiplier (0.5×…4×). The scene paces sim ticks against real time × this — see
     /// `GameScene.update`. 1× ≈ the base 60-ticks/second cadence (one tick per drawn frame at 60 fps).
@@ -130,10 +140,12 @@ public final class GameModel {
     }
     /// The player's manual pause (space bar / game over) — what the game returns to when every transient UI
     /// surface closes.
-    @ObservationIgnored private var userPaused = false
+    @ObservationIgnored
+    private var userPaused = false
     /// How many UI surfaces currently want the game frozen (balanced `beginUIPause`/`endUIPause`); the game is
     /// paused while any are open, then resumes to `userPaused`.
-    @ObservationIgnored private var uiPauseCount = 0
+    @ObservationIgnored
+    private var uiPauseCount = 0
     /// Recompute the effective pause from the player's pause + open UI surfaces.
     private func applyPause() { paused = userPaused || uiPauseCount > 0 }
     /// The latched level outcome (`GameLoop_IsLevelFinished`). `playing` until a Win/Lose condition is met,
@@ -151,18 +163,24 @@ public final class GameModel {
     private(set) var economy: [HouseEconomy] = []
     /// A bare tile the player left-clicked to inspect (no unit/structure there). Shown in the inspector when
     /// nothing is selected. `inspectedTile` is the live tile coords; `tileInfo` is its derived parameters.
-    @ObservationIgnored private var inspectedTile: (x: Int, y: Int)?
+    @ObservationIgnored
+    private var inspectedTile: (x: Int, y: Int)?
     private(set) var tileInfo: TileInfo?
     /// A transient player hint banner (construction complete / low power / no funds), auto-cleared after a
     /// few seconds. Derived each frame from the player's economy + factories — no new sim events needed.
     public private(set) var notice: String?
-    @ObservationIgnored private var noticeFrames = 0
-    @ObservationIgnored private var wasLowPower = false
-    @ObservationIgnored private var readyFactories: Set<Int> = []
+    @ObservationIgnored
+    private var noticeFrames = 0
+    @ObservationIgnored
+    private var wasLowPower = false
+    @ObservationIgnored
+    private var readyFactories: Set<Int> = []
     /// Durations (seconds) of the registered death-announcement voice fragments, for sequencing them.
-    @ObservationIgnored private var speechDuration: [SoundID: TimeInterval] = [:]
+    @ObservationIgnored
+    private var speechDuration: [SoundID: TimeInterval] = [:]
     /// True while a spoken death announcement is playing — rate-limits so battles don't pile up speech.
-    @ObservationIgnored private var speaking = false
+    @ObservationIgnored
+    private var speaking = false
 
     // Build-GUI derived state (refreshed for the selected player-owned factory).
     /// The selected factory's **full** build menu (every item, locked ones tagged with their blockers) so the
@@ -184,8 +202,10 @@ public final class GameModel {
     private(set) var starportDelivery: StarportDelivery?
     /// The starport slot whose CHOAM prices are currently rolled (so the per-tick refresh re-uses them
     /// instead of re-rolling), and the prices by unit type.
-    @ObservationIgnored private var pricedStarport: Int?
-    @ObservationIgnored private var starportPriceByType: [Int: UInt16] = [:]
+    @ObservationIgnored
+    private var pricedStarport: Int?
+    @ObservationIgnored
+    private var starportPriceByType: [Int: UInt16] = [:]
     /// Super-weapon state for a selected player **palace** (nil if the selection isn't a player palace).
     private(set) var superWeapon: SuperWeaponState?
     /// While non-nil, the palace slot awaiting a death-hand **target** click (the human missile launch).
@@ -193,20 +213,25 @@ public final class GameModel {
     /// Active structure-placement mode: a finished construction-yard product awaiting a map click.
     private(set) var placement: PlacementState?
     /// Build/place/cancel commands queued from the UI, applied next `advance()` (alongside unit orders).
-    @ObservationIgnored private var pendingCommands: [Command] = []
+    @ObservationIgnored
+    private var pendingCommands: [Command] = []
     /// The latest frame — observed, so the minimap redraws each tick (units/viewport move).
     private(set) var lastFrame: FrameInfo?
     /// Throttles the steady-state HUD derivations (economy/credits/build/structure-actions/tile-info/hints)
     /// to ~10 Hz instead of the display rate, the bulk of the per-frame SwiftUI re-layout cost. Interaction
     /// (a selection/order change) overrides it so the panels still respond instantly. ~6 of the ~60 display
     /// frames per second; presentation-only, never gates sim state.
-    @ObservationIgnored private var hudThrottle = FrameThrottle(every: 6)
-    @ObservationIgnored private(set) var minimapBase: CGImage?
+    @ObservationIgnored
+    private var hudThrottle = FrameThrottle(every: 6)
+    @ObservationIgnored
+    private(set) var minimapBase: CGImage?
     /// The decoded terrain source for the minimap base, built once (the asset tiles don't change).
-    @ObservationIgnored private var minimapSource: DecodedSpriteSource?
+    @ObservationIgnored
+    private var minimapSource: DecodedSpriteSource?
     /// A cheap hash of the terrain tiles the current `minimapBase` was built from, so it's rebuilt only when
     /// the map actually changes (structures baking into the ground, walls, craters, spice) — not every tick.
-    @ObservationIgnored private var minimapTilesHash = 0
+    @ObservationIgnored
+    private var minimapTilesHash = 0
 
     public init(assets: AssetStore) {
         self.assets = assets
@@ -1296,12 +1321,12 @@ public final class GameModel {
     private static func structureState(_ s: Structure) -> String {
         if s.upgradeTimeLeft != 0 && s.upgradeLevel != 0 { return "Upgrading" }
         if s.objectType != 0 && s.countDown != 0 { return "Building" }
-        switch s.state {
-            case .justBuilt: return "Constructing"
-            case .busy: return "Working"
-            case .ready: return "Ready"
-            case .idle: return "Idle"
-            case .detect: return "—"
+        return switch s.state {
+            case .justBuilt: "Constructing"
+            case .busy: "Working"
+            case .ready: "Ready"
+            case .idle: "Idle"
+            case .detect: "—"
         }
     }
 

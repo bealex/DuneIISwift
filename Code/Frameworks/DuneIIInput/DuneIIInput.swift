@@ -120,11 +120,11 @@ public struct InputController: InputSource {
 
     private func order(_ kind: OrderKind, slot: Int, tileX x: Int, tileY y: Int) -> Command {
         let tile = UInt16(y * mapWidth + x)
-        switch kind {
-            case .move: return .move(unit: UInt16(slot), tile: tile)
-            case .attack: return .attack(unit: UInt16(slot), tile: tile)
-            case .harvest: return .harvest(unit: UInt16(slot), tile: tile)
-            case .retreat: return .retreat(unit: UInt16(slot), tile: tile)
+        return switch kind {
+            case .move: .move(unit: UInt16(slot), tile: tile)
+            case .attack: .attack(unit: UInt16(slot), tile: tile)
+            case .harvest: .harvest(unit: UInt16(slot), tile: tile)
+            case .retreat: .retreat(unit: UInt16(slot), tile: tile)
         }
     }
 }

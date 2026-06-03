@@ -150,12 +150,12 @@ public enum UnitSprites {
 
     /// The per-type turret pixel offset (`viewport.c`'s switch on `turretSpriteID`).
     static func turretOffset(_ turretSpriteID: UInt16, _ orientation: Int) -> (Int, Int) {
-        switch turretSpriteID {
-            case 141: return (0, -2)  // sonic tank   (0x8D)
-            case 146: return (0, -3)  // launcher / deviator (0x92)
-            case 126: return siegeTurretOffset[orientation]  // siege tank   (0x7E)
-            case 136: return devastatorTurretOffset[orientation]  // devastator (0x88)
-            default: return (0, 0)  // combat tank, …
+        return switch turretSpriteID {
+            case 141: (0, -2)  // sonic tank   (0x8D)
+            case 146: (0, -3)  // launcher / deviator (0x92)
+            case 126: siegeTurretOffset[orientation]  // siege tank   (0x7E)
+            case 136: devastatorTurretOffset[orientation]  // devastator (0x88)
+            default: (0, 0)  // combat tank, …
         }
     }
 }

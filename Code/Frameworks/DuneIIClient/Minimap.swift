@@ -109,7 +109,8 @@ enum Minimap {
 }
 
 struct MinimapView: View {
-    @State var model: GameModel
+    @State
+    var model: GameModel
 
     var body: some View {
         // Read the live, observed state in `body` so the Canvas redraws every tick (units/structures move,

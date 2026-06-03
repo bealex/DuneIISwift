@@ -4,7 +4,8 @@ import SwiftUI
 /// The app's Settings window (⌘,). Audio toggles for now — more preferences can join later. Bindings write
 /// straight through to `GameModel`, which applies them live to the audio sink / music director.
 public struct SettingsView: View {
-    @State var model: GameModel
+    @State
+    var model: GameModel
 
     public init(model: GameModel) { _model = State(initialValue: model) }
 

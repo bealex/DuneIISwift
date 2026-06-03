@@ -5,7 +5,8 @@ import SwiftUI
 /// A Contracts-bound panel — it reads the scene-published `SelectionInfo` from the model and calls back to
 /// arm an order (Move/Attack), which the next map click targets, or Stop the unit immediately.
 struct InspectorView: View {
-    @State var model: MapModel
+    @State
+    var model: MapModel
 
     var body: some View {
         ScrollView {

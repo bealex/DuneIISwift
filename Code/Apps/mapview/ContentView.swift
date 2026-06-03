@@ -4,8 +4,10 @@ import SwiftUI
 /// The map window: a SpriteKit view filling the resizable window, with a toolbar to pick a scenario
 /// and set the 1×–16× scale.
 struct ContentView: View {
-    @State var model: MapModel
-    @State private var showInspector = true
+    @State
+    var model: MapModel
+    @State
+    private var showInspector = true
 
     private let scales = [ 1, 2, 4, 8, 16 ]
 

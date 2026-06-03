@@ -5,7 +5,8 @@ import SwiftUI
 
 /// The selected unit/building's properties + the commands available to it (player-owned units only).
 struct InspectorPanel: View {
-    @State var model: GameModel
+    @State
+    var model: GameModel
 
     var body: some View {
         ScrollView {
@@ -305,7 +306,8 @@ struct InspectorPanel: View {
 /// Per-house economy: credits, storage, and power balance. Shows all houses or only the player's
 /// (the Debug window's toggle).
 struct EconomyPanel: View {
-    @State var model: GameModel
+    @State
+    var model: GameModel
 
     var body: some View {
         ScrollView {
@@ -343,7 +345,8 @@ struct EconomyPanel: View {
 
 /// Debug controls: fog, whose economy to show, and the per-unit health/state overlay.
 public struct DebugPanel: View {
-    @State var model: GameModel
+    @State
+    var model: GameModel
 
     public init(model: GameModel) { _model = State(initialValue: model) }
 

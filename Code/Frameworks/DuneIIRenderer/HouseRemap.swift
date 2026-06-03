@@ -12,13 +12,13 @@ public enum House: Int, CaseIterable, Sendable {
     case mercenary = 5
 
     public var displayName: String {
-        switch self {
-            case .harkonnen: return "Harkonnen"
-            case .atreides: return "Atreides"
-            case .ordos: return "Ordos"
-            case .fremen: return "Fremen"
-            case .sardaukar: return "Sardaukar"
-            case .mercenary: return "Mercenary"
+        return switch self {
+            case .harkonnen: "Harkonnen"
+            case .atreides: "Atreides"
+            case .ordos: "Ordos"
+            case .fremen: "Fremen"
+            case .sardaukar: "Sardaukar"
+            case .mercenary: "Mercenary"
         }
     }
 }

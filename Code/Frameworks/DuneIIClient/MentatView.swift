@@ -8,9 +8,11 @@ import SwiftUI
 /// what's unlocked at the scenario's campaign level. Each topic shows the original description text alongside
 /// the unit/building sprite and key stats from our tables. Replaces the old single-object info card.
 struct MentatView: View {
-    @State var model: GameModel
+    @State
+    var model: GameModel
     let provider: SpriteImageProvider
-    @State private var selected: String?
+    @State
+    private var selected: String?
 
     private static let sectionOrder: [MentatHelp.Section] = [ .structures, .vehicles, .specials, .houses ]
 
@@ -58,7 +60,8 @@ struct MentatView: View {
 
     // MARK: Detail
 
-    @ViewBuilder private var detail: some View {
+    @ViewBuilder
+    private var detail: some View {
         if let name = selected, let topic = topics.first(where: { $0.name == name }) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -192,10 +195,10 @@ struct MentatView: View {
     private var initialSelection: String? {
         if let sel = model.selection {
             let match = topics.first { topic in
-                switch subject(topic.name) {
-                    case let .structure(t): return sel.kind == .structure && UInt16(t.rawValue) == sel.typeRaw
-                    case let .unit(t): return sel.kind == .unit && UInt16(t.rawValue) == sel.typeRaw
-                    case .none: return false
+                return switch subject(topic.name) {
+                    case let .structure(t): sel.kind == .structure && UInt16(t.rawValue) == sel.typeRaw
+                    case let .unit(t): sel.kind == .unit && UInt16(t.rawValue) == sel.typeRaw
+                    case .none: false
                 }
             }
             if let match { return match.name }

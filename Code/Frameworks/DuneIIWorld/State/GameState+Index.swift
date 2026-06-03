@@ -85,9 +85,9 @@ public extension GameState {
 
     /// The `Object` referenced by an `ObjectRef`.
     func object(_ ref: ObjectRef) -> Object {
-        switch ref {
-            case .unit(let i): return units[i].o
-            case .structure(let i): return structures[i].o
+        return switch ref {
+            case .unit(let i): units[i].o
+            case .structure(let i): structures[i].o
         }
     }
 

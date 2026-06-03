@@ -5,7 +5,8 @@ import SwiftUI
 /// The scenario-lab window: a SpriteKit view of the 8×8 region with a toolbar to pick the scenario,
 /// the two unit types, the zoom, regenerate the terrain, and pause/resume.
 struct ContentView: View {
-    @State var model: ScenarioLabModel
+    @State
+    var model: ScenarioLabModel
 
     private let scales = [ 1, 2, 4, 8, 16 ]
     private let speeds = Array(1 ... 10)

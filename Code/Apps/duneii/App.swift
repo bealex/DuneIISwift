@@ -7,8 +7,10 @@ import SwiftUI
 ///   `swift run duneii [installDir]`  (installDir defaults to the bundled install).
 @main
 struct DuneIIApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var model = GameModel(assets: AssetStore(installURL: DuneIIApp.installURL()))
+    @NSApplicationDelegateAdaptor(AppDelegate.self)
+    private var delegate
+    @State
+    private var model = GameModel(assets: AssetStore(installURL: DuneIIApp.installURL()))
 
     var body: some Scene {
         WindowGroup("Dune II") {
