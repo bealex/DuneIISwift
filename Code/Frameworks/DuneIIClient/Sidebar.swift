@@ -44,36 +44,48 @@ import SwiftUI
               let tiles = assets.tileSet, let iconMap = assets.iconMap else { return nil }
         let groupIndex = Int(StructureInfo[type].iconGroup)
         guard let group = iconMap.group(groupIndex), let first = group.tileIDs.first else { return nil }
+        // The structure's footprint in tiles (from its layout) — works for every group, including the special
+        // 1×1 ones (walls = group 6, concrete = group 8, turrets = 23/24) that aren't in `StructureCatalog`.
+        let layout = StructureLayoutInfo[StructureInfo[type].layout].size
+        let w = max(1, Int(layout.width)), h = max(1, Int(layout.height))
+        let perState = w * h
+
         let remapHouse = DuneIIRenderer.House(rawValue: house.rawValue) ?? .harkonnen
-        let remap: (UInt8) -> UInt8 = { HouseRemap.tile($0, house: remapHouse) }
+        // House recolour, then neutralise the palette-cycling placeholders (IBM.PAL indices 223 wind-trap /
+        // 239 repair / 255 selection render as magenta without animation) → black, per the user's request.
+        let remap: (UInt8) -> UInt8 = { idx in
+            (idx == 223 || idx == 239 || idx == 255) ? 0 : HouseRemap.tile(idx, house: remapHouse)
+        }
         let tw = tiles.tileWidth, th = tiles.tileHeight
 
-        // A multi-tile building: stitch the `width*height` tiles of the completed build state (index 2, per
-        // `Structure_UpdateMap`, `structure.c:1779`) into one image, row-major. 1×1 turrets fall through.
-        if let layout = StructureCatalog.layout(iconGroup: groupIndex), layout.width * layout.height > 1,
-           group.tileIDs.count % (layout.width * layout.height) == 0 {
-            let perState = layout.width * layout.height
-            let state = min(2, group.tileIDs.count / perState - 1)
-            let fw = layout.width * tw, fh = layout.height * th
-            var indices = [UInt8](repeating: 0, count: fw * fh)
-            for i in 0 ..< perState {
-                let pixels = tiles.tile(group.tileIDs[state * perState + i])
-                guard !pixels.isEmpty else { continue }
-                let originX = (i % layout.width) * tw, originY = (i / layout.width) * th
-                for y in 0 ..< th {
-                    for x in 0 ..< tw {
-                        let source = y * tw + x
-                        if source < pixels.count { indices[(originY + y) * fw + originX + x] = pixels[source] }
-                    }
+        // OpenDUNE `Structure_UpdateMap` (`structure.c:1779`): the *built* tiles begin at group offset
+        // `2 * layoutSize` — the first two states are the foundation / under-construction frames. So the
+        // finished icon is `tileIDs[2*perState ..< 3*perState]`. This is what makes turrets show their gun,
+        // walls look intact (not rubble), and concrete render clean (no placement-grid lines).
+        let base = 2 * perState
+        guard group.tileIDs.count >= base + perState else {
+            return IndexedImage.cgImage(indices: tiles.tile(first), width: tw, height: th,
+                                        palette: assets.palette, remap: remap)
+        }
+        let fw = w * tw, fh = h * th
+        var indices = [UInt8](repeating: 0, count: fw * fh)
+        for i in 0 ..< perState {
+            let pixels = tiles.tile(group.tileIDs[base + i])
+            guard !pixels.isEmpty else { continue }
+            let originX = (i % w) * tw, originY = (i / w) * th
+            for y in 0 ..< th {
+                for x in 0 ..< tw {
+                    let source = y * tw + x
+                    if source < pixels.count { indices[(originY + y) * fw + originX + x] = pixels[source] }
                 }
             }
-            return IndexedImage.cgImage(indices: indices, width: fw, height: fh, palette: assets.palette, remap: remap)
         }
-        return IndexedImage.cgImage(indices: tiles.tile(first), width: tw, height: th, palette: assets.palette, remap: remap)
+        return IndexedImage.cgImage(indices: indices, width: fw, height: fh, palette: assets.palette, remap: remap)
     }
 }
 
-/// A house-recoloured sprite for a unit/structure type, nearest-neighbour scaled to fit `height`.
+/// A house-recoloured sprite for a unit/structure type, nearest-neighbour scaled to **fill** a square of
+/// side `height` (wide buildings are cropped to the square rather than letterboxed).
 struct SpriteThumbnail: View {
     let objectType: UInt16
     let isStructure: Bool
@@ -84,10 +96,12 @@ struct SpriteThumbnail: View {
 
     var body: some View {
         if let image = provider.image(objectType: objectType, isStructure: isStructure, house: house, assets: assets) {
-            Image(decorative: image, scale: 1).interpolation(.none).resizable().scaledToFit().frame(height: height)
+            Image(decorative: image, scale: 1).interpolation(.none).resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: height, height: height).clipped()
         } else {
             Image(systemName: isStructure ? "building.2.fill" : "shippingbox.fill")
-                .foregroundStyle(.secondary).frame(height: height)
+                .foregroundStyle(.secondary).frame(width: height, height: height)
         }
     }
 }
