@@ -43,14 +43,15 @@ struct StyleRespace {
         let tree = Parser.parse(source: source)
         let literals = CollectionLiteralSpacer().rewrite(tree)
         let guards = GuardNormalizer().rewrite(literals)
-        return TernaryNormalizer().rewrite(guards).description
+        let ternaries = TernaryNormalizer().rewrite(guards)
+        return BlankLineNormalizer().rewrite(ternaries).description
     }
 }
 
 private final class CollectionLiteralSpacer: SyntaxRewriter {
     override func visit(_ node: ArrayExprSyntax) -> ExprSyntax {
+        guard !isTypeConstructor(Syntax(node)) else { return super.visit(node) }
         guard let visited = super.visit(node).as(ArrayExprSyntax.self) else { return super.visit(node) }
-
         guard
             !visited.elements.isEmpty,
             isSingleLine(visited.leftSquare, visited.elements, visited.rightSquare)
@@ -67,8 +68,8 @@ private final class CollectionLiteralSpacer: SyntaxRewriter {
     }
 
     override func visit(_ node: DictionaryExprSyntax) -> ExprSyntax {
+        guard !isTypeConstructor(Syntax(node)) else { return super.visit(node) }
         guard let visited = super.visit(node).as(DictionaryExprSyntax.self) else { return super.visit(node) }
-
         guard
             case .elements(let elements) = visited.content,
             !elements.isEmpty,
@@ -118,6 +119,28 @@ private final class CollectionLiteralSpacer: SyntaxRewriter {
                 case .spaces, .tabs: return true
                 default: return false
             }
+        }
+    }
+
+    // True when this bracket expression (or a collection literal enclosing it) is the called expression of a
+    // function call — i.e. `[UInt8](repeating:…)`, `[Int]()`, `[[UInt8]](…)`, `[String: Int](…)`. There the
+    // brackets are a *type*, not a value literal, and must stay tight. Climbs only through collection-literal
+    // structure so a real literal in argument or member position (`[1, 2, 3].first`) is unaffected.
+    private func isTypeConstructor(_ node: Syntax) -> Bool {
+        var expression = node
+        while true {
+            if let call = expression.parent?.as(FunctionCallExprSyntax.self), call.calledExpression.id == expression.id
+            {
+                return true
+            }
+            guard
+                let parent = expression.parent,
+                parent.is(ArrayExprSyntax.self) || parent.is(ArrayElementSyntax.self)
+                    || parent.is(ArrayElementListSyntax.self) || parent.is(DictionaryExprSyntax.self)
+                    || parent.is(DictionaryElementSyntax.self) || parent.is(DictionaryElementListSyntax.self)
+            else { return false }
+
+            expression = parent
         }
     }
 }
@@ -247,6 +270,58 @@ private final class TernaryNormalizer: SyntaxRewriter {
                 case .newlines, .carriageReturns, .carriageReturnLineFeeds: return true
                 default: return false
             }
+        }
+    }
+}
+
+// Enforces two blank-line rules inside braced bodies / closures (not top level), neither of which
+// swift-format can express:
+//   • a nested (local) function is surrounded by a blank line;
+//   • a `guard` is followed by a blank line, but a run of consecutive guards stays together with the single
+//     blank line only after the last one.
+// It only adjusts the blank count on a statement that already begins its own line, and preserves any
+// comments and indentation in the leading trivia.
+private final class BlankLineNormalizer: SyntaxRewriter {
+    override func visit(_ node: CodeBlockItemListSyntax) -> CodeBlockItemListSyntax {
+        let node = super.visit(node)
+
+        guard node.parent?.is(SourceFileSyntax.self) != true else { return node }
+
+        var items = Array(node)
+        guard items.count > 1 else { return node }
+
+        for index in 1 ..< items.count {
+            let previous = items[index - 1].item
+            let current = items[index].item
+            let previousGuard = previous.is(GuardStmtSyntax.self)
+            let currentGuard = current.is(GuardStmtSyntax.self)
+
+            var blanks: Int?
+            if previousGuard { blanks = currentGuard ? 0 : 1 }
+            if current.is(FunctionDeclSyntax.self) || previous.is(FunctionDeclSyntax.self) { blanks = 1 }
+
+            if let blanks { items[index] = withLeadingBlanks(items[index], blanks) }
+        }
+
+        return CodeBlockItemListSyntax(items)
+    }
+
+    private func withLeadingBlanks(_ item: CodeBlockItemSyntax, _ blanks: Int) -> CodeBlockItemSyntax {
+        let pieces = Array(item.leadingTrivia)
+        var newlineRun = 0
+        while newlineRun < pieces.count, isNewline(pieces[newlineRun]) { newlineRun += 1 }
+
+        guard newlineRun > 0 else { return item }
+
+        var result = item
+        result.leadingTrivia = Trivia(pieces: [ .newlines(blanks + 1) ] + pieces[newlineRun...])
+        return result
+    }
+
+    private func isNewline(_ piece: TriviaPiece) -> Bool {
+        switch piece {
+            case .newlines, .carriageReturns, .carriageReturnLineFeeds: return true
+            default: return false
         }
     }
 }
