@@ -26,17 +26,67 @@ import SwiftUI
         return image
     }
 
-    private static func unitImage(_ objectType: UInt16, house: HouseID, assets: AssetStore) -> CGImage? {
-        guard let type = UnitType(rawValue: Int(objectType)) else { return nil }
-        let gid = Int(UnitInfo[type].groundSpriteID)
-        guard let (sheet, frame) = GlobalSprite.unit(gid), let set = assets.shp(sheet.fileName),
+    private struct DecodedFrame { let pixels: [UInt8]; let w: Int; let h: Int; let hasLookup: Bool }
+
+    private static func unitFrame(_ globalIndex: Int, assets: AssetStore) -> DecodedFrame? {
+        guard let (sheet, frame) = GlobalSprite.unit(globalIndex), let set = assets.shp(sheet.fileName),
               frame >= 0, frame < set.frames.count else { return nil }
         let f = set.frames[frame]
-        // Only frames carrying a house-colour lookup get the sprite remap (matches `rendertest`).
+        return DecodedFrame(pixels: f.pixels, w: f.width, h: f.height, hasLookup: f.hasLookup)
+    }
+
+    private static func unitImage(_ objectType: UInt16, house: HouseID, assets: AssetStore) -> CGImage? {
+        guard let type = UnitType(rawValue: Int(objectType)) else { return nil }
+        let info = UnitInfo[type]
         let remapHouse = DuneIIRenderer.House(rawValue: house.rawValue) ?? .harkonnen
-        let remap: (UInt8) -> UInt8 = f.hasLookup ? { HouseRemap.sprite($0, house: remapHouse) } : { $0 }
-        return IndexedImage.cgImage(indices: f.pixels, width: f.width, height: f.height,
-                                    palette: assets.palette, transparentIndex: 0, remap: remap)
+        // House recolour, gated by the frame's lookup flag (a frame without house pixels passes through).
+        func resolve(_ idx: UInt8, _ hasLookup: Bool) -> UInt8 {
+            hasLookup ? HouseRemap.sprite(idx, house: remapHouse) : idx
+        }
+        // North-facing (orientation 0): the body frame is `groundSpriteID` for every display mode
+        // (`UnitSprites.info` adds 0 at orientation 0 for directional/infantry/air alike).
+        guard let body = unitFrame(Int(info.groundSpriteID), assets: assets) else { return nil }
+
+        // Units with a turret (tanks, launcher, sonic, deviator, …) composite it on top at its
+        // orientation-0 pixel offset (`UnitSprites.turretOffset`, `viewport.c`).
+        guard info.turretSpriteID != 0xFFFF, let turret = unitFrame(Int(info.turretSpriteID), assets: assets) else {
+            return IndexedImage.cgImage(indices: body.pixels, width: body.w, height: body.h, palette: assets.palette,
+                                        transparentIndex: 0, remap: { resolve($0, body.hasLookup) })
+        }
+        let (tdx, tdy) = turretOffset0(info.turretSpriteID)
+        // Bounding box of body (centred) + turret (centred + offset) so the gun barrel isn't clipped.
+        let bx0 = -body.w / 2, by0 = -body.h / 2
+        let tx0 = tdx - turret.w / 2, ty0 = tdy - turret.h / 2
+        let minX = min(bx0, tx0), minY = min(by0, ty0)
+        let cw = max(bx0 + body.w, tx0 + turret.w) - minX, ch = max(by0 + body.h, ty0 + turret.h) - minY
+        guard cw > 0, ch > 0 else { return nil }
+        var canvas = [UInt8](repeating: 0, count: cw * ch)
+        func blit(_ f: DecodedFrame, atX ox: Int, atY oy: Int) {
+            for y in 0 ..< f.h {
+                for x in 0 ..< f.w {
+                    let s = y * f.w + x
+                    guard s < f.pixels.count else { continue }
+                    let idx = f.pixels[s]
+                    if idx == 0 { continue }   // transparent
+                    canvas[(oy + y) * cw + (ox + x)] = resolve(idx, f.hasLookup)
+                }
+            }
+        }
+        blit(body, atX: bx0 - minX, atY: by0 - minY)
+        blit(turret, atX: tx0 - minX, atY: ty0 - minY)   // gun on top
+        return IndexedImage.cgImage(indices: canvas, width: cw, height: ch, palette: assets.palette,
+                                    transparentIndex: 0, remap: { $0 })   // already house-resolved
+    }
+
+    /// Orientation-0 turret pixel offset — the north-facing slice of `UnitSprites.turretOffset` (`viewport.c`).
+    private static func turretOffset0(_ turretSpriteID: UInt16) -> (Int, Int) {
+        switch turretSpriteID {
+            case 141: return (0, -2)   // sonic tank
+            case 146: return (0, -3)   // launcher / deviator
+            case 126: return (0, -5)   // siege tank
+            case 136: return (0, -4)   // devastator
+            default:  return (0, 0)    // combat tank, …
+        }
     }
 
     private static func structureImage(_ objectType: UInt16, house: HouseID, assets: AssetStore) -> CGImage? {
