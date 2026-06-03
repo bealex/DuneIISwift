@@ -413,24 +413,29 @@ public struct GameSidebar: View {
 
     @ViewBuilder private func buildProgress(_ bs: BuildState) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Big icon (2× the list thumbnails) + the product name; no status text.
-            HStack(spacing: 10) {
+            // Big icon (2× the list thumbnails) + the product name, pinned top-trailing; no status text.
+            HStack(alignment: .top, spacing: 10) {
                 SpriteThumbnail(objectType: bs.objectType, isStructure: bs.isStructure, house: model.playerHouse,
                                 height: 44, provider: sprites, assets: model.assets)
-                Text(bs.displayName).font(.headline).lineLimit(2).lineHeight(.tight)
                 Spacer(minLength: 0)
+                Text(bs.displayName).font(.headline).lineLimit(2).lineHeight(.tight)
+                    .multilineTextAlignment(.trailing)
             }
             ProgressView(value: bs.progress).tint(bs.onHold ? .orange : .accentColor)
-            // Bigger circular buttons — only the action that applies right now (place / resume / pause) + stop.
-            HStack(spacing: 12) {
+            // Only the action that applies right now (place / resume / pause) + stop, evenly distributed.
+            HStack(spacing: 0) {
                 if bs.isReady && bs.isStructure {
-                    ActionIcon(systemImage: "mappin.and.ellipse", active: true, help: "Place", size: 40) { model.beginPlacement() }
+                    ActionIcon(systemImage: "mappin.and.ellipse", active: true, help: "Place") { model.beginPlacement() }
+                        .frame(maxWidth: .infinity)
                 } else if bs.onHold {
-                    ActionIcon(systemImage: "play.fill", active: true, help: "Resume", size: 40) { model.resumeBuild() }
+                    ActionIcon(systemImage: "play.fill", active: true, help: "Resume") { model.resumeBuild() }
+                        .frame(maxWidth: .infinity)
                 } else if !bs.isReady {
-                    ActionIcon(systemImage: "pause.fill", help: "Pause", size: 40) { model.pauseBuild() }
+                    ActionIcon(systemImage: "pause.fill", help: "Pause") { model.pauseBuild() }
+                        .frame(maxWidth: .infinity)
                 }
-                ActionIcon(systemImage: "xmark", help: "Stop", size: 40) { model.cancelBuild() }
+                ActionIcon(systemImage: "xmark", help: "Stop") { model.cancelBuild() }
+                    .frame(maxWidth: .infinity)
             }
             if model.placement != nil {
                 Text("Click a spot to place · Esc / right-click cancels")
