@@ -56,6 +56,16 @@ public final class GameScene: SKScene {
     private var middleDragLastWindow: CGPoint?
     private var middleDidDrag = false
     private var middleDownScene: CGPoint?
+    #if os(iOS)
+    // Touch state: a single finger taps (select / place / armed-order) or drags to pan; two fingers pinch to
+    // zoom; a stationary long-press issues the default order (the macOS right-click). Scene coords are y-up.
+    private var touchStartScene: CGPoint?
+    private var touchLastScene: CGPoint?
+    private var touchDidPan = false
+    private var pinchStartDistance: CGFloat?
+    private var longPressWork: DispatchWorkItem?
+    private var longPressFired = false
+    #endif
     private var lastTargetingActive = false   // last cursor state, so we only `.set()` the cursor on change
     private let healthLayer = SKNode()
     private var healthBars: [SKSpriteNode] = []
@@ -532,5 +542,71 @@ public final class GameScene: SKScene {
     override public func cursorUpdate(with event: NSEvent) {
         (targetingActive ? NSCursor.crosshair : NSCursor.arrow).set()
     }
+    #endif
+
+    #if os(iOS)
+    // MARK: - Touch input
+
+    override public func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        let count = event?.allTouches?.count ?? touches.count
+        if count >= 2 {
+            cancelLongPress()
+            pinchStartDistance = pinchDistance(event)
+            return
+        }
+        guard let p = touches.first?.location(in: self) else { return }
+        touchStartScene = p; touchLastScene = p; touchDidPan = false; longPressFired = false
+        // A stationary long-press = the macOS right-click (default order / cancel a mode).
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.touchDidPan, let start = self.touchStartScene else { return }
+            self.longPressFired = true
+            if self.model?.missileTargeting != nil { self.model?.cancelMissileTargeting() }
+            else if self.model?.placement != nil { self.model?.cancelPlacement() }
+            else if let (x, y) = self.tile(atScenePoint: start) { self.model?.rightClickTile(x, y) }
+        }
+        longPressWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    override public func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if (event?.allTouches?.count ?? touches.count) >= 2, let start = pinchStartDistance, let now = pinchDistance(event) {
+            cancelLongPress()
+            if now / start > 1.30 { model?.zoomIn(); pinchStartDistance = now }
+            else if now / start < 0.77 { model?.zoomOut(); pinchStartDistance = now }
+            return
+        }
+        guard let cur = touches.first?.location(in: self), let last = touchLastScene, let start = touchStartScene else { return }
+        touchLastScene = cur
+        if hypot(cur.x - start.x, cur.y - start.y) > 10 { touchDidPan = true; cancelLongPress() }
+        // Hand-tool pan: drag content with the finger (only when not in a target-select / placement mode).
+        if touchDidPan, model?.placement == nil, model?.missileTargeting == nil, model?.pendingOrder == nil {
+            model?.scroll(dx: -Double(cur.x - last.x), dy: Double(cur.y - last.y))
+        } else if model?.placement != nil, let (x, y) = tile(atScenePoint: cur) {
+            model?.placementHover(tileX: x, tileY: y)
+        }
+    }
+
+    override public func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        defer { resetTouchState() }
+        cancelLongPress()
+        if pinchStartDistance != nil || touchDidPan || longPressFired { return }
+        // A plain tap = the macOS left-click: place / launch in a mode, else select / apply an armed order.
+        guard let p = touchStartScene, let (x, y) = tile(atScenePoint: p) else { return }
+        if model?.missileTargeting != nil { model?.launchMissileAt(tileX: x, tileY: y) }
+        else if model?.placement != nil { model?.placeAt(tileX: x, tileY: y) }
+        else { model?.leftClickTile(x, y) }
+    }
+
+    override public func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        cancelLongPress(); resetTouchState()
+    }
+
+    private func pinchDistance(_ event: UIEvent?) -> CGFloat? {
+        let pts = (event?.allTouches.map { Array($0) } ?? []).prefix(2).map { $0.location(in: self) }
+        guard pts.count == 2 else { return nil }
+        return hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+    }
+    private func cancelLongPress() { longPressWork?.cancel(); longPressWork = nil }
+    private func resetTouchState() { touchStartScene = nil; touchLastScene = nil; touchDidPan = false; pinchStartDistance = nil }
     #endif
 }

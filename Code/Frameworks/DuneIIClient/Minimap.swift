@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import CoreGraphics
 import DuneIIContracts
 import DuneIIFormats
@@ -172,6 +174,7 @@ struct MinimapView: View {
                 // dragging — and works even when the minimap panel isn't the key window (first-mouse). Only
                 // active while the radar is up + settled (a dark / tuning screen isn't clickable, as in Dune II).
                 if radarOn, staticIndex == nil {
+                    #if os(macOS)
                     MinimapMouse(side: side) { point in
                         // Left click / drag: recentre the main map on the clicked world point.
                         let world = Viewport.worldSize / side
@@ -186,6 +189,16 @@ struct MinimapView: View {
                         model.rightClickTile(tx, ty)
                     }
                     .frame(width: side, height: side)
+                    #else
+                    // iOS: tap/drag the radar to recentre the main map.
+                    Color.clear.contentShape(Rectangle())
+                        .frame(width: side, height: side)
+                        .gesture(DragGesture(minimumDistance: 0).onChanged { g in
+                            let world = Viewport.worldSize / side
+                            model.centerOn(worldX: min(max(0, g.location.x), side) * world,
+                                           worldY: min(max(0, g.location.y), side) * world)
+                        })
+                    #endif
                 }
             }
             .frame(width: side, height: side)
@@ -196,6 +209,7 @@ struct MinimapView: View {
     }
 }
 
+#if os(macOS)
 /// A transparent AppKit overlay that reports click + drag locations (in its own top-left-origin space) so
 /// the minimap can recentre the map continuously. Accepts the first mouse, so a click registers even when
 /// the (non-activating) tool panel isn't focused.
@@ -235,3 +249,4 @@ final class MinimapMouseView: NSView {
     private func report(_ event: NSEvent) { onPoint?(convert(event.locationInWindow, from: nil)) }
     private func reportRight(_ event: NSEvent) { onRightPoint?(convert(event.locationInWindow, from: nil)) }
 }
+#endif

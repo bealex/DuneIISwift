@@ -1,0 +1,51 @@
+# XcodeGen spec for the Dune II iOS app. `Scripts/build-ios.sh` stages the original PAKs into `GameData/`,
+# runs `xcodegen generate`, then `xcodebuild`. The .xcodeproj it produces is generated (git-ignored).
+name: duneii-ios
+options:
+  bundleIdPrefix: com.lonelybytes
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  # The local SwiftPM package at Code/ (two levels up from this file). The app links its DuneIIClient library,
+  # which pulls in the whole engine (Contracts/Formats/World/Simulation/Renderer/Input/Audio).
+  DuneII:
+    path: ../..
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: REDACTED_TEAM
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "6.0"
+    TARGETED_DEVICE_FAMILY: "1,2"           # iPhone + iPad
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  duneii-ios:
+    type: application
+    platform: iOS
+    sources:
+      - path: .
+        excludes: [project.yml, GameData, "*.md"]
+      # The original install's PAKs, staged here by build-ios.sh — a folder reference so they land in
+      # the app bundle under GameData/ (where AssetStore reads them).
+      - path: GameData
+        type: folder
+    dependencies:
+      - package: DuneII
+        product: DuneIIClient
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lonelybytes.duneii
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Dune II
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIRequiresFullScreen: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UIStatusBarHidden: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"

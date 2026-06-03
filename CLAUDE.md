@@ -27,7 +27,7 @@ After that: `Documentation/Plan.v1.md` is the authoritative plan (goals, locked 
     - `DuneIIAudio` — `AudioSink` protocol + `NullAudio` (Foundation) + later Core Audio. Depends on Contracts.
     - `DuneIIExport` — asset writers (`PngWriter` via ImageIO/CoreGraphics, `WavWriter` via RIFF), used by `assetgen` to export decoded assets to PNG/WAV for verification. Depends on Formats. Offline tooling, not a runtime presentation leaf.
   - `Tools/` — command-line developer/build tools: `assetgen` (extract `Resources/` from the install + the `emc-disasm` subcommand).
-  - `Apps/` — runnable end-products: `duneii` (the **native macOS** game client — SwiftUI map window + floating tool windows), `mapview`/`scenariolab` (single-window verification viewers), `rendertest` (asset inspector), `duneii-headless` (test/oracle driver), `rendercap` (headless render capture).
+  - `Apps/` — runnable end-products: `duneii` (the **native macOS** game client — a SwiftUI map window + the in-window `GameSidebar`), `duneii-ios` (the **iOS** client — same `DuneIIClient` engine + sidebar, a SpriteKit `SpriteView` map + touch input; an **XcodeGen** project, no committed `.xcodeproj` — see `Apps/duneii-ios/README.md`), `mapview`/`scenariolab` (single-window verification viewers), `rendertest` (asset inspector), `duneii-headless` (test/oracle driver), `rendercap` (headless render capture). The two game clients share everything via `DuneIIClient`; platform specifics sit behind `#if os(macOS)`/`#if os(iOS)`.
   - `Tests/` — one `<Subject>Tests` target per tested target (the `DuneII` prefix is dropped): `ContractsTests`, `FormatsTests`, `WorldTests`, `SimulationTests`; fixtures under `<Subject>Tests/Fixtures/`.
 - `Repositories/OpenDUNE/` — the C reference and **oracle**. Source of truth for all game logic, save format, scripting, codecs, tables.
 - `Repositories/dunepak/` — Rust PAK packer (PAK container reference).
@@ -99,6 +99,8 @@ Scripts/check.sh --filter <TypeName>   # build + only matching tests (fast inner
 Scripts/log-history.sh "<bullet>"   # append a bullet to today's History/YYYY-MM-DD.md (workflow step 6; creates+indexes a new day)
 Scripts/build-oracle.sh             # rebuild + re-sign the OpenDUNE parity oracle (run with sandbox disabled)
 Scripts/gen-scenario-goldens.sh [--only <name>]   # regenerate the scenario goldens (one, with --only)
+Scripts/check-ios.sh                # cross-compile DuneIIClient + the iOS app sources for the iOS SDK (iOS-compat regression check; the macOS build never sees the `#if os(iOS)` code)
+Scripts/build-ios.sh [sim|device|archive]   # stage PAKs → xcodegen → xcodebuild: run the iOS app on the simulator / a connected device / export a signed .ipa (see Apps/duneii-ios/README.md)
 ```
 
 **Investigation helpers** (the source-reading / disasm probes that recur every porting slice):

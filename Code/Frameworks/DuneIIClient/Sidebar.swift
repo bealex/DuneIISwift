@@ -640,12 +640,15 @@ struct OptionsPopover: View {
             .frame(height: 120)
             Divider()
             DebugPanel(model: model)
+            #if os(macOS)
+            // The audio settings live in the macOS `Settings` scene (⌘,); iOS has no such window.
             Divider()
             HStack {
                 SettingsLink { Label("Settings…", systemImage: "slider.horizontal.3") }
                 Spacer()
             }
             .padding(10)
+            #endif
         }
         .frame(width: 320, height: 540)
     }
