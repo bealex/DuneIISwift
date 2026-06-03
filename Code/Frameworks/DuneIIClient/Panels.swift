@@ -278,10 +278,12 @@ struct EconomyPanel: View {
 }
 
 /// Debug controls: fog, whose economy to show, and the per-unit health/state overlay.
-struct DebugPanel: View {
+public struct DebugPanel: View {
     @State var model: GameModel
 
-    var body: some View {
+    public init(model: GameModel) { _model = State(initialValue: model) }
+
+    public var body: some View {
         Form {
             Toggle("Fog of war", isOn: Binding(get: { model.showFog }, set: { model.showFog = $0 }))
             Toggle("AI fog of war", isOn: Binding(get: { model.aiFogOfWar }, set: { model.aiFogOfWar = $0 }))

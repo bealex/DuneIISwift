@@ -134,12 +134,29 @@ public struct GameSidebar: View {
     @State private var showOptions = false
     @State private var showMentat = false
 
+    /// True when the host window is full-screen (macOS) or there is no window chrome (iOS): the sidebar then
+    /// goes black-on-white to blend with the black map. Windowed (macOS), it uses the system window
+    /// background + adaptive text so it blends with the title-bar chrome.
+    let fullScreen: Bool
+    @Environment(\.colorScheme) private var systemScheme
+
     private let columns = [GridItem(.adaptive(minimum: 44), spacing: 6, alignment: .leading)]
 
-    public init(model: GameModel, onSave: @escaping () -> Void, onLoad: @escaping () -> Void) {
+    public init(model: GameModel, fullScreen: Bool = false,
+                onSave: @escaping () -> Void, onLoad: @escaping () -> Void) {
         _model = State(initialValue: model)
+        self.fullScreen = fullScreen
         self.onSave = onSave
         self.onLoad = onLoad
+    }
+
+    /// Black in full-screen (matches the map); the standard window background when windowed.
+    private var sidebarBackground: Color {
+        #if os(macOS)
+        fullScreen ? .black : Color(nsColor: .windowBackgroundColor)
+        #else
+        .black
+        #endif
     }
 
     public var body: some View {
@@ -160,7 +177,10 @@ public struct GameSidebar: View {
             bottomBar
         }
         .frame(width: 200)
-        .background(Color(white: 0.10))
+        .background(sidebarBackground)
+        // Full-screen: force a dark scheme so labels are white on the black sidebar. Windowed: keep the
+        // inherited scheme so adaptive text stays readable on the system background.
+        .environment(\.colorScheme, fullScreen ? .dark : systemScheme)
         .sheet(isPresented: $showMentat) {
             if let s = model.selection { MentatSheet(info: s, provider: sprites, assets: model.assets) }
         }
@@ -272,9 +292,11 @@ public struct GameSidebar: View {
                                       name: item.displayName, cost: item.cost, locked: !option.isAvailable,
                                       underfunded: underfunded)
                         }
-                        .buttonStyle(.bordered).disabled(!option.isAvailable).help(buildHelp(option))
+                        .buttonStyle(.bordered).frame(maxWidth: .infinity)
+                        .disabled(!option.isAvailable).help(buildHelp(option))
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         if !model.starportStock.isEmpty {
@@ -287,9 +309,11 @@ public struct GameSidebar: View {
                                   name: item.displayName, cost: item.cost, locked: false,
                                   underfunded: item.cost > model.playerCredits)
                     }
-                    .buttonStyle(.bordered).disabled(item.cost > model.playerCredits)
+                    .buttonStyle(.bordered).frame(maxWidth: .infinity)
+                    .disabled(item.cost > model.playerCredits)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
