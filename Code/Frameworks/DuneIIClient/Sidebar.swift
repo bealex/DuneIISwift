@@ -266,15 +266,15 @@ public struct GameSidebar: View {
                     Text("Mission \(mission)").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            // Credits and power each take half the width.
+            // Credits and power each take half the width, centred within their half.
             HStack(spacing: 8) {
                 Label("\(model.playerCredits)", systemImage: "dollarsign.circle.fill")
                     .monospacedDigit().foregroundStyle(.yellow)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity)
                 Label("\(e?.power ?? 0)/\(e?.powerUsed ?? 0)", systemImage: "bolt.fill")
                     .monospacedDigit().foregroundStyle(powerOK ? Color.secondary : Color.red)
                     .help("Power produced / consumed")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity)
             }
             .font(.callout)
         }
