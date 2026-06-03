@@ -389,9 +389,10 @@ public struct GameSidebar: View {
             SpriteThumbnail(objectType: objectType, isStructure: isStructure, house: model.playerHouse,
                             height: 22, provider: sprites, assets: model.assets)
                 .frame(width: 30, alignment: .center)
-            Text(name).lineLimit(1)
+            // The title absorbs the slack (maxWidth .infinity) so the lock + cost pin to the trailing edge —
+            // every row is aligned on both the left (title) and right (cost) sides.
+            Text(name).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             if locked { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary) }
-            Spacer(minLength: 4)
             Text("\(cost)").font(.caption.monospacedDigit()).foregroundStyle(underfunded ? Color.red : Color.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
