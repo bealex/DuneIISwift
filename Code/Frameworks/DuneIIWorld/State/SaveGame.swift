@@ -10,7 +10,7 @@ import Foundation
 /// Encoded with a binary property list (Foundation-only, deterministic) behind a 5-byte magic + version
 /// header. Bump `version` on any incompatible `GameState`-shape change. See `Documentation/Formats/Save.md`.
 public enum SaveGame {
-    static let magic: [UInt8] = [0x44, 0x55, 0x32, 0x53]   // "DU2S"
+    static let magic: [UInt8] = [ 0x44, 0x55, 0x32, 0x53 ]  // "DU2S"
     static let version: UInt8 = 1
 
     public enum SaveError: Error, Equatable { case badMagic, badVersion(UInt8), truncated, decode }
@@ -32,7 +32,6 @@ public enum SaveGame {
         let versionByte = data[data.startIndex + magic.count]
         guard versionByte == version else { throw SaveError.badVersion(versionByte) }
         let body = Data(data.suffix(from: data.startIndex + magic.count + 1))
-        do { return try PropertyListDecoder().decode(GameState.self, from: body) }
-        catch { throw SaveError.decode }
+        do { return try PropertyListDecoder().decode(GameState.self, from: body) } catch { throw SaveError.decode }
     }
 }

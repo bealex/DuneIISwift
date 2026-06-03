@@ -18,19 +18,25 @@ public struct UnitScriptRunner: Sendable {
     let combat: UnitCombat
     let targets: TargetFinder
 
-    public init(scriptInfo: ScriptInfo,
-                interpreter: any ScriptInterpreter = DefaultScriptInterpreter(),
-                unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
-                mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
-                housePrimitives: any HousePrimitives = DefaultHousePrimitives()) {
+    public init(
+        scriptInfo: ScriptInfo,
+        interpreter: any ScriptInterpreter = DefaultScriptInterpreter(),
+        unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
+        mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
+        housePrimitives: any HousePrimitives = DefaultHousePrimitives()
+    ) {
         self.interpreter = interpreter
         self.scriptInfo = scriptInfo
         self.general = GeneralScriptFunctions()
         self.unit = UnitScriptFunctions(unitPrimitives: unitPrimitives)
         self.actions = UnitActions(interpreter: interpreter)
-        self.movement = UnitMovement(scriptInfo: scriptInfo, interpreter: interpreter,
-                                     unitPrimitives: unitPrimitives, mapPrimitives: mapPrimitives,
-                                     housePrimitives: housePrimitives)
+        self.movement = UnitMovement(
+            scriptInfo: scriptInfo,
+            interpreter: interpreter,
+            unitPrimitives: unitPrimitives,
+            mapPrimitives: mapPrimitives,
+            housePrimitives: housePrimitives
+        )
         self.combat = UnitCombat(movement: movement)
         self.targets = TargetFinder(map: mapPrimitives, house: housePrimitives)
     }
@@ -46,14 +52,29 @@ public struct UnitScriptRunner: Sendable {
                 let action = engine.peek(1)
                 if u.o.houseID == state.playerHouseID
                     && action == UInt16(ActionType.harvest.rawValue)
-                    && u.nextActionID != 0xFF { return 0 }
-                actions.setAction(slot: slot, action: UInt8(truncatingIfNeeded: action),
-                                  scriptInfo: scriptInfo, engine: &engine, in: &state)
+                    && u.nextActionID != 0xFF
+                {
+                    return 0
+                }
+                actions.setAction(
+                    slot: slot,
+                    action: UInt8(truncatingIfNeeded: action),
+                    scriptInfo: scriptInfo,
+                    engine: &engine,
+                    in: &state
+                )
                 return 0
-            case 0x02: return general.noOperation()   // DisplayText — GUI (SEAM)
+            case 0x02: return general.noOperation()  // DisplayText — GUI (SEAM)
             case 0x03: return general.getDistanceToTile(from: u.o.position, encoded: engine.peek(1), in: state)
             case 0x04: return unit.startAnimation(slot: slot, in: &state)
-            case 0x0A: return unit.setActionDefault(slot: slot, scriptInfo: scriptInfo, actions: actions, engine: &engine, in: &state)
+            case 0x0A:
+                return unit.setActionDefault(
+                    slot: slot,
+                    scriptInfo: scriptInfo,
+                    actions: actions,
+                    engine: &engine,
+                    in: &state
+                )
             case 0x0B: return unit.blink(slot: slot, in: &state)
             case 0x13: return unit.setSprite(slot: slot, value: engine.peek(1), in: &state)
             case 0x12: return movement.explosionMultiple(slot: slot, radius: engine.peek(1), in: &state)
@@ -64,7 +85,12 @@ public struct UnitScriptRunner: Sendable {
             case 0x22: return combat.pickup(slot: slot, in: &state)
             case 0x05: return unit.setDestination(slot: slot, encoded: engine.peek(1), in: &state)
             case 0x06: return unit.getOrientation(u, encoded: engine.peek(1), in: state)
-            case 0x07: return unit.setOrientation(slot: slot, orientation: Int8(truncatingIfNeeded: engine.peek(1)), in: &state)
+            case 0x07:
+                return unit.setOrientation(
+                    slot: slot,
+                    orientation: Int8(truncatingIfNeeded: engine.peek(1)),
+                    in: &state
+                )
             case 0x08: return combat.fire(slot: slot, in: &state)
             case 0x09: return combat.mcvDeploy(slot: slot, in: &state)
             case 0x0C: return movement.calculateRoute(slot: slot, encoded: engine.peek(1), engine: &engine, in: &state)
@@ -72,9 +98,10 @@ public struct UnitScriptRunner: Sendable {
             case 0x0E: return movement.explosionSingle(slot: slot, type: engine.peek(1), in: &state)
             case 0x0F: return movement.die(slot: slot, engine: &engine, in: &state)
             case 0x10: let d = general.delay(ticks: engine.peek(1)); engine.delay = d; return d
-            case 0x11: return general.isFriendly(currentHouseID: state.unitHouseID(u), encoded: engine.peek(1), in: state)
-            case 0x26: state.emitSound(Int(engine.peek(1)), at: u.o.position); return 0   // Script_Unit_VoicePlay
-            case 0x15, 0x27, 0x2B, 0x34, 0x35, 0x39, 0x3F: return general.noOperation()   // 0x27 DisplayDestroyedText — GUI (SEAM)
+            case 0x11:
+                return general.isFriendly(currentHouseID: state.unitHouseID(u), encoded: engine.peek(1), in: state)
+            case 0x26: state.emitSound(Int(engine.peek(1)), at: u.o.position); return 0  // Script_Unit_VoicePlay
+            case 0x15, 0x27, 0x2B, 0x34, 0x35, 0x39, 0x3F: return general.noOperation()  // 0x27 DisplayDestroyedText — GUI (SEAM)
             case 0x17: return general.randomRange(min: engine.peek(1), max: engine.peek(2), in: &state)
             case 0x19: return unit.setDestinationDirect(slot: slot, encoded: engine.peek(1), in: &state)
             case 0x1A: return unit.stop(slot: slot, in: &state)
@@ -97,9 +124,19 @@ public struct UnitScriptRunner: Sendable {
             case 0x30: return unit.getRandomTile(slot: slot, encoded: engine.peek(1), in: &state)
             case 0x31: return unit.idleAction(slot: slot, in: &state)
             case 0x32: return general.unitCount(houseID: u.o.houseID, type: engine.peek(1), in: state)
-            case 0x33: return unit.goToClosestStructure(slot: slot, type: engine.peek(1), scriptInfo: scriptInfo,
-                                                        actions: actions, engine: &engine, in: &state)
-            case 0x36: return targets.sandwormFindBestTarget(slot: slot, in: state).map { state.indexEncode(state.units[$0].o.index, type: .unit) } ?? 0
+            case 0x33:
+                return unit.goToClosestStructure(
+                    slot: slot,
+                    type: engine.peek(1),
+                    scriptInfo: scriptInfo,
+                    actions: actions,
+                    engine: &engine,
+                    in: &state
+                )
+            case 0x36:
+                return targets.sandwormFindBestTarget(slot: slot, in: state).map {
+                    state.indexEncode(state.units[$0].o.index, type: .unit)
+                } ?? 0
             case 0x37: return unit.unknown2BD5(slot: slot, in: &state)
             case 0x38: return general.getOrientation(encoded: engine.peek(1), in: state)
             case 0x3A: return unit.setTarget(slot: slot, target: engine.peek(1), in: &state)
@@ -107,7 +144,7 @@ public struct UnitScriptRunner: Sendable {
             case 0x3C: let d = general.delayRandom(maxTicks: engine.peek(1), in: &state); engine.delay = d; return d
             case 0x3D: return unit.rotate(slot: slot, in: &state)
             case 0x3E: return general.getDistanceToObject(from: u.o.position, encoded: engine.peek(1), in: state)
-            default:   return nil   // not yet ported
+            default: return nil  // not yet ported
         }
     }
 

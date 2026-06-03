@@ -7,7 +7,7 @@ import SwiftUI
 struct ContentView: View {
     @State var model: ScenarioLabModel
 
-    private let scales = [1, 2, 4, 8, 16]
+    private let scales = [ 1, 2, 4, 8, 16 ]
     private let speeds = Array(1 ... 10)
 
     var body: some View {
@@ -16,7 +16,7 @@ struct ContentView: View {
         let dim = CGFloat(ScenarioImageBuilder.sidePx * model.scale)
         ZStack {
             Color.black
-            SpriteView(scene: model.scene, options: [.ignoresSiblingOrder])
+            SpriteView(scene: model.scene, options: [ .ignoresSiblingOrder ])
                 .frame(width: dim, height: dim)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -37,11 +37,17 @@ struct ContentView: View {
                 }
             }
             ToolbarItem(placement: .automatic) {
-                Button { model.regenerate() } label: { Image(systemName: "arrow.clockwise") }
-                    .help("Regenerate terrain")
+                Button {
+                    model.regenerate()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("Regenerate terrain")
             }
             ToolbarItem(placement: .automatic) {
-                Button { model.running.toggle() } label: {
+                Button {
+                    model.running.toggle()
+                } label: {
                     Image(systemName: model.running ? "pause.fill" : "play.fill")
                 }
                 .help(model.running ? "Pause" : "Run")

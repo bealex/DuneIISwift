@@ -49,7 +49,7 @@ public struct HouseTickCursors: Sendable, Equatable, Codable {
 public struct GameState: Sendable, Codable {
     // Object pools — fixed-size slot arrays sized to OpenDUNE's *_INDEX_MAX.
     public var units: [Unit]
-    public var structures: [Structure]   // sized to MAX_HARD so the 3 special slots (79/80/81) exist
+    public var structures: [Structure]  // sized to MAX_HARD so the 3 special slots (79/80/81) exist
     public var houses: [House]
     public var teams: [Team]
 
@@ -162,7 +162,7 @@ public struct GameState: Sendable, Codable {
     public var iconMap: IconMap?
 
     /// Active structure animations (`g_animations`, 112 slots).
-    public var animations = [Animation](repeating: Animation(), count: 112)
+    public var animations = [ Animation ](repeating: Animation(), count: 112)
 
     /// `s_animationTimer`: the next tick the animation pass needs to run.
     public var animationTimer: UInt32 = 0
@@ -170,7 +170,7 @@ public struct GameState: Sendable, Codable {
     /// Active explosions (`g_explosions`, `EXPLOSION_MAX` = 32 slots) — the short visual sprite
     /// animations for impacts/deaths/destruction. Started by `Map_MakeExplosion`; ticked (gated) by
     /// `explosionTick()`. See `Documentation/Algorithms/Explosion.md`.
-    public var explosions = [Explosion](repeating: Explosion(), count: 32)
+    public var explosions = [ Explosion ](repeating: Explosion(), count: 32)
 
     /// `s_explosionTimer`: the next tick the explosion pass needs to run.
     public var explosionTimer: UInt32 = 0
@@ -208,7 +208,7 @@ public struct GameState: Sendable, Codable {
 
     /// The seed-generated base ground tile of each cell (`g_mapTileID`), so an animation `STOP` can
     /// restore it. Snapshotted by `createLandscape`.
-    public var mapBaseTileID = [UInt16](repeating: 0, count: 64 * 64)
+    public var mapBaseTileID = [ UInt16 ](repeating: 0, count: 64 * 64)
 
     /// Set whenever an animation changes a map ground tile, so a renderer knows to re-blit.
     public var mapDirty = false

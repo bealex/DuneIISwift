@@ -1,6 +1,7 @@
-import Testing
 import DuneIIContracts
 import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
 
 /// Decision-trace coverage for `Unit_Damage` (`unit.c:1530`) — each branch asserted against the C logic:
@@ -9,10 +10,11 @@ import DuneIIWorld
 @Suite("Unit_Damage")
 struct UnitCombatTests {
     // offsets[typeID] = typeID, so a script load for type T parks the PC at T.
-    let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func setup(_ type: UnitType, hp: UInt16, house: UInt8 = 0, player: UInt8 = 0)
-        -> (GameState, Int, UnitCombat) {
+        -> (GameState, Int, UnitCombat)
+    {
         var s = GameState(random256Seed: 0x12345)
         s.playerHouseID = player
         _ = s.houseAllocate(index: house)
@@ -41,7 +43,7 @@ struct UnitCombatTests {
         #expect(died)
         #expect(s.units[slot].o.hitpoints == 0)
         #expect(s.units[slot].actionID == UInt8(ActionType.die.rawValue))
-        #expect(!s.units[slot].o.flags.contains(.allocated))   // Unit_RemovePlayer cleared it
+        #expect(!s.units[slot].o.flags.contains(.allocated))  // Unit_RemovePlayer cleared it
     }
 
     @Test("a death raises the spoken 'unit destroyed' feedback (Sound_Output_Feedback)")
@@ -73,7 +75,7 @@ struct UnitCombatTests {
         let died = combat.damage(slot: slot, damage: 50, range: 0, in: &s)
         #expect(died)
         #expect(s.units[slot].actionID == UInt8(ActionType.die.rawValue))
-        #expect(s.units[slot].o.flags.contains(.allocated))    // not the player's → left allocated
+        #expect(s.units[slot].o.flags.contains(.allocated))  // not the player's → left allocated
     }
 
     // MARK: - The DIE-branch natives (ExplosionSingle 0x0E → Die 0x0F)
@@ -82,10 +84,10 @@ struct UnitCombatTests {
     func dieRemoves() {
         var (s, slot, combat) = setup(.tank, hp: 1)
         var engine = s.units[slot].o.script
-        engine.scriptPC = 5                                        // a running script
+        engine.scriptPC = 5  // a running script
         _ = combat.movement.die(slot: slot, engine: &engine, in: &s)
-        #expect(!s.units[slot].o.flags.contains(.used))           // Unit_Remove freed the slot
-        #expect(engine.scriptPC == ScriptEngine.scriptNull)       // and the running script stopped
+        #expect(!s.units[slot].o.flags.contains(.used))  // Unit_Remove freed the slot
+        #expect(engine.scriptPC == ScriptEngine.scriptNull)  // and the running script stopped
     }
 
     @Test("Script_Unit_Die: a saboteur leaves a death explosion at its position")
@@ -95,7 +97,7 @@ struct UnitCombatTests {
         var engine = s.units[slot].o.script
         _ = combat.movement.die(slot: slot, engine: &engine, in: &s)
         #expect(!s.units[slot].o.flags.contains(.used))
-        #expect(s.map[Int(pos.packed)].hasExplosion)              // EXPLOSION_SABOTEUR_DEATH started
+        #expect(s.map[Int(pos.packed)].hasExplosion)  // EXPLOSION_SABOTEUR_DEATH started
     }
 
     @Test("Script_Unit_ExplosionSingle starts an explosion at the unit")
@@ -123,7 +125,7 @@ struct UnitCombatTests {
         let full = UnitInfo[.infantry].o.hitpoints
         var (s, slot, combat) = setup(.infantry, hp: full / 2 + 1)
         _ = combat.damage(slot: slot, damage: 2, range: 0, in: &s)
-        #expect(s.units[slot].o.type == UInt8(UnitType.soldier.rawValue))   // infantry(2) + 2
+        #expect(s.units[slot].o.type == UInt8(UnitType.soldier.rawValue))  // infantry(2) + 2
         #expect(s.units[slot].o.hitpoints == UnitInfo[.soldier].o.hitpoints)
     }
 
@@ -132,7 +134,7 @@ struct UnitCombatTests {
         let full = UnitInfo[.sandworm].o.hitpoints
         var (s, slot, combat) = setup(.sandworm, hp: full / 2 + 5)
         let died = combat.damage(slot: slot, damage: 10, range: 0, in: &s)
-        #expect(!died)                                            // still has HP
+        #expect(!died)  // still has HP
         #expect(s.units[slot].actionID == UInt8(ActionType.die.rawValue))
     }
 
@@ -143,7 +145,7 @@ struct UnitCombatTests {
         var (s, slot, combat) = setup(.tank, hp: 200, house: 0, player: 0)
         s.units[slot].targetAttack = 1234
         s.units[slot].targetMove = 5678
-        let ok = combat.deviate(slot: slot, probability: 256, houseID: 1, in: &s)   // 256 ⇒ draw always < it
+        let ok = combat.deviate(slot: slot, probability: 256, houseID: 1, in: &s)  // 256 ⇒ draw always < it
         #expect(ok)
         #expect(s.units[slot].deviated == 120)
         #expect(s.units[slot].deviatedHouse == 1)
@@ -157,12 +159,12 @@ struct UnitCombatTests {
         s.units[slot].deviated = 50
         let ok = combat.deviate(slot: slot, probability: 256, houseID: 1, in: &s)
         #expect(!ok)
-        #expect(s.units[slot].deviated == 50)   // unchanged
+        #expect(s.units[slot].deviated == 50)  // unchanged
     }
 
     @Test("an isNotDeviatable unit is immune")
     func deviateImmune() {
-        var (s, slot, combat) = setup(.carryall, hp: 200)   // carryall: isNormalUnit + isNotDeviatable
+        var (s, slot, combat) = setup(.carryall, hp: 200)  // carryall: isNormalUnit + isNotDeviatable
         let ok = combat.deviate(slot: slot, probability: 256, houseID: 1, in: &s)
         #expect(!ok)
         #expect(s.units[slot].deviated == 0)
@@ -170,7 +172,7 @@ struct UnitCombatTests {
 
     @Test("a probability the RNG draw exceeds leaves the unit undeviated")
     func deviateFails() {
-        var (s, slot, combat) = setup(.tank, hp: 200)   // seed 0x12345: first draw > 1
+        var (s, slot, combat) = setup(.tank, hp: 200)  // seed 0x12345: first draw > 1
         let ok = combat.deviate(slot: slot, probability: 1, houseID: 1, in: &s)
         #expect(!ok)
         #expect(s.units[slot].deviated == 0)
@@ -182,8 +184,16 @@ struct UnitCombatTests {
     func createWinger() throws {
         var (s, _, combat) = setup(.tank, hp: 200)
         let pos = Tile32.unpack(30 * 64 + 30)
-        let c = try #require(combat.unitCreate(index: Pool.unitIndexInvalid, type: UInt8(UnitType.carryall.rawValue),
-                                               houseID: 0, position: pos, orientation: 64, in: &s))
+        let c = try #require(
+            combat.unitCreate(
+                index: Pool.unitIndexInvalid,
+                type: UInt8(UnitType.carryall.rawValue),
+                houseID: 0,
+                position: pos,
+                orientation: 64,
+                in: &s
+            )
+        )
         #expect(s.units[c].o.flags.contains(.used))
         #expect(s.units[c].o.flags.contains(.allocated))
         #expect(!s.units[c].o.flags.contains(.isNotOnMap))
@@ -196,8 +206,16 @@ struct UnitCombatTests {
     @Test("unitCreate: an off-map position ⇒ isNotOnMap, unplaced")
     func createOffMap() throws {
         var (s, _, combat) = setup(.tank, hp: 200)
-        let c = try #require(combat.unitCreate(index: Pool.unitIndexInvalid, type: UInt8(UnitType.carryall.rawValue),
-                                               houseID: 0, position: Tile32(x: 0xFFFF, y: 0xFFFF), orientation: 0, in: &s))
+        let c = try #require(
+            combat.unitCreate(
+                index: Pool.unitIndexInvalid,
+                type: UInt8(UnitType.carryall.rawValue),
+                houseID: 0,
+                position: Tile32(x: 0xFFFF, y: 0xFFFF),
+                orientation: 0,
+                in: &s
+            )
+        )
         #expect(s.units[c].o.flags.contains(.isNotOnMap))
     }
 
@@ -209,25 +227,41 @@ struct UnitCombatTests {
         let targetEnc = s.indexEncode(s.units[target].o.index, type: .unit)
         let pos = s.units[attacker].o.position
 
-        let b = try #require(combat.unitCreateBullet(position: pos, type: UInt8(UnitType.bullet.rawValue),
-                                                     houseID: 0, damage: 25, target: targetEnc, in: &s))
+        let b = try #require(
+            combat.unitCreateBullet(
+                position: pos,
+                type: UInt8(UnitType.bullet.rawValue),
+                houseID: 0,
+                damage: 25,
+                target: targetEnc,
+                in: &s
+            )
+        )
         #expect(s.units[b].o.type == UInt8(UnitType.bullet.rawValue))
         #expect(s.units[b].o.hitpoints == 25)
         #expect(s.units[b].currentDestination == s.indexGetTile(targetEnc))
-        #expect(s.units[b].o.flags.contains(.bulletIsBig))   // 25 > 15
+        #expect(s.units[b].o.flags.contains(.bulletIsBig))  // 25 > 15
         #expect(s.units[b].orientation[0].current == Tile32.direction(from: pos, to: s.indexGetTile(targetEnc)))
 
         // A small bullet (≤ 15 damage) is not "big".
-        let b2 = try #require(combat.unitCreateBullet(position: pos, type: UInt8(UnitType.bullet.rawValue),
-                                                      houseID: 0, damage: 10, target: targetEnc, in: &s))
+        let b2 = try #require(
+            combat.unitCreateBullet(
+                position: pos,
+                type: UInt8(UnitType.bullet.rawValue),
+                houseID: 0,
+                damage: 10,
+                target: targetEnc,
+                in: &s
+            )
+        )
         #expect(!s.units[b2].o.flags.contains(.bulletIsBig))
     }
 
     @Test("fire: no/invalid attack target ⇒ no shot (0)")
     func fireNoTarget() {
         var (s, slot, combat) = setup(.tank, hp: 200)
-        #expect(combat.fire(slot: slot, in: &s) == 0)            // targetAttack 0
-        s.units[slot].targetAttack = 0xABCD                      // invalid index
+        #expect(combat.fire(slot: slot, in: &s) == 0)  // targetAttack 0
+        s.units[slot].targetAttack = 0xABCD  // invalid index
         #expect(combat.fire(slot: slot, in: &s) == 0)
     }
 
@@ -237,11 +271,13 @@ struct UnitCombatTests {
         _ = s.houseAllocate(index: 1)
         s.houses[1].unitCountMax = 100
         let enemy = s.unitAllocate(index: 0, type: UInt8(UnitType.tank.rawValue), houseID: 1)!
-        s.units[enemy].o.position = Tile32.unpack(21 * 64 + 20)   // one tile east, inside fire range
+        s.units[enemy].o.position = Tile32.unpack(21 * 64 + 20)  // one tile east, inside fire range
         let target = s.indexEncode(s.units[enemy].o.index, type: .unit)
         s.units[slot].targetAttack = target
         let dir = Tile32.direction(from: s.units[slot].o.position, to: s.units[enemy].o.position)
-        for level in 0 ..< 2 { s.units[slot].orientation[level].current = dir; s.units[slot].orientation[level].speed = 0 }   // tank has a turret ⇒ aimLevel 1
+        for level in 0 ..< 2 {
+            s.units[slot].orientation[level].current = dir; s.units[slot].orientation[level].speed = 0
+        }  // tank has a turret ⇒ aimLevel 1
         s.units[slot].fireDelay = 0
         s.soundEvents.removeAll()
 
@@ -252,7 +288,7 @@ struct UnitCombatTests {
 
     @Test("mapMakeExplosion: damages units in radius (scaled by distance), spares the far + provokes the enemy")
     func mapMakeExplosion() {
-        var (s, origin, combat) = setup(.tank, hp: 200, house: 0, player: 0)   // the firer (house 0)
+        var (s, origin, combat) = setup(.tank, hp: 200, house: 0, player: 0)  // the firer (house 0)
         _ = s.houseAllocate(index: 2)
         s.houses[2].unitCountMax = 100
         let pos = Tile32.unpack(20 * 64 + 20)
@@ -271,14 +307,20 @@ struct UnitCombatTests {
         let originEnc = s.indexEncode(s.units[origin].o.index, type: .unit)
         combat.movement.mapMakeExplosion(type: 0, position: pos, hitpoints: 30, origin: originEnc, in: &s)
 
-        #expect(s.units[near].o.hitpoints == 170)                                  // 30 >> 0 at distance 0
-        #expect(s.units[far].o.hitpoints == 200)                                   // out of range
-        #expect(s.units[near].actionID == UInt8(ActionType.hunt.rawValue))         // GUARD+byScenario ⇒ HUNT
-        #expect(s.units[near].targetAttack == originEnc)                           // retaliates at the firer
+        #expect(s.units[near].o.hitpoints == 170)  // 30 >> 0 at distance 0
+        #expect(s.units[far].o.hitpoints == 200)  // out of range
+        #expect(s.units[near].actionID == UInt8(ActionType.hunt.rawValue))  // GUARD+byScenario ⇒ HUNT
+        #expect(s.units[near].targetAttack == originEnc)  // retaliates at the firer
 
         // hitpoints 0 ⇒ a pure visual blast: no damage, no reaction.
         s.units[far].actionID = UInt8(ActionType.guard_.rawValue)
-        combat.movement.mapMakeExplosion(type: 0, position: Tile32.unpack(50 * 64 + 50), hitpoints: 0, origin: originEnc, in: &s)
+        combat.movement.mapMakeExplosion(
+            type: 0,
+            position: Tile32.unpack(50 * 64 + 50),
+            hitpoints: 0,
+            origin: originEnc,
+            in: &s
+        )
         #expect(s.units[far].o.hitpoints == 200)
     }
 }

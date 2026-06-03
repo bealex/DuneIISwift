@@ -14,21 +14,27 @@ private func prettify(_ raw: String, overrides: [String: String]) -> String {
 
 public extension UnitType {
     var displayName: String {
-        prettify(String(describing: self), overrides: [
-            "mcv": "MCV", "missileHouse": "House Missile", "missileRocket": "Rocket",
-            "missileTurret": "Turret Rocket", "missileDeviator": "Gas Rocket",
-            "missileTrooper": "Trooper Rocket", "sonicBlast": "Sonic Blast", "raiderTrike": "Raider Trike",
-        ])
+        prettify(
+            String(describing: self),
+            overrides: [
+                "mcv": "MCV", "missileHouse": "House Missile", "missileRocket": "Rocket",
+                "missileTurret": "Turret Rocket", "missileDeviator": "Gas Rocket",
+                "missileTrooper": "Trooper Rocket", "sonicBlast": "Sonic Blast", "raiderTrike": "Raider Trike",
+            ]
+        )
     }
 }
 
 public extension StructureType {
     var displayName: String {
-        prettify(String(describing: self), overrides: [
-            "slab1x1": "Concrete", "slab2x2": "Concrete (2×2)", "lightVehicle": "Light Factory",
-            "heavyVehicle": "Heavy Factory", "highTech": "Hi-Tech Factory", "houseOfIx": "House of IX",
-            "worTrooper": "WOR", "constructionYard": "Construction Yard", "rocketTurret": "Rocket Turret",
-        ])
+        prettify(
+            String(describing: self),
+            overrides: [
+                "slab1x1": "Concrete", "slab2x2": "Concrete (2×2)", "lightVehicle": "Light Factory",
+                "heavyVehicle": "Heavy Factory", "highTech": "Hi-Tech Factory", "houseOfIx": "House of IX",
+                "worTrooper": "WOR", "constructionYard": "Construction Yard", "rocketTurret": "Rocket Turret",
+            ]
+        )
     }
 }
 

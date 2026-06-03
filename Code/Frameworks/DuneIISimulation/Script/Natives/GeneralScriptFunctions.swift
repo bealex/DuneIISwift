@@ -19,7 +19,10 @@ public struct GeneralScriptFunctions: Sendable {
     /// 0 if it still resolves to a live object.
     public func unknown0288(index: UInt16, in state: GameState) -> UInt16 {
         if let s = state.indexGetStructure(index),
-           state.indexEncode(state.structures[s].o.index, type: .structure) != index { return 1 }
+            state.indexEncode(state.structures[s].o.index, type: .structure) != index
+        {
+            return 1
+        }
         return state.indexGetObject(index) == nil ? 1 : 0
     }
 
@@ -55,7 +58,9 @@ public struct GeneralScriptFunctions: Sendable {
         if !state.indexIsValid(encoded) { return 0xFFFF }
 
         let position: Tile32
-        if let sSlot = state.indexGetStructure(encoded), let st = StructureType(rawValue: Int(state.structures[sSlot].o.type)) {
+        if let sSlot = state.indexGetStructure(encoded),
+            let st = StructureType(rawValue: Int(state.structures[sSlot].o.type))
+        {
             let s = state.structures[sSlot]
             let dir8 = Orientation.to8(UInt8(bitPattern: Tile32.direction(from: from, to: s.o.position)))
             // OpenDUNE indexes the *structure's* layout here — an un-gated enhancement over 1.07's

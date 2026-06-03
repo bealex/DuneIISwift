@@ -1,8 +1,9 @@
-import Foundation
-import Testing
 import DuneIIContracts
 import DuneIIFormats
 import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIISimulation
 
 /// The minimap's top-left "corner blob": a unit/structure plotted in the **unplayable border** (tile (0,0)
@@ -16,7 +17,7 @@ import DuneIIWorld
 struct MinimapBlobTests {
     private func repoRoot() -> URL {
         var repo = URL(fileURLWithPath: #filePath)
-        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }   // Code/Tests/SimulationTests → repo root
+        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }  // Code/Tests/SimulationTests → repo root
         return repo
     }
 
@@ -25,12 +26,13 @@ struct MinimapBlobTests {
     /// border). An item is `"<kind> <type> tile=(x,y)"`.
     private func run(scenario name: String, ticks: Int) throws -> (drawn: Set<String>, clipped: Set<String>)? {
         let repo = repoRoot()
-        guard let icon = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")),
-              let unitEmc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
-              let buildEmc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc")),
-              let teamEmc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/TEAM/TEAM.emc")),
-              let iniData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scenarios/\(name)"))
-        else { return nil }   // install assets absent — skip
+        guard
+            let icon = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")),
+            let unitEmc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
+            let buildEmc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc")),
+            let teamEmc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/TEAM/TEAM.emc")),
+            let iniData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scenarios/\(name)"))
+        else { return nil }  // install assets absent — skip
 
         let scriptInfo = ScriptInfo(try Emc.Program(unitEmc))
         let structureScriptInfo = ScriptInfo(try Emc.Program(buildEmc))
@@ -41,7 +43,10 @@ struct MinimapBlobTests {
         state.loadScenario(ini: ini, iconMap: try IconMap(icon), teamScriptOffsets: teamScriptInfo.offsets)
         let player = playerHouse(ini) ?? .atreides
         state.playerHouseID = UInt8(player.rawValue)
-        for h in 0 ..< 6 { _ = state.houseAllocate(index: UInt8(h)); if state.houses[h].unitCountMax == 0 { state.houses[h].unitCountMax = 39 } }
+        for h in 0 ..< 6 {
+            _ = state.houseAllocate(index: UInt8(h));
+            if state.houses[h].unitCountMax == 0 { state.houses[h].unitCountMax = 39 }
+        }
         state.houses[Int(player.rawValue)].flags.insert(.human)
         state.viewportPosition = Tile32.packXY(x: 32, y: 32)
 
@@ -51,8 +56,14 @@ struct MinimapBlobTests {
             state.unitUpdateMap(1, slot)
         }
 
-        var sim = Simulation(state: state, scriptInfo: scriptInfo, structureScriptInfo: structureScriptInfo,
-                             teamScriptInfo: teamScriptInfo, tickExplosions: true, tickAnimations: true)
+        var sim = Simulation(
+            state: state,
+            scriptInfo: scriptInfo,
+            structureScriptInfo: structureScriptInfo,
+            teamScriptInfo: teamScriptInfo,
+            tickExplosions: true,
+            tickAnimations: true
+        )
         var drawn = Set<String>(), clipped = Set<String>()
         for t in 0 ... ticks {
             if t > 0 { sim.tick() }
@@ -80,8 +91,10 @@ struct MinimapBlobTests {
         guard let r = try run(scenario: "SCENO020.INI", ticks: 1500) else { return }
         // The border spawn really happens (the corner blob's source) — and it lands in the clipped set, so the
         // fixed minimap never plots it.
-        #expect(r.clipped.contains { $0.hasSuffix("tile=(0,0)") },
-                "expected a unit to spawn in the unplayable corner (the Fremen palace wave) — none did")
+        #expect(
+            r.clipped.contains { $0.hasSuffix("tile=(0,0)") },
+            "expected a unit to spawn in the unplayable corner (the Fremen palace wave) — none did"
+        )
         assertNoBorderBlip(r, "SCENO020")
     }
 
@@ -93,7 +106,10 @@ struct MinimapBlobTests {
 
     /// The host's player-house lookup (`AssetStore.playerHouse`) — the `Brain=Human` house.
     private func playerHouse(_ ini: Ini) -> HouseID? {
-        for h in HouseID.allCases where ini.string(section: h.displayName, key: "Brain")?.caseInsensitiveCompare("Human") == .orderedSame { return h }
+        for h in HouseID.allCases
+        where ini.string(section: h.displayName, key: "Brain")?.caseInsensitiveCompare("Human") == .orderedSame {
+            return h
+        }
         return nil
     }
 }

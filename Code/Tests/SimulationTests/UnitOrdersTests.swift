@@ -1,6 +1,7 @@
-import Testing
 import DuneIIContracts
 import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
 
 /// Coverage for the player-order (command) path (`UnitOrders`, OpenDUNE `gui/viewport.c` click→order +
@@ -8,8 +9,12 @@ import DuneIIWorld
 /// lets `Unit_SetAction` load without a real `UNIT.EMC`.
 @Suite("Unit orders (command pipeline)")
 struct UnitOrdersTests {
-    let orders = UnitOrders(scriptInfo: ScriptInfo(program: [UInt16](repeating: 0, count: 64),
-                                                   offsets: (0 ..< 30).map { UInt16($0) }))
+    let orders = UnitOrders(
+        scriptInfo: ScriptInfo(
+            program: [ UInt16 ](repeating: 0, count: 64),
+            offsets: (0 ..< 30).map { UInt16($0) }
+        )
+    )
     private func u(_ t: UnitType) -> UInt8 { UInt8(t.rawValue) }
 
     private func makeState() -> GameState {
@@ -57,18 +62,18 @@ struct UnitOrdersTests {
     @Test("attack order snaps to the enemy on the tile; a turret unit doesn't also move")
     func attackEnemy() {
         var s = makeState()
-        let mover = place(&s, .tank, house: 0, packed: 1300)     // tank has a turret
+        let mover = place(&s, .tank, house: 0, packed: 1300)  // tank has a turret
         let enemy = place(&s, .tank, house: 2, packed: 2000)
         orders.apply(.attack(unit: UInt16(mover), tile: 2000), in: &s)
         #expect(s.units[mover].actionID == UInt8(ActionType.attack.rawValue))
         #expect(s.units[mover].targetAttack == s.indexEncode(s.units[enemy].o.index, type: .unit))
-        #expect(s.units[mover].targetMove == 0)   // turret unit aims, doesn't move
+        #expect(s.units[mover].targetMove == 0)  // turret unit aims, doesn't move
     }
 
     @Test("attack order from a turretless unit also sets targetMove")
     func attackTurretless() {
         var s = makeState()
-        let mover = place(&s, .soldier, house: 0, packed: 1300)   // foot, no turret
+        let mover = place(&s, .soldier, house: 0, packed: 1300)  // foot, no turret
         let enemy = place(&s, .tank, house: 2, packed: 2000)
         orders.apply(.attack(unit: UInt16(mover), tile: 2000), in: &s)
         let enc = s.indexEncode(s.units[enemy].o.index, type: .unit)
@@ -80,7 +85,7 @@ struct UnitOrdersTests {
     func stopOrder() {
         var s = makeState()
         let slot = place(&s, .tank, house: 0, packed: 1300)
-        orders.apply(.move(unit: UInt16(slot), tile: 2000), in: &s)   // give it a move first
+        orders.apply(.move(unit: UInt16(slot), tile: 2000), in: &s)  // give it a move first
         #expect(s.units[slot].targetMove != 0)
         orders.apply(.stop(unit: UInt16(slot)), in: &s)
         #expect(s.units[slot].actionID == UInt8(ActionType.guard_.rawValue))
@@ -112,7 +117,7 @@ struct UnitOrdersTests {
     func setActionOrder() {
         var s = makeState()
         let slot = place(&s, .harvester, house: 0, packed: 1300)
-        orders.apply(.move(unit: UInt16(slot), tile: 2000), in: &s)   // give it a move first
+        orders.apply(.move(unit: UInt16(slot), tile: 2000), in: &s)  // give it a move first
         #expect(s.units[slot].targetMove != 0)
         orders.apply(.setAction(unit: UInt16(slot), action: UInt8(ActionType.return.rawValue)), in: &s)
         #expect(s.units[slot].actionID == UInt8(ActionType.return.rawValue))
@@ -124,8 +129,8 @@ struct UnitOrdersTests {
     @Test("findTargetAround returns an adjacent unit's tile, else the tile itself")
     func findTargetAround() {
         var s = makeState()
-        _ = place(&s, .tank, house: 2, packed: 2001)   // one tile east of 2000
-        #expect(orders.findTargetAround(2000, in: s) == 2001)   // snaps to the adjacent unit
-        #expect(orders.findTargetAround(3000, in: s) == 3000)   // nothing around ⇒ the tile itself
+        _ = place(&s, .tank, house: 2, packed: 2001)  // one tile east of 2000
+        #expect(orders.findTargetAround(2000, in: s) == 2001)  // snaps to the adjacent unit
+        #expect(orders.findTargetAround(3000, in: s) == 3000)  // nothing around ⇒ the tile itself
     }
 }

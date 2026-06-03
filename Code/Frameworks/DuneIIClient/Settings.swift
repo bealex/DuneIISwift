@@ -13,7 +13,10 @@ public struct SettingsView: View {
             Form {
                 Toggle("Sound effects", isOn: Binding(get: { model.soundEnabled }, set: { model.soundEnabled = $0 }))
                 Toggle("Music", isOn: Binding(get: { model.musicEnabled }, set: { model.musicEnabled = $0 }))
-                Picker("Music engine", selection: Binding(get: { model.musicBackend }, set: { model.musicBackend = $0 })) {
+                Picker(
+                    "Music engine",
+                    selection: Binding(get: { model.musicBackend }, set: { model.musicBackend = $0 })
+                ) {
                     ForEach(MusicBackend.allCases, id: \.self) { Text($0.displayName).tag($0) }
                 }
                 .disabled(!model.musicEnabled)

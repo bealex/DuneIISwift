@@ -20,7 +20,7 @@ public enum Cps {
     }
 
     public static func decode(_ data: Data) throws -> Image {
-        let bytes = [UInt8](data)
+        let bytes = [ UInt8 ](data)
         guard bytes.count >= 10 else { throw DecodeError.truncated }
 
         let paletteSize = bytes.u16LE(at: 8)

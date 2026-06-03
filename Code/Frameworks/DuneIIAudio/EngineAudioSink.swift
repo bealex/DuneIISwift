@@ -32,7 +32,7 @@ public final class EngineAudioSink: AudioSink {
         guard let listener, let px = event.positionX, let py = event.positionY else { return 1 }
         let dx = Double(px - listener.x), dy = Double(py - listener.y)
         let dist = (dx * dx + dy * dy).squareRoot()
-        let near = 2.0 * 256, falloff = 18.0 * 256   // sub-tile units
+        let near = 2.0 * 256, falloff = 18.0 * 256  // sub-tile units
         let v = 1 - (dist - near) / (falloff - near)
         return Float(min(1, max(0.12, v)))
     }
@@ -42,15 +42,19 @@ public final class EngineAudioSink: AudioSink {
     ///     real concurrency.
     ///   - sampleRate: the canonical mixing rate every sound is resampled to.
     public init(voices: Int = 24, sampleRate: Double = 22_050) {
-        format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate,
-                               channels: 1, interleaved: false)!
+        format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: 1,
+            interleaved: false
+        )!
         for _ in 0 ..< max(1, voices) {
             let node = AVAudioPlayerNode()
             engine.attach(node)
             engine.connect(node, to: engine.mainMixerNode, format: format)
             nodes.append(node)
         }
-        _ = engine.mainMixerNode   // realise the mixer before start
+        _ = engine.mainMixerNode  // realise the mixer before start
     }
 
     /// Start the audio engine and the player-node pool. Idempotent; on a box with no output device it
@@ -61,7 +65,7 @@ public final class EngineAudioSink: AudioSink {
         engine.prepare()
         do {
             try engine.start()
-            for node in nodes { node.play() }   // keep the pool running, so scheduleBuffer plays at once
+            for node in nodes { node.play() }  // keep the pool running, so scheduleBuffer plays at once
             running = true
         } catch {
             running = false
@@ -79,7 +83,7 @@ public final class EngineAudioSink: AudioSink {
         guard running, enabled, let buffer = buffers[event.sound] else { return }
         let node = nodes[next]
         next = (next + 1) % nodes.count
-        node.volume = volume(for: event)   // distance attenuation (1 for a position-less / UI sound)
+        node.volume = volume(for: event)  // distance attenuation (1 for a position-less / UI sound)
         // `.interrupts` replaces whatever is on this node, so the new sound starts immediately even on a
         // busy voice (round-robin makes that the rare, oldest one).
         node.scheduleBuffer(buffer, at: nil, options: .interrupts, completionHandler: nil)
@@ -88,7 +92,7 @@ public final class EngineAudioSink: AudioSink {
 
     public func stopAll() {
         for node in nodes { node.stop() }
-        if running { for node in nodes { node.play() } }   // keep them running for the next play
+        if running { for node in nodes { node.play() } }  // keep them running for the next play
     }
 
     /// Convert unsigned 8-bit mono PCM @ `sampleRate` into a float32 mono buffer in the `target` format,
@@ -99,22 +103,27 @@ public final class EngineAudioSink: AudioSink {
         let n = source.count
 
         // Output frame count at the target rate (1:1 when the rates match).
-        let outCount = Int(target.sampleRate) == sampleRate
+        let outCount =
+            Int(target.sampleRate) == sampleRate
             ? n
             : max(1, Int((Double(n) * target.sampleRate / Double(sampleRate)).rounded()))
-        guard let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: AVAudioFrameCount(outCount)) else { return nil }
+        guard
+            let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: AVAudioFrameCount(outCount))
+        else {
+            return nil
+        }
         output.frameLength = AVAudioFrameCount(outCount)
         let out = output.floatChannelData![0]
 
         if outCount == n {
             for i in 0 ..< n { out[i] = source[i] }
         } else {
-            let step = Double(n - 1) / Double(max(1, outCount - 1))   // source samples per output sample
+            let step = Double(n - 1) / Double(max(1, outCount - 1))  // source samples per output sample
             for i in 0 ..< outCount {
                 let pos = Double(i) * step
                 let i0 = min(Int(pos), n - 1), i1 = min(i0 + 1, n - 1)
                 let frac = Float(pos - Double(i0))
-                out[i] = source[i0] + (source[i1] - source[i0]) * frac   // linear interpolation
+                out[i] = source[i0] + (source[i1] - source[i0]) * frac  // linear interpolation
             }
         }
         return output

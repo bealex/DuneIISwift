@@ -48,7 +48,7 @@ func emcListing(_ program: Emc.Program, kind: Emc.ObjectKind) -> String {
 /// entry — reached only via `Jump`, never shown by the per-type view — are visible.
 func emcLinearListing(_ program: Emc.Program, kind: Emc.ObjectKind) -> String {
     let lowest = program.offsets.min() ?? 0
-    var lines = ["; ---- linear (whole program; shared subroutines live below the lowest type entry @\(lowest)) ----"]
+    var lines = [ "; ---- linear (whole program; shared subroutines live below the lowest type entry @\(lowest)) ----" ]
     for instruction in Emc.disassemble(program, from: 0, to: program.data.count, kind: kind) {
         var line = String(format: "%5d:  %@", instruction.address, instruction.name)
         if let operand = instruction.operand { line += " \(operand)" }
@@ -61,7 +61,10 @@ func emcLinearListing(_ program: Emc.Program, kind: Emc.ObjectKind) -> String {
 func runEmcDisasm(_ arguments: [String]) {
     let positional = arguments.filter { !$0.hasPrefix("--") }
     let linear = arguments.contains("--linear")
-    guard let path = positional.first, let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+    guard
+        let path = positional.first,
+        let data = try? Data(contentsOf: URL(fileURLWithPath: path))
+    else {
         usage()
         exit(1)
     }
@@ -83,8 +86,7 @@ func makeDirectory(_ url: URL) {
 }
 
 func defaultPalette(_ installDir: URL) -> Palette {
-    if
-        let data = try? Data(contentsOf: installDir.appendingPathComponent("DUNE.PAK")),
+    if let data = try? Data(contentsOf: installDir.appendingPathComponent("DUNE.PAK")),
         let archive = try? Pak.Archive(data),
         let paletteData = archive.data(named: "IBM.PAL"),
         let palette = try? Palette(paletteData)
@@ -97,7 +99,7 @@ func defaultPalette(_ installDir: URL) -> Palette {
 }
 
 func grayscalePalette() -> Palette {
-    var bytes = [UInt8](repeating: 0, count: 768)
+    var bytes = [ UInt8 ](repeating: 0, count: 768)
     for index in 0 ..< 256 {
         let value = UInt8(index >> 2)
         bytes[index * 3] = value
@@ -108,7 +110,12 @@ func grayscalePalette() -> Palette {
 }
 
 func extractEntry(
-    _ data: Data, name: String, into directory: URL, palette: Palette, grayscale: Palette, counts: inout [String: Int]
+    _ data: Data,
+    name: String,
+    into directory: URL,
+    palette: Palette,
+    grayscale: Palette,
+    counts: inout [String: Int]
 ) {
     let base = (name as NSString).deletingPathExtension
     let kind = (name as NSString).pathExtension.uppercased()
@@ -121,8 +128,12 @@ func extractEntry(
                 for (index, frame) in set.frames.enumerated() where frame.width > 0 {
                     let url = folder.appendingPathComponent(String(format: "frame%03d.png", index))
                     try PngWriter.write(
-                        indices: frame.pixels, width: frame.width, height: frame.height,
-                        palette: palette, transparentIndex: 0, to: url
+                        indices: frame.pixels,
+                        width: frame.width,
+                        height: frame.height,
+                        palette: palette,
+                        transparentIndex: 0,
+                        to: url
                     )
                 }
                 counts["SHP", default: 0] += 1
@@ -131,8 +142,11 @@ func extractEntry(
                 let folder = directory.appendingPathComponent("Images")
                 makeDirectory(folder)
                 try PngWriter.write(
-                    indices: image.pixels, width: image.width, height: image.height,
-                    palette: image.palette ?? palette, to: folder.appendingPathComponent("\(base).png")
+                    indices: image.pixels,
+                    width: image.width,
+                    height: image.height,
+                    palette: image.palette ?? palette,
+                    to: folder.appendingPathComponent("\(base).png")
                 )
                 counts["CPS", default: 0] += 1
             case "ICN":
@@ -141,8 +155,11 @@ func extractEntry(
                 let folder = directory.appendingPathComponent("Tiles")
                 makeDirectory(folder)
                 try PngWriter.write(
-                    indices: sheet.indices, width: sheet.width, height: sheet.height,
-                    palette: palette, to: folder.appendingPathComponent("\(base).png")
+                    indices: sheet.indices,
+                    width: sheet.width,
+                    height: sheet.height,
+                    palette: palette,
+                    to: folder.appendingPathComponent("\(base).png")
                 )
                 counts["ICN", default: 0] += 1
             case "WSA":
@@ -152,8 +169,11 @@ func extractEntry(
                 for (index, frame) in animation.frames.enumerated() where animation.width > 0 {
                     let url = folder.appendingPathComponent(String(format: "frame%03d.png", index))
                     try PngWriter.write(
-                        indices: frame, width: animation.width, height: animation.height,
-                        palette: animation.palette ?? palette, to: url
+                        indices: frame,
+                        width: animation.width,
+                        height: animation.height,
+                        palette: animation.palette ?? palette,
+                        to: url
                     )
                 }
                 counts["WSA", default: 0] += 1
@@ -162,7 +182,8 @@ func extractEntry(
                 let folder = directory.appendingPathComponent("Audio")
                 makeDirectory(folder)
                 try WavWriter.write(
-                    samples: sound.samples, sampleRate: max(sound.sampleRate, 1),
+                    samples: sound.samples,
+                    sampleRate: max(sound.sampleRate, 1),
                     to: folder.appendingPathComponent("\(base).wav")
                 )
                 counts["VOC", default: 0] += 1
@@ -171,7 +192,11 @@ func extractEntry(
                 let folder = directory.appendingPathComponent("Scripts")
                 makeDirectory(folder)
                 let listing = emcListing(program, kind: objectKind(path: name, override: nil))
-                try listing.write(to: folder.appendingPathComponent("\(base).emc.txt"), atomically: true, encoding: .utf8)
+                try listing.write(
+                    to: folder.appendingPathComponent("\(base).emc.txt"),
+                    atomically: true,
+                    encoding: .utf8
+                )
                 counts["EMC", default: 0] += 1
             case "FNT":
                 let font = try Fnt.Font(data)
@@ -179,8 +204,12 @@ func extractEntry(
                 let folder = directory.appendingPathComponent("Fonts")
                 makeDirectory(folder)
                 try PngWriter.write(
-                    indices: sheet.indices, width: sheet.width, height: sheet.height,
-                    palette: grayscale, transparentIndex: 0, to: folder.appendingPathComponent("\(base).png")
+                    indices: sheet.indices,
+                    width: sheet.width,
+                    height: sheet.height,
+                    palette: grayscale,
+                    transparentIndex: 0,
+                    to: folder.appendingPathComponent("\(base).png")
                 )
                 counts["FNT", default: 0] += 1
             default:
@@ -196,7 +225,7 @@ func tileSheet(_ tiles: Icn.TileSet) -> (indices: [UInt8], width: Int, height: I
     let rows = max((tiles.tileCount + perRow - 1) / perRow, 1)
     let width = tiles.tileWidth * perRow
     let height = tiles.tileHeight * rows
-    var indices = [UInt8](repeating: 0, count: width * height)
+    var indices = [ UInt8 ](repeating: 0, count: width * height)
     for tile in 0 ..< tiles.tileCount {
         let pixels = tiles.tile(tile)
         let originX = (tile % perRow) * tiles.tileWidth
@@ -218,7 +247,7 @@ func fontSheet(_ font: Fnt.Font) -> (indices: [UInt8], width: Int, height: Int) 
     let rows = max((font.glyphs.count + perRow - 1) / perRow, 1)
     let width = cellWidth * perRow
     let height = cellHeight * rows
-    var indices = [UInt8](repeating: 0, count: width * height)
+    var indices = [ UInt8 ](repeating: 0, count: width * height)
     for (glyphIndex, glyph) in font.glyphs.enumerated() {
         let originX = (glyphIndex % perRow) * cellWidth
         let originY = (glyphIndex / perRow) * cellHeight + glyph.topRows
@@ -229,7 +258,7 @@ func fontSheet(_ font: Fnt.Font) -> (indices: [UInt8], width: Int, height: Int) 
 
                 let px = originX + x
                 let py = originY + y
-                if px < width, py < height { indices[py * width + px] = 255 }   // set pixels -> white
+                if px < width, py < height { indices[py * width + px] = 255 }  // set pixels -> white
             }
         }
     }
@@ -244,12 +273,16 @@ func runExtract(_ arguments: [String]) {
     let palette = defaultPalette(installDir)
     let grayscale = grayscalePalette()
 
-    guard let entries = try? FileManager.default.contentsOfDirectory(at: installDir, includingPropertiesForKeys: nil) else {
+    guard
+        let entries = try? FileManager.default.contentsOfDirectory(at: installDir, includingPropertiesForKeys: nil)
+    else {
         print("assetgen: cannot list \(installDir.path)")
         exit(1)
     }
 
-    let paks = entries.filter { $0.pathExtension.uppercased() == "PAK" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    let paks = entries.filter { $0.pathExtension.uppercased() == "PAK" }.sorted {
+        $0.lastPathComponent < $1.lastPathComponent
+    }
     var counts: [String: Int] = [:]
     for pak in paks {
         guard let data = try? Data(contentsOf: pak), let archive = try? Pak.Archive(data) else { continue }
@@ -257,8 +290,12 @@ func runExtract(_ arguments: [String]) {
         let directory = outputDir.appendingPathComponent(pak.deletingPathExtension().lastPathComponent)
         for entry in archive.entries {
             extractEntry(
-                archive.data(entry), name: entry.name, into: directory,
-                palette: palette, grayscale: grayscale, counts: &counts
+                archive.data(entry),
+                name: entry.name,
+                into: directory,
+                palette: palette,
+                grayscale: grayscale,
+                counts: &counts
             )
         }
     }
@@ -272,7 +309,9 @@ func runExtract(_ arguments: [String]) {
 // MARK: - dispatch
 
 let arguments = Array(CommandLine.arguments.dropFirst())
-guard let command = arguments.first else {
+guard
+    let command = arguments.first
+else {
     print("assetgen — Dune II asset tool")
     usage()
     exit(0)

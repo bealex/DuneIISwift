@@ -7,9 +7,9 @@ import DuneIIWorld
 /// `Documentation/Architecture/FrameInfo.md`.
 public extension Simulation {
     func makeFrameInfo() -> FrameInfo {
-        let width = 64, height = 64    // `g_map` is a fixed 64×64 grid
+        let width = 64, height = 64  // `g_map` is a fixed 64×64 grid
 
-        var tiles = [FrameInfo.Tile]()
+        var tiles = [ FrameInfo.Tile ]()
         tiles.reserveCapacity(state.map.count)
         // Partial fog edges: for a revealed tile bordering the unknown, pick the fog-edge sprite for its
         // 4-neighbour veil bitmask (computed from the binary `isUnveiled` grid — the sim models fog as
@@ -22,15 +22,20 @@ public extension Simulation {
                 let mask = Self.fogEdgeMask(packed: i, width: width, height: height) { state.map[$0].isUnveiled }
                 if mask != 0 { fogEdge = Int(fogEdges[mask]) }
             }
-            tiles.append(FrameInfo.Tile(groundSpriteIndex: Int(tile.groundTileID),
-                                        overlaySpriteIndex: Int(tile.overlayTileID),
-                                        houseID: tile.houseID, isUnveiled: tile.isUnveiled,
-                                        fogEdgeSpriteIndex: fogEdge))
+            tiles.append(
+                FrameInfo.Tile(
+                    groundSpriteIndex: Int(tile.groundTileID),
+                    overlaySpriteIndex: Int(tile.overlayTileID),
+                    houseID: tile.houseID,
+                    isUnveiled: tile.isUnveiled,
+                    fogEdgeSpriteIndex: fogEdge
+                )
+            )
         }
 
-        var units = [FrameInfo.Unit]()
-        var effects = [FrameInfo.Effect]()
-        var blurs = [FrameInfo.Blur]()
+        var units = [ FrameInfo.Unit ]()
+        var effects = [ FrameInfo.Effect ]()
+        var blurs = [ FrameInfo.Blur ]()
         for u in state.units where u.o.flags.contains(.used) {
             // Hidden units (in transport, inside a structure, off-map) are never drawn by `viewport.c`;
             // drawing them leaves a phantom at the unit's stale position (e.g. a harvester frozen at its
@@ -44,32 +49,51 @@ public extension Simulation {
             // A sandworm (`blurTile`) is not a normal SHP draw: the renderer displaces the terrain under
             // its silhouette (`DRAWSPRITE_FLAG_BLUR`). Carry it as a Blur — its body frame is the mask.
             if UnitInfo[type].o.flags.contains(.blurTile) {
-                blurs.append(FrameInfo.Blur(positionX: Int(u.o.position.x), positionY: Int(u.o.position.y),
-                                            sprite: sprites.body))
+                blurs.append(
+                    FrameInfo.Blur(
+                        positionX: Int(u.o.position.x),
+                        positionY: Int(u.o.position.y),
+                        sprite: sprites.body
+                    )
+                )
                 continue
             }
             let house = HouseID(rawValue: Int(state.unitHouseID(u))) ?? .harkonnen
             let isSmoking = u.o.flags.contains(.isSmoking)
-            units.append(FrameInfo.Unit(
-                id: u.o.index, type: type, house: house,
-                positionX: Int(u.o.position.x), positionY: Int(u.o.position.y),
-                body: sprites.body, turret: sprites.turret, overlay: sprites.overlay, isSmoking: isSmoking,
-                isAirUnit: UnitInfo[type].movementType == .winger,
-                hitpoints: Int(u.o.hitpoints), hitpointsMax: Int(UnitInfo[type].o.hitpoints),
-                activity: Self.activity(forActionID: u.actionID)))
+            units.append(
+                FrameInfo.Unit(
+                    id: u.o.index,
+                    type: type,
+                    house: house,
+                    positionX: Int(u.o.position.x),
+                    positionY: Int(u.o.position.y),
+                    body: sprites.body,
+                    turret: sprites.turret,
+                    overlay: sprites.overlay,
+                    isSmoking: isSmoking,
+                    isAirUnit: UnitInfo[type].movementType == .winger,
+                    hitpoints: Int(u.o.hitpoints),
+                    hitpointsMax: Int(UnitInfo[type].o.hitpoints),
+                    activity: Self.activity(forActionID: u.actionID)
+                )
+            )
 
             // Smoke cloud over a damaged-but-alive vehicle, 14px above the unit centre
             // (`viewport.c:615`): frame `180 + (spriteOffset & 3)`, with 183 folded back to 181.
             if isSmoking {
                 var frame = 180 + (Int(u.spriteOffset) & 3)
                 if frame == 183 { frame = 181 }
-                effects.append(FrameInfo.Effect(
-                    positionX: Int(u.o.position.x), positionY: Int(u.o.position.y),
-                    sprite: SpriteLayer(spriteIndex: frame, offsetY: -14)))
+                effects.append(
+                    FrameInfo.Effect(
+                        positionX: Int(u.o.position.x),
+                        positionY: Int(u.o.position.y),
+                        sprite: SpriteLayer(spriteIndex: frame, offsetY: -14)
+                    )
+                )
             }
         }
 
-        var structures = [FrameInfo.Structure]()
+        var structures = [ FrameInfo.Structure ]()
         for s in state.structures where s.o.flags.contains(.used) {
             // Created-but-not-yet-placed structures (`Structure_Create` parks them off-map at (0,0) until
             // they are built onto the map) must not be drawn — otherwise they leave a phantom blip at world
@@ -78,47 +102,77 @@ public extension Simulation {
             if s.o.flags.contains(.isNotOnMap) { continue }
             guard let type = StructureType(rawValue: Int(s.o.type)) else { continue }
             let house = HouseID(rawValue: Int(s.o.houseID)) ?? .harkonnen
-            structures.append(FrameInfo.Structure(
-                id: s.o.index, type: type, house: house,
-                positionX: Int(s.o.position.x), positionY: Int(s.o.position.y),
-                // The health bar uses the **base** HP as the denominator, like OpenDUNE
-                // (`widget_draw.c:725` `GUI_DrawProgressbar(o->hitpoints, si->o.hitpoints)`), NOT the
-                // power-degraded `s.hitpointsMax` — an under-powered structure keeps full hitpoints until it
-                // bleeds down, so dividing by the degraded cap shows an over-full / wrong-length bar (e.g.
-                // an outpost at 400/250 instead of 400/500).
-                hitpoints: Int(s.o.hitpoints), hitpointsMax: Int(StructureInfo[type].o.hitpoints),
-                buildProgress: structureBuildProgress(s, type: type)))
+            structures.append(
+                FrameInfo.Structure(
+                    id: s.o.index,
+                    type: type,
+                    house: house,
+                    positionX: Int(s.o.position.x),
+                    positionY: Int(s.o.position.y),
+                    // The health bar uses the **base** HP as the denominator, like OpenDUNE
+                    // (`widget_draw.c:725` `GUI_DrawProgressbar(o->hitpoints, si->o.hitpoints)`), NOT the
+                    // power-degraded `s.hitpointsMax` — an under-powered structure keeps full hitpoints until it
+                    // bleeds down, so dividing by the degraded cap shows an over-full / wrong-length bar (e.g.
+                    // an outpost at 400/250 instead of 400/500).
+                    hitpoints: Int(s.o.hitpoints),
+                    hitpointsMax: Int(StructureInfo[type].o.hitpoints),
+                    buildProgress: structureBuildProgress(s, type: type)
+                )
+            )
         }
 
         // Active explosions (impacts / unit deaths / building destruction). `spriteID` is already a
         // global index; the sim advances it via `explosionTick`, the renderer just draws the frame.
         for explosion in state.explosions where explosion.active {
-            effects.append(FrameInfo.Effect(
-                positionX: Int(explosion.position.x), positionY: Int(explosion.position.y),
-                sprite: SpriteLayer(spriteIndex: Int(explosion.spriteID))))
+            effects.append(
+                FrameInfo.Effect(
+                    positionX: Int(explosion.position.x),
+                    positionY: Int(explosion.position.y),
+                    sprite: SpriteLayer(spriteIndex: Int(explosion.spriteID))
+                )
+            )
         }
 
-        var houses = [FrameInfo.House]()
+        var houses = [ FrameInfo.House ]()
         for h in state.houses where h.flags.contains(.used) {
             guard let id = HouseID(rawValue: Int(h.index)) else { continue }
-            houses.append(FrameInfo.House(
-                id: id, credits: Int(h.credits), creditsStorage: Int(h.creditsStorage),
-                powerProduction: Int(h.powerProduction), powerUsage: Int(h.powerUsage),
-                radarActivated: h.flags.contains(.radarActivated)))
+            houses.append(
+                FrameInfo.House(
+                    id: id,
+                    credits: Int(h.credits),
+                    creditsStorage: Int(h.creditsStorage),
+                    powerProduction: Int(h.powerProduction),
+                    powerUsage: Int(h.powerUsage),
+                    radarActivated: h.flags.contains(.radarActivated)
+                )
+            )
         }
 
         // The scenario's playable rectangle (g_mapInfos[mapScale]) — the renderer blacks out the border + the
         // camera clamps to it. `MapInfo.scales` is the same table `Map_IsValidPosition` uses for gameplay.
         let info = MapInfo.scales[Int(min(state.mapScale, UInt8(MapInfo.scales.count - 1)))]
-        let mapArea = FrameInfo.MapArea(minX: Int(info.minX), minY: Int(info.minY),
-                                        width: Int(info.sizeX), height: Int(info.sizeY))
+        let mapArea = FrameInfo.MapArea(
+            minX: Int(info.minX),
+            minY: Int(info.minY),
+            width: Int(info.sizeX),
+            height: Int(info.sizeY)
+        )
 
         return FrameInfo(
-            tick: state.timerGame, mapWidth: width, mapHeight: height,
-            tiles: tiles, units: units, structures: structures, effects: effects, houses: houses,
+            tick: state.timerGame,
+            mapWidth: width,
+            mapHeight: height,
+            tiles: tiles,
+            units: units,
+            structures: structures,
+            effects: effects,
+            houses: houses,
             viewportX: Int(Tile32.packedX(state.viewportPosition)) * 256,
             viewportY: Int(Tile32.packedY(state.viewportPosition)) * 256,
-            veiledTileIndex: Int(state.tileIDs.veiled), blurs: blurs, mapArea: mapArea)
+            veiledTileIndex: Int(state.tileIDs.veiled),
+            blurs: blurs,
+            mapArea: mapArea
+        )
     }
 
     /// The 4-neighbour fog-of-war veil bitmask for tile `packed` on a `width × height` grid — bit 0 = N,
@@ -129,20 +183,20 @@ public extension Simulation {
     static func activity(forActionID actionID: UInt8) -> FrameInfo.UnitActivity {
         switch ActionType(rawValue: Int(actionID)) {
             case .attack, .hunt, .ambush, .sabotage: return .attacking
-            case .move, .retreat:                    return .moving
-            case .guard_, .areaGuard:                return .guarding
-            case .harvest, .return:                  return .harvesting
-            default:                                  return .idle   // stop / deploy / die / destruct / none
+            case .move, .retreat: return .moving
+            case .guard_, .areaGuard: return .guarding
+            case .harvest, .return: return .harvesting
+            default: return .idle  // stop / deploy / die / destruct / none
         }
     }
 
     static func fogEdgeMask(packed: Int, width: Int, height: Int, isUnveiled: (Int) -> Bool) -> Int {
         let x = packed % width, y = packed / width
         var mask = 0
-        if y == 0 || !isUnveiled(packed - width) { mask |= 1 << 0 }          // N
-        if x == width - 1 || !isUnveiled(packed + 1) { mask |= 1 << 1 }      // E
-        if y == height - 1 || !isUnveiled(packed + width) { mask |= 1 << 2 } // S
-        if x == 0 || !isUnveiled(packed - 1) { mask |= 1 << 3 }              // W
+        if y == 0 || !isUnveiled(packed - width) { mask |= 1 << 0 }  // N
+        if x == width - 1 || !isUnveiled(packed + 1) { mask |= 1 << 1 }  // E
+        if y == height - 1 || !isUnveiled(packed + width) { mask |= 1 << 2 }  // S
+        if x == 0 || !isUnveiled(packed - 1) { mask |= 1 << 3 }  // W
         return mask
     }
 
@@ -153,7 +207,14 @@ public extension Simulation {
     /// (BUSY factory with a queued object); the refinery is not a factory, so a docked harvester won't show.
     private func structureBuildProgress(_ s: Structure, type: StructureType) -> Double? {
         let si = StructureInfo[type]
-        guard s.state == .busy, s.o.linkedID != 0xFF, s.countDown != 0, si.o.flags.contains(.factory) else { return nil }
+        guard
+            s.state == .busy,
+            s.o.linkedID != 0xFF,
+            s.countDown != 0,
+            si.o.flags.contains(.factory)
+        else {
+            return nil
+        }
         let buildTime: Int
         switch type {
             case .constructionYard:
@@ -161,7 +222,12 @@ public extension Simulation {
                 buildTime = Int(StructureInfo[st].o.buildTime)
             case .repair:
                 let lu = Int(s.o.linkedID)
-                guard lu < state.units.count, let ut = UnitType(rawValue: Int(state.units[lu].o.type)) else { return nil }
+                guard
+                    lu < state.units.count,
+                    let ut = UnitType(rawValue: Int(state.units[lu].o.type))
+                else {
+                    return nil
+                }
                 buildTime = Int(UnitInfo[ut].o.buildTime)
             default:
                 guard let ut = UnitType(rawValue: Int(s.objectType)) else { return nil }

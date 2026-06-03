@@ -24,8 +24,8 @@ public enum WavWriter {
         bytes += uint32(36 + dataLength)
         bytes += Array("WAVE".utf8)
         bytes += Array("fmt ".utf8)
-        bytes += uint32(16)             // PCM fmt chunk size
-        bytes += uint16(1)              // format = PCM
+        bytes += uint32(16)  // PCM fmt chunk size
+        bytes += uint16(1)  // format = PCM
         bytes += uint16(channels)
         bytes += uint32(sampleRate)
         bytes += uint32(byteRate)

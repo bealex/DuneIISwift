@@ -1,18 +1,19 @@
 import Foundation
 import Testing
+
 @testable import DuneIIFormats
 
 @Suite("Pak")
 struct PakTests {
     // Two entries: "A" = [0x11,0x22] at offset 16, "B" = [0x33] at offset 18; 16-byte table.
     static let synthetic = Data([
-        0x10, 0x00, 0x00, 0x00,   // offset of "A" = 16
-        0x41, 0x00,               // "A\0"
-        0x12, 0x00, 0x00, 0x00,   // offset of "B" = 18
-        0x42, 0x00,               // "B\0"
-        0x00, 0x00, 0x00, 0x00,   // terminating zero offset
-        0x11, 0x22,               // A data (at 16)
-        0x33,                     // B data (at 18)
+        0x10, 0x00, 0x00, 0x00,  // offset of "A" = 16
+        0x41, 0x00,  // "A\0"
+        0x12, 0x00, 0x00, 0x00,  // offset of "B" = 18
+        0x42, 0x00,  // "B\0"
+        0x00, 0x00, 0x00, 0x00,  // terminating zero offset
+        0x11, 0x22,  // A data (at 16)
+        0x33,  // B data (at 18)
     ])
 
     @Test("parses entries, offsets and sizes")
@@ -27,7 +28,7 @@ struct PakTests {
     func extract() throws {
         let archive = try Pak.Archive(PakTests.synthetic)
         #expect(archive.data(named: "A") == Data([ 0x11, 0x22 ]))
-        #expect(archive.data(named: "b") == Data([ 0x33 ]))   // last entry runs to end-of-file
+        #expect(archive.data(named: "b") == Data([ 0x33 ]))  // last entry runs to end-of-file
         #expect(archive.data(named: "missing") == nil)
     }
 

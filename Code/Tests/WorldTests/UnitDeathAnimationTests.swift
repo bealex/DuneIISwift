@@ -1,6 +1,7 @@
 import DuneIIContracts
 import Foundation
 import Testing
+
 @testable import DuneIIWorld
 
 /// The "squish" sound when infantry is crushed under a tracked/heavy unit. Driving over a foot unit sets its
@@ -14,15 +15,21 @@ struct UnitDeathAnimationTests {
     /// emitted the squish voice (`SoundID(35)`, the `Animation_Func_PlayVoice` cue).
     private func emitsSquish(kind: AnimationKind, row: Int) -> Bool {
         var state = GameState()
-        state.animationStart(tableIndex: row, tile: Tile32(x: 2560, y: 2560), tileLayout: 0, houseID: 0,
-                             iconGroup: 4, kind: kind)
-        for _ in 0 ..< 6 { state.animationTick() }   // step through SET_OVERLAY_TILE → PLAY_VOICE → PAUSE
+        state.animationStart(
+            tableIndex: row,
+            tile: Tile32(x: 2560, y: 2560),
+            tileLayout: 0,
+            houseID: 0,
+            iconGroup: 4,
+            kind: kind
+        )
+        for _ in 0 ..< 6 { state.animationTick() }  // step through SET_OVERLAY_TILE → PLAY_VOICE → PAUSE
         return state.soundEvents.contains { $0.sound == SoundID(35) }
     }
 
     @Test("squished rows (2,3) play voice 35; normal rows (0,1) are silent — both infantry display modes")
     func squishVoiceRows() {
-        for kind in [AnimationKind.unitScript1, .unitScript2] {
+        for kind in [ AnimationKind.unitScript1, .unitScript2 ] {
             #expect(emitsSquish(kind: kind, row: 2), "\(kind) row 2 (squished) should play the squish voice")
             #expect(emitsSquish(kind: kind, row: 3), "\(kind) row 3 (squished) should play the squish voice")
             #expect(!emitsSquish(kind: kind, row: 0), "\(kind) row 0 (normal death) must be silent")

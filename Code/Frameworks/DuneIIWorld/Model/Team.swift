@@ -22,13 +22,13 @@ public struct Team: Sendable, Equatable, Codable {
     public var members: UInt16 = 0
     public var minMembers: UInt16 = 0
     public var maxMembers: UInt16 = 0
-    public var movementType: UInt16 = 0     // MovementType
-    public var action: UInt16 = 0           // current TeamActionType
-    public var actionStart: UInt16 = 0      // the TeamActionType it starts with
+    public var movementType: UInt16 = 0  // MovementType
+    public var action: UInt16 = 0  // current TeamActionType
+    public var actionStart: UInt16 = 0  // the TeamActionType it starts with
     public var houseID: UInt8 = 0
     public var position: Tile32 = Tile32(x: 0, y: 0)
-    public var targetTile: UInt16 = 0       // used as a bool (set or not)
-    public var target: UInt16 = 0           // encoded index
+    public var targetTile: UInt16 = 0  // used as a bool (set or not)
+    public var target: UInt16 = 0  // encoded index
     public var script: ScriptEngine = ScriptEngine()
 
     public init() {}

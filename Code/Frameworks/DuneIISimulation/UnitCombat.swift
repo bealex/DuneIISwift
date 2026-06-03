@@ -53,7 +53,11 @@ public struct UnitCombat: Sendable {
                 if state.structures[s].o.houseID == state.unitHouseID(state.units[slot]) { return 0 }
                 let linked = state.units[slot].o.linkedID
                 if linked == 0xFF { return 1 }
-                return movement.unit.isValidMovementIntoStructure(state.units[Int(linked)], state.structures[s], in: state) != 0 ? 1 : 0
+                return movement.unit.isValidMovementIntoStructure(
+                    state.units[Int(linked)],
+                    state.structures[s],
+                    in: state
+                ) != 0 ? 1 : 0
             default:
                 return 1
         }
@@ -70,7 +74,8 @@ public struct UnitCombat: Sendable {
         if linked != 0xFF {
             let origin = state.units[Int(linked)].originEncoded
             if let s = state.indexGetStructure(origin),
-               state.structures[s].state == .idle, state.structures[s].o.script.variables[4] == 0 {
+                state.structures[s].state == .idle, state.structures[s].o.script.variables[4] == 0
+            {
                 let encoded = state.indexEncode(state.structures[s].o.index, type: .structure)
                 state.objectScriptVariable4Link(unitEnc, encoded)
                 state.units[slot].targetMove = state.units[slot].o.script.variables[4]
@@ -117,31 +122,41 @@ public struct UnitCombat: Sendable {
                 if state.units[u2].targetLast.x != 0 || state.units[u2].targetLast.y != 0 {
                     state.units[slot].targetMove = state.indexEncode(state.units[u2].targetLast.packed, type: .tile)
                 } else if state.units[u2].o.type == UInt8(UnitType.harvester.rawValue)
-                            && state.unitHouseID(state.units[u2]) != state.playerHouseID {
+                    && state.unitHouseID(state.units[u2]) != state.playerHouseID
+                {
                     let spice = movement.map.searchSpice(state.units[slot].o.position.packed, radius: 20, in: state)
                     state.units[slot].targetMove = state.indexEncode(spice, type: .tile)
                 }
                 return 1
 
             case .unit:
-                guard let u2 = state.indexGetUnit(state.units[slot].targetMove),
-                      state.units[u2].o.flags.contains(.allocated) else { return 0 }
+                guard
+                    let u2 = state.indexGetUnit(state.units[slot].targetMove),
+                    state.units[u2].o.flags.contains(.allocated)
+                else { return 0 }
                 let isHarvester = state.units[u2].o.type == UInt8(UnitType.harvester.rawValue)
 
                 var best = -1
                 var minDistance: Int16 = 0
                 var find = PoolFind(houseID: state.unitHouseID(state.units[slot]))
                 loop: while let s2 = state.structureFind(&find) {
-                    let distance = Int16(bitPattern: Tile32.distanceRoundedUp(from: state.structures[s2].o.position,
-                                                                             to: state.units[slot].o.position))
+                    let distance = Int16(
+                        bitPattern: Tile32.distanceRoundedUp(
+                            from: state.structures[s2].o.position,
+                            to: state.units[slot].o.position
+                        )
+                    )
                     let wanted = isHarvester ? StructureType.refinery : .repair
                     if state.structures[s2].o.type != UInt8(wanted.rawValue)
                         || state.structures[s2].state != .idle
-                        || state.structures[s2].o.script.variables[4] != 0 { continue }
+                        || state.structures[s2].o.script.variables[4] != 0
+                    {
+                        continue
+                    }
                     if minDistance != 0 && distance >= minDistance { if isHarvester { break loop } else { continue } }
                     minDistance = distance
                     best = s2
-                    if isHarvester { break loop }   // a harvester takes the first idle refinery
+                    if isHarvester { break loop }  // a harvester takes the first idle refinery
                 }
                 guard best != -1 else { return 0 }
                 // SEAM: Unit_Select(NULL) deselect (GUI).
@@ -151,8 +166,10 @@ public struct UnitCombat: Sendable {
                 state.unitUpdateMap(0, u2)
                 state.unitHide(u2)
 
-                state.objectScriptVariable4Link(state.indexEncode(state.units[slot].o.index, type: .unit),
-                                                state.indexEncode(state.structures[best].o.index, type: .structure))
+                state.objectScriptVariable4Link(
+                    state.indexEncode(state.units[slot].o.index, type: .unit),
+                    state.indexEncode(state.structures[best].o.index, type: .structure)
+                )
                 state.units[slot].targetMove = state.units[slot].o.script.variables[4]
 
                 if !isHarvester { return 0 }
@@ -175,8 +192,10 @@ public struct UnitCombat: Sendable {
         if Tools.indexType(state.units[slot].targetMove) == .unit { return 0 }
 
         if Tools.indexType(state.units[slot].targetMove) == .structure {
-            guard let s = state.indexGetStructure(state.units[slot].targetMove),
-                  let stype = StructureType(rawValue: Int(state.structures[s].o.type)) else { return 0 }
+            guard
+                let s = state.indexGetStructure(state.units[slot].targetMove),
+                let stype = StructureType(rawValue: Int(state.structures[s].o.type))
+            else { return 0 }
 
             if stype == .starport {
                 var ret: UInt16 = 0
@@ -195,7 +214,8 @@ public struct UnitCombat: Sendable {
 
             if (state.structures[s].state == .idle
                 || (StructureInfo[stype].o.flags.contains(.busyStateIsIncoming) && state.structures[s].state == .busy))
-                && state.structures[s].o.linkedID == 0xFF {
+                && state.structures[s].o.linkedID == 0xFF
+            {
                 state.unitEnterStructure(Int(state.units[slot].o.linkedID), s)
                 state.objectScriptVariable4Clear(.unit(slot))
                 state.units[slot].targetMove = 0
@@ -227,7 +247,7 @@ public struct UnitCombat: Sendable {
         movement.unit.setSpeed(&u2, speed: 0, gameSpeed: state.gameSpeed)
         state.units[passenger] = u2
 
-        state.units[slot].o.linkedID = state.units[passenger].o.linkedID   // shift the next passenger in
+        state.units[slot].o.linkedID = state.units[passenger].o.linkedID  // shift the next passenger in
         state.units[passenger].o.linkedID = 0xFF
         if state.units[slot].o.linkedID != 0xFF { return 1 }
 
@@ -316,7 +336,9 @@ public struct UnitCombat: Sendable {
         // A player-built structure reveals to all houses (`0xFF`) in stock Dune II; with the debug
         // `aiFogOfWar` on, only to the player + AI houses that have already found the player (the mask is
         // `0xFF` with the flag off, so the stock path is unchanged). See `Architecture/AIFogOfWar.md`.
-        if houseID == state.playerHouseID { state.structures[slot].o.seenByHouses |= state.playerObjectVisibilityMask() }
+        if houseID == state.playerHouseID {
+            state.structures[slot].o.seenByHouses |= state.playerObjectVisibilityMask()
+        }
         state.structures[slot].o.flags.remove(.isNotOnMap)
         let corner = Tile32.unpack(position)
         state.structures[slot].o.position = Tile32(x: corner.x & 0xFF00, y: corner.y & 0xFF00)
@@ -328,8 +350,8 @@ public struct UnitCombat: Sendable {
             let count = UInt16(StructureLayoutInfo[si.layout].tileCount)
             state.structures[slot].o.hitpoints &-= (si.o.hitpoints / 2) &* tilesWithoutSlab / count
         }
-        state.structures[slot].o.flags.insert(.degrades)   // 1.07 (non-enhanced): a placed structure always degrades
-        state.structures[slot].o.script.reset()            // Script_Reset; Script_Load is deferred to GameLoop_Structure
+        state.structures[slot].o.flags.insert(.degrades)  // 1.07 (non-enhanced): a placed structure always degrades
+        state.structures[slot].o.script.reset()  // Script_Reset; Script_Load is deferred to GameLoop_Structure
         state.structures[slot].o.script.variables[0] = 0
         state.structures[slot].o.script.variables[4] = 0
         state.structures[slot].o.script.delay = 0
@@ -351,7 +373,11 @@ public struct UnitCombat: Sendable {
     /// 0xFFFE) is a seam; an AI gets its full upgrade immediately. Returns the slot, or `nil`.
     func structureCreate(type: StructureType, houseID: UInt8, position: UInt16, in state: inout GameState) -> Int? {
         if houseID >= 6 { return nil }
-        guard let slot = state.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(type.rawValue)) else { return nil }
+        guard
+            let slot = state.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(type.rawValue))
+        else {
+            return nil
+        }
         let si = StructureInfo[type]
         state.structures[slot].o.houseID = houseID
         state.structures[slot].creatorHouseID = UInt16(houseID)
@@ -361,8 +387,12 @@ public struct UnitCombat: Sendable {
         state.structures[slot].state = .justBuilt
         state.structures[slot].o.hitpoints = si.o.hitpoints
         state.structures[slot].hitpointsMax = si.o.hitpoints
-        if houseID == UInt8(HouseID.harkonnen.rawValue) && type == .lightVehicle { state.structures[slot].upgradeLevel = 1 }
-        if si.o.flags.contains(.factory) { state.structures[slot].upgradeTimeLeft = state.structureIsUpgradable(slot) ? 100 : 0 }
+        if houseID == UInt8(HouseID.harkonnen.rawValue) && type == .lightVehicle {
+            state.structures[slot].upgradeLevel = 1
+        }
+        if si.o.flags.contains(.factory) {
+            state.structures[slot].upgradeTimeLeft = state.structureIsUpgradable(slot) ? 100 : 0
+        }
         state.structures[slot].objectType = 0xFFFF
         // SEAM: Structure_BuildObject(s, 0xFFFE) — the GUI build-menu / `available`-flag handler.
         state.structures[slot].countDown = 0
@@ -385,12 +415,18 @@ public struct UnitCombat: Sendable {
     /// ferried to it (`viewport.c:210`), so a 2nd/3rd refinery each get one.
     @discardableResult
     public func structurePlaceReady(factory slot: Int, position: UInt16, in state: inout GameState) -> Bool {
-        guard slot >= 0, slot < state.structures.count,
-              StructureType(rawValue: Int(state.structures[slot].o.type)) == .constructionYard,
-              state.structures[slot].state == .ready else { return false }
+        guard
+            slot >= 0,
+            slot < state.structures.count,
+            StructureType(rawValue: Int(state.structures[slot].o.type)) == .constructionYard,
+            state.structures[slot].state == .ready
+        else { return false }
         let product = Int(state.structures[slot].o.linkedID)
-        guard product != 0xFF, product < state.structures.count,
-              state.structures[product].o.flags.contains(.used) else { return false }
+        guard
+            product != 0xFF,
+            product < state.structures.count,
+            state.structures[product].o.flags.contains(.used)
+        else { return false }
         let placedType = StructureType(rawValue: Int(state.structures[product].o.type))
         if !structurePlace(product, position: position, in: &state) { return false }
         // The factory released the product and is free to build again (the `Structure_BuildObject(s, 0xFFFE)`
@@ -449,16 +485,25 @@ public struct UnitCombat: Sendable {
         let buildTime: UInt16
         if st != .constructionYard {
             guard let ut = UnitType(rawValue: Int(objectType)),
-                  let u = unitCreate(index: Pool.unitIndexInvalid, type: UInt8(objectType), houseID: houseID,
-                                     position: Tile32(x: 0xFFFF, y: 0xFFFF), orientation: 0, in: &state) else {
+                let u = unitCreate(
+                    index: Pool.unitIndexInvalid,
+                    type: UInt8(objectType),
+                    houseID: houseID,
+                    position: Tile32(x: 0xFFFF, y: 0xFFFF),
+                    orientation: 0,
+                    in: &state
+                )
+            else {
                 state.structures[slot].o.flags.remove(.onHold)
-                return false   // SEAM (player): GUI "unable to create more".
+                return false  // SEAM (player): GUI "unable to create more".
             }
             objIndex = state.units[u].o.index
             buildTime = UnitInfo[ut].o.buildTime
         } else {
-            guard let st2 = StructureType(rawValue: Int(objectType)),
-                  let sNew = structureCreate(type: st2, houseID: houseID, position: 0xFFFF, in: &state) else {
+            guard
+                let st2 = StructureType(rawValue: Int(objectType)),
+                let sNew = structureCreate(type: st2, houseID: houseID, position: 0xFFFF, in: &state)
+            else {
                 state.structures[slot].o.flags.remove(.onHold)
                 return false
             }
@@ -486,20 +531,34 @@ public struct UnitCombat: Sendable {
     /// `price` is the CHOAM amount charged on send (the GUI's `h->credits -= amount`; `widget_click.c:1308`),
     /// refunded if the unit can't be allocated. `0` (the default) keeps the EMC-only behaviour — no charge —
     /// so existing callers/goldens are unchanged; the duneii client passes the rolled `starportPrice`.
-    public func structureStarportOrder(slot: Int, objectType: UInt16, price: UInt16 = 0,
-                                       in state: inout GameState) -> Bool {
-        guard StructureType(rawValue: Int(state.structures[slot].o.type)) == .starport,
-              UnitType(rawValue: Int(objectType)) != nil else { return false }
+    public func structureStarportOrder(
+        slot: Int,
+        objectType: UInt16,
+        price: UInt16 = 0,
+        in state: inout GameState
+    ) -> Bool {
+        guard
+            StructureType(rawValue: Int(state.structures[slot].o.type)) == .starport,
+            UnitType(rawValue: Int(objectType)) != nil
+        else { return false }
         let typeIndex = Int(objectType)
         if typeIndex >= state.starportAvailable.count || state.starportAvailable[typeIndex] <= 0 { return false }
 
         let houseID = state.structures[slot].o.houseID
         let h = Int(houseID)
-        let charged = min(state.houses[h].credits, price)   // the GUI greys out unaffordable orders; clamp anyway
+        let charged = min(state.houses[h].credits, price)  // the GUI greys out unaffordable orders; clamp anyway
         state.houses[h].credits &-= charged
-        guard let u = unitCreate(index: Pool.unitIndexInvalid, type: UInt8(objectType), houseID: houseID,
-                                 position: Tile32(x: 0xFFFF, y: 0xFFFF), orientation: 0, in: &state) else {
-            state.houses[h].credits &+= charged   // pool full — refund what we charged (GUI text seam)
+        guard
+            let u = unitCreate(
+                index: Pool.unitIndexInvalid,
+                type: UInt8(objectType),
+                houseID: houseID,
+                position: Tile32(x: 0xFFFF, y: 0xFFFF),
+                orientation: 0,
+                in: &state
+            )
+        else {
+            state.houses[h].credits &+= charged  // pool full — refund what we charged (GUI text seam)
             return false
         }
 
@@ -521,9 +580,11 @@ public struct UnitCombat: Sendable {
     public func mcvDeploy(slot: Int, in state: inout GameState) -> UInt16 {
         state.unitUpdateMap(0, slot)
         let base = Int(state.units[slot].o.position.packed)
-        for off in [0, -1, -64, -65] {
+        for off in [ 0, -1, -64, -65 ] {
             let pos = UInt16(truncatingIfNeeded: base + off)
-            if structureCreate(type: .constructionYard, houseID: state.units[slot].o.houseID, position: pos, in: &state) != nil {
+            if structureCreate(type: .constructionYard, houseID: state.units[slot].o.houseID, position: pos, in: &state)
+                != nil
+            {
                 state.unitRemove(slot)
                 return 1
             }
@@ -542,14 +603,30 @@ public struct UnitCombat: Sendable {
     public func randomSoldier(slot: Int, action: UInt16, in state: inout GameState) -> UInt16 {
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
         if UInt16(state.random256.next()) >= UnitInfo[ut].o.spawnChance { return 0 }
-        let position = Tile32.moveByRandom(state.units[slot].o.position, distance: 20, center: true, rng: &state.random256)
+        let position = Tile32.moveByRandom(
+            state.units[slot].o.position,
+            distance: 20,
+            center: true,
+            rng: &state.random256
+        )
         let orientation = Int8(bitPattern: state.random256.next())
-        guard let nu = unitCreate(index: Pool.unitIndexInvalid, type: UInt8(UnitType.soldier.rawValue),
-                                  houseID: state.units[slot].o.houseID, position: position,
-                                  orientation: orientation, in: &state) else { return 0 }
+        guard
+            let nu = unitCreate(
+                index: Pool.unitIndexInvalid,
+                type: UInt8(UnitType.soldier.rawValue),
+                houseID: state.units[slot].o.houseID,
+                position: position,
+                orientation: orientation,
+                in: &state
+            )
+        else { return 0 }
         state.units[nu].deviated = state.units[slot].deviated
-        movement.actions.setAction(slot: nu, action: UInt8(truncatingIfNeeded: action),
-                                   scriptInfo: movement.scriptInfo, in: &state)
+        movement.actions.setAction(
+            slot: nu,
+            action: UInt8(truncatingIfNeeded: action),
+            scriptInfo: movement.scriptInfo,
+            in: &state
+        )
         return 1
     }
 
@@ -564,9 +641,15 @@ public struct UnitCombat: Sendable {
         if !UnitInfo[ut].o.flags.contains(.canBePickedUp) || state.units[slot].deviated != 0 { return 0 }
 
         let encoded = state.indexEncode(state.units[slot].o.index, type: .unit)
-        guard let u2 = unitCallUnitByType(type: UInt8(truncatingIfNeeded: type),
-                                          houseID: state.unitHouseID(state.units[slot]),
-                                          target: encoded, createCarryall: false, in: &state) else { return 0 }
+        guard
+            let u2 = unitCallUnitByType(
+                type: UInt8(truncatingIfNeeded: type),
+                houseID: state.unitHouseID(state.units[slot]),
+                target: encoded,
+                createCarryall: false,
+                in: &state
+            )
+        else { return 0 }
         let encoded2 = state.indexEncode(state.units[u2].o.index, type: .unit)
         state.objectScriptVariable4Link(encoded, encoded2)
         state.units[u2].targetMove = encoded
@@ -589,10 +672,17 @@ public struct UnitCombat: Sendable {
         if ut == .sandworm || ui.movementType == .winger { return false }
 
         if let slot2 = state.unitGetByPackedTile(packed), slot2 != slot {
-            if movement.house.areAllied(state.unitHouseID(state.units[slot2]), state.unitHouseID(state.units[slot]),
-                                        playerHouseID: state.playerHouseID) { return true }
+            if movement.house.areAllied(
+                state.unitHouseID(state.units[slot2]),
+                state.unitHouseID(state.units[slot]),
+                playerHouseID: state.playerHouseID
+            ) {
+                return true
+            }
             if ui.movementType != .tracked { return true }
-            if let ut2 = UnitType(rawValue: Int(state.units[slot2].o.type)), UnitInfo[ut2].movementType != .foot { return true }
+            if let ut2 = UnitType(rawValue: Int(state.units[slot2].o.type)), UnitInfo[ut2].movementType != .foot {
+                return true
+            }
         }
 
         return state.structureGetByPackedTile(packed) != nil
@@ -646,8 +736,13 @@ public struct UnitCombat: Sendable {
     /// its var-4). With `createCarryall` and none free (and `type == CARRYALL`), spawn a fresh off-map
     /// scenario carryall (placement guards bypassed via `validateStrictIfZero`). Returns the unit slot, or nil.
     @discardableResult
-    public func unitCallUnitByType(type: UInt8, houseID: UInt8, target: UInt16,
-                                   createCarryall: Bool, in state: inout GameState) -> Int? {
+    public func unitCallUnitByType(
+        type: UInt8,
+        houseID: UInt8,
+        target: UInt16,
+        createCarryall: Bool,
+        in state: inout GameState
+    ) -> Int? {
         var found: Int?
         var find = PoolFind(houseID: houseID, type: UInt16(type))
         while let u = state.unitFind(&find) {
@@ -658,8 +753,14 @@ public struct UnitCombat: Sendable {
 
         if createCarryall, found == nil, type == UInt8(UnitType.carryall.rawValue) {
             state.validateStrictIfZero &+= 1
-            let slot = unitCreate(index: Pool.unitIndexInvalid, type: type, houseID: houseID,
-                                  position: Tile32(x: 0, y: 0), orientation: 96, in: &state)
+            let slot = unitCreate(
+                index: Pool.unitIndexInvalid,
+                type: type,
+                houseID: houseID,
+                position: Tile32(x: 0, y: 0),
+                orientation: 96,
+                in: &state
+            )
             state.validateStrictIfZero &-= 1
             if let slot { state.units[slot].o.flags.insert(.byScenario); found = slot }
         }
@@ -677,9 +778,15 @@ public struct UnitCombat: Sendable {
     /// `nil` if allocation fails or the destination tile is occupied. A `0xFFFF:0xFFFF` position creates an
     /// off-map (`isNotOnMap`) unit. The map-redraw seams are inherited from `unitUpdateMap`/`setAction`.
     @discardableResult
-    public func unitCreate(index: UInt16, type: UInt8, houseID: UInt8,
-                           position: Tile32, orientation: Int8, in state: inout GameState) -> Int? {
-        if houseID >= 6 { return nil }                                  // HOUSE_MAX
+    public func unitCreate(
+        index: UInt16,
+        type: UInt8,
+        houseID: UInt8,
+        position: Tile32,
+        orientation: Int8,
+        in state: inout GameState
+    ) -> Int? {
+        if houseID >= 6 { return nil }  // HOUSE_MAX
         guard let ut = UnitType(rawValue: Int(type)) else { return nil }  // typeID >= UNIT_MAX
         let ui = UnitInfo[ut]
 
@@ -711,7 +818,7 @@ public struct UnitCombat: Sendable {
         state.units[slot].o.linkedID = 0xFF
         state.units[slot].o.script.delay = 0
         state.units[slot].actionID = UInt8(ActionType.guard_.rawValue)
-        state.units[slot].nextActionID = 0xFF   // ACTION_INVALID
+        state.units[slot].nextActionID = 0xFF  // ACTION_INVALID
         state.units[slot].fireDelay = 0
         state.units[slot].distanceToDestination = 0x7FFF
         state.units[slot].targetMove = 0
@@ -721,7 +828,7 @@ public struct UnitCombat: Sendable {
         state.units[slot].blinkCounter = 0
         state.units[slot].timer = 0
 
-        state.units[slot].o.script.reset()   // Script_Reset(&u->o.script, g_scriptUnit)
+        state.units[slot].o.script.reset()  // Script_Reset(&u->o.script, g_scriptUnit)
         state.units[slot].o.flags.insert(.allocated)
 
         if ui.movementType == .tracked {
@@ -745,8 +852,10 @@ public struct UnitCombat: Sendable {
 
         state.unitUpdateMap(1, slot)
 
-        let action = houseID == state.playerHouseID ? UInt8(ui.o.actionsPlayer[3].rawValue)
-                                                    : UInt8(truncatingIfNeeded: ui.actionAI)
+        let action =
+            houseID == state.playerHouseID
+            ? UInt8(ui.o.actionsPlayer[3].rawValue)
+            : UInt8(truncatingIfNeeded: ui.actionAI)
         actions.setAction(slot: slot, action: action, scriptInfo: scriptInfo, in: &state)
         return slot
     }
@@ -758,15 +867,25 @@ public struct UnitCombat: Sendable {
     /// cargo, *not* the carryall), or the winger itself — so a caller stamping `originEncoded` lands it on the
     /// right unit. `nil` on failure. Draws `Random256` (the spawn edge) + the `findLocationTile` LCG draws.
     @discardableResult
-    public func unitCreateWrapper(houseID: UInt8, type: UnitType, destination: UInt16, in state: inout GameState) -> Int? {
-        let tile = Tile32.unpack(movement.map.findLocationTile(UInt16(state.random256.next() & 3), houseID: houseID, in: &state))
+    public func unitCreateWrapper(houseID: UInt8, type: UnitType, destination: UInt16, in state: inout GameState)
+        -> Int?
+    {
+        let tile = Tile32.unpack(
+            movement.map.findLocationTile(UInt16(state.random256.next() & 3), houseID: houseID, in: &state)
+        )
         let orientation = Tile32.direction(from: tile, to: Tile32(x: 0x2000, y: 0x2000))
         let setDest = UnitScriptFunctions(unitPrimitives: movement.unit)
 
         if UnitInfo[type].movementType == .winger {
             state.validateStrictIfZero &+= 1
-            let u = unitCreate(index: Pool.unitIndexInvalid, type: UInt8(type.rawValue), houseID: houseID,
-                               position: tile, orientation: orientation, in: &state)
+            let u = unitCreate(
+                index: Pool.unitIndexInvalid,
+                type: UInt8(type.rawValue),
+                houseID: houseID,
+                position: tile,
+                orientation: orientation,
+                in: &state
+            )
             state.validateStrictIfZero &-= 1
             guard let u else { return nil }
             state.units[u].o.flags.insert(.byScenario)
@@ -775,26 +894,47 @@ public struct UnitCombat: Sendable {
         }
 
         state.validateStrictIfZero &+= 1
-        let carryallOpt = unitCreate(index: Pool.unitIndexInvalid, type: UInt8(UnitType.carryall.rawValue),
-                                     houseID: houseID, position: tile, orientation: orientation, in: &state)
+        let carryallOpt = unitCreate(
+            index: Pool.unitIndexInvalid,
+            type: UInt8(UnitType.carryall.rawValue),
+            houseID: houseID,
+            position: tile,
+            orientation: orientation,
+            in: &state
+        )
         state.validateStrictIfZero &-= 1
-        guard let carryall = carryallOpt else {
-            if type == .harvester && state.houses[Int(houseID)].harvestersIncoming == 0 { state.houses[Int(houseID)].harvestersIncoming &+= 1 }
+        guard
+            let carryall = carryallOpt
+        else {
+            if type == .harvester && state.houses[Int(houseID)].harvestersIncoming == 0 {
+                state.houses[Int(houseID)].harvestersIncoming &+= 1
+            }
             return nil
         }
 
         if movement.house.areAllied(houseID, state.playerHouseID, playerHouseID: state.playerHouseID)
-            || state.unitIsTypeOnMap(houseID: houseID, typeID: UInt8(UnitType.carryall.rawValue)) {
+            || state.unitIsTypeOnMap(houseID: houseID, typeID: UInt8(UnitType.carryall.rawValue))
+        {
             state.units[carryall].o.flags.insert(.byScenario)
         }
 
         state.validateStrictIfZero &+= 1
-        let unitOpt = unitCreate(index: Pool.unitIndexInvalid, type: UInt8(type.rawValue), houseID: houseID,
-                                 position: Tile32(x: 0xFFFF, y: 0xFFFF), orientation: 0, in: &state)
+        let unitOpt = unitCreate(
+            index: Pool.unitIndexInvalid,
+            type: UInt8(type.rawValue),
+            houseID: houseID,
+            position: Tile32(x: 0xFFFF, y: 0xFFFF),
+            orientation: 0,
+            in: &state
+        )
         state.validateStrictIfZero &-= 1
-        guard let cargo = unitOpt else {
+        guard
+            let cargo = unitOpt
+        else {
             state.unitRemove(carryall)
-            if type == .harvester && state.houses[Int(houseID)].harvestersIncoming == 0 { state.houses[Int(houseID)].harvestersIncoming &+= 1 }
+            if type == .harvester && state.houses[Int(houseID)].harvestersIncoming == 0 {
+                state.houses[Int(houseID)].harvestersIncoming &+= 1
+            }
             return nil
         }
 
@@ -802,7 +942,7 @@ public struct UnitCombat: Sendable {
         state.units[carryall].o.linkedID = UInt8(truncatingIfNeeded: Int(state.units[cargo].o.index))
         if type == .harvester { state.units[cargo].amount = 1 }
         if destination != 0 { setDest.unitSetDestination(slot: carryall, destination, in: &state) }
-        return cargo   // OpenDUNE returns the ferried cargo, not the carryall (so `originEncoded` lands on it)
+        return cargo  // OpenDUNE returns the ferried cargo, not the carryall (so `originEncoded` lands on it)
     }
 
     /// `House_EnsureHarvesterAvailable` (`house.c:298`): if the house has no harvester on the map, in a
@@ -825,8 +965,12 @@ public struct UnitCombat: Sendable {
         if state.unitIsTypeOnMap(houseID: houseID, typeID: UInt8(UnitType.harvester.rawValue)) { return }
         var rf = PoolFind(houseID: houseID, type: UInt16(StructureType.refinery.rawValue))
         guard let refinery = state.structureFind(&rf) else { return }
-        _ = unitCreateWrapper(houseID: houseID, type: .harvester,
-                              destination: state.indexEncode(state.structures[refinery].o.index, type: .structure), in: &state)
+        _ = unitCreateWrapper(
+            houseID: houseID,
+            type: .harvester,
+            destination: state.indexEncode(state.structures[refinery].o.index, type: .structure),
+            in: &state
+        )
         // SEAM: GUI "harvester is heading to refinery" text for the player.
     }
 
@@ -836,8 +980,14 @@ public struct UnitCombat: Sendable {
     /// `damage > 15`. Returns the bullet's slot, or `nil` on an invalid target / allocation failure. The
     /// `Voice_PlayAtTile` cue is an audio seam; the unseen-bullet `Tile_RemoveFogInRadius` is ported.
     @discardableResult
-    public func unitCreateBullet(position: Tile32, type: UInt8, houseID: UInt8, damage: UInt16,
-                                 target: UInt16, in state: inout GameState) -> Int? {
+    public func unitCreateBullet(
+        position: Tile32,
+        type: UInt8,
+        houseID: UInt8,
+        damage: UInt16,
+        target: UInt16,
+        in state: inout GameState
+    ) -> Int? {
         if !state.indexIsValid(target) { return nil }
         guard let ut = UnitType(rawValue: Int(type)) else { return nil }
         let ui = UnitInfo[ut]
@@ -846,36 +996,64 @@ public struct UnitCombat: Sendable {
         switch ut {
             case .missileHouse, .missileRocket, .missileTurret, .missileDeviator, .missileTrooper:
                 let orientation = Tile32.direction(from: position, to: tile)
-                guard let bullet = unitCreate(index: Pool.unitIndexInvalid, type: type, houseID: houseID,
-                                              position: position, orientation: orientation, in: &state) else { return nil }
+                guard
+                    let bullet = unitCreate(
+                        index: Pool.unitIndexInvalid,
+                        type: type,
+                        houseID: houseID,
+                        position: position,
+                        orientation: orientation,
+                        in: &state
+                    )
+                else { return nil }
                 // SEAM: Voice_PlayAtTile(bulletSound) audio.
                 state.units[bullet].targetAttack = target
                 state.units[bullet].o.hitpoints = damage
                 state.units[bullet].currentDestination = tile
 
                 if ui.flags.contains(.notAccurate) {
-                    let scatter: UInt16 = (state.random256.next() & 0xF) != 0
+                    let scatter: UInt16 =
+                        (state.random256.next() & 0xF) != 0
                         ? Tile32.distance(from: position, to: tile) / 256 + 8
                         : UInt16(state.random256.next()) + 8
-                    state.units[bullet].currentDestination = Tile32.moveByRandom(tile, distance: scatter, center: false, rng: &state.random256)
+                    state.units[bullet].currentDestination = Tile32.moveByRandom(
+                        tile,
+                        distance: scatter,
+                        center: false,
+                        rng: &state.random256
+                    )
                 }
 
                 state.units[bullet].fireDelay = ui.fireDistance & 0xFF
                 if let u = state.indexGetUnit(target), let ut2 = UnitType(rawValue: Int(state.units[u].o.type)),
-                   UnitInfo[ut2].movementType == .winger {
+                    UnitInfo[ut2].movementType == .winger
+                {
                     state.units[bullet].fireDelay <<= 1
                 }
 
-                if ut == .missileHouse || (state.units[bullet].o.seenByHouses & (1 << state.playerHouseID)) != 0 { return bullet }
+                if ut == .missileHouse || (state.units[bullet].o.seenByHouses & (1 << state.playerHouseID)) != 0 {
+                    return bullet
+                }
                 state.tileRemoveFogInRadius(state.units[bullet].o.position, radius: 2)
                 return bullet
 
             case .bullet, .sonicBlast:
                 let orientation = Tile32.direction(from: position, to: tile)
-                let t = Tile32.moveByDirection(Tile32.moveByDirection(position, orientation: 0, distance: 32),
-                                               orientation: Int16(orientation), distance: 128)
-                guard let bullet = unitCreate(index: Pool.unitIndexInvalid, type: type, houseID: houseID,
-                                              position: t, orientation: orientation, in: &state) else { return nil }
+                let t = Tile32.moveByDirection(
+                    Tile32.moveByDirection(position, orientation: 0, distance: 32),
+                    orientation: Int16(orientation),
+                    distance: 128
+                )
+                guard
+                    let bullet = unitCreate(
+                        index: Pool.unitIndexInvalid,
+                        type: type,
+                        houseID: houseID,
+                        position: t,
+                        orientation: orientation,
+                        in: &state
+                    )
+                else { return nil }
                 if ut == .sonicBlast { state.units[bullet].fireDelay = ui.fireDistance & 0xFF }
                 state.units[bullet].currentDestination = tile
                 state.units[bullet].o.hitpoints = damage
@@ -925,10 +1103,15 @@ public struct UnitCombat: Sendable {
 
         if state.units[slot].fireDelay != 0 { return 0 }
 
-        let distance = GeneralScriptFunctions().getDistanceToObject(from: state.units[slot].o.position, encoded: target, in: state)
+        let distance = GeneralScriptFunctions().getDistanceToObject(
+            from: state.units[slot].o.position,
+            encoded: target,
+            in: state
+        )
         if Int16(truncatingIfNeeded: Int(ui.fireDistance) << 8) < Int16(bitPattern: distance) { return 0 }
 
-        let targetIsWinger: Bool = state.indexGetUnit(target).flatMap { UnitType(rawValue: Int(state.units[$0].o.type)) }
+        let targetIsWinger: Bool =
+            state.indexGetUnit(target).flatMap { UnitType(rawValue: Int(state.units[$0].o.type)) }
             .map { UnitInfo[$0].movementType == .winger } ?? false
         if ut != .sandworm && (Tools.indexType(target) != .unit || !targetIsWinger) {
             let orientation = Tile32.direction(from: state.units[slot].o.position, to: state.indexGetTile(target))
@@ -949,26 +1132,43 @@ public struct UnitCombat: Sendable {
                 state.unitUpdateMap(0, slot)
                 if let target2 = state.indexGetUnit(target) {
                     state.units[target2].o.script.variables[1] = 0xFFFF
-                    state.unitRemove(target2)   // Unit_RemovePlayer + HouseUnitCount_Remove are folded into unitRemove
+                    state.unitRemove(target2)  // Unit_RemovePlayer + HouseUnitCount_Remove are folded into unitRemove
                 }
                 // The "gulp" swallow animation at the worm (`Map_MakeExplosion(ui->explosionType, pos, 0, 0)`,
                 // `script/unit.c`): a visual-only blast (hitpoints 0 ⇒ no damage/RNG — the prey was already
                 // removed above). `ui` is the sandworm's info, so `explosionType` is EXPLOSION_SANDWORM_SWALLOW.
-                movement.mapMakeExplosion(type: ui.explosionType, position: state.units[slot].o.position,
-                                          hitpoints: 0, origin: 0, in: &state)
-                state.emitSound(63, at: state.units[slot].o.position)   // Voice_PlayAtTile(63, …) — WORMET3P
+                movement.mapMakeExplosion(
+                    type: ui.explosionType,
+                    position: state.units[slot].o.position,
+                    hitpoints: 0,
+                    origin: 0,
+                    in: &state
+                )
+                state.emitSound(63, at: state.units[slot].o.position)  // Voice_PlayAtTile(63, …) — WORMET3P
                 state.unitUpdateMap(1, slot)
                 state.units[slot].amount &-= 1
                 state.units[slot].o.script.delay = 12
                 if Int8(bitPattern: UInt8(truncatingIfNeeded: state.units[slot].amount)) < 1 {
-                    actions.setAction(slot: slot, action: UInt8(ActionType.die.rawValue), scriptInfo: scriptInfo, in: &state)
+                    actions.setAction(
+                        slot: slot,
+                        action: UInt8(ActionType.die.rawValue),
+                        scriptInfo: scriptInfo,
+                        in: &state
+                    )
                 }
 
             case .missileTrooper, .missileRocket, .missileTurret, .missileDeviator, .bullet, .sonicBlast:
                 if UnitType(rawValue: Int(typeID)) == .missileTrooper { damage -= damage / 4 }
-                guard let bullet = unitCreateBullet(position: state.units[slot].o.position, type: typeID,
-                                                    houseID: state.unitHouseID(state.units[slot]),
-                                                    damage: damage, target: target, in: &state) else { return 0 }
+                guard
+                    let bullet = unitCreateBullet(
+                        position: state.units[slot].o.position,
+                        type: typeID,
+                        houseID: state.unitHouseID(state.units[slot]),
+                        damage: damage,
+                        target: target,
+                        in: &state
+                    )
+                else { return 0 }
                 state.units[bullet].originEncoded = state.indexEncode(state.units[slot].o.index, type: .unit)
                 // `Voice_PlayAtTile(ui->bulletSound, u->o.position)` (`script/unit.c:99`): the weapon sound.
                 // The sim only emits the id; the host maps it to a VOC and plays it.
@@ -978,14 +1178,27 @@ public struct UnitCombat: Sendable {
             default: break
         }
 
-        state.units[slot].fireDelay = Tools.adjustToGameSpeed(normal: ui.fireDelay &* 2, minimum: 1, maximum: 0xFFFF,
-                                                              inverseSpeed: true, gameSpeed: state.gameSpeed)
+        state.units[slot].fireDelay = Tools.adjustToGameSpeed(
+            normal: ui.fireDelay &* 2,
+            minimum: 1,
+            maximum: 0xFFFF,
+            inverseSpeed: true,
+            gameSpeed: state.gameSpeed
+        )
         if fireTwice {
-            if state.units[slot].o.flags.contains(.fireTwiceFlip) { state.units[slot].o.flags.remove(.fireTwiceFlip) }
-            else { state.units[slot].o.flags.insert(.fireTwiceFlip) }
             if state.units[slot].o.flags.contains(.fireTwiceFlip) {
-                state.units[slot].fireDelay = Tools.adjustToGameSpeed(normal: 5, minimum: 1, maximum: 10,
-                                                                      inverseSpeed: true, gameSpeed: state.gameSpeed)
+                state.units[slot].o.flags.remove(.fireTwiceFlip)
+            } else {
+                state.units[slot].o.flags.insert(.fireTwiceFlip)
+            }
+            if state.units[slot].o.flags.contains(.fireTwiceFlip) {
+                state.units[slot].fireDelay = Tools.adjustToGameSpeed(
+                    normal: 5,
+                    minimum: 1,
+                    maximum: 10,
+                    inverseSpeed: true,
+                    gameSpeed: state.gameSpeed
+                )
             }
         } else {
             state.units[slot].o.flags.remove(.fireTwiceFlip)

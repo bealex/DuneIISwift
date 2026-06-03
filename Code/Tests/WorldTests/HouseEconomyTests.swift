@@ -1,5 +1,6 @@
-import Testing
 import DuneIIContracts
+import Testing
+
 @testable import DuneIIWorld
 
 /// `House_CalculatePowerAndCredit` (`house.c:470`) — a house's power production/usage + credit storage are
@@ -18,21 +19,21 @@ struct HouseEconomyTests {
     func calculate() {
         var s = GameState()
         _ = s.houseAllocate(index: 0)
-        place(&s, .windtrap, house: 0, hp: StructureInfo[.windtrap].o.hitpoints)   // producer (powerUsage -100)
-        place(&s, .refinery, house: 0, hp: StructureInfo[.refinery].o.hitpoints)   // consumer + 1005 storage
+        place(&s, .windtrap, house: 0, hp: StructureInfo[.windtrap].o.hitpoints)  // producer (powerUsage -100)
+        place(&s, .refinery, house: 0, hp: StructureInfo[.refinery].o.hitpoints)  // consumer + 1005 storage
         // A structure of another house must not count toward house 0.
         place(&s, .windtrap, house: 1, hp: StructureInfo[.windtrap].o.hitpoints)
 
         s.houseCalculatePowerAndCredit(0)
-        #expect(s.houses[0].powerProduction == UInt16(-Int(StructureInfo[.windtrap].powerUsage)))   // 100
-        #expect(s.houses[0].powerUsage == UInt16(StructureInfo[.refinery].powerUsage))              // 30
-        #expect(s.houses[0].creditsStorage == StructureInfo[.refinery].creditsStorage)              // 1005
+        #expect(s.houses[0].powerProduction == UInt16(-Int(StructureInfo[.windtrap].powerUsage)))  // 100
+        #expect(s.houses[0].powerUsage == UInt16(StructureInfo[.refinery].powerUsage))  // 30
+        #expect(s.houses[0].creditsStorage == StructureInfo[.refinery].creditsStorage)  // 1005
     }
 
     @Test("a damaged power plant produces proportionally less (1.07: ≤ half HP → half)")
     func damagedPlant() {
         let full = StructureInfo[.windtrap].o.hitpoints
-        let capacity = UInt16(-Int(StructureInfo[.windtrap].powerUsage))   // 100
+        let capacity = UInt16(-Int(StructureInfo[.windtrap].powerUsage))  // 100
 
         // ≤ half HP → exactly half output.
         var s = GameState(); _ = s.houseAllocate(index: 0)
@@ -55,7 +56,7 @@ struct HouseEconomyTests {
         place(&s, .windtrap, house: 0, hp: StructureInfo[.windtrap].o.hitpoints)
         s.houseCalculatePowerAndCredit(0)
         let first = s.houses[0].powerProduction
-        s.houseCalculatePowerAndCredit(0)   // a second call must not double-count
+        s.houseCalculatePowerAndCredit(0)  // a second call must not double-count
         #expect(s.houses[0].powerProduction == first)
     }
 
@@ -68,7 +69,7 @@ struct HouseEconomyTests {
         s.structureCalculateHitpointsMax(0)
         let slot = s.structures.firstIndex { $0.o.flags.contains(.allocated) && $0.o.houseID == 0 }!
         #expect(s.structures[slot].hitpointsMax == StructureInfo[.windtrap].o.hitpoints)
-        #expect(s.structures[slot].o.hitpoints == StructureInfo[.windtrap].o.hitpoints)   // not bled
+        #expect(s.structures[slot].o.hitpoints == StructureInfo[.windtrap].o.hitpoints)  // not bled
     }
 
     @Test("a powerless consumer is capped at half HP and bleeds 1 HP toward it")
@@ -80,8 +81,8 @@ struct HouseEconomyTests {
         s.houseCalculatePowerAndCredit(0)
         s.structureCalculateHitpointsMax(0)
         let slot = s.structures.firstIndex { $0.o.flags.contains(.allocated) && $0.o.houseID == 0 }!
-        #expect(s.structures[slot].hitpointsMax == full / 2)         // floored at half
-        #expect(s.structures[slot].o.hitpoints == full - 1)          // cap < HP → Structure_Damage(1)
+        #expect(s.structures[slot].hitpointsMax == full / 2)  // floored at half
+        #expect(s.structures[slot].o.hitpoints == full - 1)  // cap < HP → Structure_Damage(1)
     }
 
     @Test("partial power scales the max HP by the power ratio (128/256)")
@@ -95,6 +96,6 @@ struct HouseEconomyTests {
         s.structureCalculateHitpointsMax(0)
         let slot = s.structures.firstIndex { $0.o.flags.contains(.allocated) && $0.o.houseID == 0 }!
         #expect(s.structures[slot].hitpointsMax == max(full * 128 / 256, full / 2))
-        #expect(s.structures[slot].o.hitpoints == full - 1)          // cap < full HP → bled 1
+        #expect(s.structures[slot].o.hitpoints == full - 1)  // cap < full HP → bled 1
     }
 }

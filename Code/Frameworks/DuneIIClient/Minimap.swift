@@ -1,6 +1,3 @@
-#if canImport(AppKit)
-import AppKit
-#endif
 import CoreGraphics
 import DuneIIContracts
 import DuneIIFormats
@@ -8,6 +5,10 @@ import DuneIIRenderer
 import DuneIIWorld
 import Foundation
 import SwiftUI
+
+#if canImport(AppKit)
+    import AppKit
+#endif
 
 /// The minimap: a downscaled terrain image with unit dots and the current viewport rectangle. Clicking
 /// recentres the main map on the clicked world point.
@@ -19,7 +20,7 @@ enum Minimap {
     @MainActor
     static func baseImage(frame: FrameInfo, source: DecodedSpriteSource, palette: Palette, showFog: Bool) -> CGImage? {
         let n = 64
-        var rgba = [UInt8](repeating: 0, count: n * n * 4)
+        var rgba = [ UInt8 ](repeating: 0, count: n * n * 4)
         let ts = source.terrainTileSize
         let centre = (ts / 2) * ts + (ts / 2)
         for ty in 0 ..< n {
@@ -41,10 +42,17 @@ enum Minimap {
         }
         guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
         return CGImage(
-            width: n, height: n, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: n * 4,
+            width: n,
+            height: n,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: n * 4,
             space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
         )
     }
 
@@ -54,7 +62,9 @@ enum Minimap {
     static func radarStaticFrames(assets: AssetStore) -> [CGImage] {
         guard let data = assets.data("STATIC.WSA"), let anim = try? Wsa.Animation(data) else { return [] }
         let palette = anim.palette ?? assets.palette
-        return anim.frames.compactMap { rgbaImage(indices: $0, width: anim.width, height: anim.height, palette: palette) }
+        return anim.frames.compactMap {
+            rgbaImage(indices: $0, width: anim.width, height: anim.height, palette: palette)
+        }
     }
 
     /// A structure's tile footprint `(width, height)` — its minimap blip spans the whole footprint, not
@@ -67,7 +77,7 @@ enum Minimap {
     /// Build a `CGImage` from `width×height` row-major palette indices.
     static func rgbaImage(indices: [UInt8], width: Int, height: Int, palette: Palette) -> CGImage? {
         guard width > 0, height > 0, indices.count >= width * height else { return nil }
-        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        var rgba = [ UInt8 ](repeating: 0, count: width * height * 4)
         for i in 0 ..< width * height {
             let c = palette.rgba8(Int(indices[i]))
             let o = i * 4
@@ -78,10 +88,18 @@ enum Minimap {
         }
         guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
         return CGImage(
-            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: width * 4,
             space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )
     }
 }
 
@@ -110,12 +128,13 @@ struct MinimapView: View {
                     let rect = CGRect(x: 0, y: 0, width: side, height: side)
                     // Radar tuning in/out: the STATIC.WSA noise frame, stretched to fill.
                     if let staticIndex, staticIndex < staticFrames.count {
-                        return context.draw(Image(decorative: staticFrames[staticIndex], scale: 1, orientation: .up), in: rect)
+                        return context.draw(
+                            Image(decorative: staticFrames[staticIndex], scale: 1, orientation: .up),
+                            in: rect
+                        )
                     }
                     // Radar offline (no outpost / no power) and not force-enabled — a dark, empty screen.
-                    guard
-                        radarOn
-                    else { return context.fill(Path(rect), with: .color(.black)) }
+                    guard radarOn else { return context.fill(Path(rect), with: .color(.black)) }
 
                     if let base = model.minimapBase {
                         context.draw(Image(decorative: base, scale: 1, orientation: .up), in: rect)
@@ -142,7 +161,12 @@ struct MinimapView: View {
                         // reveal what the player can't see (`isHiddenByFog`, same masking as the main map).
                         for s in frame.structures
                         where area.contains(tileX: s.positionX / 256, tileY: s.positionY / 256)
-                            && !FrameComposer.isHiddenByFog(frame, worldX: s.positionX, worldY: s.positionY, showFog: showFog)
+                            && !FrameComposer.isHiddenByFog(
+                                frame,
+                                worldX: s.positionX,
+                                worldY: s.positionY,
+                                showFog: showFog
+                            )
                         {
                             let x = Double(s.positionX) * tile / 256
                             let y = Double(s.positionY) * tile / 256
@@ -156,17 +180,37 @@ struct MinimapView: View {
                         }
                         for unit in frame.units
                         where area.contains(tileX: unit.positionX / 256, tileY: unit.positionY / 256)
-                            && !FrameComposer.isHiddenByFog(frame, worldX: unit.positionX, worldY: unit.positionY, showFog: showFog)
+                            && !FrameComposer.isHiddenByFog(
+                                frame,
+                                worldX: unit.positionX,
+                                worldY: unit.positionY,
+                                showFog: showFog
+                            )
                         {
                             let x = Double(unit.positionX) * tile / 256
                             let y = Double(unit.positionY) * tile / 256
                             let mine = unit.house == playerHouse
-                            context.fill(Path(ellipseIn: CGRect(x: x - unitBlip / 2, y: y - unitBlip / 2, width: unitBlip, height: unitBlip)), with: .color(mine ? .green : .red))
+                            context.fill(
+                                Path(
+                                    ellipseIn: CGRect(
+                                        x: x - unitBlip / 2,
+                                        y: y - unitBlip / 2,
+                                        width: unitBlip,
+                                        height: unitBlip
+                                    )
+                                ),
+                                with: .color(mine ? .green : .red)
+                            )
                         }
                     }
                     // The viewport rectangle.
                     let v = viewport.visibleWorldRect(viewSize: model.viewSize)
-                    let r = CGRect(x: v.minX * scale, y: v.minY * scale, width: v.width * scale, height: v.height * scale)
+                    let r = CGRect(
+                        x: v.minX * scale,
+                        y: v.minY * scale,
+                        width: v.width * scale,
+                        height: v.height * scale
+                    )
                     context.stroke(Path(r.intersection(rect)), with: .color(.white), lineWidth: 1)
                 }
                 .frame(width: side, height: side)
@@ -175,29 +219,33 @@ struct MinimapView: View {
                 // active while the radar is up + settled (a dark / tuning screen isn't clickable, as in Dune II).
                 if radarOn, staticIndex == nil {
                     #if os(macOS)
-                    MinimapMouse(side: side) { point in
-                        // Left click / drag: recentre the main map on the clicked world point.
-                        let world = Viewport.worldSize / side
-                        let x = min(max(0, Double(point.x)), side) * world
-                        let y = min(max(0, Double(point.y)), side) * world
-                        model.centerOn(worldX: x, worldY: y)
-                    } onRightPoint: { point in
-                        // Right click: order the selected unit(s) to that tile — same default order
-                        // (move / attack / harvest) as right-clicking the big map (`rightClickTile`).
-                        let tx = min(63, max(0, Int(Double(point.x) / side * 64)))
-                        let ty = min(63, max(0, Int(Double(point.y) / side * 64)))
-                        model.rightClickTile(tx, ty)
-                    }
-                    .frame(width: side, height: side)
-                    #else
-                    // iOS: tap/drag the radar to recentre the main map.
-                    Color.clear.contentShape(Rectangle())
-                        .frame(width: side, height: side)
-                        .gesture(DragGesture(minimumDistance: 0).onChanged { g in
+                        MinimapMouse(side: side) { point in
+                            // Left click / drag: recentre the main map on the clicked world point.
                             let world = Viewport.worldSize / side
-                            model.centerOn(worldX: min(max(0, g.location.x), side) * world,
-                                           worldY: min(max(0, g.location.y), side) * world)
-                        })
+                            let x = min(max(0, Double(point.x)), side) * world
+                            let y = min(max(0, Double(point.y)), side) * world
+                            model.centerOn(worldX: x, worldY: y)
+                        } onRightPoint: { point in
+                            // Right click: order the selected unit(s) to that tile — same default order
+                            // (move / attack / harvest) as right-clicking the big map (`rightClickTile`).
+                            let tx = min(63, max(0, Int(Double(point.x) / side * 64)))
+                            let ty = min(63, max(0, Int(Double(point.y) / side * 64)))
+                            model.rightClickTile(tx, ty)
+                        }
+                        .frame(width: side, height: side)
+                    #else
+                        // iOS: tap/drag the radar to recentre the main map.
+                        Color.clear.contentShape(Rectangle())
+                            .frame(width: side, height: side)
+                            .gesture(
+                                DragGesture(minimumDistance: 0).onChanged { g in
+                                    let world = Viewport.worldSize / side
+                                    model.centerOn(
+                                        worldX: min(max(0, g.location.x), side) * world,
+                                        worldY: min(max(0, g.location.y), side) * world
+                                    )
+                                }
+                            )
                     #endif
                 }
             }
@@ -210,43 +258,43 @@ struct MinimapView: View {
 }
 
 #if os(macOS)
-/// A transparent AppKit overlay that reports click + drag locations (in its own top-left-origin space) so
-/// the minimap can recentre the map continuously. Accepts the first mouse, so a click registers even when
-/// the (non-activating) tool panel isn't focused.
-private struct MinimapMouse: NSViewRepresentable {
-    let side: CGFloat
-    let onPoint: (CGPoint) -> Void
-    let onRightPoint: (CGPoint) -> Void
+    /// A transparent AppKit overlay that reports click + drag locations (in its own top-left-origin space) so
+    /// the minimap can recentre the map continuously. Accepts the first mouse, so a click registers even when
+    /// the (non-activating) tool panel isn't focused.
+    private struct MinimapMouse: NSViewRepresentable {
+        let side: CGFloat
+        let onPoint: (CGPoint) -> Void
+        let onRightPoint: (CGPoint) -> Void
 
-    func makeNSView(context: Context) -> MinimapMouseView {
-        let view = MinimapMouseView()
-        view.onPoint = onPoint
-        view.onRightPoint = onRightPoint
-        return view
+        func makeNSView(context: Context) -> MinimapMouseView {
+            let view = MinimapMouseView()
+            view.onPoint = onPoint
+            view.onRightPoint = onRightPoint
+            return view
+        }
+
+        func updateNSView(_ nsView: MinimapMouseView, context: Context) {
+            nsView.onPoint = onPoint
+            nsView.onRightPoint = onRightPoint
+        }
     }
 
-    func updateNSView(_ nsView: MinimapMouseView, context: Context) {
-        nsView.onPoint = onPoint
-        nsView.onRightPoint = onRightPoint
+    final class MinimapMouseView: NSView {
+        var onPoint: ((CGPoint) -> Void)?
+        var onRightPoint: ((CGPoint) -> Void)?
+
+        override var isFlipped: Bool { true }  // top-left origin, matching the SwiftUI Canvas
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func mouseDown(with event: NSEvent) { report(event) }
+        override func mouseDragged(with event: NSEvent) { report(event) }
+        // Middle button click / drag recentres + follows the cursor too (like the big map's middle-button pan).
+        override func otherMouseDown(with event: NSEvent) { if event.buttonNumber == 2 { report(event) } }
+        override func otherMouseDragged(with event: NSEvent) { if event.buttonNumber == 2 { report(event) } }
+        // Right click / drag issues a unit order at that point (same as the big map's right-click).
+        override func rightMouseDown(with event: NSEvent) { reportRight(event) }
+        override func rightMouseDragged(with event: NSEvent) { reportRight(event) }
+
+        private func report(_ event: NSEvent) { onPoint?(convert(event.locationInWindow, from: nil)) }
+        private func reportRight(_ event: NSEvent) { onRightPoint?(convert(event.locationInWindow, from: nil)) }
     }
-}
-
-final class MinimapMouseView: NSView {
-    var onPoint: ((CGPoint) -> Void)?
-    var onRightPoint: ((CGPoint) -> Void)?
-
-    override var isFlipped: Bool { true }  // top-left origin, matching the SwiftUI Canvas
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { report(event) }
-    override func mouseDragged(with event: NSEvent) { report(event) }
-    // Middle button click / drag recentres + follows the cursor too (like the big map's middle-button pan).
-    override func otherMouseDown(with event: NSEvent) { if event.buttonNumber == 2 { report(event) } }
-    override func otherMouseDragged(with event: NSEvent) { if event.buttonNumber == 2 { report(event) } }
-    // Right click / drag issues a unit order at that point (same as the big map's right-click).
-    override func rightMouseDown(with event: NSEvent) { reportRight(event) }
-    override func rightMouseDragged(with event: NSEvent) { reportRight(event) }
-
-    private func report(_ event: NSEvent) { onPoint?(convert(event.locationInWindow, from: nil)) }
-    private func reportRight(_ event: NSEvent) { onRightPoint?(convert(event.locationInWindow, from: nil)) }
-}
 #endif

@@ -1,6 +1,7 @@
-import Testing
 import DuneIIContracts
 import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
 
 /// `Simulation.makeFrameInfo()` — the `sim → render` snapshot builder. Asserts each layer of the
@@ -18,29 +19,29 @@ struct FrameInfoTests {
         var tank = Unit()
         tank.o.index = 0
         tank.o.type = UInt8(UnitType.tank.rawValue)
-        tank.o.flags = [.used, .allocated, .isUnit]
+        tank.o.flags = [ .used, .allocated, .isUnit ]
         tank.o.houseID = UInt8(HouseID.atreides.rawValue)
         tank.o.position = Tile32(x: 10 * 256 + 0x80, y: 12 * 256 + 0x80)
         tank.o.hitpoints = 100
-        tank.orientation[0].current = 64       // East
-        tank.orientation[1].current = 0        // turret North
+        tank.orientation[0].current = 64  // East
+        tank.orientation[1].current = 0  // turret North
         sim.state.units[0] = tank
 
         // A windtrap (corner position), Ordos, full of HP.
         var wt = Structure()
         wt.o.index = 0
         wt.o.type = UInt8(StructureType.windtrap.rawValue)
-        wt.o.flags = [.used, .allocated]
+        wt.o.flags = [ .used, .allocated ]
         wt.o.houseID = UInt8(HouseID.ordos.rawValue)
         wt.o.position = Tile32(x: 20 * 256, y: 8 * 256)
         wt.o.hitpoints = 175
-        wt.hitpointsMax = 120        // power-degraded *below* the 200 base (and below current HP)
+        wt.hitpointsMax = 120  // power-degraded *below* the 200 base (and below current HP)
         sim.state.structures[0] = wt
 
         // An active Ordos house with credits + power.
         var ordos = House()
         ordos.index = UInt8(HouseID.ordos.rawValue)
-        ordos.flags = [.used]
+        ordos.flags = [ .used ]
         ordos.credits = 1500
         ordos.creditsStorage = 1000
         ordos.powerProduction = 100
@@ -105,7 +106,9 @@ struct FrameInfoTests {
     func fogEdgeMask() {
         let w = 64, h = 64
         // All neighbours revealed ⇒ no edges.
-        #expect(Simulation.fogEdgeMask(packed: Int(Tile32.packXY(x: 10, y: 10)), width: w, height: h) { _ in true } == 0)
+        #expect(
+            Simulation.fogEdgeMask(packed: Int(Tile32.packXY(x: 10, y: 10)), width: w, height: h) { _ in true } == 0
+        )
         // The (0,0) corner: N and W are off-map ⇒ bit 0 (N) | bit 3 (W) = 9, even with all tiles revealed.
         #expect(Simulation.fogEdgeMask(packed: 0, width: w, height: h) { _ in true } == 0b1001)
         // Only the north neighbour veiled ⇒ bit 0.
@@ -120,14 +123,18 @@ struct FrameInfoTests {
         var sim = scene()
         sim.state.tileIDs.fogEdges = (0 ..< 16).map { UInt16(500 + $0) }
         // Reveal a 3×3 block around (10,10).
-        for dy in -1 ... 1 { for dx in -1 ... 1 {
-            sim.state.map[Int(Tile32.packXY(x: UInt16(10 + dx), y: UInt16(10 + dy)))].isUnveiled = true
-        } }
+        for dy in -1 ... 1 {
+            for dx in -1 ... 1 {
+                sim.state.map[Int(Tile32.packXY(x: UInt16(10 + dx), y: UInt16(10 + dy)))].isUnveiled = true
+            }
+        }
         let f = sim.makeFrameInfo()
-        func edge(_ x: Int, _ y: Int) -> Int { f.tiles[Int(Tile32.packXY(x: UInt16(x), y: UInt16(y)))].fogEdgeSpriteIndex }
-        #expect(edge(10, 10) == 0)             // interior: all neighbours revealed ⇒ no edge
-        #expect(edge(10, 9) == 500 + 0b0001)   // top-middle: only N veiled ⇒ mask 1
-        #expect(edge(9, 9) == 500 + 0b1001)    // top-left corner: N and W veiled ⇒ mask 9
+        func edge(_ x: Int, _ y: Int) -> Int {
+            f.tiles[Int(Tile32.packXY(x: UInt16(x), y: UInt16(y)))].fogEdgeSpriteIndex
+        }
+        #expect(edge(10, 10) == 0)  // interior: all neighbours revealed ⇒ no edge
+        #expect(edge(10, 9) == 500 + 0b0001)  // top-middle: only N veiled ⇒ mask 1
+        #expect(edge(9, 9) == 500 + 0b1001)  // top-left corner: N and W veiled ⇒ mask 9
         #expect(edge(11, 11) == 500 + 0b0110)  // bottom-right corner: E and S veiled ⇒ mask 6
     }
 
@@ -147,7 +154,7 @@ struct FrameInfoTests {
         var worm = Unit()
         worm.o.index = 5
         worm.o.type = UInt8(UnitType.sandworm.rawValue)
-        worm.o.flags = [.used, .allocated, .isUnit]
+        worm.o.flags = [ .used, .allocated, .isUnit ]
         worm.o.houseID = 6
         worm.o.position = Tile32(x: 30 * 256 + 0x80, y: 40 * 256 + 0x80)
         worm.o.hitpoints = 1000
@@ -160,7 +167,7 @@ struct FrameInfoTests {
         let blur = try #require(f.blurs.first)
         #expect(blur.positionX == 30 * 256 + 0x80)
         #expect(blur.positionY == 40 * 256 + 0x80)
-        #expect(blur.sprite.spriteIndex > 0)      // resolves to the worm silhouette frame
+        #expect(blur.sprite.spriteIndex > 0)  // resolves to the worm silhouette frame
     }
 
     @Test("terrain tile surfaces ground + overlay + fog")
@@ -197,7 +204,7 @@ struct FrameInfoTests {
     @Test("deviated unit reports its captor's (Ordos) house")
     func deviatedHouse() throws {
         var sim = scene()
-        sim.state.units[0].deviated = 120        // active deviation → Unit_GetHouseID == Ordos in 1.07
+        sim.state.units[0].deviated = 120  // active deviation → Unit_GetHouseID == Ordos in 1.07
         let u = try #require(sim.makeFrameInfo().units.first)
         #expect(u.house == .ordos)
     }
@@ -214,7 +221,7 @@ struct FrameInfoTests {
         // bar divides by the base, like OpenDUNE (`widget_draw.c:725`), so an under-powered structure isn't
         // shown over-full. Current HP (175) is reported as-is, even above the degraded cap.
         #expect(s.hitpoints == 175 && s.hitpointsMax == 200)
-        #expect(s.buildProgress == nil)   // the windtrap isn't building anything
+        #expect(s.buildProgress == nil)  // the windtrap isn't building anything
     }
 
     @Test("a building factory surfaces build progress (0 at start → ~1 near done); else nil")
@@ -226,28 +233,28 @@ struct FrameInfoTests {
         var f = Structure()
         f.o.index = 0
         f.o.type = UInt8(StructureType.heavyVehicle.rawValue)
-        f.o.flags = [.used, .allocated]
+        f.o.flags = [ .used, .allocated ]
         f.o.houseID = UInt8(HouseID.atreides.rawValue)
         f.o.position = Tile32(x: 10 * 256, y: 10 * 256)
         f.o.hitpoints = 200
         f.objectType = UInt16(UnitType.tank.rawValue)
-        f.o.linkedID = 5            // a queued object (any non-0xFF)
+        f.o.linkedID = 5  // a queued object (any non-0xFF)
         f.state = .busy
-        f.countDown = UInt16(buildTime << 8)   // just started ⇒ 0% (countDown == buildTime<<8)
+        f.countDown = UInt16(buildTime << 8)  // just started ⇒ 0% (countDown == buildTime<<8)
         sim.state.structures[0] = f
         #expect(sim.makeFrameInfo().structures.first?.buildProgress == 0)
 
-        sim.state.structures[0].countDown = UInt16((buildTime << 8) / 2)   // half
+        sim.state.structures[0].countDown = UInt16((buildTime << 8) / 2)  // half
         let half = try #require(sim.makeFrameInfo().structures.first?.buildProgress)
         #expect(abs(half - 0.5) < 0.05)
 
-        sim.state.structures[0].countDown = UInt16(1 << 8)                 // nearly done
+        sim.state.structures[0].countDown = UInt16(1 << 8)  // nearly done
         #expect((sim.makeFrameInfo().structures.first?.buildProgress ?? 0) > 0.9)
 
-        sim.state.structures[0].state = .idle                              // not building ⇒ nil
+        sim.state.structures[0].state = .idle  // not building ⇒ nil
         #expect(sim.makeFrameInfo().structures.first?.buildProgress == nil)
 
-        sim.state.structures[0].state = .busy                              // busy but no queued object ⇒ nil
+        sim.state.structures[0].state = .busy  // busy but no queued object ⇒ nil
         sim.state.structures[0].o.linkedID = 0xFF
         #expect(sim.makeFrameInfo().structures.first?.buildProgress == nil)
     }
@@ -260,7 +267,7 @@ struct FrameInfoTests {
         #expect(h.creditsStorage == 1000)
         #expect(h.powerProduction == 100)
         #expect(h.powerUsage == 30)
-        #expect(f.houses.count == 1)        // only the one `.used` house
+        #expect(f.houses.count == 1)  // only the one `.used` house
     }
 
     @Test("active explosion becomes an effect at its world position")
@@ -274,7 +281,7 @@ struct FrameInfoTests {
     func smokeEffect() throws {
         var sim = scene()
         sim.state.units[0].o.flags.insert(.isSmoking)
-        sim.state.units[0].spriteOffset = 2                  // frame 180 + 2 = 182
+        sim.state.units[0].spriteOffset = 2  // frame 180 + 2 = 182
         let f = sim.makeFrameInfo()
         let smoke = try #require(f.effects.first { $0.sprite.spriteIndex == 182 })
         #expect(smoke.sprite.offsetY == -14)
@@ -288,7 +295,7 @@ struct FrameInfoTests {
     @Test("hidden (isNotOnMap) units are omitted — no phantom at a stale position")
     func hiddenUnitOmitted() {
         var sim = scene()
-        sim.state.units[0].o.flags.insert(.isNotOnMap)     // e.g. a harvester carried in a carryall
+        sim.state.units[0].o.flags.insert(.isNotOnMap)  // e.g. a harvester carried in a carryall
         #expect(sim.makeFrameInfo().units.isEmpty)
     }
 
@@ -323,17 +330,17 @@ struct FrameInfoTests {
         sim.state.tileIDs.bloom = 0xFFFD
         sim.state.tileIDs.veiled = 0xFFFC
         let packed = Int(sim.state.units[0].o.position.packed)
-        sim.state.map[packed].groundTileID = 149          // 100 + 49 → spice
+        sim.state.map[packed].groundTileID = 149  // 100 + 49 → spice
         sim.state.units[0].o.type = UInt8(UnitType.harvester.rawValue)
         sim.state.units[0].orientation[0].current = 0
         sim.state.units[0].actionID = UInt8(ActionType.harvest.rawValue)
         sim.state.units[0].spriteOffset = 1
 
         let overlay = try #require(sim.makeFrameInfo().units.first?.overlay)
-        #expect(overlay.spriteIndex == 0xDF + 1)          // (spriteOffset % 3) + 0xDF, North
+        #expect(overlay.spriteIndex == 0xDF + 1)  // (spriteOffset % 3) + 0xDF, North
 
         // Move it onto rock (offset 0 → normalSand is 0; use a tile far outside the landscape range → rock).
-        sim.state.map[packed].groundTileID = 50           // offset -50 → entirelyRock, not spice
+        sim.state.map[packed].groundTileID = 50  // offset -50 → entirelyRock, not spice
         #expect(sim.makeFrameInfo().units.first?.overlay == nil)
     }
 
@@ -342,7 +349,7 @@ struct FrameInfoTests {
         var sim = scene()
         sim.state.units[1].o.index = 1
         sim.state.units[1].o.type = UInt8(UnitType.sandworm.rawValue)
-        sim.state.units[1].o.flags = [.used, .allocated, .isUnit]
+        sim.state.units[1].o.flags = [ .used, .allocated, .isUnit ]
         let f = sim.makeFrameInfo()
         #expect(f.units.allSatisfy { $0.type != .sandworm })
         #expect(f.units.count == 1)

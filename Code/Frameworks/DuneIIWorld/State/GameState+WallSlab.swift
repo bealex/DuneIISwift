@@ -48,7 +48,7 @@ public extension GameState {
     private func mapPositionUnveiled(_ pos: Int) -> Bool {
         guard map[pos].isUnveiled else { return false }
         let o = UInt16(map[pos].overlayTileID)
-        return o > tileIDs.veiled || o < tileIDs.veiled &- 15   // Tile_IsUnveiled
+        return o > tileIDs.veiled || o < tileIDs.veiled &- 15  // Tile_IsUnveiled
     }
 
     /// `Structure_ConnectWall` (`structure.c:1136`): pick the wall's ground tile from which of its four
@@ -66,8 +66,11 @@ public extension GameState {
             guard cur >= 0, cur < map.count else { continue }
             if recurse && wallTileIsWall(cur) { structureConnectWall(UInt16(cur), recurse: false) }
             if isDestroyed { continue }
-            if wallTileIsDestroyed(cur) { bits |= (1 << (i + 4)); bits |= (1 << i) }
-            else if wallTileIsWall(cur) { bits |= (1 << i) }
+            if wallTileIsDestroyed(cur) {
+                bits |= (1 << (i + 4)); bits |= (1 << i)
+            } else if wallTileIsWall(cur) {
+                bits |= (1 << i)
+            }
         }
         if isDestroyed { return false }
 
@@ -91,15 +94,15 @@ public extension GameState {
 
 private extension GameState {
     /// `g_table_mapDiff` (`table/tilediff.c`): the four cardinal neighbours in packed order N, E, S, W.
-    static let wallMapDiff: [Int] = [-64, 1, 64, -1]
+    static let wallMapDiff: [Int] = [ -64, 1, 64, -1 ]
 
     /// `Structure_ConnectWall`'s `wall[256]` table: neighbour-bitmask → WALLS sprite offset.
     static let wallConnectTable: [UInt8] = [
-         0,  3,  1,  2,  3,  3,  4,  5,  1,  6,  1,  7,  8,  9, 10, 11,
-         1, 12,  1, 19,  1, 16,  1, 31,  1, 28,  1, 52,  1, 45,  1, 59,
-         3,  3, 13, 20,  3,  3, 22, 32,  3,  3, 13, 53,  3,  3, 38, 60,
-         5,  6,  7, 21,  5,  6,  7, 33,  5,  6,  7, 54,  5,  6,  7, 61,
-         9,  9,  9,  9, 17, 17, 23, 34,  9,  9,  9,  9, 25, 46, 39, 62,
+        0, 3, 1, 2, 3, 3, 4, 5, 1, 6, 1, 7, 8, 9, 10, 11,
+        1, 12, 1, 19, 1, 16, 1, 31, 1, 28, 1, 52, 1, 45, 1, 59,
+        3, 3, 13, 20, 3, 3, 22, 32, 3, 3, 13, 53, 3, 3, 38, 60,
+        5, 6, 7, 21, 5, 6, 7, 33, 5, 6, 7, 54, 5, 6, 7, 61,
+        9, 9, 9, 9, 17, 17, 23, 34, 9, 9, 9, 9, 25, 46, 39, 62,
         11, 12, 11, 12, 13, 18, 13, 35, 11, 12, 11, 12, 13, 47, 13, 63,
         15, 15, 16, 16, 17, 17, 24, 36, 15, 15, 16, 16, 17, 17, 40, 64,
         19, 20, 21, 22, 23, 24, 25, 37, 19, 20, 21, 22, 23, 24, 25, 65,

@@ -5,11 +5,12 @@ import DuneIIRenderer
 import DuneIISimulation
 import DuneIIWorld
 import SpriteKit
+
 #if canImport(AppKit)
-import AppKit
+    import AppKit
 #endif
 #if canImport(UIKit)
-import UIKit
+    import UIKit
 #endif
 
 /// The map view: renders the live `Simulation` through `SpriteKitRenderer`, drives the camera from the
@@ -19,10 +20,10 @@ import UIKit
 /// to a tile/world point via the shared `tile(atScenePoint:)` / `tile(fromView:)` helpers below.
 @MainActor
 public final class GameScene: SKScene {
-    static let worldSidePx = Int(Viewport.worldSize)   // 1024
+    static let worldSidePx = Int(Viewport.worldSize)  // 1024
     private static let tileSize = 16
-    private static let barWidth = 7.0     // half the old 14 (user: "width 2x smaller")
-    private static let barHeight = 1.0    // half the old 2 (user: "height 2x smaller")
+    private static let barWidth = 7.0  // half the old 14 (user: "width 2x smaller")
+    private static let barHeight = 1.0  // half the old 2 (user: "height 2x smaller")
 
     /// Temporary / projectile unit types that never get a health bar (bullets, rockets, sonic blasts).
     private static let projectileTypes: Set<UnitType> = [
@@ -38,18 +39,18 @@ public final class GameScene: SKScene {
     private var renderer: SpriteKitRenderer?
     private var lastUpdateTime: TimeInterval = 0
     private var tickAccumulator = 0.0
-    private let selectionLayer = SKNode()          // outline(s) around the selected unit(s)/structure
-    private var selectionNodes: [SKShapeNode] = []   // pulsating square outline(s) for a selected building
-    private var unitSelectNodes: [SKSpriteNode] = []   // the MOUSE.SHP[6] selection box around each selected unit
-    private lazy var unitSelectTexture: SKTexture? = makeUnitSelectTexture()   // MOUSE/006, built once
-    private let dragBoxNode = SKShapeNode()         // the drag-select rubber-band box
+    private let selectionLayer = SKNode()  // outline(s) around the selected unit(s)/structure
+    private var selectionNodes: [SKShapeNode] = []  // pulsating square outline(s) for a selected building
+    private var unitSelectNodes: [SKSpriteNode] = []  // the MOUSE.SHP[6] selection box around each selected unit
+    private lazy var unitSelectTexture: SKTexture? = makeUnitSelectTexture()  // MOUSE/006, built once
+    private let dragBoxNode = SKShapeNode()  // the drag-select rubber-band box
     // Left-drag (drag-select) gesture state.
     private var leftDragStartWindow: CGPoint?
     private var leftDragStartTile: (Int, Int)?
     private var leftDragging = false
-    private let placementNode = SKShapeNode()      // structure-placement footprint preview
+    private let placementNode = SKShapeNode()  // structure-placement footprint preview
     #if os(macOS)
-    private var trackingArea: NSTrackingArea?
+        private var trackingArea: NSTrackingArea?
     #endif
     // Middle-button pan/recentre state: the last cursor point (window coords, camera-independent), whether
     // this gesture moved, and the down point (scene coords) for a click-recentre.
@@ -57,20 +58,20 @@ public final class GameScene: SKScene {
     private var middleDidDrag = false
     private var middleDownScene: CGPoint?
     #if os(iOS)
-    // Touch state: a single finger taps (select / place / armed-order) or drags to pan; two fingers pinch to
-    // zoom; a stationary long-press issues the default order (the macOS right-click). Scene coords are y-up.
-    private var touchStartScene: CGPoint?
-    private var touchLastScene: CGPoint?
-    private var touchDidPan = false
-    private var pinchStartDistance: CGFloat?
-    private var longPressWork: DispatchWorkItem?
-    private var longPressFired = false
+        // Touch state: a single finger taps (select / place / armed-order) or drags to pan; two fingers pinch to
+        // zoom; a stationary long-press issues the default order (the macOS right-click). Scene coords are y-up.
+        private var touchStartScene: CGPoint?
+        private var touchLastScene: CGPoint?
+        private var touchDidPan = false
+        private var pinchStartDistance: CGFloat?
+        private var longPressWork: DispatchWorkItem?
+        private var longPressFired = false
     #endif
-    private var lastTargetingActive = false   // last cursor state, so we only `.set()` the cursor on change
+    private var lastTargetingActive = false  // last cursor state, so we only `.set()` the cursor on change
     private let healthLayer = SKNode()
     private var healthBars: [SKSpriteNode] = []
-    private var buildBars: [SKSpriteNode] = []   // a white production-progress bar under a building's health bar
-    private var stateChips: [SKShapeNode] = []   // a small shape+colour action chip per unit health bar
+    private var buildBars: [SKSpriteNode] = []  // a white production-progress bar under a building's health bar
+    private var stateChips: [SKShapeNode] = []  // a small shape+colour action chip per unit health bar
 
     init(model: GameModel) {
         self.model = model
@@ -101,26 +102,31 @@ public final class GameScene: SKScene {
     /// works without this; the preview just won't follow until the next click).
     override public func didMove(to view: SKView) {
         #if os(macOS)
-        view.window?.acceptsMouseMovedEvents = true
-        if trackingArea == nil {
-            // `.activeAlways` (not `.activeInKeyWindow`): hover/cursor updates over the map keep working while
-            // a floating tool window holds focus, matching the first-mouse click handling (`FirstMouseSKView`).
-            let area = NSTrackingArea(rect: .zero,
-                                      options: [.mouseMoved, .cursorUpdate, .activeAlways, .inVisibleRect],
-                                      owner: self)
-            view.addTrackingArea(area)
-            trackingArea = area
-        }
+            view.window?.acceptsMouseMovedEvents = true
+            if trackingArea == nil {
+                // `.activeAlways` (not `.activeInKeyWindow`): hover/cursor updates over the map keep working while
+                // a floating tool window holds focus, matching the first-mouse click handling (`FirstMouseSKView`).
+                let area = NSTrackingArea(
+                    rect: .zero,
+                    options: [ .mouseMoved, .cursorUpdate, .activeAlways, .inVisibleRect ],
+                    owner: self
+                )
+                view.addTrackingArea(area)
+                trackingArea = area
+            }
         #endif
     }
 
     func load(simulation: Simulation, assets: AssetStore) {
         // Keep our overlay nodes — only drop the renderer's terrain/sprite nodes. (The placement-preview node
         // was being orphaned here, so its footprint never drew.)
-        let keep: [SKNode] = [cam, selectionLayer, dragBoxNode, healthLayer, placementNode]
+        let keep: [SKNode] = [ cam, selectionLayer, dragBoxNode, healthLayer, placementNode ]
         for child in children where !keep.contains(child) { child.removeFromParent() }
-        let r = SpriteKitRenderer(source: SpriteSource.make(assets: assets), basePalette: assets.palette,
-                                  showFog: model?.showFog ?? false)
+        let r = SpriteKitRenderer(
+            source: SpriteSource.make(assets: assets),
+            basePalette: assets.palette,
+            showFog: model?.showFog ?? false
+        )
         // Rebuild the sandworm heat-haze every other frame, not every frame: the worm patch's per-frame
         // SKTexture upload was the biggest per-frame texture cost, and halving it is imperceptible.
         r.shimmerUpdateInterval = 2
@@ -147,7 +153,7 @@ public final class GameScene: SKScene {
         if steps > 0 { tickAccumulator -= Double(steps) }
         steps = min(steps, 16)
         guard let frame = model.advance(ticks: steps) else { return }
-        model.viewSize = size                         // keep the model's view size current for clamping
+        model.viewSize = size  // keep the model's view size current for clamping
         renderer.render(frame)
         applyViewport()
         updateSelection()
@@ -160,7 +166,12 @@ public final class GameScene: SKScene {
 
     /// Draw the structure-placement footprint at the hovered tile — green where valid, red where blocked.
     private func updatePlacement() {
-        guard let model, let p = model.placement, let tx = p.hoverTileX, let ty = p.hoverTileY else {
+        guard
+            let model,
+            let p = model.placement,
+            let tx = p.hoverTileX,
+            let ty = p.hoverTileY
+        else {
             placementNode.isHidden = true; return
         }
         let valid = model.placementValidity(tileX: tx, tileY: ty) != 0
@@ -192,8 +203,11 @@ public final class GameScene: SKScene {
                 // A building: a white square outline that pulsates (alpha 0↔1, 3 s period).
                 let node = pooledSelectionSquare(usedSquares); usedSquares += 1
                 let originX = box.centerX - box.width / 2
-                let bottomY = Double(Self.worldSidePx) - (box.centerY + box.height / 2)   // image y-down → scene y-up
-                node.path = CGPath(rect: CGRect(x: originX, y: bottomY, width: box.width, height: box.height), transform: nil)
+                let bottomY = Double(Self.worldSidePx) - (box.centerY + box.height / 2)  // image y-down → scene y-up
+                node.path = CGPath(
+                    rect: CGRect(x: originX, y: bottomY, width: box.width, height: box.height),
+                    transform: nil
+                )
                 node.isHidden = false
             } else if let texture = unitSelectTexture {
                 // A unit: the original selection-box sprite (`MOUSE.SHP` frame 6 = `g_sprites[6]`), centred.
@@ -213,8 +227,10 @@ public final class GameScene: SKScene {
         while i >= selectionNodes.count {
             let n = SKShapeNode()
             n.strokeColor = .white; n.lineWidth = 1.5; n.fillColor = .clear
-            n.run(.repeatForever(.sequence([.fadeAlpha(to: 0, duration: 1.5), .fadeAlpha(to: 1, duration: 1.5)])),
-                  withKey: "pulse")
+            n.run(
+                .repeatForever(.sequence([ .fadeAlpha(to: 0, duration: 1.5), .fadeAlpha(to: 1, duration: 1.5) ])),
+                withKey: "pulse"
+            )
             selectionNodes.append(n); selectionLayer.addChild(n)
         }
         return selectionNodes[i]
@@ -234,8 +250,15 @@ public final class GameScene: SKScene {
     private func makeUnitSelectTexture() -> SKTexture? {
         guard let assets = model?.assets, let shp = assets.shp("MOUSE.SHP"), shp.frames.count > 6 else { return nil }
         let f = shp.frames[6]
-        guard let cg = IndexedImage.cgImage(indices: f.pixels, width: f.width, height: f.height,
-                                            palette: assets.palette, transparentIndex: 0) else { return nil }
+        guard
+            let cg = IndexedImage.cgImage(
+                indices: f.pixels,
+                width: f.width,
+                height: f.height,
+                palette: assets.palette,
+                transparentIndex: 0
+            )
+        else { return nil }
         let texture = SKTexture(cgImage: cg)
         texture.filteringMode = .nearest
         return texture
@@ -266,7 +289,9 @@ public final class GameScene: SKScene {
 
         // Real units (projectiles skipped). Smooth sub-tile position; bar a little above the sprite centre.
         for unit in frame.units where !Self.projectileTypes.contains(unit.type) {
-            if FrameComposer.isHiddenByFog(frame, worldX: unit.positionX, worldY: unit.positionY, showFog: fog) { continue }
+            if FrameComposer.isHiddenByFog(frame, worldX: unit.positionX, worldY: unit.positionY, showFog: fog) {
+                continue
+            }
             let frac = unit.hitpointsMax > 0 ? Double(unit.hitpoints) / Double(unit.hitpointsMax) : 1
             let cx = Double(unit.positionX) * tile / 256
             let cy = Double(unit.positionY) * tile / 256
@@ -350,12 +375,13 @@ public final class GameScene: SKScene {
     /// idle → no chip; otherwise a distinct **shape + colour** per state (centred on the node origin):
     /// move = green ▶ triangle, attack = red ◆ diamond, guard = blue ■ square, harvest = orange ● circle.
     private static func chipStyle(_ activity: FrameInfo.UnitActivity) -> (CGPath, SKColor)? {
-        let r = 1.25   // half the old 2.5 — the state icons are 2× smaller
+        let r = 1.25  // half the old 2.5 — the state icons are 2× smaller
         switch activity {
             case .idle: return nil
             case .moving:
                 let p = CGMutablePath()
-                p.move(to: CGPoint(x: -r, y: -r)); p.addLine(to: CGPoint(x: r, y: 0)); p.addLine(to: CGPoint(x: -r, y: r)); p.closeSubpath()
+                p.move(to: CGPoint(x: -r, y: -r)); p.addLine(to: CGPoint(x: r, y: 0));
+                p.addLine(to: CGPoint(x: -r, y: r)); p.closeSubpath()
                 return (p, .systemGreen)
             case .attacking:
                 let p = CGMutablePath()
@@ -365,7 +391,9 @@ public final class GameScene: SKScene {
             case .guarding:
                 return (CGPath(rect: CGRect(x: -r, y: -r, width: 2 * r, height: 2 * r), transform: nil), .systemBlue)
             case .harvesting:
-                return (CGPath(ellipseIn: CGRect(x: -r, y: -r, width: 2 * r, height: 2 * r), transform: nil), .systemOrange)
+                return (
+                    CGPath(ellipseIn: CGRect(x: -r, y: -r, width: 2 * r, height: 2 * r), transform: nil), .systemOrange
+                )
         }
     }
 
@@ -418,7 +446,9 @@ public final class GameScene: SKScene {
 
     /// True while the next primary tap supplies a target: an armed unit order, structure placement, or the
     /// palace death-hand target-select.
-    private var targetingActive: Bool { (model?.pendingOrder != nil) || (model?.placement != nil) || (model?.missileTargeting != nil) }
+    private var targetingActive: Bool {
+        (model?.pendingOrder != nil) || (model?.placement != nil) || (model?.missileTargeting != nil)
+    }
 
     /// Set the crosshair while targeting, the arrow otherwise — only when the state changes. macOS only:
     /// iOS has no hardware cursor, so the body is a no-op there.
@@ -426,187 +456,220 @@ public final class GameScene: SKScene {
         guard targetingActive != lastTargetingActive else { return }
         lastTargetingActive = targetingActive
         #if os(macOS)
-        (targetingActive ? NSCursor.crosshair : NSCursor.arrow).set()
+            (targetingActive ? NSCursor.crosshair : NSCursor.arrow).set()
         #endif
     }
 
     #if os(macOS)
-    private func tile(at event: NSEvent) -> (Int, Int)? { tile(atScenePoint: event.location(in: self)) }
+        private func tile(at event: NSEvent) -> (Int, Int)? { tile(atScenePoint: event.location(in: self)) }
 
-    // Left-click is resolved on mouse-UP so a press-drag-release can be a drag-select box instead. The
-    // special modes (missile target-select, structure placement, an armed order) act on a plain click and
-    // suppress drag-select.
-    override public func mouseDown(with event: NSEvent) {
-        leftDragStartWindow = event.locationInWindow
-        leftDragStartTile = tile(at: event)
-        leftDragging = false
-    }
-
-    override public func mouseDragged(with event: NSEvent) {
-        guard let start = leftDragStartWindow,
-              model?.missileTargeting == nil, model?.placement == nil, model?.pendingOrder == nil else { return }
-        let cur = event.locationInWindow
-        if hypot(cur.x - start.x, cur.y - start.y) > 4 { leftDragging = true }
-        if leftDragging, let from = leftDragStartTile, let to = tile(at: event) { setDragBox(from: from, to: to) }
-    }
-
-    override public func mouseUp(with event: NSEvent) {
-        defer { leftDragStartWindow = nil; leftDragStartTile = nil; leftDragging = false; dragBoxNode.isHidden = true }
-        if leftDragging, let from = leftDragStartTile, let to = tile(at: event) {
-            model?.dragSelect(fromTileX: from.0, fromTileY: from.1, toTileX: to.0, toTileY: to.1)
-            return
+        // Left-click is resolved on mouse-UP so a press-drag-release can be a drag-select box instead. The
+        // special modes (missile target-select, structure placement, an armed order) act on a plain click and
+        // suppress drag-select.
+        override public func mouseDown(with event: NSEvent) {
+            leftDragStartWindow = event.locationInWindow
+            leftDragStartTile = tile(at: event)
+            leftDragging = false
         }
-        guard let (x, y) = tile(at: event) else { return }
-        if model?.missileTargeting != nil { model?.launchMissileAt(tileX: x, tileY: y) }
-        else if model?.placement != nil { model?.placeAt(tileX: x, tileY: y) }
-        else { model?.leftClickTile(x, y) }
-    }
 
-    override public func rightMouseDown(with event: NSEvent) {
-        if model?.missileTargeting != nil { model?.cancelMissileTargeting(); return }
-        if model?.placement != nil { model?.cancelPlacement(); return }
-        if let (x, y) = tile(at: event) { model?.rightClickTile(x, y) }
-    }
-
-    /// Middle mouse button: drag to pan the map (a hand-tool — the content follows the cursor), or a plain
-    /// click (no drag) recentres on the clicked point. Tracked in window coords so the camera's own motion
-    /// during the drag doesn't feed back into the delta.
-    override public func otherMouseDown(with event: NSEvent) {
-        guard event.buttonNumber == 2 else { return }
-        middleDragLastWindow = event.locationInWindow
-        middleDidDrag = false
-        middleDownScene = event.location(in: self)
-    }
-
-    override public func otherMouseDragged(with event: NSEvent) {
-        guard event.buttonNumber == 2, let last = middleDragLastWindow else { return }
-        let cur = event.locationInWindow
-        let dx = Double(cur.x - last.x), dy = Double(cur.y - last.y)
-        middleDragLastWindow = cur
-        if dx != 0 || dy != 0 { middleDidDrag = true }
-        // Hand-tool pan: drag right ⇒ content moves right (view pans left), drag up ⇒ content moves up.
-        // `scroll` moves the content by `-dx` screen px / `+dy`; window y-up already matches the scroll `dy`.
-        model?.scroll(dx: -dx, dy: dy)
-    }
-
-    override public func otherMouseUp(with event: NSEvent) {
-        guard event.buttonNumber == 2 else { return }
-        defer { middleDragLastWindow = nil; middleDownScene = nil }
-        if !middleDidDrag, let p = middleDownScene {
-            model?.centerOn(worldX: Double(p.x), worldY: Double(Self.worldSidePx) - Double(p.y))
+        override public func mouseDragged(with event: NSEvent) {
+            guard
+                let start = leftDragStartWindow,
+                model?.missileTargeting == nil,
+                model?.placement == nil,
+                model?.pendingOrder == nil
+            else { return }
+            let cur = event.locationInWindow
+            if hypot(cur.x - start.x, cur.y - start.y) > 4 { leftDragging = true }
+            if leftDragging, let from = leftDragStartTile, let to = tile(at: event) { setDragBox(from: from, to: to) }
         }
-    }
 
-    override public func mouseMoved(with event: NSEvent) {
-        guard model?.placement != nil, let (x, y) = tile(at: event) else { return }
-        model?.placementHover(tileX: x, tileY: y)
-    }
-
-    override public func keyDown(with event: NSEvent) {
-        switch event.keyCode {
-            case 24, 69: model?.zoomIn()    // '=' / '+' / keypad +
-            case 27, 78: model?.zoomOut()   // '-' / keypad -
-            case 123: model?.scroll(dx: -64, dy: 0)   // ←
-            case 124: model?.scroll(dx: 64, dy: 0)    // →
-            case 126: model?.scroll(dx: 0, dy: -64)   // ↑ (up = toward smaller image-y)
-            case 125: model?.scroll(dx: 0, dy: 64)    // ↓
-            case 49:  model?.togglePause()   // space — pause / resume
-            case 53:  // Esc — back out of whatever mode is active, else deselect
-                if model?.missileTargeting != nil { model?.cancelMissileTargeting() }
-                else if model?.placement != nil { model?.cancelPlacement() }
-                else { model?.deselect() }
-            default:
-                // When a player **building** is selected, r/u/s drive its repair/upgrade (r and u toggle, so
-                // pressing them again stops; s stops whichever is in progress). Otherwise they're the per-unit
-                // action shortcuts — only the actions valid for that unit type fire (so `a`=Attack is ignored
-                // for a harvester, `r`=Return for a tank). Targeted actions (a/m/h) arm a crosshair click.
-                let building = model?.isBuildingSelected == true
-                switch event.charactersIgnoringModifiers?.lowercased() {
-                    case "a": model?.issueAction(.attack)
-                    case "m": model?.issueAction(.move)
-                    case "h": model?.issueAction(.harvest)
-                    case "r": if building { model?.repairSelected() } else { model?.issueAction(.return) }
-                    case "u": model?.upgradeSelected()   // buildings only (no-op otherwise)
-                    case "e": model?.issueAction(.retreat)
-                    case "g": model?.issueAction(.guard_)
-                    case "d": model?.issueAction(.deploy)
-                    case "b": model?.issueAction(.sabotage)
-                    case "x": model?.issueAction(.destruct)
-                    case "s": if building { model?.stopBuildingActivity() } else { model?.stopSelected() }
-                    default:  super.keyDown(with: event)
-                }
+        override public func mouseUp(with event: NSEvent) {
+            defer {
+                leftDragStartWindow = nil; leftDragStartTile = nil; leftDragging = false; dragBoxNode.isHidden = true
+            }
+            if leftDragging, let from = leftDragStartTile, let to = tile(at: event) {
+                model?.dragSelect(fromTileX: from.0, fromTileY: from.1, toTileX: to.0, toTileY: to.1)
+                return
+            }
+            guard let (x, y) = tile(at: event) else { return }
+            if model?.missileTargeting != nil {
+                model?.launchMissileAt(tileX: x, tileY: y)
+            } else if model?.placement != nil {
+                model?.placeAt(tileX: x, tileY: y)
+            } else {
+                model?.leftClickTile(x, y)
+            }
         }
-    }
 
-    /// AppKit's authoritative cursor hook (fires as the mouse moves over the view), so the crosshair sticks.
-    override public func cursorUpdate(with event: NSEvent) {
-        (targetingActive ? NSCursor.crosshair : NSCursor.arrow).set()
-    }
+        override public func rightMouseDown(with event: NSEvent) {
+            if model?.missileTargeting != nil { model?.cancelMissileTargeting(); return }
+            if model?.placement != nil { model?.cancelPlacement(); return }
+            if let (x, y) = tile(at: event) { model?.rightClickTile(x, y) }
+        }
+
+        /// Middle mouse button: drag to pan the map (a hand-tool — the content follows the cursor), or a plain
+        /// click (no drag) recentres on the clicked point. Tracked in window coords so the camera's own motion
+        /// during the drag doesn't feed back into the delta.
+        override public func otherMouseDown(with event: NSEvent) {
+            guard event.buttonNumber == 2 else { return }
+            middleDragLastWindow = event.locationInWindow
+            middleDidDrag = false
+            middleDownScene = event.location(in: self)
+        }
+
+        override public func otherMouseDragged(with event: NSEvent) {
+            guard event.buttonNumber == 2, let last = middleDragLastWindow else { return }
+            let cur = event.locationInWindow
+            let dx = Double(cur.x - last.x), dy = Double(cur.y - last.y)
+            middleDragLastWindow = cur
+            if dx != 0 || dy != 0 { middleDidDrag = true }
+            // Hand-tool pan: drag right ⇒ content moves right (view pans left), drag up ⇒ content moves up.
+            // `scroll` moves the content by `-dx` screen px / `+dy`; window y-up already matches the scroll `dy`.
+            model?.scroll(dx: -dx, dy: dy)
+        }
+
+        override public func otherMouseUp(with event: NSEvent) {
+            guard event.buttonNumber == 2 else { return }
+            defer { middleDragLastWindow = nil; middleDownScene = nil }
+            if !middleDidDrag, let p = middleDownScene {
+                model?.centerOn(worldX: Double(p.x), worldY: Double(Self.worldSidePx) - Double(p.y))
+            }
+        }
+
+        override public func mouseMoved(with event: NSEvent) {
+            guard model?.placement != nil, let (x, y) = tile(at: event) else { return }
+            model?.placementHover(tileX: x, tileY: y)
+        }
+
+        override public func keyDown(with event: NSEvent) {
+            switch event.keyCode {
+                case 24, 69: model?.zoomIn()  // '=' / '+' / keypad +
+                case 27, 78: model?.zoomOut()  // '-' / keypad -
+                case 123: model?.scroll(dx: -64, dy: 0)  // ←
+                case 124: model?.scroll(dx: 64, dy: 0)  // →
+                case 126: model?.scroll(dx: 0, dy: -64)  // ↑ (up = toward smaller image-y)
+                case 125: model?.scroll(dx: 0, dy: 64)  // ↓
+                case 49: model?.togglePause()  // space — pause / resume
+                case 53:  // Esc — back out of whatever mode is active, else deselect
+                    if model?.missileTargeting != nil {
+                        model?.cancelMissileTargeting()
+                    } else if model?.placement != nil {
+                        model?.cancelPlacement()
+                    } else {
+                        model?.deselect()
+                    }
+                default:
+                    // When a player **building** is selected, r/u/s drive its repair/upgrade (r and u toggle, so
+                    // pressing them again stops; s stops whichever is in progress). Otherwise they're the per-unit
+                    // action shortcuts — only the actions valid for that unit type fire (so `a`=Attack is ignored
+                    // for a harvester, `r`=Return for a tank). Targeted actions (a/m/h) arm a crosshair click.
+                    let building = model?.isBuildingSelected == true
+                    switch event.charactersIgnoringModifiers?.lowercased() {
+                        case "a": model?.issueAction(.attack)
+                        case "m": model?.issueAction(.move)
+                        case "h": model?.issueAction(.harvest)
+                        case "r": if building { model?.repairSelected() } else { model?.issueAction(.return) }
+                        case "u": model?.upgradeSelected()  // buildings only (no-op otherwise)
+                        case "e": model?.issueAction(.retreat)
+                        case "g": model?.issueAction(.guard_)
+                        case "d": model?.issueAction(.deploy)
+                        case "b": model?.issueAction(.sabotage)
+                        case "x": model?.issueAction(.destruct)
+                        case "s": if building { model?.stopBuildingActivity() } else { model?.stopSelected() }
+                        default: super.keyDown(with: event)
+                    }
+            }
+        }
+
+        /// AppKit's authoritative cursor hook (fires as the mouse moves over the view), so the crosshair sticks.
+        override public func cursorUpdate(with event: NSEvent) {
+            (targetingActive ? NSCursor.crosshair : NSCursor.arrow).set()
+        }
     #endif
 
     #if os(iOS)
-    // MARK: - Touch input
+        // MARK: - Touch input
 
-    override public func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        let count = event?.allTouches?.count ?? touches.count
-        if count >= 2 {
+        override public func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+            let count = event?.allTouches?.count ?? touches.count
+            if count >= 2 {
+                cancelLongPress()
+                pinchStartDistance = pinchDistance(event)
+                return
+            }
+            guard let p = touches.first?.location(in: self) else { return }
+            touchStartScene = p; touchLastScene = p; touchDidPan = false; longPressFired = false
+            // A stationary long-press = the macOS right-click (default order / cancel a mode).
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, !self.touchDidPan, let start = self.touchStartScene else { return }
+                self.longPressFired = true
+                if self.model?.missileTargeting != nil {
+                    self.model?.cancelMissileTargeting()
+                } else if self.model?.placement != nil {
+                    self.model?.cancelPlacement()
+                } else if let (x, y) = self.tile(atScenePoint: start) {
+                    self.model?.rightClickTile(x, y)
+                }
+            }
+            longPressWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+        }
+
+        override public func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+            if (event?.allTouches?.count ?? touches.count) >= 2, let start = pinchStartDistance,
+                let now = pinchDistance(event)
+            {
+                cancelLongPress()
+                if now / start > 1.30 {
+                    model?.zoomIn(); pinchStartDistance = now
+                } else if now / start < 0.77 {
+                    model?.zoomOut(); pinchStartDistance = now
+                }
+                return
+            }
+            guard
+                let cur = touches.first?.location(in: self),
+                let last = touchLastScene,
+                let start = touchStartScene
+            else { return }
+            touchLastScene = cur
+            if hypot(cur.x - start.x, cur.y - start.y) > 10 { touchDidPan = true; cancelLongPress() }
+            // Hand-tool pan: drag content with the finger (only when not in a target-select / placement mode).
+            if touchDidPan, model?.placement == nil, model?.missileTargeting == nil, model?.pendingOrder == nil {
+                model?.scroll(dx: -Double(cur.x - last.x), dy: Double(cur.y - last.y))
+            } else if model?.placement != nil, let (x, y) = tile(atScenePoint: cur) {
+                model?.placementHover(tileX: x, tileY: y)
+            }
+        }
+
+        override public func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+            defer { resetTouchState() }
             cancelLongPress()
-            pinchStartDistance = pinchDistance(event)
-            return
+            if pinchStartDistance != nil || touchDidPan || longPressFired { return }
+            // A plain tap = the macOS left-click: place / launch in a mode, else select / apply an armed order.
+            guard let p = touchStartScene, let (x, y) = tile(atScenePoint: p) else { return }
+            if model?.missileTargeting != nil {
+                model?.launchMissileAt(tileX: x, tileY: y)
+            } else if model?.placement != nil {
+                model?.placeAt(tileX: x, tileY: y)
+            } else {
+                model?.leftClickTile(x, y)
+            }
         }
-        guard let p = touches.first?.location(in: self) else { return }
-        touchStartScene = p; touchLastScene = p; touchDidPan = false; longPressFired = false
-        // A stationary long-press = the macOS right-click (default order / cancel a mode).
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, !self.touchDidPan, let start = self.touchStartScene else { return }
-            self.longPressFired = true
-            if self.model?.missileTargeting != nil { self.model?.cancelMissileTargeting() }
-            else if self.model?.placement != nil { self.model?.cancelPlacement() }
-            else if let (x, y) = self.tile(atScenePoint: start) { self.model?.rightClickTile(x, y) }
+
+        override public func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+            cancelLongPress(); resetTouchState()
         }
-        longPressWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
-    }
 
-    override public func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if (event?.allTouches?.count ?? touches.count) >= 2, let start = pinchStartDistance, let now = pinchDistance(event) {
-            cancelLongPress()
-            if now / start > 1.30 { model?.zoomIn(); pinchStartDistance = now }
-            else if now / start < 0.77 { model?.zoomOut(); pinchStartDistance = now }
-            return
+        private func pinchDistance(_ event: UIEvent?) -> CGFloat? {
+            let pts = (event?.allTouches.map { Array($0) } ?? []).prefix(2).map { $0.location(in: self) }
+            guard pts.count == 2 else { return nil }
+            return hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
         }
-        guard let cur = touches.first?.location(in: self), let last = touchLastScene, let start = touchStartScene else { return }
-        touchLastScene = cur
-        if hypot(cur.x - start.x, cur.y - start.y) > 10 { touchDidPan = true; cancelLongPress() }
-        // Hand-tool pan: drag content with the finger (only when not in a target-select / placement mode).
-        if touchDidPan, model?.placement == nil, model?.missileTargeting == nil, model?.pendingOrder == nil {
-            model?.scroll(dx: -Double(cur.x - last.x), dy: Double(cur.y - last.y))
-        } else if model?.placement != nil, let (x, y) = tile(atScenePoint: cur) {
-            model?.placementHover(tileX: x, tileY: y)
+        private func cancelLongPress() { longPressWork?.cancel(); longPressWork = nil }
+        private func resetTouchState() {
+            touchStartScene = nil; touchLastScene = nil; touchDidPan = false; pinchStartDistance = nil
         }
-    }
-
-    override public func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        defer { resetTouchState() }
-        cancelLongPress()
-        if pinchStartDistance != nil || touchDidPan || longPressFired { return }
-        // A plain tap = the macOS left-click: place / launch in a mode, else select / apply an armed order.
-        guard let p = touchStartScene, let (x, y) = tile(atScenePoint: p) else { return }
-        if model?.missileTargeting != nil { model?.launchMissileAt(tileX: x, tileY: y) }
-        else if model?.placement != nil { model?.placeAt(tileX: x, tileY: y) }
-        else { model?.leftClickTile(x, y) }
-    }
-
-    override public func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        cancelLongPress(); resetTouchState()
-    }
-
-    private func pinchDistance(_ event: UIEvent?) -> CGFloat? {
-        let pts = (event?.allTouches.map { Array($0) } ?? []).prefix(2).map { $0.location(in: self) }
-        guard pts.count == 2 else { return nil }
-        return hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
-    }
-    private func cancelLongPress() { longPressWork?.cancel(); longPressWork = nil }
-    private func resetTouchState() { touchStartScene = nil; touchLastScene = nil; touchDidPan = false; pinchStartDistance = nil }
     #endif
 }

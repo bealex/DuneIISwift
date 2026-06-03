@@ -32,7 +32,7 @@ public struct TeamScriptRunner: Sendable {
     func dispatch(_ index: Int, engine: inout ScriptEngine, state: inout GameState, slot: Int) -> UInt16? {
         switch index {
             case 0x00: let d = general.delay(ticks: engine.peek(1)); engine.delay = d; return d
-            case 0x01, 0x0B: return general.noOperation()   // DisplayText / DisplayModalMessage — GUI (SEAM)
+            case 0x01, 0x0B: return general.noOperation()  // DisplayText / DisplayModalMessage — GUI (SEAM)
             case 0x02: return team.getMembers(slot: slot, in: state)
             case 0x03: return team.addClosestUnit(slot: slot, in: &state)
             case 0x04: return team.getAverageDistance(slot: slot, in: &state)
@@ -40,22 +40,46 @@ public struct TeamScriptRunner: Sendable {
                 guard let targets = unit?.targets else { return nil }
                 return team.findBestTarget(slot: slot, targets: targets, in: &state)
             case 0x05:
-                guard let u = unit else { return nil }   // needs the unit-action layer
-                return team.moveOrGuardMembers(slot: slot, distance: engine.peek(1), unitScript: u.scriptInfo,
-                                               actions: u.actions, unitFuncs: u.unit, in: &state)
+                guard let u = unit else { return nil }  // needs the unit-action layer
+                return team.moveOrGuardMembers(
+                    slot: slot,
+                    distance: engine.peek(1),
+                    unitScript: u.scriptInfo,
+                    actions: u.actions,
+                    unitFuncs: u.unit,
+                    in: &state
+                )
             case 0x07:
                 guard let u = unit else { return nil }
-                return team.issueAttackOrders(slot: slot, unitScript: u.scriptInfo, actions: u.actions,
-                                              unitFuncs: u.unit, in: &state)
-            case 0x08: return team.load(slot: slot, type: engine.peek(1), interpreter: interpreter,
-                                        scriptInfo: scriptInfo, engine: &engine, in: &state)
-            case 0x09: return team.load2(slot: slot, interpreter: interpreter, scriptInfo: scriptInfo,
-                                         engine: &engine, in: &state)
+                return team.issueAttackOrders(
+                    slot: slot,
+                    unitScript: u.scriptInfo,
+                    actions: u.actions,
+                    unitFuncs: u.unit,
+                    in: &state
+                )
+            case 0x08:
+                return team.load(
+                    slot: slot,
+                    type: engine.peek(1),
+                    interpreter: interpreter,
+                    scriptInfo: scriptInfo,
+                    engine: &engine,
+                    in: &state
+                )
+            case 0x09:
+                return team.load2(
+                    slot: slot,
+                    interpreter: interpreter,
+                    scriptInfo: scriptInfo,
+                    engine: &engine,
+                    in: &state
+                )
             case 0x0A: return general.delayRandom(maxTicks: engine.peek(1), in: &state)
             case 0x0C: return team.getVariable6(slot: slot, in: state)
             case 0x0D: return team.getTarget(slot: slot, in: state)
             case 0x0E: return general.noOperation()
-            default:   return nil
+            default: return nil
         }
     }
 

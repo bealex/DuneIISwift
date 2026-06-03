@@ -10,8 +10,10 @@ public struct TargetFinder: Sendable {
     public let map: any MapPrimitives
     public let house: any HousePrimitives
 
-    public init(map: any MapPrimitives = DefaultMapPrimitives(),
-                house: any HousePrimitives = DefaultHousePrimitives()) {
+    public init(
+        map: any MapPrimitives = DefaultMapPrimitives(),
+        house: any HousePrimitives = DefaultHousePrimitives()
+    ) {
         self.map = map
         self.house = house
     }
@@ -62,8 +64,14 @@ public struct TargetFinder: Sendable {
         var find = PoolFind()
         while let target = state.unitFind(&find) {
             if mode != 0 && mode != 4 {
-                if mode == 1, Tile32.distance(from: state.units[slot].o.position, to: state.units[target].o.position) > distance { continue }
-                if mode == 2, Tile32.distance(from: position, to: state.units[target].o.position) > distance { continue }
+                if mode == 1,
+                    Tile32.distance(from: state.units[slot].o.position, to: state.units[target].o.position) > distance
+                {
+                    continue
+                }
+                if mode == 2, Tile32.distance(from: position, to: state.units[target].o.position) > distance {
+                    continue
+                }
             }
             let priority = Int16(bitPattern: targetUnitPriority(unitSlot: slot, targetSlot: target, in: state))
             if priority > bestPriority {
@@ -85,13 +93,16 @@ public struct TargetFinder: Sendable {
 
         var res: UInt16
         switch UnitInfo[tt].movementType {
-            case .foot:                res = 0x64
+            case .foot: res = 0x64
             case .tracked, .harvester: res = 0x3E8
-            case .wheeled:             res = 0x1388
-            default:                   res = 0
+            case .wheeled: res = 0x1388
+            default: res = 0
         }
         if state.units[targetSlot].speed != 0 || state.units[targetSlot].fireDelay != 0 { res &*= 4 }
-        let distance = Tile32.distanceRoundedUp(from: state.units[unitSlot].o.position, to: state.units[targetSlot].o.position)
+        let distance = Tile32.distanceRoundedUp(
+            from: state.units[unitSlot].o.position,
+            to: state.units[targetSlot].o.position
+        )
         if distance != 0 && res != 0 { res /= distance }
         if distance < 2 { res &*= 2 }
         return res
@@ -134,8 +145,10 @@ public struct TargetFinder: Sendable {
         if target.o.seenByHouses & (1 << unitHouse) == 0 { return 0 }
         if house.areAllied(unitHouse, state.unitHouseID(target), playerHouseID: state.playerHouseID) { return 0 }
 
-        guard let uType = UnitType(rawValue: Int(state.units[unitSlot].o.type)),
-              let tType = UnitType(rawValue: Int(target.o.type)) else { return 0 }
+        guard
+            let uType = UnitType(rawValue: Int(state.units[unitSlot].o.type)),
+            let tType = UnitType(rawValue: Int(target.o.type))
+        else { return 0 }
         let unitInfo = UnitInfo[uType]
         let targetInfo = UnitInfo[tType]
 
@@ -144,7 +157,10 @@ public struct TargetFinder: Sendable {
         if targetInfo.movementType == .winger {
             if !unitInfo.o.flags.contains(.targetAir) { return 0 }
             if target.o.houseID == state.playerHouseID
-                && !map.isPositionUnveiled(state.map[Int(target.o.position.packed)], tileIDs: state.tileIDs) { return 0 }
+                && !map.isPositionUnveiled(state.map[Int(target.o.position.packed)], tileIDs: state.tileIDs)
+            {
+                return 0
+            }
         }
 
         if !map.isValidPosition(target.o.position.packed, mapScale: state.mapScale) { return 0 }

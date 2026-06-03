@@ -1,5 +1,6 @@
-import Testing
 import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
 
 /// Behaviour checks for the fog primitives `Tile_IsUnveiled` (`sprites.c:477`) and
@@ -9,16 +10,16 @@ import DuneIIWorld
 @Suite("Fog-of-war unveil primitives")
 struct UnveilTests {
     let map: any MapPrimitives = DefaultMapPrimitives()
-    let veiled: UInt16 = 124   // the real FOG_OF_WAR base from ICON.MAP
+    let veiled: UInt16 = 124  // the real FOG_OF_WAR base from ICON.MAP
 
     @Test("Tile_IsUnveiled: the 16-frame veil run is veiled, outside it is unveiled")
     func tileIsUnveiled() {
-        #expect(!map.tileIsUnveiled(veiled, veiledTileID: veiled))        // last veil frame
-        #expect(!map.tileIsUnveiled(veiled - 15, veiledTileID: veiled))   // first veil frame
-        #expect(!map.tileIsUnveiled(veiled - 8, veiledTileID: veiled))    // mid-run
-        #expect(map.tileIsUnveiled(veiled + 1, veiledTileID: veiled))     // above the run
-        #expect(map.tileIsUnveiled(veiled - 16, veiledTileID: veiled))    // below the run
-        #expect(map.tileIsUnveiled(0, veiledTileID: veiled))              // ordinary terrain
+        #expect(!map.tileIsUnveiled(veiled, veiledTileID: veiled))  // last veil frame
+        #expect(!map.tileIsUnveiled(veiled - 15, veiledTileID: veiled))  // first veil frame
+        #expect(!map.tileIsUnveiled(veiled - 8, veiledTileID: veiled))  // mid-run
+        #expect(map.tileIsUnveiled(veiled + 1, veiledTileID: veiled))  // above the run
+        #expect(map.tileIsUnveiled(veiled - 16, veiledTileID: veiled))  // below the run
+        #expect(map.tileIsUnveiled(0, veiledTileID: veiled))  // ordinary terrain
     }
 
     @Test("Map_IsPositionUnveiled: needs the flag and a non-veil overlay")

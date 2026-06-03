@@ -12,7 +12,7 @@ struct MentatView: View {
     let provider: SpriteImageProvider
     @State private var selected: String?
 
-    private static let sectionOrder: [MentatHelp.Section] = [.structures, .vehicles, .specials, .houses]
+    private static let sectionOrder: [MentatHelp.Section] = [ .structures, .vehicles, .specials, .houses ]
 
     /// What a Mentat topic refers to, for the sprite + stat lookup (houses / lore have none).
     private enum Subject { case structure(StructureType), unit(UnitType), none }
@@ -82,9 +82,12 @@ struct MentatView: View {
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
-            ContentUnavailableView("Mentat", systemImage: "brain.head.profile",
-                                   description: Text("Pick a topic to read about it."))
-                .frame(maxWidth: .infinity)
+            ContentUnavailableView(
+                "Mentat",
+                systemImage: "brain.head.profile",
+                description: Text("Pick a topic to read about it.")
+            )
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -124,13 +127,25 @@ struct MentatView: View {
     @ViewBuilder private func thumbnail(_ topic: MentatHelp.Topic, size: CGFloat) -> some View {
         switch subject(topic.name) {
             case let .structure(t):
-                SpriteThumbnail(objectType: UInt16(t.rawValue), isStructure: true, house: model.playerHouse,
-                                height: size, provider: provider, assets: model.assets)
-                    .frame(width: size, height: size)
+                SpriteThumbnail(
+                    objectType: UInt16(t.rawValue),
+                    isStructure: true,
+                    house: model.playerHouse,
+                    height: size,
+                    provider: provider,
+                    assets: model.assets
+                )
+                .frame(width: size, height: size)
             case let .unit(t):
-                SpriteThumbnail(objectType: UInt16(t.rawValue), isStructure: false, house: model.playerHouse,
-                                height: size, provider: provider, assets: model.assets)
-                    .frame(width: size, height: size)
+                SpriteThumbnail(
+                    objectType: UInt16(t.rawValue),
+                    isStructure: false,
+                    house: model.playerHouse,
+                    height: size,
+                    provider: provider,
+                    assets: model.assets
+                )
+                .frame(width: size, height: size)
             case .none:
                 Image(systemName: topic.section == .houses ? "flag.fill" : "sparkles")
                     .font(.system(size: size * 0.6)).foregroundStyle(.secondary)
@@ -142,8 +157,11 @@ struct MentatView: View {
 
     private func sectionTitle(_ s: MentatHelp.Section) -> String {
         switch s {
-            case .structures: "Structures"; case .vehicles: "Vehicles"
-            case .specials:   "Special";    case .houses:   "Houses"; case .general: ""
+            case .structures: "Structures";
+            case .vehicles: "Vehicles"
+            case .specials: "Special";
+            case .houses: "Houses";
+            case .general: ""
         }
     }
 
@@ -176,8 +194,8 @@ struct MentatView: View {
             let match = topics.first { topic in
                 switch subject(topic.name) {
                     case let .structure(t): return sel.kind == .structure && UInt16(t.rawValue) == sel.typeRaw
-                    case let .unit(t):      return sel.kind == .unit && UInt16(t.rawValue) == sel.typeRaw
-                    case .none:             return false
+                    case let .unit(t): return sel.kind == .unit && UInt16(t.rawValue) == sel.typeRaw
+                    case .none: return false
                 }
             }
             if let match { return match.name }

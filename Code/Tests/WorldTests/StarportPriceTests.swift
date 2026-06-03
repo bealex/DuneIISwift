@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import DuneIIWorld
 
 /// CHOAM starport-price parity against OpenDUNE's `GUI_FactoryWindow_CalculateStarportPrice` (`gui.c:2726`).

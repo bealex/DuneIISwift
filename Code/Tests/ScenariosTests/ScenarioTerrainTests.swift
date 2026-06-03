@@ -1,15 +1,17 @@
-import Foundation
-import Testing
 import DuneIIFormats
 import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIIScenarios
 
 @Suite("Scenario terrain")
 struct ScenarioTerrainTests {
     private func iconMap() throws -> IconMap? {
         var repo = URL(fileURLWithPath: #filePath)
-        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }   // Code/Tests/ScenariosTests → repo root
-        guard let data = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP"))
+        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }  // Code/Tests/ScenariosTests → repo root
+        guard
+            let data = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP"))
         else { return nil }
         return try IconMap(data)
     }
@@ -29,7 +31,7 @@ struct ScenarioTerrainTests {
 
     @Test("apply lays natural Map_CreateLandscape terrain — reproducible, with varied tiles")
     func apply() throws {
-        guard let icon = try iconMap() else { return }   // needs the install
+        guard let icon = try iconMap() else { return }  // needs the install
 
         func built(_ seed: UInt32) -> GameState {
             var s = GameState()
@@ -40,8 +42,8 @@ struct ScenarioTerrainTests {
 
         let a = built(3), b = built(3), c = built(8)
         let groundA = a.map.map(\.groundTileID)
-        #expect(groundA == b.map.map(\.groundTileID))   // same seed ⇒ identical terrain
-        #expect(groundA != c.map.map(\.groundTileID))   // a different seed differs
+        #expect(groundA == b.map.map(\.groundTileID))  // same seed ⇒ identical terrain
+        #expect(groundA != c.map.map(\.groundTileID))  // a different seed differs
 
         // The generated map isn't a flat fill — it carries transition/feature tiles.
         #expect(Set(groundA).count > 4)

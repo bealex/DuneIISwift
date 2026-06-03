@@ -1,7 +1,8 @@
-import Testing
 import DuneIIContracts
-@testable import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
+@testable import DuneIIWorld
 
 /// `GameLoop_IsLevelFinished` / `GameLoop_IsLevelWon` — the mission win/lose evaluation: a level ends when a
 /// `WinFlags` condition is met (after a 7200-tick minimum) and `LoseFlags` decides win vs lose. See
@@ -28,32 +29,32 @@ struct LevelEndTests {
     @Test("destroying the last enemy structure wins (WinFlags 1 / LoseFlags 1)")
     func winByDestroyingEnemy() {
         var sim = base(winFlags: 1, loseFlags: 1)
-        addStructure(&sim.state, house: 0)                  // the player's base
-        let enemy = addStructure(&sim.state, house: 1)      // the enemy's base
+        addStructure(&sim.state, house: 0)  // the player's base
+        let enemy = addStructure(&sim.state, house: 1)  // the enemy's base
 
-        sim.state.timerGame = 5000                          // < 7200 ⇒ too early to decide
+        sim.state.timerGame = 5000  // < 7200 ⇒ too early to decide
         sim.evaluateLevelEnd()
         #expect(sim.state.gameEndState == .playing)
 
-        sim.state.timerGame = 8000                          // past the minimum, but the enemy still stands
+        sim.state.timerGame = 8000  // past the minimum, but the enemy still stands
         sim.evaluateLevelEnd()
         #expect(sim.state.gameEndState == .playing)
 
-        sim.state.structureFree(enemy)                       // the enemy's last structure falls
+        sim.state.structureFree(enemy)  // the enemy's last structure falls
         sim.evaluateLevelEnd()
         #expect(sim.state.gameEndState == .won)
     }
 
     @Test("losing the whole base loses (WinFlags 2 / LoseFlags 1)")
     func loseByLosingBase() {
-        var sim = base(winFlags: 2, loseFlags: 1)           // end when no friendly structures; win iff no enemy
+        var sim = base(winFlags: 2, loseFlags: 1)  // end when no friendly structures; win iff no enemy
         let friendly = addStructure(&sim.state, house: 0)
         addStructure(&sim.state, house: 1)
         sim.state.timerGame = 8000
 
-        sim.state.structureFree(friendly)                     // the player's base is wiped out
+        sim.state.structureFree(friendly)  // the player's base is wiped out
         sim.evaluateLevelEnd()
-        #expect(sim.state.gameEndState == .lost)              // finished, but the enemy survives ⇒ lost
+        #expect(sim.state.gameEndState == .lost)  // finished, but the enemy survives ⇒ lost
     }
 
     @Test("reaching the spice quota wins (WinFlags 4 / LoseFlags 4)")
@@ -73,8 +74,8 @@ struct LevelEndTests {
     @Test("disableLevelEnd lets the game run on past a met win/lose condition")
     func playIndefinitely() {
         var sim = base(winFlags: 1, loseFlags: 1)
-        addStructure(&sim.state, house: 0)                  // the player's base; no enemy structures at all
-        sim.state.timerGame = 8000                          // past the minimum + the win condition is met
+        addStructure(&sim.state, house: 0)  // the player's base; no enemy structures at all
+        sim.state.timerGame = 8000  // past the minimum + the win condition is met
 
         // Default (faithful): the win latches.
         var control = sim
@@ -95,7 +96,7 @@ struct LevelEndTests {
     @Test("a level never ends before 7200 ticks even with the condition met")
     func minimumDuration() {
         var sim = base(winFlags: 1, loseFlags: 1)
-        addStructure(&sim.state, house: 0)                  // no enemy structures at all
+        addStructure(&sim.state, house: 0)  // no enemy structures at all
         sim.state.timerGame = 7199
         sim.evaluateLevelEnd()
         #expect(sim.state.gameEndState == .playing)

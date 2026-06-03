@@ -1,6 +1,7 @@
 import DuneIIContracts
 import Foundation
 import Testing
+
 @testable import DuneIIAudio
 
 /// `MusicDirector` — the music-selection policy transcribed from OpenDUNE (`g_table_musics` +
@@ -33,15 +34,15 @@ struct MusicDirectorTests {
     @Test("g_table_musics is transcribed verbatim (38 entries, key IDs)")
     func table() {
         #expect(MusicDirector.table.count == 38)
-        #expect(MusicDirector.table[0] == nil)                 // silence
-        #expect(MusicDirector.table[5]! == (17, 4))            // Ordos/Fremen win
-        #expect(MusicDirector.table[6]! == (8, 3))             // Harkonnen/Sardaukar win
-        #expect(MusicDirector.table[7]! == (8, 2))             // Atreides/Mercenary win
-        #expect(MusicDirector.table[8]! == (1, 6))             // first map track
-        #expect(MusicDirector.table[15]! == (9, 5))            // last map track
-        #expect(MusicDirector.table[17]! == (10, 7))           // first attack track
-        #expect(MusicDirector.table[22]! == (15, 7))           // last attack track
-        #expect(MusicDirector.table[24]! == (7, 2))            // Harkonnen briefing
+        #expect(MusicDirector.table[0] == nil)  // silence
+        #expect(MusicDirector.table[5]! == (17, 4))  // Ordos/Fremen win
+        #expect(MusicDirector.table[6]! == (8, 3))  // Harkonnen/Sardaukar win
+        #expect(MusicDirector.table[7]! == (8, 2))  // Atreides/Mercenary win
+        #expect(MusicDirector.table[8]! == (1, 6))  // first map track
+        #expect(MusicDirector.table[15]! == (9, 5))  // last map track
+        #expect(MusicDirector.table[17]! == (10, 7))  // first attack track
+        #expect(MusicDirector.table[22]! == (15, 7))  // last attack track
+        #expect(MusicDirector.table[24]! == (7, 2))  // Harkonnen briefing
     }
 
     @Test("previewTracks lists every non-silent table entry with its (file, song)")
@@ -60,9 +61,9 @@ struct MusicDirectorTests {
     @Test("per-house win/lose/briefing IDs match g_table_houseInfo")
     func houseMusic() {
         // Harkonnen, Atreides, Ordos, Fremen, Sardaukar, Mercenary
-        #expect(MusicDirector.winMusic == [6, 7, 5, 5, 6, 7])
-        #expect(MusicDirector.loseMusic == [3, 4, 2, 2, 3, 4])
-        #expect(MusicDirector.briefingMusic == [24, 25, 26, 0xFFFF, 0xFFFF, 0xFFFF])
+        #expect(MusicDirector.winMusic == [ 6, 7, 5, 5, 6, 7 ])
+        #expect(MusicDirector.loseMusic == [ 3, 4, 2, 2, 3, 4 ])
+        #expect(MusicDirector.briefingMusic == [ 24, 25, 26, 0xFFFF, 0xFFFF, 0xFFFF ])
     }
 
     @Test("filename zero-pads the song index")
@@ -87,9 +88,9 @@ struct MusicDirectorTests {
     func stingers() {
         let d = director(seed: 1)
         d.win(house: .ordos)
-        #expect(d.currentMusicID == 5)        // Ordos win
+        #expect(d.currentMusicID == 5)  // Ordos win
         d.lose(house: .atreides)
-        #expect(d.currentMusicID == 4)        // Atreides lose
+        #expect(d.currentMusicID == 4)  // Atreides lose
         // 0xFFFF (a disabled briefing) / out-of-range / silence all stop and reset to 0.
         #expect(d.play(musicID: 0xFFFF, loop: true) == false)
         #expect(d.currentMusicID == 0)
@@ -108,9 +109,9 @@ struct MusicDirectorTests {
     /// a real file in `Resources/Audio/Music/`. Short-circuits when the assets aren't present.
     @Test("every selectable track exists on disk")
     func tracksExistOnDisk() throws {
-        let musicDir = URL(filePath: #filePath)        // …/Code/Tests/AudioTests/MusicDirectorTests.swift
+        let musicDir = URL(filePath: #filePath)  // …/Code/Tests/AudioTests/MusicDirectorTests.swift
             .deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()   // → repo root
+            .deletingLastPathComponent().deletingLastPathComponent()  // → repo root
             .appending(path: "Resources/Audio/Music")
         try #require(FileManager.default.fileExists(atPath: musicDir.path), "music assets absent — skipping")
 
@@ -122,7 +123,10 @@ struct MusicDirectorTests {
         for id in ids {
             let track = try #require(MusicDirector.table[id], "musicID \(id) has no track")
             let file = musicDir.appending(path: MusicPlayer.filename(file: track.file, song: track.song))
-            #expect(FileManager.default.fileExists(atPath: file.path), "missing \(file.lastPathComponent) for musicID \(id)")
+            #expect(
+                FileManager.default.fileExists(atPath: file.path),
+                "missing \(file.lastPathComponent) for musicID \(id)"
+            )
         }
     }
 }

@@ -1,7 +1,8 @@
-import Testing
 import DuneIIContracts
-@testable import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
+@testable import DuneIIWorld
 
 /// Campaign degrade — the `GameLoop_Structure` degrade body (`structure.c:121`): on later campaigns
 /// (`campaignID > 1`), a `degrades` structure above half its base hitpoints loses its house's
@@ -12,7 +13,7 @@ struct DegradeTests {
         var s = GameState(); s.playerHouseID = 0; s.campaignID = campaign
         _ = s.houseAllocate(index: 0)
         let slot = s.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(StructureType.windtrap.rawValue))!
-        s.structures[slot].o.houseID = 0   // Harkonnen (HouseID 0) — degradingAmount 3
+        s.structures[slot].o.houseID = 0  // Harkonnen (HouseID 0) — degradingAmount 3
         s.structures[slot].o.hitpoints = hitpoints
         s.structures[slot].hitpointsMax = StructureInfo[.windtrap].o.hitpoints
         s.structures[slot].o.flags.insert(.degrades)
@@ -30,14 +31,14 @@ struct DegradeTests {
     func degradesAboveHalf() {
         var (s, slot) = sim(campaign: 2, hitpoints: StructureInfo[.windtrap].o.hitpoints)
         s.gameLoopStructure()
-        #expect(s.state.structures[slot].o.hitpoints == base - 3)   // Harkonnen degradingAmount = 3
+        #expect(s.state.structures[slot].o.hitpoints == base - 3)  // Harkonnen degradingAmount = 3
     }
 
     @Test("degrade stops at half hitpoints")
     func stopsAtHalf() {
         var (s, slot) = sim(campaign: 2, hitpoints: StructureInfo[.windtrap].o.hitpoints / 2)
         s.gameLoopStructure()
-        #expect(s.state.structures[slot].o.hitpoints == base / 2)   // not > half ⇒ untouched
+        #expect(s.state.structures[slot].o.hitpoints == base / 2)  // not > half ⇒ untouched
     }
 
     @Test("no degrade on campaign 1")

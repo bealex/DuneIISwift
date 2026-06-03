@@ -1,9 +1,10 @@
-import Foundation
-import Testing
 import DuneIIContracts
 import DuneIIFormats
-import DuneIIWorld
 import DuneIISimulation
+import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIIScenarios
 
 /// `ScenarioWorld.outcome()` — the lab's "scenario finished" signal. Each kind reaches its natural
@@ -12,13 +13,17 @@ import DuneIISimulation
 struct ScenarioOutcomeTests {
     private func loadBuilder() throws -> ScenarioBuilder? {
         var repo = URL(fileURLWithPath: #filePath)
-        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }   // Code/Tests/ScenariosTests → repo root
-        guard let icon = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")),
-              let emc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
-              let build = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc"))
+        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }  // Code/Tests/ScenariosTests → repo root
+        guard
+            let icon = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")),
+            let emc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
+            let build = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc"))
         else { return nil }
-        return ScenarioBuilder(iconMap: try IconMap(icon), unitScript: ScriptInfo(try Emc.Program(emc)),
-                               structureScript: ScriptInfo(try Emc.Program(build)))
+        return ScenarioBuilder(
+            iconMap: try IconMap(icon),
+            unitScript: ScriptInfo(try Emc.Program(emc)),
+            structureScript: ScriptInfo(try Emc.Program(build))
+        )
     }
 
     @Test("a freshly-built scenario is still running")

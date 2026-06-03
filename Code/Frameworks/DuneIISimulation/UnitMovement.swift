@@ -20,14 +20,20 @@ public struct UnitMovement: Sendable {
 
     /// The death-hand (house missile) 17-point blast offsets (`unit.c:1394`): the impact tile plus a
     /// fixed inner/outer cross pattern of 16 sub-tile offsets.
-    static let deathHandOffsetX: [Int16] = [0, 0, 200, 256, 200, 0, -200, -256, -200, 0, 400, 512, 400, 0, -400, -512, -400]
-    static let deathHandOffsetY: [Int16] = [0, -256, -200, 0, 200, 256, 200, 0, -200, -512, -400, 0, 400, 512, 400, 0, -400]
+    static let deathHandOffsetX: [Int16] = [
+        0, 0, 200, 256, 200, 0, -200, -256, -200, 0, 400, 512, 400, 0, -400, -512, -400,
+    ]
+    static let deathHandOffsetY: [Int16] = [
+        0, -256, -200, 0, 200, 256, 200, 0, -200, -512, -400, 0, 400, 512, 400, 0, -400,
+    ]
 
-    public init(scriptInfo: ScriptInfo,
-                interpreter: any ScriptInterpreter = DefaultScriptInterpreter(),
-                unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
-                mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
-                housePrimitives: any HousePrimitives = DefaultHousePrimitives()) {
+    public init(
+        scriptInfo: ScriptInfo,
+        interpreter: any ScriptInterpreter = DefaultScriptInterpreter(),
+        unitPrimitives: any UnitPrimitives = DefaultUnitPrimitives(),
+        mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
+        housePrimitives: any HousePrimitives = DefaultHousePrimitives()
+    ) {
         self.scriptInfo = scriptInfo
         self.unit = unitPrimitives
         self.map = mapPrimitives
@@ -47,9 +53,13 @@ public struct UnitMovement: Sendable {
 
         var speed = UInt16(state.units[slot].speedRemainder)
         if ui.movementType != .winger {
-            speed &+= Tools.adjustToGameSpeed(normal: UInt16(state.units[slot].speedPerTick),
-                                              minimum: 1, maximum: 255, inverseSpeed: false,
-                                              gameSpeed: state.gameSpeed)
+            speed &+= Tools.adjustToGameSpeed(
+                normal: UInt16(state.units[slot].speedPerTick),
+                minimum: 1,
+                maximum: 255,
+                inverseSpeed: false,
+                gameSpeed: state.gameSpeed
+            )
         } else {
             speed &+= UInt16(state.units[slot].speedPerTick)
         }
@@ -78,9 +88,11 @@ public struct UnitMovement: Sendable {
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
         let ui = UnitInfo[ut]
 
-        var newPosition = Tile32.moveByDirection(state.units[slot].o.position,
-                                                 orientation: Int16(state.units[slot].orientation[0].current),
-                                                 distance: distance)
+        var newPosition = Tile32.moveByDirection(
+            state.units[slot].o.position,
+            orientation: Int16(state.units[slot].orientation[0].current),
+            distance: distance
+        )
 
         if newPosition.x == state.units[slot].o.position.x && newPosition.y == state.units[slot].o.position.y {
             return false
@@ -93,7 +105,8 @@ public struct UnitMovement: Sendable {
             }
             if state.units[slot].o.flags.contains(.byScenario)
                 && state.units[slot].o.linkedID == 0xFF
-                && state.units[slot].o.script.variables[4] == 0 {
+                && state.units[slot].o.script.variables[4] == 0
+            {
                 state.unitRemove(slot)
                 return true
             }
@@ -114,9 +127,10 @@ public struct UnitMovement: Sendable {
 
         if ui.flags.contains(.isTracked) && d < 48 {
             if let u2 = state.unitGetByPackedTile(packed),
-               let ut2 = UnitType(rawValue: Int(state.units[u2].o.type)),
-               UnitInfo[ut2].movementType == .foot,
-               state.units[u2].o.flags.contains(.allocated) {
+                let ut2 = UnitType(rawValue: Int(state.units[u2].o.type)),
+                UnitInfo[ut2].movementType == .foot,
+                state.units[u2].o.flags.contains(.allocated)
+            {
                 // Driving over a foot unit — it dies. (SEAM: Unit_Select(NULL) if it was selected.)
                 state.unitUntargetMe(u2)
                 state.units[u2].o.script.variables[1] = 1
@@ -129,9 +143,14 @@ public struct UnitMovement: Sendable {
                     // RNG-free, so the golden draw stream is unchanged; the overlay only paints once
                     // animations are ticked (the visual apps), like the structure/corpse animations.
                     let orient8 = Orientation.to8(UInt8(bitPattern: state.units[slot].orientation[0].current))
-                    state.animationStart(tableIndex: Int(orient8), tile: state.units[slot].o.position,
-                                         tileLayout: 0, houseID: state.units[slot].o.houseID,
-                                         iconGroup: 5, kind: .unitMove)
+                    state.animationStart(
+                        tableIndex: Int(orient8),
+                        tile: state.units[slot].o.position,
+                        tileLayout: 0,
+                        houseID: state.units[slot].o.houseID,
+                        iconGroup: 5,
+                        kind: .unitMove
+                    )
                 }
             }
         }
@@ -139,8 +158,11 @@ public struct UnitMovement: Sendable {
         state.unitUpdateMap(0, slot)
 
         if ui.movementType == .winger {
-            if state.units[slot].o.flags.contains(.animationFlip) { state.units[slot].o.flags.remove(.animationFlip) }
-            else { state.units[slot].o.flags.insert(.animationFlip) }
+            if state.units[slot].o.flags.contains(.animationFlip) {
+                state.units[slot].o.flags.remove(.animationFlip)
+            } else {
+                state.units[slot].o.flags.insert(.animationFlip)
+            }
         }
 
         let currentDestination = state.units[slot].currentDestination
@@ -155,13 +177,15 @@ public struct UnitMovement: Sendable {
             let blastDamage = (state.units[slot].o.hitpoints / 4) &+ 1
             if let u2 = state.unitGetByPackedTile(packed) {
                 if let ut2 = UnitType(rawValue: Int(state.units[u2].o.type)),
-                   !UnitInfo[ut2].flags.contains(.sonicProtection) {
+                    !UnitInfo[ut2].flags.contains(.sonicProtection)
+                {
                     damage(slot: u2, damage: blastDamage, range: 0, in: &state)
                 }
             } else if let s2 = state.structureGetByPackedTile(packed) {
                 _ = state.structureDamage(s2, damage: blastDamage, range: 0)
             } else if map.landscapeType(state.map[Int(packed)], tileIDs: state.tileIDs) == .wall
-                      && StructureInfo[.wall].o.hitpoints > blastDamage {
+                && StructureInfo[.wall].o.hitpoints > blastDamage
+            {
                 _ = state.random256.next()
             }
             if state.units[slot].o.hitpoints < (ui.damage / 2) {
@@ -178,15 +202,19 @@ public struct UnitMovement: Sendable {
                 var ltype = map.landscapeType(state.map[Int(newPosition.packed)], tileIDs: state.tileIDs)
                 if (ltype == .wall || ltype == .structure)
                     && Tools.indexType(state.units[slot].originEncoded) == .structure
-                    && state.map[Int(newPosition.packed)].houseID == state.units[slot].o.houseID {
+                    && state.map[Int(newPosition.packed)].houseID == state.units[slot].o.houseID
+                {
                     ltype = .normalSand
                 }
                 if ltype == .wall || ltype == .structure || ltype == .entirelyMountain {
                     state.units[slot].o.position = newPosition
-                    mapMakeExplosion(type: (ui.explosionType &+ UInt16(state.units[slot].o.hitpoints) / 10) & 3,
-                                     position: state.units[slot].o.position,
-                                     hitpoints: state.units[slot].o.hitpoints,
-                                     origin: state.units[slot].originEncoded, in: &state)
+                    mapMakeExplosion(
+                        type: (ui.explosionType &+ UInt16(state.units[slot].o.hitpoints) / 10) & 3,
+                        position: state.units[slot].o.position,
+                        hitpoints: state.units[slot].o.hitpoints,
+                        origin: state.units[slot].originEncoded,
+                        in: &state
+                    )
                     state.unitRemove(slot)
                     return true
                 }
@@ -203,25 +231,51 @@ public struct UnitMovement: Sendable {
                             // Death-hand 17-point blast: explode `ui.explosionType` (200 hp) at the impact
                             // tile and 16 fixed offsets around it (skipping off-map points).
                             for i in 0 ..< 17 {
-                                let p = Tile32(x: newPosition.x &+ UInt16(bitPattern: Self.deathHandOffsetX[i]),
-                                               y: newPosition.y &+ UInt16(bitPattern: Self.deathHandOffsetY[i]))
+                                let p = Tile32(
+                                    x: newPosition.x &+ UInt16(bitPattern: Self.deathHandOffsetX[i]),
+                                    y: newPosition.y &+ UInt16(bitPattern: Self.deathHandOffsetY[i])
+                                )
                                 if p.isValid {
-                                    mapMakeExplosion(type: ui.explosionType, position: p, hitpoints: 200, origin: 0, in: &state)
+                                    mapMakeExplosion(
+                                        type: ui.explosionType,
+                                        position: p,
+                                        hitpoints: 200,
+                                        origin: 0,
+                                        in: &state
+                                    )
                                 }
                             }
                         } else if ui.explosionType != 0xFFFF {
                             if ui.flags.contains(.impactOnSand)
                                 && state.map[Int(state.units[slot].o.position.packed)].index == 0
-                                && map.landscapeType(state.map[Int(state.units[slot].o.position.packed)], tileIDs: state.tileIDs) == .normalSand {
-                                mapMakeExplosion(type: UInt16(ExplosionType.sandBurst.rawValue), position: newPosition,
-                                                 hitpoints: state.units[slot].o.hitpoints, origin: state.units[slot].originEncoded, in: &state)
+                                && map.landscapeType(
+                                    state.map[Int(state.units[slot].o.position.packed)],
+                                    tileIDs: state.tileIDs
+                                ) == .normalSand
+                            {
+                                mapMakeExplosion(
+                                    type: UInt16(ExplosionType.sandBurst.rawValue),
+                                    position: newPosition,
+                                    hitpoints: state.units[slot].o.hitpoints,
+                                    origin: state.units[slot].originEncoded,
+                                    in: &state
+                                )
                             } else if ut == .missileDeviator {
-                                mapDeviateArea(type: ui.explosionType, position: newPosition, radius: 32,
-                                               houseID: state.units[slot].o.houseID, in: &state)
+                                mapDeviateArea(
+                                    type: ui.explosionType,
+                                    position: newPosition,
+                                    radius: 32,
+                                    houseID: state.units[slot].o.houseID,
+                                    in: &state
+                                )
                             } else {
-                                mapMakeExplosion(type: (ui.explosionType &+ UInt16(state.units[slot].o.hitpoints) / 20) & 3,
-                                                 position: newPosition, hitpoints: state.units[slot].o.hitpoints,
-                                                 origin: state.units[slot].originEncoded, in: &state)
+                                mapMakeExplosion(
+                                    type: (ui.explosionType &+ UInt16(state.units[slot].o.hitpoints) / 20) & 3,
+                                    position: newPosition,
+                                    hitpoints: state.units[slot].o.hitpoints,
+                                    origin: state.units[slot].originEncoded,
+                                    in: &state
+                                )
                             }
                         }
                         state.unitRemove(slot)
@@ -234,21 +288,30 @@ public struct UnitMovement: Sendable {
                     state.units[slot].currentDestination = Tile32(x: 0, y: 0)
 
                     if state.units[slot].o.flags.contains(.degrades) && (state.random256.next() & 3) == 0 {
-                        damage(slot: slot, damage: 1, range: 0, in: &state)   // Unit_Damage(unit, 1, 0)
+                        damage(slot: slot, damage: 1, range: 0, in: &state)  // Unit_Damage(unit, 1, 0)
                     }
 
                     if ut == .saboteur {
                         // Saboteur detonates on reaching a wall, or within 32 sub-units of its move target
                         // (1.07 non-enhanced: measured from the pre-step `o.position`). 500-hp blast.
-                        var detonate = map.landscapeType(state.map[Int(newPosition.packed)], tileIDs: state.tileIDs) == .wall
+                        var detonate =
+                            map.landscapeType(state.map[Int(newPosition.packed)], tileIDs: state.tileIDs) == .wall
                         if !detonate {
-                            detonate = state.units[slot].targetMove != 0
-                                && Tile32.distance(from: state.units[slot].o.position,
-                                                   to: state.indexGetTile(state.units[slot].targetMove)) < 32
+                            detonate =
+                                state.units[slot].targetMove != 0
+                                && Tile32.distance(
+                                    from: state.units[slot].o.position,
+                                    to: state.indexGetTile(state.units[slot].targetMove)
+                                ) < 32
                         }
                         if detonate {
-                            mapMakeExplosion(type: UInt16(ExplosionType.saboteurDeath.rawValue), position: newPosition,
-                                             hitpoints: 500, origin: 0, in: &state)
+                            mapMakeExplosion(
+                                type: UInt16(ExplosionType.saboteurDeath.rawValue),
+                                position: newPosition,
+                                hitpoints: 500,
+                                origin: 0,
+                                in: &state
+                            )
                             state.unitRemove(slot)
                             return true
                         }
@@ -265,7 +328,7 @@ public struct UnitMovement: Sendable {
                     if let s = state.structureGetByPackedTile(packed) {
                         state.units[slot].targetPreLast = Tile32(x: 0, y: 0)
                         state.units[slot].targetLast = Tile32(x: 0, y: 0)
-                        state.unitEnterStructure(slot, s)   // Unit_EnterStructure(unit, s)
+                        state.unitEnterStructure(slot, s)  // Unit_EnterStructure(unit, s)
                         return true
                     }
 
@@ -277,7 +340,7 @@ public struct UnitMovement: Sendable {
             }
         }
 
-        guard state.units[slot].o.flags.contains(.used) else { return ret }   // self-removed above
+        guard state.units[slot].o.flags.contains(.used) else { return ret }  // self-removed above
 
         state.units[slot].distanceToDestination = distance
         state.units[slot].o.position = newPosition
@@ -311,13 +374,22 @@ public struct UnitMovement: Sendable {
         unit.setOrientation(&u, orientation: orientation, rotateInstantly: false, level: 1)
         state.units[slot] = u
 
-        let position = Tile32.moveByOrientation(state.units[slot].o.position, orientation: UInt8(bitPattern: orientation))
+        let position = Tile32.moveByOrientation(
+            state.units[slot].o.position,
+            orientation: UInt8(bitPattern: orientation)
+        )
         let packed = position.packed
 
         state.units[slot].distanceToDestination = 0x7FFF
 
-        let score = unit.tileEnterScore(state.units[slot], packed: packed, orient8: UInt16(UInt8(bitPattern: orientation)) / 32,
-                                        in: state, map: map, house: house)
+        let score = unit.tileEnterScore(
+            state.units[slot],
+            packed: packed,
+            orient8: UInt16(UInt8(bitPattern: orientation)) / 32,
+            in: state,
+            map: map,
+            house: house
+        )
         if score > 255 || score == -1 { return false }
 
         var type = map.landscapeType(state.map[Int(packed)], tileIDs: state.tileIDs)
@@ -357,7 +429,12 @@ public struct UnitMovement: Sendable {
     /// flip the unit back to its own house's default action and clear its targets. Returns true on expiry.
     /// A non-deviated unit returns false immediately (the common path).
     @discardableResult
-    public func deviationDecrease(slot: Int, amount amount0: UInt16, engine: inout ScriptEngine, in state: inout GameState) -> Bool {
+    public func deviationDecrease(
+        slot: Int,
+        amount amount0: UInt16,
+        engine: inout ScriptEngine,
+        in state: inout GameState
+    ) -> Bool {
         if state.units[slot].deviated == 0 { return false }
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
         let ui = UnitInfo[ut]
@@ -407,9 +484,14 @@ public struct UnitMovement: Sendable {
     /// destination. Returns 0 once arrived, 1 otherwise. Computes the route via the `Pathfinder` on first
     /// call, turns the unit to face the next step (one step), then commits it via `Unit_StartMovement`.
     @discardableResult
-    public func calculateRoute(slot: Int, encoded: UInt16, engine: inout ScriptEngine, in state: inout GameState) -> UInt16 {
+    public func calculateRoute(slot: Int, encoded: UInt16, engine: inout ScriptEngine, in state: inout GameState)
+        -> UInt16
+    {
         if state.units[slot].currentDestination.x != 0 || state.units[slot].currentDestination.y != 0
-            || !state.indexIsValid(encoded) { return 1 }
+            || !state.indexIsValid(encoded)
+        {
+            return 1
+        }
 
         let packedSrc = state.units[slot].o.position.packed
         let packedDst = state.indexGetTile(encoded).packed
@@ -421,7 +503,13 @@ public struct UnitMovement: Sendable {
         }
 
         if state.units[slot].route[0] == 0xFF {
-            let res = pathfinder.pathfind(src: packedSrc, dst: packedDst, unit: state.units[slot], bufferSize: 40, in: state)
+            let res = pathfinder.pathfind(
+                src: packedSrc,
+                dst: packedDst,
+                unit: state.units[slot],
+                bufferSize: 40,
+                in: state
+            )
             let n = min(res.routeSize, 14)
             for i in 0 ..< n { state.units[slot].route[i] = res.buffer[i] }
 

@@ -65,7 +65,7 @@ public struct InputController: InputSource {
             pendingOrder = nil
         } else {
             selection = hit
-            selectedUnits = hit.unitSlot.map { [$0] } ?? []
+            selectedUnits = hit.unitSlot.map { [ $0 ] } ?? []
             pendingOrder = nil
         }
     }
@@ -76,9 +76,11 @@ public struct InputController: InputSource {
     /// maps a slot to its unit-type id. Returns the kept slots (sorted); `[]` for an empty input.
     public static func dominantGroup(_ slots: [Int], typeOf: (Int) -> Int) -> [Int] {
         let groups = Dictionary(grouping: slots, by: typeOf)
-        guard let best = groups.max(by: { l, r in
-            l.value.count != r.value.count ? l.value.count < r.value.count : l.key > r.key
-        }) else { return [] }
+        guard
+            let best = groups.max(by: { l, r in
+                l.value.count != r.value.count ? l.value.count < r.value.count : l.key > r.key
+            })
+        else { return [] }
         return best.value.sorted()
     }
 
@@ -117,8 +119,8 @@ public struct InputController: InputSource {
     private func order(_ kind: OrderKind, slot: Int, tileX x: Int, tileY y: Int) -> Command {
         let tile = UInt16(y * mapWidth + x)
         switch kind {
-            case .move:    return .move(unit: UInt16(slot), tile: tile)
-            case .attack:  return .attack(unit: UInt16(slot), tile: tile)
+            case .move: return .move(unit: UInt16(slot), tile: tile)
+            case .attack: return .attack(unit: UInt16(slot), tile: tile)
             case .harvest: return .harvest(unit: UInt16(slot), tile: tile)
             case .retreat: return .retreat(unit: UInt16(slot), tile: tile)
         }

@@ -11,7 +11,7 @@
 /// `Unit`/`Structure`/… a pure POD value: copies are free and ARC-free. Access is by `subscript`/`count`,
 /// matching the former array API, so call sites are unchanged.
 public struct Inline<let N: Int, Element>: Equatable, Sendable, Codable
-        where Element: Equatable & Sendable & Codable {
+where Element: Equatable & Sendable & Codable {
     public var storage: InlineArray<N, Element>
 
     public init(repeating value: Element) { storage = .init(repeating: value) }

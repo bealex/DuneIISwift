@@ -24,7 +24,10 @@ enum RenderHarness {
 
     /// The `Fixtures/` directory holding the committed reference PNGs (next to this file).
     static var fixturesDir: URL {
-        URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures", isDirectory: true)
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
+            "Fixtures",
+            isDirectory: true
+        )
     }
 
     /// One render-golden case: a scenario advanced to `tick`, captured at a tile-space `rect` (`nil` = the
@@ -38,8 +41,14 @@ enum RenderHarness {
         /// Drop a stationary sandworm at this tile before rendering (to exercise the shimmer); `nil` = none.
         let worm: (x: Int, y: Int)?
 
-        init(_ name: String, scenario: String, tick: Int,
-             rect: (x: Int, y: Int, w: Int, h: Int)? = nil, fog: Bool = false, worm: (x: Int, y: Int)? = nil) {
+        init(
+            _ name: String,
+            scenario: String,
+            tick: Int,
+            rect: (x: Int, y: Int, w: Int, h: Int)? = nil,
+            fog: Bool = false,
+            worm: (x: Int, y: Int)? = nil
+        ) {
             self.name = name
             self.scenario = scenario
             self.tick = tick
@@ -63,8 +72,14 @@ enum RenderHarness {
     @MainActor
     static func capture(_ c: Case) -> CGImage? {
         guard let p = prepare(c) else { return nil }
-        let crop = c.rect.map { CGRect(x: $0.x * p.tileSize, y: $0.y * p.tileSize,
-                                       width: $0.w * p.tileSize, height: $0.h * p.tileSize) }
+        let crop = c.rect.map {
+            CGRect(
+                x: $0.x * p.tileSize,
+                y: $0.y * p.tileSize,
+                width: $0.w * p.tileSize,
+                height: $0.h * p.tileSize
+            )
+        }
         return p.renderer.snapshot(p.frame, crop: crop)
     }
 
@@ -72,8 +87,11 @@ enum RenderHarness {
     /// used by the shimmer-throttle test. `nil` when the install is absent.
     @MainActor
     static func prepare(_ c: Case) -> Prepared? {
-        guard let installURL, let assets = Assets(installURL: installURL),
-              let ini = assets.ini(c.scenario) else { return nil }
+        guard
+            let installURL,
+            let assets = Assets(installURL: installURL),
+            let ini = assets.ini(c.scenario)
+        else { return nil }
 
         // Build + run the simulation to `c.tick` (mirrors rendercap / mapview setup).
         var state = GameState()
@@ -93,16 +111,20 @@ enum RenderHarness {
             var worm = Unit()
             worm.o.index = UInt16(slot)
             worm.o.type = UInt8(UnitType.sandworm.rawValue)
-            worm.o.flags = [.used, .allocated, .isUnit]
+            worm.o.flags = [ .used, .allocated, .isUnit ]
             worm.o.houseID = 6
             worm.o.position = Tile32(x: UInt16(w.x) * 256 + 0x80, y: UInt16(w.y) * 256 + 0x80)
             worm.o.hitpoints = 1000
             state.units[slot] = worm
         }
 
-        var sim = Simulation(state: state, scriptInfo: unitScript,
-                             structureScriptInfo: ScriptInfo(assets.buildProgram),
-                             tickExplosions: true, tickAnimations: true)
+        var sim = Simulation(
+            state: state,
+            scriptInfo: unitScript,
+            structureScriptInfo: ScriptInfo(assets.buildProgram),
+            tickExplosions: true,
+            tickAnimations: true
+        )
         for _ in 0 ..< max(0, c.tick) { sim.tick() }
 
         // A graphics-session connection for off-screen SpriteKit rendering, without showing a window.
@@ -122,7 +144,8 @@ private struct Assets {
     private let archives: [Pak.Archive]
 
     init?(installURL: URL) {
-        guard let entries = try? FileManager.default.contentsOfDirectory(at: installURL, includingPropertiesForKeys: nil)
+        guard
+            let entries = try? FileManager.default.contentsOfDirectory(at: installURL, includingPropertiesForKeys: nil)
         else { return nil }
         var archives: [Pak.Archive] = []
         for url in entries where url.pathExtension.uppercased() == "PAK" {
@@ -132,15 +155,18 @@ private struct Assets {
 
         func data(_ name: String) -> Data? {
             for a in archives {
-                if let e = a.entries.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { return a.data(e) }
+                if let e = a.entries.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+                    return a.data(e)
+                }
             }
             return nil
         }
-        guard let pal = data("IBM.PAL").flatMap({ try? Palette($0) }),
-              let map = data("ICON.MAP").flatMap({ try? IconMap($0) }),
-              let icn = data("ICON.ICN").flatMap({ try? Icn.TileSet($0) }),
-              let unit = data("UNIT.EMC").flatMap({ try? Emc.Program($0) }),
-              let build = data("BUILD.EMC").flatMap({ try? Emc.Program($0) })
+        guard
+            let pal = data("IBM.PAL").flatMap({ try? Palette($0) }),
+            let map = data("ICON.MAP").flatMap({ try? IconMap($0) }),
+            let icn = data("ICON.ICN").flatMap({ try? Icn.TileSet($0) }),
+            let unit = data("UNIT.EMC").flatMap({ try? Emc.Program($0) }),
+            let build = data("BUILD.EMC").flatMap({ try? Emc.Program($0) })
         else { return nil }
 
         var sheets: [String: Shp.FrameSet] = [:]

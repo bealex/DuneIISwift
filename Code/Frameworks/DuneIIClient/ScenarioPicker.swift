@@ -37,7 +37,9 @@ public struct ScenarioPicker: View {
                             Text("Campaign \(level)")
                                 .font(.caption.weight(.bold)).foregroundStyle(.secondary)
                             ForEach(forHouse.filter { $0.campaign == level }, id: \.self) { entry in
-                                Button { model.load(entry.fileName); isPresented = false } label: {
+                                Button {
+                                    model.load(entry.fileName); isPresented = false
+                                } label: {
                                     HStack {
                                         Text("Mission \(entry.mission)")
                                         Spacer()

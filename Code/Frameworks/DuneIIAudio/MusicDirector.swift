@@ -18,26 +18,26 @@ public final class MusicDirector {
     /// Entry 0 is silence. `<file>` is the `dune<N>` number; `<song>` the XMI sequence index. (Verbatim —
     /// including IDs 27/33–37, which are intro/cutscene-only and unused here.)
     static let table: [(file: Int, song: Int)?] = [
-        nil,        /*  0 silence       */
-        (1, 2),     /*  1 */ (1, 3),  /*  2 */ (1, 4),  /*  3 */ (1, 5),  /*  4 */
-        (17, 4),    /*  5 win Ordos/Fremen */ (8, 3),  /*  6 win Hark/Sard */ (8, 2),  /*  7 win Atr/Merc */
-        (1, 6),     /*  8 */ (2, 6),  /*  9 */ (3, 6),  /* 10 */ (4, 6),  /* 11 */ (5, 6),  /* 12 */ (6, 6),  /* 13 */
-        (9, 4),     /* 14 */ (9, 5),  /* 15 */ (18, 6), /* 16 */
-        (10, 7),    /* 17 */ (11, 7), /* 18 */ (12, 7), /* 19 */ (13, 7), /* 20 */ (14, 7), /* 21 */ (15, 7), /* 22 */
-        (1, 8),     /* 23 */
-        (7, 2),     /* 24 briefing Hark */ (7, 3),  /* 25 briefing Atr */ (7, 4),  /* 26 briefing Ordos */
-        (0, 2),     /* 27 */ (7, 6),  /* 28 */ (16, 7), /* 29 */
-        (19, 4),    /* 30 */ (19, 2), /* 31 */ (19, 3), /* 32 */ (20, 2), /* 33 */ (16, 8), /* 34 */
-        (0, 3),     /* 35 */ (0, 4),  /* 36 */ (0, 5),  /* 37 */
+        nil, /*  0 silence       */
+        (1, 2), /*  1 */ (1, 3), /*  2 */ (1, 4), /*  3 */ (1, 5), /*  4 */
+        (17, 4), /*  5 win Ordos/Fremen */ (8, 3), /*  6 win Hark/Sard */ (8, 2), /*  7 win Atr/Merc */
+        (1, 6), /*  8 */ (2, 6), /*  9 */ (3, 6), /* 10 */ (4, 6), /* 11 */ (5, 6), /* 12 */ (6, 6), /* 13 */
+        (9, 4), /* 14 */ (9, 5), /* 15 */ (18, 6), /* 16 */
+        (10, 7), /* 17 */ (11, 7), /* 18 */ (12, 7), /* 19 */ (13, 7), /* 20 */ (14, 7), /* 21 */ (15, 7), /* 22 */
+        (1, 8), /* 23 */
+        (7, 2), /* 24 briefing Hark */ (7, 3), /* 25 briefing Atr */ (7, 4), /* 26 briefing Ordos */
+        (0, 2), /* 27 */ (7, 6), /* 28 */ (16, 7), /* 29 */
+        (19, 4), /* 30 */ (19, 2), /* 31 */ (19, 3), /* 32 */ (20, 2), /* 33 */ (16, 8), /* 34 */
+        (0, 3), /* 35 */ (0, 4), /* 36 */ (0, 5), /* 37 */
     ]
 
     /// Per-house music IDs (`src/table/houseinfo.c`), indexed by `HouseID.rawValue` (Harkonnen…Mercenary).
     /// `0xFFFF` (Fremen/Sardaukar/Mercenary briefing) = none.
-    static let briefingMusic = [24, 25, 26, 0xFFFF, 0xFFFF, 0xFFFF]
-    static let winMusic       = [6, 7, 5, 5, 6, 7]
-    static let loseMusic      = [3, 4, 2, 2, 3, 4]
+    static let briefingMusic = [ 24, 25, 26, 0xFFFF, 0xFFFF, 0xFFFF ]
+    static let winMusic = [ 6, 7, 5, 5, 6, 7 ]
+    static let loseMusic = [ 3, 4, 2, 2, 3, 4 ]
 
-    static let mapTracks = 8 ... 15      // in-mission ambient pool (Tools_RandomLCG_Range(0,8)+8)
+    static let mapTracks = 8 ... 15  // in-mission ambient pool (Tools_RandomLCG_Range(0,8)+8)
     static let attackTracks = 17 ... 22  // in-battle pool (Tools_RandomLCG_Range(0,5)+17)
 
     private let musicDirectory: URL
@@ -53,10 +53,12 @@ public final class MusicDirector {
     /// track that was playing — so the user hears the same song in the new timbre without a gap in the policy.
     public var backend: MusicBackend { didSet { if backend != oldValue { switchEngine() } } }
 
-    public init(musicDirectory: URL,
-                soundBank: URL? = nil,
-                backend: MusicBackend = .adlib,
-                rng: any RandomNumberGenerator = SystemRandomNumberGenerator()) {
+    public init(
+        musicDirectory: URL,
+        soundBank: URL? = nil,
+        backend: MusicBackend = .adlib,
+        rng: any RandomNumberGenerator = SystemRandomNumberGenerator()
+    ) {
         self.musicDirectory = musicDirectory
         self.soundBank = soundBank
         self.backend = backend
@@ -68,8 +70,8 @@ public final class MusicDirector {
 
     private static func makeEngine(_ backend: MusicBackend, musicDirectory: URL, soundBank: URL?) -> MusicEngine {
         switch backend {
-        case .adlib: ADLMusicPlayer(musicDirectory: musicDirectory)
-        case .midi: MusicPlayer(musicDirectory: musicDirectory, soundBank: soundBank)
+            case .adlib: ADLMusicPlayer(musicDirectory: musicDirectory)
+            case .midi: MusicPlayer(musicDirectory: musicDirectory, soundBank: soundBank)
         }
     }
 
@@ -89,7 +91,11 @@ public final class MusicDirector {
     @discardableResult
     public func play(musicID: Int, loop: Bool) -> Bool {
         guard enabled else { return false }
-        guard musicID > 0, musicID < Self.table.count, let track = Self.table[musicID] else {
+        guard
+            musicID > 0,
+            musicID < Self.table.count,
+            let track = Self.table[musicID]
+        else {
             currentMusicID = 0
             player.stop()
             return false
@@ -132,9 +138,9 @@ public extension MusicDirector {
     /// number + XMI subsong), and a human-readable name. Used by tooling (e.g. `rendertest`'s music preview)
     /// to list and play each track directly through a `MusicEngine`.
     struct PreviewTrack: Identifiable, Sendable, Hashable {
-        public let id: Int      // musicID (`g_table_musics` index)
-        public let file: Int    // DUNE<file>.ADL
-        public let song: Int    // subsong (XMI sequence index)
+        public let id: Int  // musicID (`g_table_musics` index)
+        public let file: Int  // DUNE<file>.ADL
+        public let song: Int  // subsong (XMI sequence index)
         public let name: String
     }
 
@@ -149,12 +155,12 @@ public extension MusicDirector {
     private static func previewName(id: Int, entry: (file: Int, song: Int)) -> String {
         let role: String?
         switch id {
-        case 24: role = "Briefing · Harkonnen"
-        case 25: role = "Briefing · Atreides"
-        case 26: role = "Briefing · Ordos"
-        case mapTracks: role = "Map ambient"
-        case attackTracks: role = "Battle"
-        default: role = nil
+            case 24: role = "Briefing · Harkonnen"
+            case 25: role = "Briefing · Atreides"
+            case 26: role = "Briefing · Ordos"
+            case mapTracks: role = "Map ambient"
+            case attackTracks: role = "Battle"
+            default: role = nil
         }
         let base = String(format: "ID %02d · DUNE%d · song %d", id, entry.file, entry.song)
         return role.map { "\($0) — \(base)" } ?? base

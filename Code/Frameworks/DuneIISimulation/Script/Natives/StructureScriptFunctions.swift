@@ -48,8 +48,11 @@ struct StructureScriptFunctions: Sendable {
     /// `Script_Structure_Unknown11B9` (op 0x06, `:464`): clear a target unit's var-4 link + its move
     /// order. No-op unless the encoded index is a valid unit.
     func unknown11B9(encoded: UInt16, in state: inout GameState) -> UInt16 {
-        guard state.indexIsValid(encoded), Tools.indexType(encoded) == .unit,
-              let u = state.indexGetUnit(encoded) else { return 0 }
+        guard
+            state.indexIsValid(encoded),
+            Tools.indexType(encoded) == .unit,
+            let u = state.indexGetUnit(encoded)
+        else { return 0 }
         state.objectScriptVariable4Clear(.unit(u))
         state.units[u].targetMove = 0
         return 0
@@ -67,7 +70,9 @@ struct StructureScriptFunctions: Sendable {
         var found: Int?
         var find = PoolFind()
         while let u = state.unitFind(&find) {
-            if House.areAllied(sHouse, state.unitHouseID(state.units[u]), playerHouseID: state.playerHouseID) { continue }
+            if House.areAllied(sHouse, state.unitHouseID(state.units[u]), playerHouseID: state.playerHouseID) {
+                continue
+            }
             let uType = state.units[u].o.type
             if uType != ornithopter, state.units[u].o.seenByHouses & (1 << sHouse) == 0 { continue }
             let distance = Tile32.distance(from: state.units[u].o.position, to: position)
@@ -75,7 +80,7 @@ struct StructureScriptFunctions: Sendable {
             if distance >= (uType == ornithopter ? range &* 3 : range) { continue }
             found = u
         }
-        guard let f = found else { return 0 }   // IT_NONE
+        guard let f = found else { return 0 }  // IT_NONE
         return state.indexEncode(UInt16(state.units[f].o.index), type: .unit)
     }
 
@@ -85,9 +90,11 @@ struct StructureScriptFunctions: Sendable {
     /// `Map_Update` render redraw is a seam.
     func rotateTurret(slot: Int, encoded: UInt16, in state: inout GameState) -> UInt16 {
         if encoded == 0 { return 0 }
-        guard let iconMap = state.iconMap,
-              let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return 1 }
-        let group = (st == .rocketTurret) ? 24 : 23   // ICM_ICONGROUP_BASE_ROCKET / DEFENSE_TURRET
+        guard
+            let iconMap = state.iconMap,
+            let st = StructureType(rawValue: Int(state.structures[slot].o.type))
+        else { return 1 }
+        let group = (st == .rocketTurret) ? 24 : 23  // ICM_ICONGROUP_BASE_ROCKET / DEFENSE_TURRET
         guard let baseTileID = iconMap.tileID(group: group, offset: 2) else { return 1 }
 
         let packed = Int(state.structures[slot].o.position.packed)
@@ -95,7 +102,9 @@ struct StructureScriptFunctions: Sendable {
         if rotation < 0 || rotation > 7 { return 1 }
 
         let lookAt = state.indexGetTile(encoded)
-        let needed = Int(Orientation.to8(UInt8(bitPattern: Tile32.direction(from: state.structures[slot].o.position, to: lookAt))))
+        let needed = Int(
+            Orientation.to8(UInt8(bitPattern: Tile32.direction(from: state.structures[slot].o.position, to: lookAt)))
+        )
         if needed == rotation { return 0 }
 
         var diff = needed - rotation
@@ -129,20 +138,33 @@ struct StructureScriptFunctions: Sendable {
 
         let type: UInt8, damage: UInt16, fireDelayBase: UInt16
         if st == .rocketTurret,
-           Tile32.distance(from: state.indexGetTile(target), to: state.structures[slot].o.position) >= 0x300 {
+            Tile32.distance(from: state.indexGetTile(target), to: state.structures[slot].o.position) >= 0x300
+        {
             type = UInt8(UnitType.missileTurret.rawValue); damage = 30; fireDelayBase = UnitInfo[.launcher].fireDelay
         } else {
             type = UInt8(UnitType.bullet.rawValue); damage = 20; fireDelayBase = UnitInfo[.tank].fireDelay
         }
-        let fireDelay = Tools.adjustToGameSpeed(normal: fireDelayBase, minimum: 1, maximum: 0xFFFF,
-                                                inverseSpeed: true, gameSpeed: state.gameSpeed)
+        let fireDelay = Tools.adjustToGameSpeed(
+            normal: fireDelayBase,
+            minimum: 1,
+            maximum: 0xFFFF,
+            inverseSpeed: true,
+            gameSpeed: state.gameSpeed
+        )
 
         var position = state.structures[slot].o.position
         position.x = position.x &+ 0x80
         position.y = position.y &+ 0x80
-        guard let bullet = combat.unitCreateBullet(position: position, type: type,
-                                                   houseID: state.structures[slot].o.houseID,
-                                                   damage: damage, target: target, in: &state) else { return 0 }
+        guard
+            let bullet = combat.unitCreateBullet(
+                position: position,
+                type: type,
+                houseID: state.structures[slot].o.houseID,
+                damage: damage,
+                target: target,
+                in: &state
+            )
+        else { return 0 }
         state.units[bullet].originEncoded = state.indexEncode(UInt16(state.structures[slot].o.index), type: .structure)
         return fireDelay
     }
@@ -163,7 +185,7 @@ struct StructureScriptFunctions: Sendable {
         var i = Int(state.random256.next() & 0xF)
         for _ in 0 ..< 16 {
             let offset = layout.tilesAround[i]
-            i = (i + 1) & 0xF                      // advance now so the `continue`s don't skip it
+            i = (i + 1) & 0xF  // advance now so the `continue`s don't skip it
             if offset == 0 { continue }
             let curPacked = UInt16(truncatingIfNeeded: Int(packed) + Int(offset))
             if !map.isValidPosition(curPacked, mapScale: state.mapScale) { continue }
@@ -190,12 +212,13 @@ struct StructureScriptFunctions: Sendable {
 
         // Carryall pickup: a winger lifts off from the structure's tile.
         if UnitInfo[ut].movementType == .winger,
-           combat.unitSetPosition(slot: u, position: state.structures[slot].o.position, in: &state) {
+            combat.unitSetPosition(slot: u, position: state.structures[slot].o.position, in: &state)
+        {
             state.structures[slot].o.linkedID = state.units[u].o.linkedID
             state.units[u].o.linkedID = 0xFF
             if state.structures[slot].o.linkedID == 0xFF { state.structureSetState(slot, .idle) }
             state.objectScriptVariable4Clear(.structure(slot))
-            return 1   // SEAM: Sound_Output_Feedback
+            return 1  // SEAM: Sound_Output_Feedback
         }
 
         let position = findFreePosition(slot: slot, checkForSpice: ut == .harvester, in: &state)
@@ -209,7 +232,10 @@ struct StructureScriptFunctions: Sendable {
         state.units[u].o.linkedID = 0xFF
 
         var v = state.units[u]
-        let dir = Int8(bitPattern: UInt8(bitPattern: Tile32.direction(from: state.structures[slot].o.position, to: v.o.position)) & 0xE0)
+        let dir = Int8(
+            bitPattern: UInt8(bitPattern: Tile32.direction(from: state.structures[slot].o.position, to: v.o.position))
+                & 0xE0
+        )
         combat.movement.unit.setOrientation(&v, orientation: dir, rotateInstantly: true, level: 0)
         combat.movement.unit.setOrientation(&v, orientation: v.orientation[0].current, rotateInstantly: true, level: 1)
         state.units[u] = v
@@ -220,7 +246,8 @@ struct StructureScriptFunctions: Sendable {
         // "<house> unit/harvester deployed" (`script/structure.c:289`): the player's own non-repair factory
         // only. Harvester → house+68, any other unit → house+30. Routed through the global feedback queue.
         if state.structures[slot].o.houseID == state.playerHouseID,
-           StructureType(rawValue: Int(state.structures[slot].o.type)) != .repair {
+            StructureType(rawValue: Int(state.structures[slot].o.type)) != .repair
+        {
             state.pendingFeedback.append(UInt16(state.playerHouseID) &+ (ut == .harvester ? 68 : 30))
         }
         return 1
@@ -239,17 +266,23 @@ struct StructureScriptFunctions: Sendable {
         let u = Int(state.structures[slot].o.linkedID)
 
         if state.playerHouseID == state.structures[slot].o.houseID,
-           state.units[u].o.type == UInt8(UnitType.harvester.rawValue),
-           state.units[u].targetLast.x == 0, state.units[u].targetLast.y == 0,
-           position != 0 {
+            state.units[u].o.type == UInt8(UnitType.harvester.rawValue),
+            state.units[u].targetLast.x == 0, state.units[u].targetLast.y == 0,
+            position != 0
+        {
             return 0
         }
 
         let structureEncoded = state.indexEncode(UInt16(state.structures[slot].o.index), type: .structure)
-        guard let carryall = combat.unitCallUnitByType(type: UInt8(truncatingIfNeeded: type),
-                                                       houseID: state.structures[slot].o.houseID,
-                                                       target: structureEncoded, createCarryall: position == 0,
-                                                       in: &state) else { return 0 }
+        guard
+            let carryall = combat.unitCallUnitByType(
+                type: UInt8(truncatingIfNeeded: type),
+                houseID: state.structures[slot].o.houseID,
+                target: structureEncoded,
+                createCarryall: position == 0,
+                in: &state
+            )
+        else { return 0 }
 
         let carryallEncoded = state.indexEncode(UInt16(state.units[carryall].o.index), type: .unit)
         state.objectScriptVariable4Set(.structure(slot), carryallEncoded)
@@ -286,7 +319,7 @@ struct StructureScriptFunctions: Sendable {
 
         var creditsStep: UInt16 = 7
         if state.units[u].o.houseID != state.playerHouseID {
-            creditsStep = UInt16(truncatingIfNeeded: 7 + (Int(state.random256.next() % 4) - 1))   // 6…9
+            creditsStep = UInt16(truncatingIfNeeded: 7 + (Int(state.random256.next() % 4) - 1))  // 6…9
         }
         creditsStep = creditsStep &* harvesterStep
         // Harvested-spice tally (`script/structure.c:138`), capped at 65000.
@@ -344,23 +377,42 @@ struct StructureScriptFunctions: Sendable {
             if UInt16(si.o.spawnChance) < UInt16(state.random256.next()) { continue }
 
             let orientation = Int8(truncatingIfNeeded: Int(state.random256.next()))
-            guard let u = combat.unitCreate(index: 0xFFFF, type: UInt8(UnitType.soldier.rawValue),
-                                            houseID: houseID, position: tile, orientation: orientation,
-                                            in: &state) else { continue }
+            guard
+                let u = combat.unitCreate(
+                    index: 0xFFFF,
+                    type: UInt8(UnitType.soldier.rawValue),
+                    houseID: houseID,
+                    position: tile,
+                    orientation: orientation,
+                    in: &state
+                )
+            else { continue }
 
             let maxHP = UnitInfo[.soldier].o.hitpoints
             state.units[u].o.hitpoints = UInt16(UInt32(maxHP) * UInt32(state.random256.next() & 3) / 256)
 
             if houseID != state.playerHouseID {
-                combat.actions.setAction(slot: u, action: UInt8(ActionType.attack.rawValue),
-                                         scriptInfo: combat.movement.scriptInfo, in: &state)
+                combat.actions.setAction(
+                    slot: u,
+                    action: UInt8(ActionType.attack.rawValue),
+                    scriptInfo: combat.movement.scriptInfo,
+                    in: &state
+                )
                 continue
             }
 
-            combat.actions.setAction(slot: u, action: UInt8(ActionType.move.rawValue),
-                                     scriptInfo: combat.movement.scriptInfo, in: &state)
-            let dest = Tile32.moveByRandom(state.units[u].o.position, distance: 32, center: true,
-                                           rng: &state.random256)
+            combat.actions.setAction(
+                slot: u,
+                action: UInt8(ActionType.move.rawValue),
+                scriptInfo: combat.movement.scriptInfo,
+                in: &state
+            )
+            let dest = Tile32.moveByRandom(
+                state.units[u].o.position,
+                distance: 32,
+                center: true,
+                rng: &state.random256
+            )
             state.units[u].targetMove = state.indexEncode(dest.packed, type: .tile)
         }
         return 0

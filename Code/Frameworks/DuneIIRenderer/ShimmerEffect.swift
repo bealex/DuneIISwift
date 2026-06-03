@@ -13,7 +13,7 @@ import Foundation
 /// blur — a `CGImage` per worm per frame (worms are few).
 public enum ShimmerEffect {
     /// The per-frame horizontal displacement, cycling each frame (`blurOffsets`, `gui.c:935`).
-    public static let blurOffsets = [1, 3, 2, 5, 4, 3, 2, 1]
+    public static let blurOffsets = [ 1, 3, 2, 5, 4, 3, 2, 1 ]
 
     /// Build the displaced patch for one worm: a `wormWidth × wormHeight` RGBA `CGImage` that shows, inside
     /// the worm's silhouette (`mask` pixels ≠ 0), the colorized terrain sampled `offset` columns to the
@@ -27,14 +27,34 @@ public enum ShimmerEffect {
     ///   - mask: the worm sprite's indexed pixels (`wormWidth × wormHeight`); 0 = transparent (no displace).
     ///   - offset: the horizontal displacement (a `blurOffsets` value).
     ///   - palette: the (cycled) palette to colorize the sampled terrain index.
-    public static func patch(terrain: [UInt8], terrainWidth: Int, terrainHeight: Int,
-                             left: Int, top: Int,
-                             mask: [UInt8], wormWidth: Int, wormHeight: Int,
-                             offset: Int, palette: Palette,
-                             veiled: ((Int, Int) -> Bool)? = nil) -> CGImage? {
-        guard let rgba = patchRGBA(terrain: terrain, terrainWidth: terrainWidth, terrainHeight: terrainHeight,
-                                   left: left, top: top, mask: mask, wormWidth: wormWidth, wormHeight: wormHeight,
-                                   offset: offset, palette: palette, veiled: veiled) else { return nil }
+    public static func patch(
+        terrain: [UInt8],
+        terrainWidth: Int,
+        terrainHeight: Int,
+        left: Int,
+        top: Int,
+        mask: [UInt8],
+        wormWidth: Int,
+        wormHeight: Int,
+        offset: Int,
+        palette: Palette,
+        veiled: ((Int, Int) -> Bool)? = nil
+    ) -> CGImage? {
+        guard
+            let rgba = patchRGBA(
+                terrain: terrain,
+                terrainWidth: terrainWidth,
+                terrainHeight: terrainHeight,
+                left: left,
+                top: top,
+                mask: mask,
+                wormWidth: wormWidth,
+                wormHeight: wormHeight,
+                offset: offset,
+                palette: palette,
+                veiled: veiled
+            )
+        else { return nil }
         return rgbaImage(rgba, width: wormWidth, height: wormHeight)
     }
 
@@ -44,21 +64,33 @@ public enum ShimmerEffect {
     ///   `(px, py)` is under fog. A worm pixel is left transparent when either its own display position or its
     ///   displaced source sample is veiled — so the shimmer never pulls the dithered fog edge into the worm
     ///   silhouette at a boundary, and a worm sitting in the fog shows nothing (it's hidden, like other units).
-    public static func patchRGBA(terrain: [UInt8], terrainWidth: Int, terrainHeight: Int,
-                                 left: Int, top: Int,
-                                 mask: [UInt8], wormWidth: Int, wormHeight: Int,
-                                 offset: Int, palette: Palette,
-                                 veiled: ((Int, Int) -> Bool)? = nil) -> [UInt8]? {
-        guard wormWidth > 0, wormHeight > 0, mask.count >= wormWidth * wormHeight,
-              terrain.count >= terrainWidth * terrainHeight else { return nil }
+    public static func patchRGBA(
+        terrain: [UInt8],
+        terrainWidth: Int,
+        terrainHeight: Int,
+        left: Int,
+        top: Int,
+        mask: [UInt8],
+        wormWidth: Int,
+        wormHeight: Int,
+        offset: Int,
+        palette: Palette,
+        veiled: ((Int, Int) -> Bool)? = nil
+    ) -> [UInt8]? {
+        guard
+            wormWidth > 0,
+            wormHeight > 0,
+            mask.count >= wormWidth * wormHeight,
+            terrain.count >= terrainWidth * terrainHeight
+        else { return nil }
 
-        var rgba = [UInt8](repeating: 0, count: wormWidth * wormHeight * 4)   // transparent by default
+        var rgba = [ UInt8 ](repeating: 0, count: wormWidth * wormHeight * 4)  // transparent by default
         for y in 0 ..< wormHeight {
             let ty = top + y
             if ty < 0 || ty >= terrainHeight { continue }
             for x in 0 ..< wormWidth where mask[y * wormWidth + x] != 0 {
-                let dispX = left + x                          // where this worm pixel is shown
-                let tx = left + x + offset                    // `buf[blurOffset]`: the pixel to the right
+                let dispX = left + x  // where this worm pixel is shown
+                let tx = left + x + offset  // `buf[blurOffset]`: the pixel to the right
                 if tx < 0 || tx >= terrainWidth { continue }
                 // Fog: don't shimmer over or pull in veiled terrain.
                 if let veiled, (dispX >= 0 && dispX < terrainWidth && veiled(dispX, ty)) || veiled(tx, ty) { continue }
@@ -73,12 +105,25 @@ public enum ShimmerEffect {
     /// A `CGImage` from a row-major RGBA8 (premultipliedLast, top-left origin) buffer — the same layout the
     /// rest of the renderer's `CGImage`s use (`IndexedImage`).
     static func rgbaImage(_ rgba: [UInt8], width: Int, height: Int) -> CGImage? {
-        guard width > 0, height > 0, rgba.count >= width * height * 4,
-              let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
+        guard
+            width > 0,
+            height > 0,
+            rgba.count >= width * height * 4,
+            let provider = CGDataProvider(data: Data(rgba) as CFData)
+        else { return nil }
         let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
-                       bytesPerRow: width * 4, space: colorSpace,
-                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        return CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )
     }
 }

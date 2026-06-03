@@ -19,9 +19,13 @@ public struct ScenarioID: Sendable, Equatable, Hashable {
     public init?(fileName: String) {
         let upper = fileName.uppercased()
         guard upper.hasPrefix("SCEN"), upper.hasSuffix(".INI") else { return nil }
-        let core = upper.dropFirst(4).dropLast(4)        // "SCENA001.INI" → "A001"
+        let core = upper.dropFirst(4).dropLast(4)  // "SCENA001.INI" → "A001"
         guard let initial = core.first, let mission = Int(core.dropFirst()), mission >= 1 else { return nil }
-        guard let house = HouseID.allCases.first(where: { HouseInfo[$0].name.uppercased().first == initial }) else { return nil }
+        guard
+            let house = HouseID.allCases.first(where: { HouseInfo[$0].name.uppercased().first == initial })
+        else {
+            return nil
+        }
         self.fileName = upper
         self.house = house
         self.mission = mission

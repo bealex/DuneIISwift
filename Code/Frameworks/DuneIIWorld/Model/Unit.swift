@@ -1,8 +1,8 @@
 /// Directional state, one per orientation slot. A port of OpenDUNE's `dir24` (`src/unit.h`).
 public struct Dir24: Sendable, Equatable, Codable {
-    public var speed: Int8 = 0      // speed of direction change
-    public var target: Int8 = 0     // target direction
-    public var current: Int8 = 0    // current direction
+    public var speed: Int8 = 0  // speed of direction change
+    public var target: Int8 = 0  // target direction
+    public var current: Int8 = 0  // current direction
 
     public init() {}
 }
@@ -14,16 +14,16 @@ public struct Unit: Sendable, Equatable, Codable {
     public var originEncoded: UInt16 = 0
     public var actionID: UInt8 = 0
     public var nextActionID: UInt8 = 0
-    public var fireDelay: UInt16 = 0            // uint8 in Dune2; uint16 here per OpenDUNE
+    public var fireDelay: UInt16 = 0  // uint8 in Dune2; uint16 here per OpenDUNE
     public var distanceToDestination: UInt16 = 0
-    public var targetAttack: UInt16 = 0         // encoded index
-    public var targetMove: UInt16 = 0           // encoded index
-    public var amount: UInt8 = 0                // sandworm: units left to eat; harvester: spice held
-    public var deviated: UInt8 = 0              // deviation strength (0 = not deviated)
-    public var deviatedHouse: UInt8 = 0         // house deviated to (valid only if deviated != 0)
+    public var targetAttack: UInt16 = 0  // encoded index
+    public var targetMove: UInt16 = 0  // encoded index
+    public var amount: UInt8 = 0  // sandworm: units left to eat; harvester: spice held
+    public var deviated: UInt8 = 0  // deviation strength (0 = not deviated)
+    public var deviatedHouse: UInt8 = 0  // house deviated to (valid only if deviated != 0)
     public var targetLast: Tile32 = Tile32(x: 0, y: 0)
     public var targetPreLast: Tile32 = Tile32(x: 0, y: 0)
-    public var orientation = Inline<2, Dir24>(repeating: Dir24())   // [0] base, [1] top (turret); POD, inline
+    public var orientation = Inline<2, Dir24>(repeating: Dir24())  // [0] base, [1] top (turret); POD, inline
     public var speedPerTick: UInt8 = 0
     public var speedRemainder: UInt8 = 0
     public var speed: UInt8 = 0
@@ -31,9 +31,9 @@ public struct Unit: Sendable, Equatable, Codable {
     public var wobbleIndex: UInt8 = 0
     public var spriteOffset: Int8 = 0
     public var blinkCounter: UInt8 = 0
-    public var team: UInt8 = 0                  // 0 = none; value n means team n-1
+    public var team: UInt8 = 0  // 0 = none; value n means team n-1
     public var timer: UInt16 = 0
-    public var route = Inline<14, UInt8>(repeating: 0)   // POD, inline — no heap/ARC on a Unit copy
+    public var route = Inline<14, UInt8>(repeating: 0)  // POD, inline — no heap/ARC on a Unit copy
 
     public init() {}
 }

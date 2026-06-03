@@ -8,7 +8,7 @@ import CoreGraphics
 struct Viewport: Equatable {
     static let tilePx = 16.0
     static let tiles = 64.0
-    static let worldSize = tilePx * tiles    // 1024 world points
+    static let worldSize = tilePx * tiles  // 1024 world points
 
     /// Screen centre in **world points** (0…worldSize, y-down to match image space).
     var centerX: Double = worldSize / 2
@@ -53,10 +53,16 @@ struct Viewport: Equatable {
     /// follows the scenario's map boundary rather than scrolling onto the unused border.
     mutating func clamp(viewSize: CGSize) {
         let half = Double(viewSize.width) / zoom / 2
-        if half * 2 >= area.width { centerX = area.midX }
-        else { centerX = min(area.maxX - half, max(area.minX + half, centerX)) }
+        if half * 2 >= area.width {
+            centerX = area.midX
+        } else {
+            centerX = min(area.maxX - half, max(area.minX + half, centerX))
+        }
         let halfY = Double(viewSize.height) / zoom / 2
-        if halfY * 2 >= area.height { centerY = area.midY }
-        else { centerY = min(area.maxY - halfY, max(area.minY + halfY, centerY)) }
+        if halfY * 2 >= area.height {
+            centerY = area.midY
+        } else {
+            centerY = min(area.maxY - halfY, max(area.minY + halfY, centerY))
+        }
     }
 }

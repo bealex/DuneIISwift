@@ -1,9 +1,10 @@
-import Foundation
-import Testing
 import DuneIIContracts
 import DuneIIFormats
-@testable import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIISimulation
+@testable import DuneIIWorld
 
 /// Real-data integration for the structure script subsystem: bridge the committed `BUILD.EMC` into a
 /// `ScriptInfo`, place a structure, and drive `Simulation.tick()` so `GameLoop_Structure` loads + runs its
@@ -15,25 +16,31 @@ import DuneIIFormats
 struct StructureScriptTests {
     private func emc(_ relative: String) -> ScriptInfo? {
         var repo = URL(fileURLWithPath: #filePath)
-        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }   // Code/Tests/SimulationTests → repo root
-        guard let data = try? Data(contentsOf: repo.appendingPathComponent(relative)),
-              let program = try? Emc.Program(data) else { return nil }
+        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }  // Code/Tests/SimulationTests → repo root
+        guard
+            let data = try? Data(contentsOf: repo.appendingPathComponent(relative)),
+            let program = try? Emc.Program(data)
+        else { return nil }
         return ScriptInfo(program)
     }
 
     /// A `Simulation` with both EMCs bridged and a single `windtrap` placed for `house`, HP 200, idle. The
     /// structure's 2×2 tile occupancy is stamped manually (no `iconMap` needed for the script path).
     private func setup(house: UInt8 = 0, player: UInt8 = 0) -> (Simulation, Int, [Int])? {
-        guard let unit = emc("Resources/Scripts/UNIT/UNIT.emc"),
-              let build = emc("Resources/Scripts/BUILD/BUILD.emc") else { return nil }
+        guard
+            let unit = emc("Resources/Scripts/UNIT/UNIT.emc"),
+            let build = emc("Resources/Scripts/BUILD/BUILD.emc")
+        else { return nil }
 
         var s = GameState(random256Seed: 0x51234)
         s.playerHouseID = player
         _ = s.houseAllocate(index: house)
         s.houses[Int(house)].unitCountMax = 100
 
-        let slot = s.structureAllocate(index: Pool.structureIndexInvalid,
-                                       type: UInt8(StructureType.windtrap.rawValue))!
+        let slot = s.structureAllocate(
+            index: Pool.structureIndexInvalid,
+            type: UInt8(StructureType.windtrap.rawValue)
+        )!
         s.structures[slot].o.houseID = house
         s.structures[slot].o.position = Tile32.unpack(20 * 64 + 20)
         s.structures[slot].state = .idle
@@ -65,7 +72,7 @@ struct StructureScriptTests {
 
     @Test("BUILD.EMC bridges + a healthy structure's script loads and idles without removing it")
     func healthyIdles() throws {
-        guard var (sim, slot, _) = setup() else { return }   // short-circuit if the scripts are absent
+        guard var (sim, slot, _) = setup() else { return }  // short-circuit if the scripts are absent
 
         // One game tick past the first structure-script tick loads the type's script.
         for _ in 0 ..< 6 { sim.tick() }
@@ -81,7 +88,7 @@ struct StructureScriptTests {
 
     @Test("damaging a structure to 0 HP runs the death script → Structure_Remove (slot freed, tiles cleared)")
     func deathPathRemovesStructure() throws {
-        guard var (sim, slot, tiles) = setup(house: 1, player: 0) else { return }   // enemy windtrap
+        guard var (sim, slot, tiles) = setup(house: 1, player: 0) else { return }  // enemy windtrap
 
         // Lethal damage begins destruction: death flag set, but the slot is not yet freed (the death
         // script, driven by GameLoop_Structure, removes it).
@@ -97,8 +104,8 @@ struct StructureScriptTests {
             removed = !sim.state.structures[slot].o.flags.contains(.used)
         }
         #expect(removed)
-        #expect(!structureSlots(sim.state).contains(slot))           // dropped from the find array
-        for p in tiles { #expect(!sim.state.map[p].hasStructure) }   // tile occupancy cleared
+        #expect(!structureSlots(sim.state).contains(slot))  // dropped from the find array
+        for p in tiles { #expect(!sim.state.map[p].hasStructure) }  // tile occupancy cleared
     }
 
     // MARK: - Turret natives (0x08–0x0B)
@@ -110,7 +117,7 @@ struct StructureScriptTests {
         s.playerHouseID = 0
         _ = s.houseAllocate(index: 0); s.houses[0].unitCountMax = 200
         _ = s.houseAllocate(index: 1); s.houses[1].unitCountMax = 200
-        let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+        let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
         return (s, UnitCombat(movement: UnitMovement(scriptInfo: info)))
     }
 
@@ -123,8 +130,13 @@ struct StructureScriptTests {
     }
 
     @discardableResult
-    private func placeUnit(_ s: inout GameState, _ type: UnitType, house: UInt8, at packed: UInt16,
-                           seenBy: UInt8? = 0) -> Int {
+    private func placeUnit(
+        _ s: inout GameState,
+        _ type: UnitType,
+        house: UInt8,
+        at packed: UInt16,
+        seenBy: UInt8? = 0
+    ) -> Int {
         let slot = s.unitAllocate(index: Pool.unitIndexInvalid, type: UInt8(type.rawValue), houseID: house)!
         s.units[slot].o.position = Tile32.unpack(packed)
         s.units[slot].o.hitpoints = 200
@@ -138,19 +150,22 @@ struct StructureScriptTests {
         let fns = StructureScriptFunctions(combat: combat)
         let turret = placeTurret(&s, .turret, house: 0, at: 20 * 64 + 20)
 
-        let a = placeUnit(&s, .tank, house: 1, at: 20 * 64 + 21, seenBy: 0)   // seen enemy, in range
-        let b = placeUnit(&s, .tank, house: 1, at: 20 * 64 + 22, seenBy: 0)   // seen enemy, in range, later in pool
+        let a = placeUnit(&s, .tank, house: 1, at: 20 * 64 + 21, seenBy: 0)  // seen enemy, in range
+        let b = placeUnit(&s, .tank, house: 1, at: 20 * 64 + 22, seenBy: 0)  // seen enemy, in range, later in pool
         // 1.07 returns the LAST matching unit in pool order, not the closest → b.
-        #expect(fns.findTargetUnit(slot: turret, range: 1280, in: &s) == s.indexEncode(UInt16(s.units[b].o.index), type: .unit))
+        #expect(
+            fns.findTargetUnit(slot: turret, range: 1280, in: &s)
+                == s.indexEncode(UInt16(s.units[b].o.index), type: .unit)
+        )
         _ = a
 
         // Allied (same house) ignored; unseen ignored; out-of-range ignored.
         var (s2, c2) = minimal()
         let f2 = StructureScriptFunctions(combat: c2)
         let t2 = placeTurret(&s2, .turret, house: 0, at: 20 * 64 + 20)
-        placeUnit(&s2, .tank, house: 0, at: 20 * 64 + 21, seenBy: 0)          // allied
-        placeUnit(&s2, .tank, house: 1, at: 20 * 64 + 21, seenBy: nil)        // not seen by house 0
-        placeUnit(&s2, .tank, house: 1, at: 20 * 64 + 40, seenBy: 0)          // 20 tiles away, out of range 1280 (5)
+        placeUnit(&s2, .tank, house: 0, at: 20 * 64 + 21, seenBy: 0)  // allied
+        placeUnit(&s2, .tank, house: 1, at: 20 * 64 + 21, seenBy: nil)  // not seen by house 0
+        placeUnit(&s2, .tank, house: 1, at: 20 * 64 + 40, seenBy: 0)  // 20 tiles away, out of range 1280 (5)
         #expect(f2.findTargetUnit(slot: t2, range: 1280, in: &s2) == 0)
     }
 
@@ -165,9 +180,16 @@ struct StructureScriptTests {
         #expect(fns.getDirection(slot: turret, encoded: 0, in: s) == 3 << 5)
 
         // Valid tile → (orientation8 to that tile) << 5, a multiple of 32 matching the primitive.
-        let target = UInt16(20 * 64 + 24)   // due east
+        let target = UInt16(20 * 64 + 24)  // due east
         let encoded = s.indexEncode(target, type: .tile)
-        let expected = UInt16(Orientation.to8(UInt8(bitPattern: Tile32.direction(from: s.structures[turret].o.position, to: Tile32.unpack(target))))) << 5
+        let expected =
+            UInt16(
+                Orientation.to8(
+                    UInt8(
+                        bitPattern: Tile32.direction(from: s.structures[turret].o.position, to: Tile32.unpack(target))
+                    )
+                )
+            ) << 5
         let got = fns.getDirection(slot: turret, encoded: encoded, in: s)
         #expect(got == expected)
         #expect(got % 32 == 0)
@@ -182,7 +204,7 @@ struct StructureScriptTests {
 
         s.structures[turret].o.script.variables[2] = s.indexEncode(UInt16(s.units[enemy].o.index), type: .unit)
         let delay = fns.fire(slot: turret, in: &s)
-        #expect(delay > 0)   // returns the speed-adjusted fire delay
+        #expect(delay > 0)  // returns the speed-adjusted fire delay
 
         // A gun turret fires a UNIT_BULLET (type 23), origin = the turret structure.
         var find = PoolFind(), bullet: Int?
@@ -199,11 +221,15 @@ struct StructureScriptTests {
 
     @Test("a placed turret acquires + fires at a seen enemy over GameLoop_Structure ticks")
     func turretFiresAtEnemy() throws {
-        guard let unit = emc("Resources/Scripts/UNIT/UNIT.emc"),
-              let build = emc("Resources/Scripts/BUILD/BUILD.emc") else { return }
+        guard
+            let unit = emc("Resources/Scripts/UNIT/UNIT.emc"),
+            let build = emc("Resources/Scripts/BUILD/BUILD.emc")
+        else { return }
         var repo = URL(fileURLWithPath: #filePath)
         for _ in 0 ..< 4 { repo.deleteLastPathComponent() }
-        guard let iconMap = try? IconMap(Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP"))) else { return }
+        guard
+            let iconMap = try? IconMap(Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
+        else { return }
 
         var s = GameState(random256Seed: 0x2468)
         s.playerHouseID = 0
@@ -212,9 +238,9 @@ struct StructureScriptTests {
         _ = s.houseAllocate(index: 1); s.houses[1].unitCountMax = 200
 
         let turret = placeTurret(&s, .turret, house: 0, at: 20 * 64 + 20)
-        s.structureUpdateMap(turret)                                   // stamp groundTileID (rotation 0)
-        placeUnit(&s, .tank, house: 1, at: 20 * 64 + 23, seenBy: 0)    // a seen enemy 3 tiles east
-        s.map[20 * 64 + 23].isUnveiled = true   // on a visible tile, so Unit_UpdateMap keeps its seenByHouses (a fogged enemy is un-seen, post the Unit_RemoveFog allied-check fix)
+        s.structureUpdateMap(turret)  // stamp groundTileID (rotation 0)
+        placeUnit(&s, .tank, house: 1, at: 20 * 64 + 23, seenBy: 0)  // a seen enemy 3 tiles east
+        s.map[20 * 64 + 23].isUnveiled = true  // on a visible tile, so Unit_UpdateMap keeps its seenByHouses (a fogged enemy is un-seen, post the Unit_RemoveFog allied-check fix)
 
         var sim = Simulation(state: s, scriptInfo: unit, structureScriptInfo: build)
 
@@ -232,7 +258,7 @@ struct StructureScriptTests {
             sim.tick()
             fired = bulletExists()
         }
-        #expect(fired)   // the turret found the enemy, rotated to aim, and fired
+        #expect(fired)  // the turret found the enemy, rotated to aim, and fired
     }
 
     // MARK: - RefineSpice (0x15)
@@ -242,7 +268,7 @@ struct StructureScriptTests {
         var (s, combat) = minimal()
         let fns = StructureScriptFunctions(combat: combat)
         let ref = placeTurret(&s, .refinery, house: 0, at: 20 * 64 + 20)
-        s.structures[ref].o.hitpoints = StructureInfo[.refinery].o.hitpoints   // full HP → step 3
+        s.structures[ref].o.hitpoints = StructureInfo[.refinery].o.hitpoints  // full HP → step 3
         s.structures[ref].state = .busy
 
         // No linked unit → SetState(IDLE), no credits.
@@ -262,7 +288,7 @@ struct StructureScriptTests {
         #expect(s.houses[0].credits == 21)
         #expect(s.units[harv].amount == 7)
         #expect(s.structures[ref].o.script.delay == 6)
-        #expect(s.units[harv].o.flags.contains(.inTransport))   // not empty yet
+        #expect(s.units[harv].o.flags.contains(.inTransport))  // not empty yet
     }
 
     @Test("RefineSpice clears inTransport when the harvester is emptied")
@@ -272,21 +298,21 @@ struct StructureScriptTests {
         let ref = placeTurret(&s, .refinery, house: 0, at: 20 * 64 + 20)
         s.structures[ref].o.hitpoints = StructureInfo[.refinery].o.hitpoints
         let harv = placeUnit(&s, .harvester, house: 0, at: 20 * 64 + 25, seenBy: nil)
-        s.units[harv].amount = 2          // < step(3) → clamps to 2
+        s.units[harv].amount = 2  // < step(3) → clamps to 2
         s.units[harv].o.flags.insert(.inTransport)
         s.structures[ref].o.linkedID = UInt8(harv)
 
         #expect(fns.refineSpice(slot: ref, in: &s) == 1)
-        #expect(s.houses[0].credits == 14)   // 7 × 2
+        #expect(s.houses[0].credits == 14)  // 7 × 2
         #expect(s.units[harv].amount == 0)
-        #expect(!s.units[harv].o.flags.contains(.inTransport))   // emptied
+        #expect(!s.units[harv].o.flags.contains(.inTransport))  // emptied
     }
 
     @Test("RefineSpice gives an enemy refinery a small ±RNG credit bonus")
     func refineEnemyVariance() {
         var (s, combat) = minimal()
         let fns = StructureScriptFunctions(combat: combat)
-        let ref = placeTurret(&s, .refinery, house: 1, at: 20 * 64 + 20)   // enemy house
+        let ref = placeTurret(&s, .refinery, house: 1, at: 20 * 64 + 20)  // enemy house
         s.structures[ref].o.hitpoints = StructureInfo[.refinery].o.hitpoints
         let harv = placeUnit(&s, .harvester, house: 1, at: 20 * 64 + 25, seenBy: nil)
         s.units[harv].amount = 10
@@ -313,7 +339,7 @@ struct StructureScriptTests {
 
         let other = s.unitAllocate(index: Pool.unitIndexInvalid, type: UInt8(UnitType.tank.rawValue), houseID: 1)!
         s.units[other].o.flags.insert(.isNotOnMap)
-        #expect(!combat.unitSetPosition(slot: other, position: Tile32.unpack(20 * 64 + 20), in: &s))   // occupied
+        #expect(!combat.unitSetPosition(slot: other, position: Tile32.unpack(20 * 64 + 20), in: &s))  // occupied
         #expect(s.units[other].o.flags.contains(.isNotOnMap))
     }
 
@@ -326,8 +352,10 @@ struct StructureScriptTests {
         let pos = fns.findFreePosition(slot: st, checkForSpice: false, in: &s)
         #expect(pos != 0)
         // The returned tile is in the structure's surrounding ring and is unoccupied passable ground.
-        let ringInts: [Int] = [20 * 64 + 19, 20 * 64 + 21, 19 * 64 + 20, 21 * 64 + 20,
-                               19 * 64 + 19, 19 * 64 + 21, 21 * 64 + 19, 21 * 64 + 21]
+        let ringInts: [Int] = [
+            20 * 64 + 19, 20 * 64 + 21, 19 * 64 + 20, 21 * 64 + 20,
+            19 * 64 + 19, 19 * 64 + 21, 21 * 64 + 19, 21 * 64 + 21,
+        ]
         let ring = Set(ringInts.map { UInt16($0) })
         #expect(ring.contains(pos))
 
@@ -350,15 +378,15 @@ struct StructureScriptTests {
         // Link a ground unit (inside the structure, off-map) and unload it.
         let unit = s.unitAllocate(index: Pool.unitIndexInvalid, type: UInt8(UnitType.tank.rawValue), houseID: 1)!
         s.units[unit].o.flags.insert(.isNotOnMap)
-        s.units[unit].o.linkedID = 0xFF                 // end of the link chain
+        s.units[unit].o.linkedID = 0xFF  // end of the link chain
         s.structures[st].o.linkedID = UInt8(unit)
 
         #expect(fns.unloadLinkedUnit(slot: st, in: &s) == 1)
-        #expect(!s.units[unit].o.flags.contains(.isNotOnMap))      // deployed onto the map
+        #expect(!s.units[unit].o.flags.contains(.isNotOnMap))  // deployed onto the map
         #expect(s.map[Int(s.units[unit].o.position.packed)].hasUnit)
         #expect(s.units[unit].o.linkedID == 0xFF)
-        #expect(s.structures[st].o.linkedID == 0xFF)               // structure's chain now empty
-        #expect(s.structures[st].state == .idle)                   // → IDLE once unlinked
+        #expect(s.structures[st].o.linkedID == 0xFF)  // structure's chain now empty
+        #expect(s.structures[st].state == .idle)  // → IDLE once unlinked
     }
 
     // MARK: - Unit_EnterStructure
@@ -373,11 +401,11 @@ struct StructureScriptTests {
         s.units[harv].amount = 10
 
         s.unitEnterStructure(harv, ref)
-        #expect(s.structures[ref].state == .ready)            // refinery has busyStateIsIncoming
+        #expect(s.structures[ref].state == .ready)  // refinery has busyStateIsIncoming
         #expect(s.structures[ref].o.linkedID == UInt8(harv))
         #expect(s.units[harv].o.flags.contains(.isNotOnMap))  // hidden inside
-        #expect(s.units[harv].o.flags.contains(.allocated))   // NOT removed (allied)
-        #expect(s.units[harv].amount == 10)                   // spice intact, to be refined
+        #expect(s.units[harv].o.flags.contains(.allocated))  // NOT removed (allied)
+        #expect(s.units[harv].amount == 10)  // spice intact, to be refined
     }
 
     @Test("a saboteur entering an enemy structure detonates it and is removed")
@@ -388,8 +416,8 @@ struct StructureScriptTests {
         let sab = placeUnit(&s, .saboteur, house: 0, at: 20 * 64 + 20, seenBy: nil)
 
         s.unitEnterStructure(sab, st)
-        #expect(!s.units[sab].o.flags.contains(.allocated))         // removed
-        #expect(s.structures[st].o.script.variables[0] == 1)        // 500 dmg destroyed the 200-HP windtrap
+        #expect(!s.units[sab].o.flags.contains(.allocated))  // removed
+        #expect(s.structures[st].o.script.variables[0] == 1)  // 500 dmg destroyed the 200-HP windtrap
     }
 
     @Test("entering a dead structure (0 HP) just removes the unit")
@@ -404,11 +432,15 @@ struct StructureScriptTests {
 
     @Test("harvester→refinery loop: a linked harvester's spice becomes credits over GameLoop_Structure ticks")
     func harvesterEconomyLoop() throws {
-        guard let unit = emc("Resources/Scripts/UNIT/UNIT.emc"),
-              let build = emc("Resources/Scripts/BUILD/BUILD.emc") else { return }
+        guard
+            let unit = emc("Resources/Scripts/UNIT/UNIT.emc"),
+            let build = emc("Resources/Scripts/BUILD/BUILD.emc")
+        else { return }
         var repo = URL(fileURLWithPath: #filePath)
         for _ in 0 ..< 4 { repo.deleteLastPathComponent() }
-        guard let iconMap = try? IconMap(Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP"))) else { return }
+        guard
+            let iconMap = try? IconMap(Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
+        else { return }
 
         var s = GameState(random256Seed: 0x1357)
         s.playerHouseID = 0
@@ -422,7 +454,7 @@ struct StructureScriptTests {
 
         let harv = placeUnit(&s, .harvester, house: 0, at: 21 * 64 + 20, seenBy: nil)
         s.units[harv].amount = 10
-        s.unitEnterStructure(harv, ref)   // simulate arrival: refinery → READY + harvester linked
+        s.unitEnterStructure(harv, ref)  // simulate arrival: refinery → READY + harvester linked
 
         var sim = Simulation(state: s, scriptInfo: unit, structureScriptInfo: build)
         var credited = false
@@ -430,8 +462,8 @@ struct StructureScriptTests {
             sim.tick()
             credited = sim.state.houses[0].credits > 0
         }
-        #expect(credited)                            // the refinery refined the harvester's spice into credits
-        #expect(sim.state.units[harv].amount < 10)   // spice consumed
+        #expect(credited)  // the refinery refined the harvester's spice into credits
+        #expect(sim.state.units[harv].amount < 10)  // spice consumed
     }
 
     // MARK: - FindUnitByType (0x03) / Unit_CallUnitByType
@@ -440,7 +472,7 @@ struct StructureScriptTests {
     func findUnitByType() {
         var (s, combat) = minimal()
         let fns = StructureScriptFunctions(combat: combat)
-        let ref = placeTurret(&s, .refinery, house: 1, at: 20 * 64 + 20)   // enemy → no player early-return
+        let ref = placeTurret(&s, .refinery, house: 1, at: 20 * 64 + 20)  // enemy → no player early-return
         let harv = placeUnit(&s, .harvester, house: 1, at: 20 * 64 + 25, seenBy: nil)
         s.structures[ref].o.linkedID = UInt8(harv)
 
@@ -461,7 +493,7 @@ struct StructureScriptTests {
     func findUnitByTypePlayerHarvester() {
         var (s, combat) = minimal()
         let fns = StructureScriptFunctions(combat: combat)
-        let ref = placeTurret(&s, .refinery, house: 0, at: 20 * 64 + 20)   // player refinery
+        let ref = placeTurret(&s, .refinery, house: 0, at: 20 * 64 + 20)  // player refinery
         s.structures[ref].state = .ready
         let harv = placeUnit(&s, .harvester, house: 0, at: 20 * 64 + 25, seenBy: nil)
         s.units[harv].targetLast = Tile32(x: 0, y: 0)
@@ -473,10 +505,15 @@ struct StructureScriptTests {
     @Test("Unit_CallUnitByType creates an off-map scenario carryall when none is free + spot blocked")
     func callUnitCreatesCarryall() {
         var (s, combat) = minimal()
-        let target: UInt16 = 0x4001   // any valid-looking encoded target
+        let target: UInt16 = 0x4001  // any valid-looking encoded target
         // No carryall exists → create one (createCarryall: true).
-        let made = combat.unitCallUnitByType(type: UInt8(UnitType.carryall.rawValue), houseID: 1,
-                                             target: target, createCarryall: true, in: &s)
+        let made = combat.unitCallUnitByType(
+            type: UInt8(UnitType.carryall.rawValue),
+            houseID: 1,
+            target: target,
+            createCarryall: true,
+            in: &s
+        )
         let c = try! #require(made)
         #expect(s.units[c].o.type == UInt8(UnitType.carryall.rawValue))
         #expect(s.units[c].o.flags.contains(.byScenario))

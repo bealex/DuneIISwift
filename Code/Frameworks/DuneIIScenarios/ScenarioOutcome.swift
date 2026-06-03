@@ -49,8 +49,9 @@ public extension ScenarioWorld {
 
             case .repairBuilding:
                 if let s = structureSlots.first,
-                   let type = StructureType(rawValue: Int(state.structures[s].o.type)),
-                   state.structures[s].o.hitpoints >= StructureInfo[type].o.hitpoints {
+                    let type = StructureType(rawValue: Int(state.structures[s].o.type)),
+                    state.structures[s].o.hitpoints >= StructureInfo[type].o.hitpoints
+                {
                     return .finished("Repaired to full HP")
                 }
 

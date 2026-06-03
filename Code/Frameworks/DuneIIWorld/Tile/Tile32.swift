@@ -54,14 +54,15 @@ public struct Tile32: Equatable, Sendable, Codable {
     public static func moveByDirection(_ tile: Tile32, orientation: Int16, distance: UInt16) -> Tile32 {
         let dist = Int(Swift.min(distance, 0xFF))
         if dist == 0 { return tile }
-        let idx = Int(UInt8(truncatingIfNeeded: orientation))          // orientation & 0xFF
+        let idx = Int(UInt8(truncatingIfNeeded: orientation))  // orientation & 0xFF
         let diffX = Int(stepX[idx])
-        let diffY = Int(stepX[(idx + 64) & 0xFF])                      // _stepY
+        let diffY = Int(stepX[(idx + 64) & 0xFF])  // _stepY
         let roundX = diffX < 0 ? -64 : 64
         let roundY = diffY < 0 ? -64 : 64
         return Tile32(
             x: UInt16(truncatingIfNeeded: Int(tile.x) + (diffX * dist + roundX) / 128),
-            y: UInt16(truncatingIfNeeded: Int(tile.y) - (diffY * dist + roundY) / 128))
+            y: UInt16(truncatingIfNeeded: Int(tile.y) - (diffY * dist + roundY) / 128)
+        )
     }
 
     /// `Map_IsPositionInViewport` (`map.c:363`): is `position` within the screen viewport whose top-left
@@ -75,8 +76,8 @@ public struct Tile32: Equatable, Sendable, Codable {
     /// `Tile_MoveByOrientation` (`tile.c:405`): step `position` one whole tile (256 sub-units) along the
     /// 8-step facing of `orientation`. Returns the input position unchanged if the step leaves the map.
     public static func moveByOrientation(_ position: Tile32, orientation: UInt8) -> Tile32 {
-        let xOffsets: [Int] = [0, 256, 256, 256, 0, -256, -256, -256]
-        let yOffsets: [Int] = [-256, -256, 0, 256, 256, 256, 0, -256]
+        let xOffsets: [Int] = [ 0, 256, 256, 256, 0, -256, -256, -256 ]
+        let yOffsets: [Int] = [ -256, -256, 0, 256, 256, 256, 0, -256 ]
         let o8 = Int(Orientation.to8(orientation))
         // uint16 arithmetic (the original adds wrapped uint16 offsets), then the out-of-map check.
         let x = UInt16(truncatingIfNeeded: Int(position.x) + xOffsets[o8])
@@ -89,7 +90,10 @@ public struct Tile32: Equatable, Sendable, Codable {
     /// byte) and a random 256-step orientation, then offset `tile` by whole tiles in that direction.
     /// Draws two `Random256` bytes from `rng`; returns the original tile if the result leaves the map.
     public static func moveByRandom(
-        _ tile: Tile32, distance: UInt16, center: Bool, rng: inout Random256
+        _ tile: Tile32,
+        distance: UInt16,
+        center: Bool,
+        rng: inout Random256
     ) -> Tile32 {
         if distance == 0 { return tile }
 
@@ -108,22 +112,22 @@ public struct Tile32: Equatable, Sendable, Codable {
 
     /// `_stepX[256]` (`tile.c:230`): the signed cos-like step table. `_stepY[i] = stepX[(i + 64) & 0xFF]`.
     static let stepX: [Int8] = [
-           0,    3,    6,    9,   12,   15,   18,   21,   24,   27,   30,   33,   36,   39,   42,   45,
-          48,   51,   54,   57,   59,   62,   65,   67,   70,   73,   75,   78,   80,   82,   85,   87,
-          89,   91,   94,   96,   98,  100,  101,  103,  105,  107,  108,  110,  111,  113,  114,  116,
-         117,  118,  119,  120,  121,  122,  123,  123,  124,  125,  125,  126,  126,  126,  126,  126,
-         127,  126,  126,  126,  126,  126,  125,  125,  124,  123,  123,  122,  121,  120,  119,  118,
-         117,  116,  114,  113,  112,  110,  108,  107,  105,  103,  102,  100,   98,   96,   94,   91,
-          89,   87,   85,   82,   80,   78,   75,   73,   70,   67,   65,   62,   59,   57,   54,   51,
-          48,   45,   42,   39,   36,   33,   30,   27,   24,   21,   18,   15,   12,    9,    6,    3,
-           0,   -3,   -6,   -9,  -12,  -15,  -18,  -21,  -24,  -27,  -30,  -33,  -36,  -39,  -42,  -45,
-         -48,  -51,  -54,  -57,  -59,  -62,  -65,  -67,  -70,  -73,  -75,  -78,  -80,  -82,  -85,  -87,
-         -89,  -91,  -94,  -96,  -98, -100, -102, -103, -105, -107, -108, -110, -111, -113, -114, -116,
+        0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45,
+        48, 51, 54, 57, 59, 62, 65, 67, 70, 73, 75, 78, 80, 82, 85, 87,
+        89, 91, 94, 96, 98, 100, 101, 103, 105, 107, 108, 110, 111, 113, 114, 116,
+        117, 118, 119, 120, 121, 122, 123, 123, 124, 125, 125, 126, 126, 126, 126, 126,
+        127, 126, 126, 126, 126, 126, 125, 125, 124, 123, 123, 122, 121, 120, 119, 118,
+        117, 116, 114, 113, 112, 110, 108, 107, 105, 103, 102, 100, 98, 96, 94, 91,
+        89, 87, 85, 82, 80, 78, 75, 73, 70, 67, 65, 62, 59, 57, 54, 51,
+        48, 45, 42, 39, 36, 33, 30, 27, 24, 21, 18, 15, 12, 9, 6, 3,
+        0, -3, -6, -9, -12, -15, -18, -21, -24, -27, -30, -33, -36, -39, -42, -45,
+        -48, -51, -54, -57, -59, -62, -65, -67, -70, -73, -75, -78, -80, -82, -85, -87,
+        -89, -91, -94, -96, -98, -100, -102, -103, -105, -107, -108, -110, -111, -113, -114, -116,
         -117, -118, -119, -120, -121, -122, -123, -123, -124, -125, -125, -126, -126, -126, -126, -126,
         -126, -126, -126, -126, -126, -126, -125, -125, -124, -123, -123, -122, -121, -120, -119, -118,
-        -117, -116, -114, -113, -112, -110, -108, -107, -105, -103, -102, -100,  -98,  -96,  -94,  -91,
-         -89,  -87,  -85,  -82,  -80,  -78,  -75,  -73,  -70,  -67,  -65,  -62,  -59,  -57,  -54,  -51,
-         -48,  -45,  -42,  -39,  -36,  -33,  -30,  -27,  -24,  -21,  -18,  -15,  -12,   -9,   -6,   -3,
+        -117, -116, -114, -113, -112, -110, -108, -107, -105, -103, -102, -100, -98, -96, -94, -91,
+        -89, -87, -85, -82, -80, -78, -75, -73, -70, -67, -65, -62, -59, -57, -54, -51,
+        -48, -45, -42, -39, -36, -33, -30, -27, -24, -21, -18, -15, -12, -9, -6, -3,
     ]
 
     /// `Tile_GetDistance`: the longest axis distance plus half the shortest (Chebyshev-ish). Wrapping
@@ -171,10 +175,12 @@ public struct Tile32: Equatable, Sendable, Codable {
     /// `Tile_GetDirection`: the precise 0...255 orientation from `from` toward `to`, via the gradient
     /// lookup table. Returns a signed byte (the original's `int8`).
     public static func direction(from: Tile32, to: Tile32) -> Int8 {
-        let orientationOffsets = [0x40, 0x80, 0x0, 0xC0]
+        let orientationOffsets = [ 0x40, 0x80, 0x0, 0xC0 ]
         let directions = [
-            0x3FFF, 0x28BC, 0x145A, 0xD8E, 0xA27, 0x81B, 0x6BD, 0x5C3, 0x506, 0x474, 0x3FE, 0x39D, 0x34B, 0x306, 0x2CB, 0x297,
-            0x26A, 0x241, 0x21D, 0x1FC, 0x1DE, 0x1C3, 0x1AB, 0x194, 0x17F, 0x16B, 0x159, 0x148, 0x137, 0x128, 0x11A, 0x10C,
+            0x3FFF, 0x28BC, 0x145A, 0xD8E, 0xA27, 0x81B, 0x6BD, 0x5C3, 0x506, 0x474, 0x3FE, 0x39D, 0x34B, 0x306, 0x2CB,
+            0x297,
+            0x26A, 0x241, 0x21D, 0x1FC, 0x1DE, 0x1C3, 0x1AB, 0x194, 0x17F, 0x16B, 0x159, 0x148, 0x137, 0x128, 0x11A,
+            0x10C,
         ]
 
         var dx = Int(to.x) - Int(from.x)

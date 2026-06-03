@@ -14,10 +14,12 @@ public extension ScenarioWorld {
     func snapshot() -> [UnitSnapshot] {
         unitSlots.map { slot in
             let u = state.units[slot]
-            return UnitSnapshot(packed: u.o.position.packed,
-                                orientation: u.orientation[0].current,
-                                hitpoints: u.o.hitpoints,
-                                alive: u.o.flags.contains(.used))
+            return UnitSnapshot(
+                packed: u.o.position.packed,
+                orientation: u.orientation[0].current,
+                hitpoints: u.o.hitpoints,
+                alive: u.o.flags.contains(.used)
+            )
         }
     }
 
@@ -26,15 +28,20 @@ public extension ScenarioWorld {
     /// fires, a destroyed building runs its death branch then is removed). Combat is fully ported now, so an
     /// attack scenario fires + impacts here rather than halting.
     mutating func tick() {
-        var sim = Simulation(state: state, scriptInfo: runner.scriptInfo, structureScriptInfo: structureScript,
-                             tickExplosions: tickExplosions, tickAnimations: tickAnimations)
+        var sim = Simulation(
+            state: state,
+            scriptInfo: runner.scriptInfo,
+            structureScriptInfo: structureScript,
+            tickExplosions: tickExplosions,
+            tickAnimations: tickAnimations
+        )
         sim.tick()
         state = sim.state
     }
 
     /// Run `ticks` ticks, returning the snapshot before tick 0 and after each tick (`ticks + 1` frames).
     mutating func run(ticks: Int) -> [[UnitSnapshot]] {
-        var frames = [snapshot()]
+        var frames = [ snapshot() ]
         for _ in 0 ..< ticks {
             tick()
             frames.append(snapshot())

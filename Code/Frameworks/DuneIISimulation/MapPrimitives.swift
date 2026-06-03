@@ -100,7 +100,7 @@ public struct DefaultMapPrimitives: MapPrimitives {
         if type == .spice { spriteOffset = 49 }
         if type == .thickSpice { spriteOffset = 65 }
 
-        if let id = state.iconMap?.tileID(group: 9, offset: spriteOffset) {   // ICM_ICONGROUP_LANDSCAPE
+        if let id = state.iconMap?.tileID(group: 9, offset: spriteOffset) {  // ICM_ICONGROUP_LANDSCAPE
             let spriteID = UInt16(id & 0x1FF)
             state.mapBaseTileID[Int(packed)] = 0x8000 | spriteID
             state.map[Int(packed)].groundTileID = spriteID
@@ -124,7 +124,7 @@ public struct DefaultMapPrimitives: MapPrimitives {
         for i in 0 ..< 4 {
             let curPacked = Int(packed) + Int(DefaultMapPrimitives.mapDiff[i])
             if Tile32.isOutOfMap(UInt16(truncatingIfNeeded: curPacked)) {
-                spriteOffset |= (1 << i)   // both spice types treat off-map as matching
+                spriteOffset |= (1 << i)  // both spice types treat off-map as matching
                 continue
             }
             let curType = landscapeType(state.map[curPacked], tileIDs: state.tileIDs)
@@ -150,7 +150,10 @@ public struct DefaultMapPrimitives: MapPrimitives {
         let r = Int(radius)
         for i in -r ... r {
             for j in -r ... r {
-                let curPacked = Tile32.packXY(x: UInt16(truncatingIfNeeded: x + j), y: UInt16(truncatingIfNeeded: y + i))
+                let curPacked = Tile32.packXY(
+                    x: UInt16(truncatingIfNeeded: x + j),
+                    y: UInt16(truncatingIfNeeded: y + i)
+                )
                 let distance = Tile32.distancePacked(packed, curPacked)
                 if distance > radius { continue }
                 if distance == radius && (state.random256.next() & 1) == 0 { continue }
@@ -162,7 +165,7 @@ public struct DefaultMapPrimitives: MapPrimitives {
     }
 
     public func findLocationTile(_ locationID: UInt16, houseID houseID0: UInt8, in state: inout GameState) -> UInt16 {
-        let mapBase: [Int] = [1, -2, -2]
+        let mapBase: [Int] = [ 1, -2, -2 ]
         let info = MapInfo.scales[Int(state.mapScale)]
         let mapOffset = mapBase[Int(state.mapScale)]
         var houseID = houseID0
@@ -172,12 +175,15 @@ public struct DefaultMapPrimitives: MapPrimitives {
             Tile32.packXY(x: UInt16(truncatingIfNeeded: x), y: UInt16(truncatingIfNeeded: y))
         }
 
-        if locationID == 6 {   // an enemy's house, used as the base-search house below
+        if locationID == 6 {  // an enemy's house, used as the base-search house below
             var find = PoolFind()
             while let s = state.structureFind(&find) {
                 let st = state.structures[s].o.type
                 if st == UInt8(StructureType.slab1x1.rawValue) || st == UInt8(StructureType.slab2x2.rawValue)
-                    || st == UInt8(StructureType.wall.rawValue) { continue }
+                    || st == UInt8(StructureType.wall.rawValue)
+                {
+                    continue
+                }
                 if state.structures[s].o.houseID == houseID { continue }
                 houseID = state.structures[s].o.houseID
                 break
@@ -186,31 +192,63 @@ public struct DefaultMapPrimitives: MapPrimitives {
 
         while ret == 0 {
             switch locationID {
-                case 0:   // North
-                    ret = packXYi(Int(info.minX) + Int(state.randomLCG.range(0, info.sizeX - 2)), Int(info.minY) + mapOffset)
-                case 1:   // East
-                    ret = packXYi(Int(info.minX) + Int(info.sizeX) - mapOffset, Int(info.minY) + Int(state.randomLCG.range(0, info.sizeY - 2)))
-                case 2:   // South
-                    ret = packXYi(Int(info.minX) + Int(state.randomLCG.range(0, info.sizeX - 2)), Int(info.minY) + Int(info.sizeY) - mapOffset)
-                case 3:   // West
-                    ret = packXYi(Int(info.minX) + mapOffset, Int(info.minY) + Int(state.randomLCG.range(0, info.sizeY - 2)))
-                case 4:   // Air
-                    ret = packXYi(Int(info.minX) + Int(state.randomLCG.range(0, info.sizeX)), Int(info.minY) + Int(state.randomLCG.range(0, info.sizeY)))
+                case 0:  // North
+                    ret = packXYi(
+                        Int(info.minX) + Int(state.randomLCG.range(0, info.sizeX - 2)),
+                        Int(info.minY) + mapOffset
+                    )
+                case 1:  // East
+                    ret = packXYi(
+                        Int(info.minX) + Int(info.sizeX) - mapOffset,
+                        Int(info.minY) + Int(state.randomLCG.range(0, info.sizeY - 2))
+                    )
+                case 2:  // South
+                    ret = packXYi(
+                        Int(info.minX) + Int(state.randomLCG.range(0, info.sizeX - 2)),
+                        Int(info.minY) + Int(info.sizeY) - mapOffset
+                    )
+                case 3:  // West
+                    ret = packXYi(
+                        Int(info.minX) + mapOffset,
+                        Int(info.minY) + Int(state.randomLCG.range(0, info.sizeY - 2))
+                    )
+                case 4:  // Air
+                    ret = packXYi(
+                        Int(info.minX) + Int(state.randomLCG.range(0, info.sizeX)),
+                        Int(info.minY) + Int(state.randomLCG.range(0, info.sizeY))
+                    )
                     if houseID == state.playerHouseID && !isValidPosition(ret, mapScale: state.mapScale) { ret = 0 }
-                case 5:   // Visible (within the radar viewport)
-                    ret = packXYi(Int(Tile32.packedX(state.minimapPosition)) + Int(state.randomLCG.range(0, 14)),
-                                  Int(Tile32.packedY(state.minimapPosition)) + Int(state.randomLCG.range(0, 9)))
+                case 5:  // Visible (within the radar viewport)
+                    ret = packXYi(
+                        Int(Tile32.packedX(state.minimapPosition)) + Int(state.randomLCG.range(0, 14)),
+                        Int(Tile32.packedY(state.minimapPosition)) + Int(state.randomLCG.range(0, 9))
+                    )
                     if houseID == state.playerHouseID && !isValidPosition(ret, mapScale: state.mapScale) { ret = 0 }
-                case 6, 7:   // Enemy base / Home base — near a structure, else a unit, else anywhere
+                case 6, 7:  // Enemy base / Home base — near a structure, else a unit, else anywhere
                     var find = PoolFind(houseID: houseID)
                     if let s = state.structureFind(&find) {
-                        ret = Tile32.moveByRandom(state.structures[s].o.position, distance: 120, center: true, rng: &state.random256).packed
+                        ret =
+                            Tile32.moveByRandom(
+                                state.structures[s].o.position,
+                                distance: 120,
+                                center: true,
+                                rng: &state.random256
+                            ).packed
                     } else {
                         var uf = PoolFind(houseID: houseID)
                         if let u = state.unitFind(&uf) {
-                            ret = Tile32.moveByRandom(state.units[u].o.position, distance: 120, center: true, rng: &state.random256).packed
+                            ret =
+                                Tile32.moveByRandom(
+                                    state.units[u].o.position,
+                                    distance: 120,
+                                    center: true,
+                                    rng: &state.random256
+                                ).packed
                         } else {
-                            ret = packXYi(Int(info.minX) + Int(state.randomLCG.range(0, info.sizeX)), Int(info.minY) + Int(state.randomLCG.range(0, info.sizeY)))
+                            ret = packXYi(
+                                Int(info.minX) + Int(state.randomLCG.range(0, info.sizeX)),
+                                Int(info.minY) + Int(state.randomLCG.range(0, info.sizeY))
+                            )
                         }
                     }
                     if houseID == state.playerHouseID && !isValidPosition(ret, mapScale: state.mapScale) { ret = 0 }
@@ -218,14 +256,16 @@ public struct DefaultMapPrimitives: MapPrimitives {
                     return 0
             }
             ret &= 0xFFF
-            if ret != 0 && (state.unitGetByPackedTile(ret) != nil || state.structureGetByPackedTile(ret) != nil) { ret = 0 }
+            if ret != 0 && (state.unitGetByPackedTile(ret) != nil || state.structureGetByPackedTile(ret) != nil) {
+                ret = 0
+            }
         }
         return ret
     }
 
     public func searchSpice(_ packed: UInt16, radius: UInt16, in state: GameState) -> UInt16 {
-        var radius1 = radius &+ 1   // best plain-spice distance seen
-        var radius2 = radius &+ 1   // best thick-spice distance seen
+        var radius1 = radius &+ 1  // best plain-spice distance seen
+        var radius2 = radius &+ 1  // best thick-spice distance seen
         var packed1 = packed
         var packed2 = packed
         var found = false
@@ -269,7 +309,7 @@ public struct DefaultMapPrimitives: MapPrimitives {
 
     /// `g_table_mapDiff[4]` (`table/tilediff.c`): packed-offset deltas for the four orthogonal
     /// neighbours (up, right, down, left).
-    static let mapDiff: [Int16] = [-64, 1, 64, -1]
+    static let mapDiff: [Int16] = [ -64, 1, 64, -1 ]
 
     /// `_landscapeSpriteMap[81]` (`map.c:523`): landscape sprite offset (0…80, from `g_landscapeTileID`)
     /// → `LandscapeType` raw value.

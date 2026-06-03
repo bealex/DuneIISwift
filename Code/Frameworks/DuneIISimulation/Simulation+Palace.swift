@@ -21,35 +21,55 @@ public extension Simulation {
     /// death-hand fires there (jittered ±160) instead of the AI's "first non-allied structure" scan. `nil`
     /// (the AI auto-fire and the non-missile weapons) keeps the original behaviour.
     mutating func structureActivateSpecial(_ slot: Int, missileTarget: UInt16? = nil) {
-        guard StructureType(rawValue: Int(state.structures[slot].o.type)) == .palace,
-              let combat = unitScript?.combat,
-              let actions = unitScript?.actions, let scriptInfo = unitScript?.scriptInfo else { return }
+        guard
+            StructureType(rawValue: Int(state.structures[slot].o.type)) == .palace,
+            let combat = unitScript?.combat,
+            let actions = unitScript?.actions,
+            let scriptInfo = unitScript?.scriptInfo
+        else { return }
         let houseID = state.structures[slot].o.houseID
-        guard let house = HouseID(rawValue: Int(houseID)),
-              state.houses[Int(houseID)].flags.contains(.used) else { return }
+        guard
+            let house = HouseID(rawValue: Int(houseID)),
+            state.houses[Int(houseID)].flags.contains(.used)
+        else { return }
         let countDown = HouseInfo[house].specialCountDown
 
         switch HouseInfo[house].specialWeapon {
-            case 1:   // HOUSE_WEAPON_MISSILE
+            case 1:  // HOUSE_WEAPON_MISSILE
                 let orientation = Int8(truncatingIfNeeded: Int(state.random256.next()))
-                guard let carrier = combat.unitCreate(index: Pool.unitIndexInvalid,
-                                                      type: UInt8(UnitType.missileHouse.rawValue), houseID: houseID,
-                                                      position: Tile32(x: 0xFFFF, y: 0xFFFF), orientation: orientation,
-                                                      in: &state) else { break }
+                guard
+                    let carrier = combat.unitCreate(
+                        index: Pool.unitIndexInvalid,
+                        type: UInt8(UnitType.missileHouse.rawValue),
+                        houseID: houseID,
+                        position: Tile32(x: 0xFFFF, y: 0xFFFF),
+                        orientation: orientation,
+                        in: &state
+                    )
+                else { break }
                 state.structures[slot].countDown = countDown
                 // An AI launch warns the player ("missile approaching", `Unit_LaunchHouseMissile` feedback 39);
                 // the human's own launch is silent here (it enters target-selection in the original).
                 if houseID != state.playerHouseID { state.pendingFeedback.append(39) }
                 // Human launch: fire the death-hand at the player's chosen tile (`Unit_LaunchHouseMissile`).
                 if let missileTarget {
-                    let jittered = Tile32.moveByRandom(Tile32.unpack(missileTarget), distance: 160, center: false,
-                                                       rng: &state.random256)
+                    let jittered = Tile32.moveByRandom(
+                        Tile32.unpack(missileTarget),
+                        distance: 160,
+                        center: false,
+                        rng: &state.random256
+                    )
                     let target = state.indexEncode(jittered.packed, type: .tile)
                     let palacePosition = state.structures[slot].o.position
                     state.unitFree(carrier)
-                    _ = combat.unitCreateBullet(position: palacePosition,
-                                                type: UInt8(UnitType.missileHouse.rawValue), houseID: houseID,
-                                                damage: 0x1F4, target: target, in: &state)
+                    _ = combat.unitCreateBullet(
+                        position: palacePosition,
+                        type: UInt8(UnitType.missileHouse.rawValue),
+                        houseID: houseID,
+                        damage: 0x1F4,
+                        target: target,
+                        in: &state
+                    )
                     return
                 }
                 // AI: launch at the first non-allied, non-slab/wall structure.
@@ -58,51 +78,92 @@ public extension Simulation {
                 while let sf = state.structureFind(&find) {
                     let tt = state.structures[sf].o.type
                     if tt == UInt8(StructureType.slab1x1.rawValue) || tt == UInt8(StructureType.slab2x2.rawValue)
-                        || tt == UInt8(StructureType.wall.rawValue) { continue }
-                    if housePrim.areAllied(houseID, state.structures[sf].o.houseID,
-                                           playerHouseID: state.playerHouseID) { continue }
+                        || tt == UInt8(StructureType.wall.rawValue)
+                    {
+                        continue
+                    }
+                    if housePrim.areAllied(
+                        houseID,
+                        state.structures[sf].o.houseID,
+                        playerHouseID: state.playerHouseID
+                    ) {
+                        continue
+                    }
                     // `Unit_LaunchHouseMissile` (`unit.c:2581`): jitter the target, free the carrier, fire.
-                    let jittered = Tile32.moveByRandom(Tile32.unpack(state.structures[sf].o.position.packed),
-                                                       distance: 160, center: false, rng: &state.random256)
+                    let jittered = Tile32.moveByRandom(
+                        Tile32.unpack(state.structures[sf].o.position.packed),
+                        distance: 160,
+                        center: false,
+                        rng: &state.random256
+                    )
                     let target = state.indexEncode(jittered.packed, type: .tile)
                     let palacePosition = state.structures[slot].o.position
                     state.unitFree(carrier)
-                    _ = combat.unitCreateBullet(position: palacePosition,
-                                                type: UInt8(UnitType.missileHouse.rawValue), houseID: houseID,
-                                                damage: 0x1F4, target: target, in: &state)
+                    _ = combat.unitCreateBullet(
+                        position: palacePosition,
+                        type: UInt8(UnitType.missileHouse.rawValue),
+                        houseID: houseID,
+                        damage: 0x1F4,
+                        target: target,
+                        in: &state
+                    )
                     return
                 }
-                state.unitFree(carrier)   // no target — discard the carrier (countdown already re-armed)
+                state.unitFree(carrier)  // no target — discard the carrier (countdown already re-armed)
                 return
 
-            case 2:   // HOUSE_WEAPON_FREMEN
+            case 2:  // HOUSE_WEAPON_FREMEN
                 let location = combat.movement.map.findLocationTile(4, houseID: Pool.houseInvalid, in: &state)
                 for _ in 0 ..< 5 {
                     _ = state.random256.next()
-                    let position = Tile32.moveByRandom(Tile32.unpack(location), distance: 32, center: true,
-                                                       rng: &state.random256)
+                    let position = Tile32.moveByRandom(
+                        Tile32.unpack(location),
+                        distance: 32,
+                        center: true,
+                        rng: &state.random256
+                    )
                     let orientation = state.randomLCG.range(0, 3)
                     let unitType: UnitType = orientation == 1 ? .trooper : .troopers
-                    guard let u = combat.unitCreate(index: Pool.unitIndexInvalid, type: UInt8(unitType.rawValue),
-                                                    houseID: UInt8(HouseID.fremen.rawValue), position: position,
-                                                    orientation: Int8(truncatingIfNeeded: Int(orientation)),
-                                                    in: &state) else { continue }
-                    actions.setAction(slot: u, action: UInt8(ActionType.hunt.rawValue), scriptInfo: scriptInfo,
-                                      in: &state)
+                    guard
+                        let u = combat.unitCreate(
+                            index: Pool.unitIndexInvalid,
+                            type: UInt8(unitType.rawValue),
+                            houseID: UInt8(HouseID.fremen.rawValue),
+                            position: position,
+                            orientation: Int8(truncatingIfNeeded: Int(orientation)),
+                            in: &state
+                        )
+                    else { continue }
+                    actions.setAction(
+                        slot: u,
+                        action: UInt8(ActionType.hunt.rawValue),
+                        scriptInfo: scriptInfo,
+                        in: &state
+                    )
                 }
                 state.structures[slot].countDown = countDown
 
-            case 3:   // HOUSE_WEAPON_SABOTEUR
+            case 3:  // HOUSE_WEAPON_SABOTEUR
                 guard let functions = structureScript?.structure else { return }
                 let position = functions.findFreePosition(slot: slot, checkForSpice: false, in: &state)
                 if position == 0 { state.structures[slot].countDown = 1; return }
                 let orientation = Int8(truncatingIfNeeded: Int(state.random256.next()))
-                guard let u = combat.unitCreate(index: Pool.unitIndexInvalid,
-                                                type: UInt8(UnitType.saboteur.rawValue), houseID: houseID,
-                                                position: Tile32.unpack(position), orientation: orientation,
-                                                in: &state) else { return }
-                actions.setAction(slot: u, action: UInt8(ActionType.sabotage.rawValue), scriptInfo: scriptInfo,
-                                  in: &state)
+                guard
+                    let u = combat.unitCreate(
+                        index: Pool.unitIndexInvalid,
+                        type: UInt8(UnitType.saboteur.rawValue),
+                        houseID: houseID,
+                        position: Tile32.unpack(position),
+                        orientation: orientation,
+                        in: &state
+                    )
+                else { return }
+                actions.setAction(
+                    slot: u,
+                    action: UInt8(ActionType.sabotage.rawValue),
+                    scriptInfo: scriptInfo,
+                    in: &state
+                )
                 state.structures[slot].countDown = countDown
 
             default:
@@ -121,7 +182,9 @@ public extension Simulation {
                 if palaceReadyForPlayer(Int(structure)) { structureActivateSpecial(Int(structure)) }
                 return true
             case let .launchHouseMissile(structure, tile):
-                if palaceReadyForPlayer(Int(structure)) { structureActivateSpecial(Int(structure), missileTarget: tile) }
+                if palaceReadyForPlayer(Int(structure)) {
+                    structureActivateSpecial(Int(structure), missileTarget: tile)
+                }
                 return true
             default:
                 return false

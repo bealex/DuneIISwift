@@ -2,8 +2,8 @@ import CoreGraphics
 import DuneIIContracts
 import DuneIIFormats
 import DuneIIRenderer
-import DuneIISimulation
 import DuneIIScenarios
+import DuneIISimulation
 import DuneIIWorld
 import Foundation
 
@@ -13,8 +13,8 @@ import Foundation
 @MainActor
 enum ScenarioImageBuilder {
     static let tilePx = 16
-    static let size = ScenarioTerrain.size      // 8
-    static var sidePx: Int { tilePx * size }     // 128
+    static let size = ScenarioTerrain.size  // 8
+    static var sidePx: Int { tilePx * size }  // 128
 
     struct UnitSprite { let image: CGImage; let centerX: Int; let centerY: Int; let z: CGFloat; let flipped: Bool }
 
@@ -22,7 +22,7 @@ enum ScenarioImageBuilder {
     static func terrainIndices(_ world: ScenarioWorld, _ assets: ScenarioAssets) -> [UInt8]? {
         guard let tiles = assets.tileSet else { return nil }
         let side = sidePx
-        var buffer = [UInt8](repeating: 0, count: side * side)
+        var buffer = [ UInt8 ](repeating: 0, count: side * side)
         let terrain = world.terrain
         for ly in 0 ..< size {
             for lx in 0 ..< size {
@@ -50,7 +50,7 @@ enum ScenarioImageBuilder {
         var result: [UnitSprite] = []
         for u in world.state.units where u.o.flags.contains(.used) {
             guard let type = UnitType(rawValue: Int(u.o.type)) else { continue }
-            if UnitInfo[type].o.flags.contains(.blurTile) { continue }    // sandworm shimmer not drawn here
+            if UnitInfo[type].o.flags.contains(.blurTile) { continue }  // sandworm shimmer not drawn here
             guard let sprites = UnitSprites.info(for: u) else { continue }
 
             // Use the effective house (Unit_GetHouseID) so a deviated unit shows its captor's colours.
@@ -62,8 +62,15 @@ enum ScenarioImageBuilder {
                 result.append(UnitSprite(image: image, centerX: cx, centerY: cy, z: 1, flipped: sprites.body.flipped))
             }
             if let turret = sprites.turret, let image = layerImage(turret, assets, house) {
-                result.append(UnitSprite(image: image, centerX: cx + turret.offsetX, centerY: cy + turret.offsetY,
-                                         z: 2, flipped: turret.flipped))
+                result.append(
+                    UnitSprite(
+                        image: image,
+                        centerX: cx + turret.offsetX,
+                        centerY: cy + turret.offsetY,
+                        z: 2,
+                        flipped: turret.flipped
+                    )
+                )
             }
         }
         return result
@@ -103,22 +110,42 @@ enum ScenarioImageBuilder {
 
     /// Render one global sprite index (via `globalSprite`) as a house-neutral indexed image.
     private static func spriteImage(_ index: Int, _ assets: ScenarioAssets) -> CGImage? {
-        guard let (shp, frame) = globalSprite(index),
-              let frames = assets.shp(shp), frame >= 0, frame < frames.frames.count else { return nil }
-        let f = frames.frames[frame]
-        return IndexedImage.cgImage(indices: f.pixels, width: f.width, height: f.height,
-                                    palette: assets.palette, transparentIndex: 0)
-    }
-
-    private static func layerImage(_ layer: UnitSpriteLayer, _ assets: ScenarioAssets,
-                                   _ house: DuneIIRenderer.House) -> CGImage? {
-        guard let (shp, frame) = globalSprite(layer.spriteIndex),
-              let frames = assets.shp(shp), frame >= 0, frame < frames.frames.count else { return nil }
+        guard
+            let (shp, frame) = globalSprite(index),
+            let frames = assets.shp(shp),
+            frame >= 0,
+            frame < frames.frames.count
+        else { return nil }
         let f = frames.frames[frame]
         return IndexedImage.cgImage(
-            indices: f.pixels, width: f.width, height: f.height,
-            palette: assets.palette, transparentIndex: 0,
-            remap: { HouseRemap.sprite($0, house: house) })
+            indices: f.pixels,
+            width: f.width,
+            height: f.height,
+            palette: assets.palette,
+            transparentIndex: 0
+        )
+    }
+
+    private static func layerImage(
+        _ layer: UnitSpriteLayer,
+        _ assets: ScenarioAssets,
+        _ house: DuneIIRenderer.House
+    ) -> CGImage? {
+        guard
+            let (shp, frame) = globalSprite(layer.spriteIndex),
+            let frames = assets.shp(shp),
+            frame >= 0,
+            frame < frames.frames.count
+        else { return nil }
+        let f = frames.frames[frame]
+        return IndexedImage.cgImage(
+            indices: f.pixels,
+            width: f.width,
+            height: f.height,
+            palette: assets.palette,
+            transparentIndex: 0,
+            remap: { HouseRemap.sprite($0, house: house) }
+        )
     }
 
     /// Map a global unit-sprite index to its SHP + local frame (load-order bases, per `Sprites_Init`).

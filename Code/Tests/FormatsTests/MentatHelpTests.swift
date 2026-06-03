@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import DuneIIFormats
 
 /// The Mentat help database decoder (`MENTAT<HOUSE>.ENG`): the `NAME` topic list + the char-pair-compressed
@@ -15,7 +16,7 @@ struct MentatHelpTests {
     @Test("the decompressor expands the char-pair scheme (string.c couples table)")
     func decompress() {
         // " e" pair: high-bit byte 0x80 → couples[0]=' ', couples[16]='t' ⇒ " t"; a plain byte passes through.
-        let bytes: [UInt8] = [0x80, UInt8(ascii: "X"), 0x00]
+        let bytes: [UInt8] = [ 0x80, UInt8(ascii: "X"), 0x00 ]
         #expect(MentatHelp.decompress(bytes, at: 0) == " tX")
     }
 
@@ -35,7 +36,7 @@ struct MentatHelpTests {
         // A vehicle topic with attribute lines.
         let tank = try #require(topics.first { $0.name == "Combat Tank" })
         #expect(tank.section == .vehicles)
-        #expect(tank.campaign == 4)            // unlocks at campaignID+1 ≥ 4
+        #expect(tank.campaign == 4)  // unlocks at campaignID+1 ≥ 4
         #expect(tank.attributes.contains { $0.contains("Mobility") })
 
         // A house lore topic.

@@ -21,12 +21,20 @@ public struct UnitActions: Sendable {
     /// The unit's script `engine` is passed separately (not read out of `state.units[slot].o.script`):
     /// during a VM run the live engine is a copy held by the runner, so the script (re)load must target
     /// it, while the unit's other fields live in `state`. Standalone callers use the `slot`-only overload.
-    public func setAction(slot: Int, action: UInt8, scriptInfo: ScriptInfo,
-                          engine: inout ScriptEngine, in state: inout GameState) {
+    public func setAction(
+        slot: Int,
+        action: UInt8,
+        scriptInfo: ScriptInfo,
+        engine: inout ScriptEngine,
+        in state: inout GameState
+    ) {
         let current = state.units[slot].actionID
         if current == UInt8(ActionType.destruct.rawValue)
             || current == UInt8(ActionType.die.rawValue)
-            || action == 0xFF { return }
+            || action == 0xFF
+        {
+            return
+        }
         guard let actionType = ActionType(rawValue: Int(action)) else { return }
         let type = Int(state.units[slot].o.type)
 

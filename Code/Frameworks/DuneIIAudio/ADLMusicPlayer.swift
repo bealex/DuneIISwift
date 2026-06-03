@@ -1,9 +1,9 @@
 import AVFoundation
 import Foundation
-import os
-import Synchronization
 import SwiftOPL3
+import Synchronization
 import WestwoodADL
+import os
 
 /// Plays Dune II's music through the **authentic DOS AdLib FM path**: the Westwood `.ADL` files synthesised on
 /// an emulated **OPL3 (YMF262)** chip — `WestwoodADL.ADLPlayer` driving a `SwiftOPL3.OPL3Chip`, exactly as the
@@ -43,8 +43,12 @@ public final class ADLMusicPlayer: MusicEngine {
 
     public init(musicDirectory: URL) {
         self.musicDirectory = musicDirectory
-        format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: Double(Self.outputRate),
-                               channels: 2, interleaved: false)!
+        format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: Double(Self.outputRate),
+            channels: 2,
+            interleaved: false
+        )!
         let node = Self.makeNode(shared: shared, format: format)
         engine.attach(node)
         engine.connect(node, to: engine.mainMixerNode, format: format)
@@ -73,15 +77,27 @@ public final class ADLMusicPlayer: MusicEngine {
 
     public func play(file: Int, song: Int, loop: Bool) {
         let url = musicDirectory.appendingPathComponent(String(format: "DUNE%d.ADL", file))
-        guard let data = try? Data(contentsOf: url) else {
+        guard
+            let data = try? Data(contentsOf: url)
+        else {
             log.warning("ADL music file missing: \(url.lastPathComponent, privacy: .public)")
             return
         }
         generation &+= 1
         let gen = generation
-        shared.command.withLock { $0 = Command(data: data, song: song, loop: loop, generation: gen,
-                                               paused: false, stopped: false) }
-        log.info("ADL play \(url.lastPathComponent, privacy: .public) song=\(song, privacy: .public) loop=\(loop, privacy: .public)")
+        shared.command.withLock {
+            $0 = Command(
+                data: data,
+                song: song,
+                loop: loop,
+                generation: gen,
+                paused: false,
+                stopped: false
+            )
+        }
+        log.info(
+            "ADL play \(url.lastPathComponent, privacy: .public) song=\(song, privacy: .public) loop=\(loop, privacy: .public)"
+        )
         ensureRunning()
         ensureProducer()
     }
@@ -89,8 +105,16 @@ public final class ADLMusicPlayer: MusicEngine {
     public func stop() {
         generation &+= 1
         let gen = generation
-        shared.command.withLock { $0 = Command(data: nil, song: 0, loop: false, generation: gen,
-                                               paused: false, stopped: true) }
+        shared.command.withLock {
+            $0 = Command(
+                data: nil,
+                song: 0,
+                loop: false,
+                generation: gen,
+                paused: false,
+                stopped: true
+            )
+        }
     }
 
     public func pause() { shared.command.withLock { $0.paused = true } }
@@ -165,11 +189,11 @@ public final class ADLMusicPlayer: MusicEngine {
     /// A fixed-capacity stereo (interleaved L/R) float ring buffer — ~1 s of lookahead. Single producer
     /// (synthesis thread) / single consumer (audio thread), each holding the `Mutex` only for the brief copy.
     private struct Ring {
-        static let capacityFrames = ADLMusicPlayer.outputRate    // 1 second
-        private var buffer = [Float](repeating: 0, count: capacityFrames * ADLMusicPlayer.channels)
-        private var head = 0        // read cursor (in floats; always even)
-        private var tail = 0        // write cursor (in floats; always even)
-        private var available = 0   // floats ready to read
+        static let capacityFrames = ADLMusicPlayer.outputRate  // 1 second
+        private var buffer = [ Float ](repeating: 0, count: capacityFrames * ADLMusicPlayer.channels)
+        private var head = 0  // read cursor (in floats; always even)
+        private var tail = 0  // write cursor (in floats; always even)
+        private var available = 0  // floats ready to read
 
         var freeFrames: Int { (buffer.count - available) / ADLMusicPlayer.channels }
 
@@ -203,8 +227,11 @@ public final class ADLMusicPlayer: MusicEngine {
 
     /// The `AVAudioSourceNode` render block body. Real-time-safe: copies already-rendered frames out of the
     /// ring (or silence when paused/stopped/underrunning). Nonisolated `@Sendable` (captures only `shared`).
-    private nonisolated static func consume(shared: Shared, frameCount: AVAudioFrameCount,
-                                            abl: UnsafeMutablePointer<AudioBufferList>) -> OSStatus {
+    private nonisolated static func consume(
+        shared: Shared,
+        frameCount: AVAudioFrameCount,
+        abl: UnsafeMutablePointer<AudioBufferList>
+    ) -> OSStatus {
         let buffers = UnsafeMutableAudioBufferListPointer(abl)
         let left = buffers[0].mData!.assumingMemoryBound(to: Float.self)
         let right = buffers[1].mData!.assumingMemoryBound(to: Float.self)
@@ -226,12 +253,12 @@ public final class ADLMusicPlayer: MusicEngine {
         var chip: OPL3Chip?
         var player: ADLPlayer?
         var loadedGeneration = Int.min
-        var everAlive = false       // armed once the driver reports an active channel (ignore opening ticks)
-        var notifiedEnd = false     // fired the end-of-track rollover once (but keep playing — see below)
+        var everAlive = false  // armed once the driver reports an active channel (ignore opening ticks)
+        var notifiedEnd = false  // fired the end-of-track rollover once (but keep playing — see below)
         var ticks = 0
         var emitted = 0
         let chunkFrames = 1024
-        var scratch = [Float](repeating: 0, count: chunkFrames * channels)
+        var scratch = [ Float ](repeating: 0, count: chunkFrames * channels)
 
         while true {
             if shared.cancelled.withLock({ $0 }) { return }
@@ -255,14 +282,18 @@ public final class ADLMusicPlayer: MusicEngine {
                 }
             }
 
-            guard let chip, let player, !command.stopped else {
+            guard
+                let chip,
+                let player,
+                !command.stopped
+            else {
                 Thread.sleep(forTimeInterval: 0.02); continue
             }
             if command.paused {
                 Thread.sleep(forTimeInterval: 0.01); continue
             }
             if shared.ring.withLock({ $0.freeFrames }) < chunkFrames {
-                Thread.sleep(forTimeInterval: 0.005); continue   // ring full — let the consumer drain
+                Thread.sleep(forTimeInterval: 0.005); continue  // ring full — let the consumer drain
             }
 
             var produced = 0

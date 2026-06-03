@@ -7,10 +7,10 @@ struct ContentView: View {
     @State var model: MapModel
     @State private var showInspector = true
 
-    private let scales = [1, 2, 4, 8, 16]
+    private let scales = [ 1, 2, 4, 8, 16 ]
 
     var body: some View {
-        SpriteView(scene: model.scene, options: [.ignoresSiblingOrder])
+        SpriteView(scene: model.scene, options: [ .ignoresSiblingOrder ])
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.black)
             .inspector(isPresented: $showInspector) {
@@ -36,8 +36,12 @@ struct ContentView: View {
                     Toggle("Fog", isOn: $model.showFog)
                 }
                 ToolbarItem(placement: .automatic) {
-                    Button { showInspector.toggle() } label: { Image(systemName: "sidebar.right") }
-                        .help("Toggle the properties panel")
+                    Button {
+                        showInspector.toggle()
+                    } label: {
+                        Image(systemName: "sidebar.right")
+                    }
+                    .help("Toggle the properties panel")
                 }
             }
             .overlay(alignment: .top) {

@@ -17,8 +17,12 @@ public struct StructureScriptRunner: Sendable {
     /// Optional Tier-2a decision-trace sink (one structure by `o.index`); nil in normal operation.
     let tracer: StructureScriptTracer?
 
-    init(scriptInfo: ScriptInfo, combat: UnitCombat, interpreter: any ScriptInterpreter,
-         tracer: StructureScriptTracer? = nil) {
+    init(
+        scriptInfo: ScriptInfo,
+        combat: UnitCombat,
+        interpreter: any ScriptInterpreter,
+        tracer: StructureScriptTracer? = nil
+    ) {
         self.interpreter = interpreter
         self.scriptInfo = scriptInfo
         self.general = GeneralScriptFunctions()
@@ -36,7 +40,7 @@ public struct StructureScriptRunner: Sendable {
             case 0x02: return structure.unknown0A81(slot: slot, in: &state)
             case 0x03: return structure.findUnitByType(slot: slot, type: engine.peek(1), in: &state)
             case 0x04: return structure.setState(slot: slot, state: Int16(bitPattern: engine.peek(1)), in: &state)
-            case 0x05: return general.noOperation()   // Script_Structure_DisplayText — GUI (SEAM)
+            case 0x05: return general.noOperation()  // Script_Structure_DisplayText — GUI (SEAM)
             case 0x06: return structure.unknown11B9(encoded: engine.peek(1), in: &state)
             case 0x07: return structure.unloadLinkedUnit(slot: slot, in: &state)
             case 0x08: return structure.findTargetUnit(slot: slot, range: engine.peek(1), in: &state)
@@ -45,11 +49,11 @@ public struct StructureScriptRunner: Sendable {
             case 0x0B: return structure.fire(slot: slot, in: &state)
             case 0x0D: return structure.getState(slot: slot, in: state)
             case 0x15: return structure.refineSpice(slot: slot, in: &state)
-            case 0x0E: state.emitSound(Int(engine.peek(1)), at: state.structures[slot].o.position); return 0   // Script_Structure_VoicePlay
+            case 0x0E: state.emitSound(Int(engine.peek(1)), at: state.structures[slot].o.position); return 0  // Script_Structure_VoicePlay
             case 0x0F: return structure.removeFogAroundTile(slot: slot, in: &state)
             case 0x16: return structure.explode(slot: slot, in: &state)
             case 0x17: return structure.destroy(slot: slot, in: &state)
-            default:   return nil   // all BUILD.EMC natives ported; an unused slot would clean-halt
+            default: return nil  // all BUILD.EMC natives ported; an unused slot would clean-halt
         }
     }
 
@@ -72,10 +76,11 @@ public struct StructureScriptRunner: Sendable {
             // oracle's per-`Script_Run` `--parity-script-trace` point). Observation only — stripped from
             // release builds (the decision-trace goldens run under `swift test`, i.e. debug).
             #if DEBUG
-            if let tracer, state.structures[slot].o.index == tracer.structureIndex,
-               let line = ScriptTraceLine.decode(engine, info: scriptInfo) {
-                tracer.record(line.oracleFormat)
-            }
+                if let tracer, state.structures[slot].o.index == tracer.structureIndex,
+                    let line = ScriptTraceLine.decode(engine, info: scriptInfo)
+                {
+                    tracer.record(line.oracleFormat)
+                }
             #endif
             let ok = interpreter.run(&engine, info: scriptInfo) { index, eng in
                 // The VM runs on a *copy* of the engine, but a native may mutate this structure's **live**
@@ -94,7 +99,7 @@ public struct StructureScriptRunner: Sendable {
             }
             executed += 1
             if !ok { break }
-            if !state.structures[slot].o.flags.contains(.used) { break }   // freed by Destroy
+            if !state.structures[slot].o.flags.contains(.used) { break }  // freed by Destroy
         }
         if state.structures[slot].o.flags.contains(.used) {
             state.structures[slot].o.script = engine

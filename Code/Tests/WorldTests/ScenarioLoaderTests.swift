@@ -1,7 +1,8 @@
-import Foundation
-import Testing
 import DuneIIContracts
 import DuneIIFormats
+import Foundation
+import Testing
+
 @testable import DuneIIWorld
 
 /// Loads a real committed scenario `.INI` (+ `ICON.MAP`) into a `GameState` and checks the map +
@@ -35,7 +36,7 @@ struct ScenarioLoaderTests {
         // A structure stores its tile *corner* (the 0x80 sub-tile stripped), not the centred unpack
         // (`Structure_Place`: `position &= 0xFF00`) — units centre, structures don't.
         #expect(cy?.o.position == Tile32(x: Tile32.unpack(1630).x & 0xFF00, y: Tile32.unpack(1630).y & 0xFF00))
-        #expect(cy?.o.position.packed == 1630)   // same packed tile either way
+        #expect(cy?.o.position.packed == 1630)  // same packed tile either way
     }
 
     @Test("SCENA001 seeds house credits + the player from the per-house sections")
@@ -66,7 +67,9 @@ struct ScenarioLoaderTests {
         #expect(!state.houses[Int(HouseID.ordos.rawValue)].flags.contains(.human))
         // `structuresBuilt` is computed at load (Game_Prepare) so build prerequisites + the radar work from
         // turn 1 — the Atreides player's placed construction yard sets its bit.
-        #expect(state.houses[atreides].structuresBuilt & (UInt32(1) << UInt32(StructureType.constructionYard.rawValue)) != 0)
+        #expect(
+            state.houses[atreides].structuresBuilt & (UInt32(1) << UInt32(StructureType.constructionYard.rawValue)) != 0
+        )
     }
 
     @Test("SCENA001 places its [MAP] Bloom spice bloom + loads the WinFlags/LoseFlags")
@@ -98,20 +101,20 @@ struct ScenarioLoaderTests {
         for _ in 0 ..< 4 { root.deleteLastPathComponent() }
         let iconMap = try IconMap(Data(contentsOf: root.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
         let text = """
-        [BASIC]
-        MapScale=0
-        [MAP]
-        Seed=353
-        [Atreides]
-        Brain=Human
-        Credits=1000
-        [REINFORCEMENTS]
-        0=Atreides,Trike,West,5
-        1=Ordos,Quad,Air,10+
-        [CHOAM]
-        Trike=5
-        Quad=3
-        """
+            [BASIC]
+            MapScale=0
+            [MAP]
+            Seed=353
+            [Atreides]
+            Brain=Human
+            Credits=1000
+            [REINFORCEMENTS]
+            0=Atreides,Trike,West,5
+            1=Ordos,Quad,Air,10+
+            [CHOAM]
+            Trike=5
+            Quad=3
+            """
         let ini = try Ini(Data(text.utf8))
 
         var state = GameState()
@@ -121,14 +124,14 @@ struct ScenarioLoaderTests {
         let r0 = state.scenario.reinforcements[0]
         #expect(r0.unitType == UInt8(UnitType.trike.rawValue))
         #expect(r0.houseID == UInt8(HouseID.atreides.rawValue))
-        #expect(r0.locationID == 3)              // WEST
+        #expect(r0.locationID == 3)  // WEST
         #expect(r0.timeBetween == 31)
         #expect(r0.timeLeft == 31)
         #expect(r0.repeats == false)
         // Entry 1: an Air Ordos Quad; the trailing '+' is dropped in 1.07 (no repeat).
         let r1 = state.scenario.reinforcements[1]
         #expect(r1.unitType == UInt8(UnitType.quad.rawValue))
-        #expect(r1.locationID == 4)              // AIR
+        #expect(r1.locationID == 4)  // AIR
         #expect(r1.timeBetween == 61)
         #expect(r1.repeats == false)
         // [CHOAM] seeds the starport stock.
@@ -142,16 +145,16 @@ struct ScenarioLoaderTests {
         for _ in 0 ..< 4 { root.deleteLastPathComponent() }
         let iconMap = try IconMap(Data(contentsOf: root.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
         let text = """
-        [BASIC]
-        MapScale=1
-        [MAP]
-        Seed=353
-        Field=1234,2500
-        """
+            [BASIC]
+            MapScale=1
+            [MAP]
+            Seed=353
+            Field=1234,2500
+            """
         let ini = try Ini(Data(text.utf8))
 
         var state = GameState()
         state.loadScenario(ini: ini, iconMap: iconMap)
-        #expect(state.scenario.spiceFields == [1234, 2500])
+        #expect(state.scenario.spiceFields == [ 1234, 2500 ])
     }
 }

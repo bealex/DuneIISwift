@@ -18,20 +18,20 @@ public enum Voc {
     }
 
     public static func decode(_ data: Data) throws -> Sound {
-        let bytes = [UInt8](data)
+        let bytes = [ UInt8 ](data)
         guard bytes.count >= 26 else { throw DecodeError.truncated }
 
-        var cursor = bytes.u16LE(at: 20)   // offset to the first data block
+        var cursor = bytes.u16LE(at: 20)  // offset to the first data block
         var sampleRate = 0
         var samples: [UInt8] = []
 
         while cursor < bytes.count {
             let blockType = bytes[cursor]
-            if blockType == 0x00 { break }   // terminator
+            if blockType == 0x00 { break }  // terminator
 
             guard cursor + 4 <= bytes.count else { throw DecodeError.truncated }
 
-            let blockLength = bytes.u32LE(at: cursor) >> 8   // 24-bit body length
+            let blockLength = bytes.u32LE(at: cursor) >> 8  // 24-bit body length
             let body = cursor + 4
             guard body + blockLength <= bytes.count else { throw DecodeError.truncated }
 

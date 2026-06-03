@@ -24,7 +24,9 @@ final class ScenarioAssets {
     }()
 
     init(installURL: URL) {
-        guard let entries = try? FileManager.default.contentsOfDirectory(at: installURL, includingPropertiesForKeys: nil) else {
+        guard
+            let entries = try? FileManager.default.contentsOfDirectory(at: installURL, includingPropertiesForKeys: nil)
+        else {
             error = "Cannot read install directory: \(installURL.path)"
             return
         }
@@ -34,17 +36,29 @@ final class ScenarioAssets {
         if let pal = data("IBM.PAL"), let p = try? Palette(pal) { palette = p }
         if let icn = data("ICON.ICN") { tileSet = try? Icn.TileSet(icn) }
 
-        guard let mapData = data("ICON.MAP"), let iconMap = try? IconMap(mapData) else {
+        guard
+            let mapData = data("ICON.MAP"),
+            let iconMap = try? IconMap(mapData)
+        else {
             error = "Missing ICON.MAP."; return
         }
-        guard let emc = data("UNIT.EMC"), let program = try? Emc.Program(emc) else {
+        guard
+            let emc = data("UNIT.EMC"),
+            let program = try? Emc.Program(emc)
+        else {
             error = "Missing UNIT.EMC."; return
         }
-        guard let build = data("BUILD.EMC"), let buildProgram = try? Emc.Program(build) else {
+        guard
+            let build = data("BUILD.EMC"),
+            let buildProgram = try? Emc.Program(build)
+        else {
             error = "Missing BUILD.EMC."; return
         }
-        builder = ScenarioBuilder(iconMap: iconMap, unitScript: ScriptInfo(program),
-                                  structureScript: ScriptInfo(buildProgram))
+        builder = ScenarioBuilder(
+            iconMap: iconMap,
+            unitScript: ScriptInfo(program),
+            structureScript: ScriptInfo(buildProgram)
+        )
         if tileSet == nil { error = "Missing ICON.ICN." }
     }
 

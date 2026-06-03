@@ -1,8 +1,9 @@
-import Foundation
-import Testing
 import DuneIIContracts
 import DuneIIFormats
 import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIISimulation
 
 /// Real-data integration: bridge the committed `UNIT.EMC` into a `ScriptInfo`, switch a unit to an
@@ -16,13 +17,13 @@ struct RealUnitScriptTests {
     @Test("UNIT.EMC bridges to ScriptInfo and a unit's real script runs under the VM")
     func realScriptRuns() throws {
         var repo = URL(fileURLWithPath: #filePath)
-        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }   // Code/Tests/SimulationTests → repo root
+        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }  // Code/Tests/SimulationTests → repo root
         let url = repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")
-        guard let data = try? Data(contentsOf: url) else { return }   // short-circuit if absent
+        guard let data = try? Data(contentsOf: url) else { return }  // short-circuit if absent
 
         let info = ScriptInfo(try Emc.Program(data))
         #expect(!info.program.isEmpty)
-        #expect(info.offsets.count >= 10)   // enough entries to cover the common unit types
+        #expect(info.offsets.count >= 10)  // enough entries to cover the common unit types
 
         var s = GameState()
         s.playerHouseID = 0

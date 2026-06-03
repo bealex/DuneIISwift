@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import DuneIIWorld
 
 /// Bit-exact parity of the tile geometry + orientation primitives against OpenDUNE, from the shared
@@ -71,8 +72,12 @@ struct TileGoldenTests {
 
     @Test("Orientation_Orientation256ToOrientation8 / 16 over all 256 inputs")
     func orientation() throws {
-        let to8 = try #require(GoldenFixture.records("tile-golden.jsonl", fn: "Orientation_Orientation256ToOrientation8").first)
-        let to16 = try #require(GoldenFixture.records("tile-golden.jsonl", fn: "Orientation_Orientation256ToOrientation16").first)
+        let to8 = try #require(
+            GoldenFixture.records("tile-golden.jsonl", fn: "Orientation_Orientation256ToOrientation8").first
+        )
+        let to16 = try #require(
+            GoldenFixture.records("tile-golden.jsonl", fn: "Orientation_Orientation256ToOrientation16").first
+        )
         #expect(to8.out.values.count == 256)
         for input in 0 ..< 256 {
             #expect(Int(Orientation.to8(UInt8(input))) == to8.out.values[input], "to8(\(input))")

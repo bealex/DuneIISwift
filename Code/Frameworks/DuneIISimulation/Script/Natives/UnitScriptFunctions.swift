@@ -47,7 +47,7 @@ public struct UnitScriptFunctions: Sendable {
                 return UInt16(abs(Int(u.orientation[idx].target) - Int(u.orientation[idx].current)))
             case 0x12: return (UInt8(ui.movementType.rawValue) & 0x40) == 0 ? 0 : 1  // always 0 in 1.07
             case 0x13: return (u.o.seenByHouses & (1 << state.playerHouseID)) == 0 ? 0 : 1
-            default:   return 0
+            default: return 0
         }
     }
 
@@ -90,12 +90,17 @@ public struct UnitScriptFunctions: Sendable {
         if ui.movementType != .winger && (u.currentDestination.x != 0 || u.currentDestination.y != 0) { return 1 }
 
         let index = ui.o.flags.contains(.hasTurret) ? 1 : 0
-        if u.orientation[index].speed != 0 { return 1 }                 // already rotating
+        if u.orientation[index].speed != 0 { return 1 }  // already rotating
         if !state.indexIsValid(u.targetAttack) { return 0 }
 
         let orientation = Tile32.direction(from: u.o.position, to: state.indexGetTile(u.targetAttack))
-        if orientation == u.orientation[index].current { return 0 }     // already aimed
-        unitPrimitives.setOrientation(&state.units[slot], orientation: orientation, rotateInstantly: false, level: index)
+        if orientation == u.orientation[index].current { return 0 }  // already aimed
+        unitPrimitives.setOrientation(
+            &state.units[slot],
+            orientation: orientation,
+            rotateInstantly: false,
+            level: index
+        )
         return 1
     }
 
@@ -115,8 +120,12 @@ public struct UnitScriptFunctions: Sendable {
     /// a tile index — but only when `encoded` is itself a tile index, else 0.
     public func getRandomTile(slot: Int, encoded: UInt16, in state: inout GameState) -> UInt16 {
         if Tools.indexType(encoded) != .tile { return 0 }
-        let tile = Tile32.moveByRandom(state.units[slot].o.position, distance: 80, center: true,
-                                       rng: &state.random256)
+        let tile = Tile32.moveByRandom(
+            state.units[slot].o.position,
+            distance: 80,
+            center: true,
+            rng: &state.random256
+        )
         return state.indexEncode(tile.packed, type: .tile)
     }
 
@@ -132,7 +141,12 @@ public struct UnitScriptFunctions: Sendable {
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return target }
         if !UnitInfo[ut].o.flags.contains(.hasTurret) {
             state.units[slot].targetMove = target
-            unitPrimitives.setOrientation(&state.units[slot], orientation: orientation, rotateInstantly: false, level: 0)
+            unitPrimitives.setOrientation(
+                &state.units[slot],
+                orientation: orientation,
+                rotateInstantly: false,
+                level: 0
+            )
         }
         unitPrimitives.setOrientation(&state.units[slot], orientation: orientation, rotateInstantly: false, level: 1)
         return state.units[slot].targetAttack
@@ -172,9 +186,14 @@ public struct UnitScriptFunctions: Sendable {
         }
 
         if let sSlot = state.indexGetStructure(destination),
-           state.structures[sSlot].o.houseID == state.unitHouseID(state.units[slot]),
-           let ut = UnitType(rawValue: Int(state.units[slot].o.type)) {
-            let valid = unitPrimitives.isValidMovementIntoStructure(state.units[slot], state.structures[sSlot], in: state)
+            state.structures[sSlot].o.houseID == state.unitHouseID(state.units[slot]),
+            let ut = UnitType(rawValue: Int(state.units[slot].o.type))
+        {
+            let valid = unitPrimitives.isValidMovementIntoStructure(
+                state.units[slot],
+                state.structures[sSlot],
+                in: state
+            )
             if valid == 1 || UnitInfo[ut].movementType == .winger {
                 state.objectScriptVariable4Link(state.indexEncode(state.units[slot].o.index, type: .unit), destination)
             }
@@ -225,7 +244,9 @@ public struct UnitScriptFunctions: Sendable {
         }
 
         if UnitType(rawValue: Int(state.units[slot].o.type)) == .harvester {
-            guard let sSlot = state.indexGetStructure(encoded) else {
+            guard
+                let sSlot = state.indexGetStructure(encoded)
+            else {
                 state.units[slot].targetMove = encoded
                 state.units[slot].route[0] = 0xFF
                 return 0
@@ -310,8 +331,14 @@ public struct UnitScriptFunctions: Sendable {
         var row = LandscapeInfo[lst].isSand ? 0 : 1
         if state.units[slot].o.script.variables[1] == 1 { row += 2 }
         let kind: AnimationKind = UnitInfo[ut].displayMode == .infantry3Frames ? .unitScript1 : .unitScript2
-        state.animationStart(tableIndex: row, tile: position, tileLayout: 0, houseID: houseID,
-                             iconGroup: 4, kind: kind)
+        state.animationStart(
+            tableIndex: row,
+            tile: position,
+            tileLayout: 0,
+            houseID: houseID,
+            iconGroup: 4,
+            kind: kind
+        )
         return 1
     }
 
@@ -339,11 +366,21 @@ public struct UnitScriptFunctions: Sendable {
 
     /// `Script_Unit_SetActionDefault` (op 0x0A, `script/unit.c:896`): switch the unit to its type's default
     /// player action (`actionsPlayer[3]`). Takes the action layer explicitly (this struct holds no runner).
-    public func setActionDefault(slot: Int, scriptInfo: ScriptInfo, actions: UnitActions,
-                                 engine: inout ScriptEngine, in state: inout GameState) -> UInt16 {
+    public func setActionDefault(
+        slot: Int,
+        scriptInfo: ScriptInfo,
+        actions: UnitActions,
+        engine: inout ScriptEngine,
+        in state: inout GameState
+    ) -> UInt16 {
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
-        actions.setAction(slot: slot, action: UInt8(UnitInfo[ut].o.actionsPlayer[3].rawValue),
-                          scriptInfo: scriptInfo, engine: &engine, in: &state)
+        actions.setAction(
+            slot: slot,
+            action: UInt8(UnitInfo[ut].o.actionsPlayer[3].rawValue),
+            scriptInfo: scriptInfo,
+            engine: &engine,
+            in: &state
+        )
         return 0
     }
 
@@ -364,8 +401,14 @@ public struct UnitScriptFunctions: Sendable {
     /// idle, unlinked, un-busy structure of `type` owned by its house (a harvester → an empty refinery).
     /// Issues a Move to that structure; returns 1 if one was found, else 0. Takes the action layer
     /// explicitly (`UnitActions` + the live `engine`) since this struct holds no script runner.
-    public func goToClosestStructure(slot: Int, type: UInt16, scriptInfo: ScriptInfo, actions: UnitActions,
-                                     engine: inout ScriptEngine, in state: inout GameState) -> UInt16 {
+    public func goToClosestStructure(
+        slot: Int,
+        type: UInt16,
+        scriptInfo: ScriptInfo,
+        actions: UnitActions,
+        engine: inout ScriptEngine,
+        in state: inout GameState
+    ) -> UInt16 {
         let houseID = state.unitHouseID(state.units[slot])
         var best = -1
         var minDistance: UInt16 = 0
@@ -374,15 +417,23 @@ public struct UnitScriptFunctions: Sendable {
             if state.structures[s].state != .idle { continue }
             if state.structures[s].o.linkedID != 0xFF { continue }
             if state.structures[s].o.script.variables[4] != 0 { continue }
-            let distance = Tile32.distanceRoundedUp(from: state.structures[s].o.position, to: state.units[slot].o.position)
+            let distance = Tile32.distanceRoundedUp(
+                from: state.structures[s].o.position,
+                to: state.units[slot].o.position
+            )
             if distance >= minDistance && minDistance != 0 { continue }
             minDistance = distance
             best = s
         }
         if best == -1 { return 0 }
 
-        actions.setAction(slot: slot, action: UInt8(ActionType.move.rawValue), scriptInfo: scriptInfo,
-                          engine: &engine, in: &state)
+        actions.setAction(
+            slot: slot,
+            action: UInt8(ActionType.move.rawValue),
+            scriptInfo: scriptInfo,
+            engine: &engine,
+            in: &state
+        )
         unitSetDestination(slot: slot, state.indexEncode(state.structures[best].o.index, type: .structure), in: &state)
         return 1
     }
@@ -397,13 +448,19 @@ public struct UnitScriptFunctions: Sendable {
             case .unit:
                 if let u2 = state.indexGetUnit(var4) {
                     if selfEnc == state.units[u2].o.script.variables[4]
-                        && state.units[u2].o.houseID == state.units[slot].o.houseID { return 1 }
+                        && state.units[u2].o.houseID == state.units[slot].o.houseID
+                    {
+                        return 1
+                    }
                     state.units[u2].targetMove = 0
                 }
             case .structure:
                 if let s = state.indexGetStructure(var4),
-                   selfEnc == state.structures[s].o.script.variables[4]
-                    && state.structures[s].o.houseID == state.units[slot].o.houseID { return 1 }
+                    selfEnc == state.structures[s].o.script.variables[4]
+                        && state.structures[s].o.houseID == state.units[slot].o.houseID
+                {
+                    return 1
+                }
             default:
                 break
         }
@@ -416,11 +473,12 @@ public struct UnitScriptFunctions: Sendable {
     public func unknown2552(slot: Int, in state: inout GameState) -> UInt16 {
         let link = state.units[slot].o.script.variables[4]
         if link == 0 { return 0 }
-        guard let u2 = state.indexGetUnit(link),
-              state.units[u2].o.type == UInt8(UnitType.carryall.rawValue) else { return 0 }
+        guard
+            let u2 = state.indexGetUnit(link),
+            state.units[u2].o.type == UInt8(UnitType.carryall.rawValue)
+        else { return 0 }
         state.objectScriptVariable4Clear(.unit(slot))
         state.units[u2].targetMove = 0
         return 0
     }
-
 }

@@ -1,13 +1,14 @@
-import Testing
 import DuneIIContracts
-@testable import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
+@testable import DuneIIWorld
 
 /// Slice 6 — `Structure_BuildObject`'s headless state-setup path (start a factory building a concrete
 /// object) + `Structure_CancelBuild`. The GUI factory-window sentinels are deferred to Phase 6.
 @Suite("Structure_BuildObject headless setup")
 struct BuildObjectTests {
-    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func base() -> (GameState, UnitCombat) {
         var s = GameState(); s.playerHouseID = 0
@@ -35,7 +36,7 @@ struct BuildObjectTests {
         #expect(s.structures[fac].countDown == UInt16(truncatingIfNeeded: Int(UnitInfo[.trike].o.buildTime) << 8))
         let product = Int(s.structures[fac].o.linkedID)
         #expect(s.units[product].o.type == UInt8(UnitType.trike.rawValue))
-        #expect(s.units[product].o.flags.contains(.isNotOnMap))   // queued inside the factory
+        #expect(s.units[product].o.flags.contains(.isNotOnMap))  // queued inside the factory
     }
 
     @Test("a construction yard starts building a structure (the product is created off-map)")
@@ -65,14 +66,14 @@ struct BuildObjectTests {
         var (s, combat) = base()
         let fac = addFactory(&s, .lightVehicle)
         #expect(!combat.structureBuildObject(slot: fac, objectType: 0xFFFF, in: &s))
-        #expect(s.structures[fac].o.linkedID == 0xFF)   // nothing queued
+        #expect(s.structures[fac].o.linkedID == 0xFF)  // nothing queued
         #expect(s.structures[fac].state == .idle)
     }
 
     @Test("a non-factory structure cannot build")
     func nonFactory() {
         var (s, combat) = base()
-        let wt = addFactory(&s, .windtrap)   // windtrap is not a factory
+        let wt = addFactory(&s, .windtrap)  // windtrap is not a factory
         #expect(!combat.structureBuildObject(slot: wt, objectType: UInt16(UnitType.trike.rawValue), in: &s))
     }
 
@@ -88,7 +89,7 @@ struct BuildObjectTests {
         s.structureCancelBuild(fac)
         #expect(s.structures[fac].o.linkedID == 0xFF)
         #expect(s.structures[fac].countDown == 0)
-        #expect(!s.units[product].o.flags.contains(.used))   // product freed
-        #expect(s.houses[0].credits > 0)                     // partial refund
+        #expect(!s.units[product].o.flags.contains(.used))  // product freed
+        #expect(s.houses[0].credits > 0)  // partial refund
     }
 }

@@ -1,5 +1,6 @@
-import Testing
 import DuneIIContracts
+import Testing
+
 @testable import DuneIIWorld
 
 /// `ScenarioID` — parsing a `SCEN<House><NNN>.INI` file name into house / mission / campaign level, and the
@@ -13,7 +14,7 @@ struct ScenarioCatalogTests {
         #expect(a1.mission == 1)
         #expect(a1.campaign == 1)
         #expect(a1.fileName == "SCENA001.INI")
-        #expect(ScenarioID(fileName: "scenh005.ini")?.house == .harkonnen)   // case-insensitive
+        #expect(ScenarioID(fileName: "scenh005.ini")?.house == .harkonnen)  // case-insensitive
         let o22 = try #require(ScenarioID(fileName: "SCENO022.INI"))
         #expect(o22.house == .ordos && o22.mission == 22)
     }
@@ -31,8 +32,8 @@ struct ScenarioCatalogTests {
 
     @Test("rejects non-scenario file names")
     func rejects() {
-        #expect(ScenarioID(fileName: "REGIONA.INI") == nil)   // region map, not a scenario
+        #expect(ScenarioID(fileName: "REGIONA.INI") == nil)  // region map, not a scenario
         #expect(ScenarioID(fileName: "ICON.MAP") == nil)
-        #expect(ScenarioID(fileName: "SCENA.INI") == nil)     // no mission number
+        #expect(ScenarioID(fileName: "SCENA.INI") == nil)  // no mission number
     }
 }

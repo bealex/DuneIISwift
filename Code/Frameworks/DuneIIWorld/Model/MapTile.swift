@@ -3,29 +3,29 @@
 /// round-trip for save compatibility; the bit layout is the one documented in `map.h` and
 /// golden-pinned against the oracle — see `Documentation/Architecture/DataModel.md`.
 public struct MapTile: Sendable, Equatable, Codable {
-    public var groundTileID: UInt16 = 0     // 9 bits: the icon drawn on this tile
-    public var overlayTileID: UInt8 = 0     // 7 bits: overlay drawn over the tile
-    public var houseID: UInt8 = 0           // 3 bits: owning house
-    public var isUnveiled = false           // no fog
+    public var groundTileID: UInt16 = 0  // 9 bits: the icon drawn on this tile
+    public var overlayTileID: UInt8 = 0  // 7 bits: overlay drawn over the tile
+    public var houseID: UInt8 = 0  // 3 bits: owning house
+    public var isUnveiled = false  // no fog
     public var hasUnit = false
     public var hasStructure = false
     public var hasAnimation = false
     public var hasExplosion = false
-    public var index: UInt8 = 0             // 8 bits: structure/unit index (1 means object 0, etc.)
+    public var index: UInt8 = 0  // 8 bits: structure/unit index (1 means object 0, etc.)
 
     public init() {}
 
     /// Unpack from the on-disk/in-engine 32-bit form (`map.h` bit layout).
     public init(packed: UInt32) {
-        groundTileID  = UInt16(packed & 0x1FF)
+        groundTileID = UInt16(packed & 0x1FF)
         overlayTileID = UInt8((packed >> 9) & 0x7F)
-        houseID       = UInt8((packed >> 16) & 0x7)
-        isUnveiled    = (packed >> 19) & 1 != 0
-        hasUnit       = (packed >> 20) & 1 != 0
-        hasStructure  = (packed >> 21) & 1 != 0
-        hasAnimation  = (packed >> 22) & 1 != 0
-        hasExplosion  = (packed >> 23) & 1 != 0
-        index         = UInt8((packed >> 24) & 0xFF)
+        houseID = UInt8((packed >> 16) & 0x7)
+        isUnveiled = (packed >> 19) & 1 != 0
+        hasUnit = (packed >> 20) & 1 != 0
+        hasStructure = (packed >> 21) & 1 != 0
+        hasAnimation = (packed >> 22) & 1 != 0
+        hasExplosion = (packed >> 23) & 1 != 0
+        index = UInt8((packed >> 24) & 0xFF)
     }
 
     /// Pack to the 32-bit form.

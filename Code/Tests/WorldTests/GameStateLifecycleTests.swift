@@ -1,5 +1,6 @@
-import Testing
 import DuneIIContracts
+import Testing
+
 @testable import DuneIIWorld
 
 /// Tests for the object/reference lifecycle bookkeeping on `GameState` (`GameState+Lifecycle.swift`):
@@ -18,12 +19,12 @@ struct GameStateLifecycleTests {
         let team = s.teamAllocate(index: Pool.teamIndexInvalid)!
         s.teams[team].maxMembers = 4
         s.teams[team].members = 2
-        s.units[unit].team = UInt8(team + 1)   // team field is 1-based
+        s.units[unit].team = UInt8(team + 1)  // team field is 1-based
 
-        #expect(s.unitRemoveFromTeam(unit) == 3)   // maxMembers 4 - members 1 = 3 free
+        #expect(s.unitRemoveFromTeam(unit) == 3)  // maxMembers 4 - members 1 = 3 free
         #expect(s.units[unit].team == 0)
         #expect(s.teams[team].members == 1)
-        #expect(s.unitRemoveFromTeam(unit) == 0)   // no team now → no-op
+        #expect(s.unitRemoveFromTeam(unit) == 0)  // no team now → no-op
     }
 
     @Test("Object_Script_Variable4 forms and clears a two-way link")
@@ -40,7 +41,7 @@ struct GameStateLifecycleTests {
         #expect(s.units[a].o.script.variables[4] == encB)
         #expect(s.units[b].o.script.variables[4] == encA)
 
-        s.objectScriptVariable4Clear(.unit(a))   // clears both ends
+        s.objectScriptVariable4Clear(.unit(a))  // clears both ends
         #expect(s.units[a].o.script.variables[4] == 0)
         #expect(s.units[b].o.script.variables[4] == 0)
     }
@@ -50,9 +51,9 @@ struct GameStateLifecycleTests {
         var s = GameState()
         let r = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.refinery))!  // busyStateIsIncoming
         #expect(s.structures[r].state == .idle)
-        s.objectScriptVariable4Set(.structure(r), 0x4001)   // non-zero ⇒ BUSY
+        s.objectScriptVariable4Set(.structure(r), 0x4001)  // non-zero ⇒ BUSY
         #expect(s.structures[r].state == .busy)
-        s.objectScriptVariable4Set(.structure(r), 0)        // zero ⇒ IDLE
+        s.objectScriptVariable4Set(.structure(r), 0)  // zero ⇒ IDLE
         #expect(s.structures[r].state == .idle)
 
         // With a linked unit, the state is left alone.
@@ -72,7 +73,7 @@ struct GameStateLifecycleTests {
 
         s.units[other].targetMove = encV
         s.units[other].targetAttack = encV
-        s.objectScriptVariable4Set(.unit(other), encV)   // two-way var4 link
+        s.objectScriptVariable4Set(.unit(other), encV)  // two-way var4 link
         s.objectScriptVariable4Set(.unit(victim), encO)
 
         let turret = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.turret))!
@@ -107,7 +108,7 @@ struct GameStateLifecycleTests {
 
         s.units[unit].targetMove = encV
         s.units[unit].targetAttack = encV
-        s.objectScriptVariable4Set(.unit(unit), encV)        // two-way var4 link
+        s.objectScriptVariable4Set(.unit(unit), encV)  // two-way var4 link
         s.objectScriptVariable4Set(.structure(victim), encU)
 
         let team = s.teamAllocate(index: Pool.teamIndexInvalid)!
@@ -142,21 +143,21 @@ struct GameStateLifecycleTests {
         s.structureRemove(victim)
 
         for i in 0 ..< Int(layout.tileCount) {
-            #expect(!s.map[packed + Int(layout.tiles[i])].hasStructure)   // occupancy cleared
+            #expect(!s.map[packed + Int(layout.tiles[i])].hasStructure)  // occupancy cleared
         }
         // The destruction/collapse animation is started so the building disappears instead of staying
         // stamped on the map (#5) — `Animation_Start(g_table_animation_structure[0], …)`.
         #expect(s.map[packed].hasAnimation)
         let anim = s.animations.first { $0.active && $0.tile.packed == UInt16(packed) }
         #expect(anim?.tableIndex == 0)
-        #expect(s.units[unit].targetMove == 0)                            // references scrubbed
+        #expect(s.units[unit].targetMove == 0)  // references scrubbed
         #expect(s.units[unit].targetAttack == 0)
-        #expect(!s.structures[victim].o.flags.contains(.used))            // slot freed
+        #expect(!s.structures[victim].o.flags.contains(.used))  // slot freed
 
         var iter = PoolFind()
         var stillFound = false
         while let f = s.structureFind(&iter) { if f == victim { stillFound = true } }
-        #expect(!stillFound)                                              // gone from the find array
+        #expect(!stillFound)  // gone from the find array
     }
 
     @Test("structureDamage: a non-lethal hit just drains HP; 0 damage / already-destroying is a no-op")
@@ -165,15 +166,15 @@ struct GameStateLifecycleTests {
         let b = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.refinery))!
         s.structures[b].o.hitpoints = 1000
 
-        let r0 = s.structureDamage(b, damage: 0, range: 0)                // 0 damage ⇒ no-op
+        let r0 = s.structureDamage(b, damage: 0, range: 0)  // 0 damage ⇒ no-op
         #expect(!r0)
         #expect(s.structures[b].o.hitpoints == 1000)
-        let r1 = s.structureDamage(b, damage: 300, range: 0)             // survives
+        let r1 = s.structureDamage(b, damage: 300, range: 0)  // survives
         #expect(!r1)
         #expect(s.structures[b].o.hitpoints == 700)
 
-        s.structures[b].o.script.variables[0] = 1                          // marked destroying
-        let r2 = s.structureDamage(b, damage: 300, range: 0)             // no-op while destroying
+        s.structures[b].o.script.variables[0] = 1  // marked destroying
+        let r2 = s.structureDamage(b, damage: 300, range: 0)  // no-op while destroying
         #expect(!r2)
         #expect(s.structures[b].o.hitpoints == 700)
     }
@@ -197,9 +198,9 @@ struct GameStateLifecycleTests {
         let died = s.structureDamage(enemy, damage: 50, range: 0)
         #expect(died)
         #expect(s.structures[enemy].o.hitpoints == 0)
-        #expect(s.structures[enemy].o.script.variables[0] == 1)           // marked destroyed
+        #expect(s.structures[enemy].o.script.variables[0] == 1)  // marked destroyed
         #expect(!s.structures[enemy].o.flags.contains(.allocated))
-        #expect(s.units[unit].targetAttack == 0)                          // Structure_UntargetMe scrubbed it
+        #expect(s.units[unit].targetAttack == 0)  // Structure_UntargetMe scrubbed it
         #expect(s.houses[2].credits == UInt16(StructureInfo[.refinery].o.buildCredits))  // enemy build-cost refund
     }
 
@@ -223,15 +224,15 @@ struct GameStateLifecycleTests {
         _ = s.houseAllocate(index: 2)
         s.houses[0].unitCountMax = 100
         s.houses[2].unitCountMax = 100
-        let enemy = s.unitAllocate(index: 0, type: u(.tank), houseID: 2)!   // Ordos
+        let enemy = s.unitAllocate(index: 0, type: u(.tank), houseID: 2)!  // Ordos
 
-        s.unitHouseUnitCountAdd(enemy, houseID: 0)   // player spots it
+        s.unitHouseUnitCountAdd(enemy, houseID: 0)  // player spots it
         #expect(s.houses[0].unitCountEnemy == 1)
-        #expect(s.houses[0].flags.contains(.isAIActive))   // human saw an enemy ⇒ AI awake
+        #expect(s.houses[0].flags.contains(.isAIActive))  // human saw an enemy ⇒ AI awake
         #expect(s.houses[2].flags.contains(.isAIActive))
         #expect(s.units[enemy].o.seenByHouses & 0b1 != 0)
 
-        s.unitHouseUnitCountAdd(enemy, houseID: 0)   // already seen + AI active ⇒ no double count
+        s.unitHouseUnitCountAdd(enemy, houseID: 0)  // already seen + AI active ⇒ no double count
         #expect(s.houses[0].unitCountEnemy == 1)
     }
 
@@ -243,7 +244,7 @@ struct GameStateLifecycleTests {
         _ = s.houseAllocate(index: 2)
         s.houses[0].unitCountMax = 100
         let unit = s.unitAllocate(index: 0, type: u(.tank), houseID: 0)!
-        s.units[unit].o.seenByHouses = 0b101    // houses 0 (allied/self) + 2 (enemy)
+        s.units[unit].o.seenByHouses = 0b101  // houses 0 (allied/self) + 2 (enemy)
         s.houses[0].unitCountAllied = 1
         s.houses[2].unitCountEnemy = 1
 
@@ -276,14 +277,14 @@ struct GameStateLifecycleTests {
 
         s.unitRemove(victim)
 
-        #expect(!s.units[victim].o.flags.contains(.used))   // slot freed
+        #expect(!s.units[victim].o.flags.contains(.used))  // slot freed
         #expect(!s.unitFindArray.contains(UInt16(victim)))
-        #expect(s.houses[0].unitCount == 1)                 // allocation count down
-        #expect(s.units[other].targetMove == 0)             // reference scrubbed
-        #expect(!s.map[Int(packed)].hasUnit)                // tile occupancy cleared
+        #expect(s.houses[0].unitCount == 1)  // allocation count down
+        #expect(s.units[other].targetMove == 0)  // reference scrubbed
+        #expect(!s.map[Int(packed)].hasUnit)  // tile occupancy cleared
         #expect(s.map[Int(packed)].index == 0)
         #expect(s.units[victim].o.seenByHouses == 0)
-        #expect(s.houses[0].unitCountAllied == 0)           // visibility tallies down
+        #expect(s.houses[0].unitCountAllied == 0)  // visibility tallies down
         #expect(s.houses[2].unitCountEnemy == 0)
     }
 }

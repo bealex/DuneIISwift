@@ -14,7 +14,7 @@ import Synchronization
 public final class RngTraceSink: Sendable {
     public struct Draw: Sendable, Equatable {
         public var tick: UInt32
-        public var value: UInt16   // a Random256 byte (0…255) or a RandomLCG_Range result
+        public var value: UInt16  // a Random256 byte (0…255) or a RandomLCG_Range result
         public init(tick: UInt32, value: UInt16) { self.tick = tick; self.value = value }
     }
 
@@ -32,7 +32,9 @@ public final class RngTraceSink: Sendable {
     public func setTick(_ tick: UInt32) { storage.withLock { $0.tick = tick } }
 
     /// Record one `Tools_Random_256` draw (called from `Random256.next`).
-    public func recordR256(_ value: UInt8) { storage.withLock { $0.r256.append(Draw(tick: $0.tick, value: UInt16(value))) } }
+    public func recordR256(_ value: UInt8) {
+        storage.withLock { $0.r256.append(Draw(tick: $0.tick, value: UInt16(value))) }
+    }
 
     /// Record one `Tools_RandomLCG_Range` result (called from `RandomLCG.range`; the internal rejection
     /// draws are *not* logged, mirroring the oracle, which traces the range wrapper, not raw `Tools_RandomLCG`).
@@ -59,10 +61,10 @@ public final class RngTraceSink: Sendable {
                 guard kv.count == 2 else { continue }
                 let (k, v) = (String(kv[0]), String(kv[1]))
                 switch k {
-                    case "tick":  tick = UInt32(v)
-                    case "idx":   idx = UInt32(v)
-                    case "ctx":   ctx = v
-                    case "byte":  value = v.hasPrefix("0x") ? UInt16(v.dropFirst(2), radix: 16) : UInt16(v)
+                    case "tick": tick = UInt32(v)
+                    case "idx": idx = UInt32(v)
+                    case "ctx": ctx = v
+                    case "byte": value = v.hasPrefix("0x") ? UInt16(v.dropFirst(2), radix: 16) : UInt16(v)
                     case "value": value = UInt16(v)
                     default: break
                 }
@@ -78,16 +80,17 @@ public final class RngTraceSink: Sendable {
     /// oracle's tick/ctx — pointing at the exact draw site to fix.
     public static func firstDivergence(ours draws: [Draw], oracle: [OracleDraw], label: String) -> String? {
         for i in 0 ..< Swift.min(draws.count, oracle.count) where draws[i].value != oracle[i].value {
-            return "\(label) draw #\(i) diverges: ours=0x\(String(draws[i].value, radix: 16)) (our tick \(draws[i].tick)) "
-                 + "vs oracle=0x\(String(oracle[i].value, radix: 16)) (oracle tick \(oracle[i].tick), ctx=\(oracle[i].ctx)) "
-                 + "→ a mis-ported draw at/just before ctx=\(oracle[i].ctx)."
+            return
+                "\(label) draw #\(i) diverges: ours=0x\(String(draws[i].value, radix: 16)) (our tick \(draws[i].tick)) "
+                + "vs oracle=0x\(String(oracle[i].value, radix: 16)) (oracle tick \(oracle[i].tick), ctx=\(oracle[i].ctx)) "
+                + "→ a mis-ported draw at/just before ctx=\(oracle[i].ctx)."
         }
         if draws.count != oracle.count {
             let i = Swift.min(draws.count, oracle.count)
             let who = draws.count < oracle.count ? "we are MISSING a draw" : "we made an EXTRA draw"
             let oracleCtx = i < oracle.count ? "ctx=\(oracle[i].ctx) tick \(oracle[i].tick)" : "(past end)"
             return "\(label) draw-count mismatch at #\(i) (\(who)): ours=\(draws.count) vs oracle=\(oracle.count); "
-                 + "next oracle draw is \(oracleCtx) → a missing/extra draw there."
+                + "next oracle draw is \(oracleCtx) → a missing/extra draw there."
         }
         return nil
     }

@@ -1,6 +1,7 @@
+import DuneIIFormats
 import Foundation
 import Testing
-import DuneIIFormats
+
 @testable import DuneIIWorld
 
 /// Golden parity for `Map_CreateLandscape`: the seed-driven map generator. It is purely RNG-driven
@@ -14,7 +15,7 @@ struct MapGeneratorTests {
     @Test("Map_CreateLandscape reproduces the oracle's ground grid per seed")
     func createLandscape() throws {
         var root = URL(fileURLWithPath: #filePath)
-        for _ in 0 ..< 4 { root.deleteLastPathComponent() }   // Code/Tests/WorldTests/ → repo root
+        for _ in 0 ..< 4 { root.deleteLastPathComponent() }  // Code/Tests/WorldTests/ → repo root
         let iconMap = try IconMap(Data(contentsOf: root.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
 
         let rows = GoldenFixture.decode("createlandscape-golden.jsonl", as: Row.self)

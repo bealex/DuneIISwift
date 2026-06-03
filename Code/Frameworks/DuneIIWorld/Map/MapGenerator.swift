@@ -7,26 +7,34 @@ public extension GameState {
     /// the same seed yields byte-identical terrain to OpenDUNE. `iconMap` supplies the landscape icon
     /// group for the final sprite mapping (`g_iconMap[g_iconMap[LANDSCAPE] + spriteIndex]`).
     mutating func createLandscape(seed: UInt32, iconMap: IconMap) {
-        let around = [0, -1, 1, -16, 16, -17, 17, -15, 15, -2, 2, -32, 32, -4, 4, -64, 64, -30, 30, -34, 34]
+        let around = [ 0, -1, 1, -16, 16, -17, 17, -15, 15, -2, 2, -32, 32, -4, 4, -64, 64, -30, 30, -34, 34 ]
         // _offsetTable[2][21][4]; the two rows differ only at index 12.
         let offsetTable: [[[Int]]] = [
-            [[0,0,4,0],[4,0,4,4],[0,0,0,4],[0,4,4,4],[0,0,0,2],[0,2,0,4],[0,0,2,0],[2,0,4,0],[4,0,4,2],
-             [4,2,4,4],[0,4,2,4],[2,4,4,4],[0,0,4,4],[2,0,2,2],[0,0,2,2],[4,0,2,2],[0,2,2,2],[2,2,4,2],
-             [2,2,0,4],[2,2,4,4],[2,2,2,4]],
-            [[0,0,4,0],[4,0,4,4],[0,0,0,4],[0,4,4,4],[0,0,0,2],[0,2,0,4],[0,0,2,0],[2,0,4,0],[4,0,4,2],
-             [4,2,4,4],[0,4,2,4],[2,4,4,4],[4,0,0,4],[2,0,2,2],[0,0,2,2],[4,0,2,2],[0,2,2,2],[2,2,4,2],
-             [2,2,0,4],[2,2,4,4],[2,2,2,4]],
+            [
+                [ 0, 0, 4, 0 ], [ 4, 0, 4, 4 ], [ 0, 0, 0, 4 ], [ 0, 4, 4, 4 ], [ 0, 0, 0, 2 ], [ 0, 2, 0, 4 ], [ 0, 0, 2, 0 ],
+                [ 2, 0, 4, 0 ], [ 4, 0, 4, 2 ],
+                [ 4, 2, 4, 4 ], [ 0, 4, 2, 4 ], [ 2, 4, 4, 4 ], [ 0, 0, 4, 4 ], [ 2, 0, 2, 2 ], [ 0, 0, 2, 2 ], [ 4, 0, 2, 2 ],
+                [ 0, 2, 2, 2 ], [ 2, 2, 4, 2 ],
+                [ 2, 2, 0, 4 ], [ 2, 2, 4, 4 ], [ 2, 2, 2, 4 ],
+            ],
+            [
+                [ 0, 0, 4, 0 ], [ 4, 0, 4, 4 ], [ 0, 0, 0, 4 ], [ 0, 4, 4, 4 ], [ 0, 0, 0, 2 ], [ 0, 2, 0, 4 ], [ 0, 0, 2, 0 ],
+                [ 2, 0, 4, 0 ], [ 4, 0, 4, 2 ],
+                [ 4, 2, 4, 4 ], [ 0, 4, 2, 4 ], [ 2, 4, 4, 4 ], [ 4, 0, 0, 4 ], [ 2, 0, 2, 2 ], [ 0, 0, 2, 2 ], [ 4, 0, 2, 2 ],
+                [ 0, 2, 2, 2 ], [ 2, 2, 4, 2 ],
+                [ 2, 2, 0, 4 ], [ 2, 2, 4, 4 ], [ 2, 2, 2, 4 ],
+            ],
         ]
-        let sand = UInt16(LandscapeType.normalSand.rawValue)        // 0
-        let dune = UInt16(LandscapeType.entirelyDune.rawValue)      // 2
-        let rock = UInt16(LandscapeType.entirelyRock.rawValue)      // 4
-        let mountain = UInt16(LandscapeType.entirelyMountain.rawValue) // 6
+        let sand = UInt16(LandscapeType.normalSand.rawValue)  // 0
+        let dune = UInt16(LandscapeType.entirelyDune.rawValue)  // 2
+        let rock = UInt16(LandscapeType.entirelyRock.rawValue)  // 4
+        let mountain = UInt16(LandscapeType.entirelyMountain.rawValue)  // 6
 
         self.iconMap = iconMap
         random256.reseed(seed)
 
         // Place random data on a 4×4 grid.
-        var memory = [UInt8](repeating: 0, count: 273)
+        var memory = [ UInt8 ](repeating: 0, count: 273)
         for i in 0 ..< 272 {
             var m = random256.next() & 0xF
             if m > 0xA { m = 0xA }
@@ -74,8 +82,8 @@ public extension GameState {
         }
 
         // Average each tile with its (up to 8) neighbours.
-        var currentRow = [UInt16](repeating: 0, count: 64)
-        var previousRow = [UInt16](repeating: 0, count: 64)
+        var currentRow = [ UInt16 ](repeating: 0, count: 64)
+        var previousRow = [ UInt16 ](repeating: 0, count: 64)
         for j in 0 ..< 64 {
             let row = j * 64
             previousRow = currentRow
@@ -99,14 +107,19 @@ public extension GameState {
         var spriteID1 = UInt16(random256.next() & 0xF)
         if spriteID1 < 0x8 { spriteID1 = 0x8 }
         if spriteID1 > 0xC { spriteID1 = 0xC }
-        var spriteID2 = UInt16(random256.next() & 0x3) &- 1     // wraps to 0xFFFF when the draw is 0
+        var spriteID2 = UInt16(random256.next() & 0x3) &- 1  // wraps to 0xFFFF when the draw is 0
         if spriteID2 > spriteID1 &- 3 { spriteID2 = spriteID1 &- 3 }
         for i in 0 ..< 4096 {
             let s = map[i].groundTileID
-            if s > spriteID1 + 4 { map[i].groundTileID = mountain }
-            else if s >= spriteID1 { map[i].groundTileID = rock }
-            else if s <= spriteID2 { map[i].groundTileID = dune }
-            else { map[i].groundTileID = sand }
+            if s > spriteID1 + 4 {
+                map[i].groundTileID = mountain
+            } else if s >= spriteID1 {
+                map[i].groundTileID = rock
+            } else if s <= spriteID2 {
+                map[i].groundTileID = dune
+            } else {
+                map[i].groundTileID = sand
+            }
         }
 
         // Add some spice.
@@ -125,8 +138,12 @@ public extension GameState {
                 spots -= 1
                 var p = 0
                 while true {
-                    let moved = Tile32.moveByRandom(tile, distance: UInt16(random256.next() & 0x3F),
-                                                    center: true, rng: &random256)
+                    let moved = Tile32.moveByRandom(
+                        tile,
+                        distance: UInt16(random256.next() & 0x3F),
+                        center: true,
+                        rng: &random256
+                    )
                     p = Int(moved.packed)
                     if !Tile32.isOutOfMap(UInt16(p)) { break }
                 }
@@ -206,7 +223,8 @@ public extension GameState {
                     for i in -1 ... 1 {
                         let packed2 = Tile32.packXY(
                             x: UInt16(truncatingIfNeeded: Int(Tile32.packedX(packed)) + i),
-                            y: UInt16(truncatingIfNeeded: Int(Tile32.packedY(packed)) + j))
+                            y: UInt16(truncatingIfNeeded: Int(Tile32.packedY(packed)) + j)
+                        )
                         if Tile32.isOutOfMap(packed2) { continue }
                         let p2 = Int(packed2)
                         if !canBecomeSpice(map[p2].groundTileID) {

@@ -1,6 +1,7 @@
-import Testing
 import DuneIIContracts
 import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
 
 // Note: no `import Foundation` — it would bring `Foundation.Unit` (the `Measurement` base class) into
@@ -14,7 +15,7 @@ struct UnitMovementDecisionTests {
     let unitPrim: any UnitPrimitives = DefaultUnitPrimitives()
     let mapPrim: any MapPrimitives = DefaultMapPrimitives()
     let housePrim: any HousePrimitives = DefaultHousePrimitives()
-    let validTile: UInt16 = 20 * 64 + 20   // x=20,y=20: inside the scale-0 playable rect
+    let validTile: UInt16 = 20 * 64 + 20  // x=20,y=20: inside the scale-0 playable rect
 
     /// A bare allocated-looking unit (so `indexEncode` yields a non-zero encoded index).
     func makeUnit(index: Int, type: UnitType, house: HouseID, targetMove: UInt16 = 0) -> Unit {
@@ -22,7 +23,7 @@ struct UnitMovementDecisionTests {
         u.o.index = UInt16(index)
         u.o.type = UInt8(type.rawValue)
         u.o.houseID = UInt8(house.rawValue)
-        u.o.flags = [.used, .allocated, .isUnit]
+        u.o.flags = [ .used, .allocated, .isUnit ]
         u.targetMove = targetMove
         return u
     }
@@ -33,7 +34,7 @@ struct UnitMovementDecisionTests {
         s.o.type = UInt8(type.rawValue)
         s.o.houseID = UInt8(house.rawValue)
         s.o.linkedID = linkedID
-        s.o.flags = [.used, .allocated]
+        s.o.flags = [ .used, .allocated ]
         return s
     }
 
@@ -56,8 +57,14 @@ struct UnitMovementDecisionTests {
     }
 
     func score(_ state: GameState, _ mover: Unit, _ packed: UInt16, orient8: UInt16 = 0) -> Int16 {
-        unitPrim.tileEnterScore(mover, packed: packed, orient8: orient8, in: state,
-                                map: mapPrim, house: housePrim)
+        unitPrim.tileEnterScore(
+            mover,
+            packed: packed,
+            orient8: orient8,
+            in: state,
+            map: mapPrim,
+            house: housePrim
+        )
     }
 
     // MARK: tileEnterScore occupant branches
@@ -76,7 +83,7 @@ struct UnitMovementDecisionTests {
         var state = GameState()
         placeUnit(&state, makeUnit(index: 5, type: .tank, house: .ordos), at: validTile)
         let mover = makeUnit(index: 1, type: .tank, house: .harkonnen)
-        #expect(score(state, mover, validTile) == 256)   // occupant not on foot ⇒ uncrushable
+        #expect(score(state, mover, validTile) == 256)  // occupant not on foot ⇒ uncrushable
     }
 
     @Test("non-tracked mover can't crush an enemy foot occupant (256)")

@@ -1,9 +1,10 @@
-import Foundation
-import Testing
 import DuneIIContracts
 import DuneIIFormats
-@testable import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIISimulation
+@testable import DuneIIWorld
 
 /// A scenario-level integration test of the **full harvester economy loop** under the *real* `UNIT.EMC` +
 /// `BUILD.EMC` scripts: a harvester gathers spice → returns to the refinery → docks → the refinery refines
@@ -15,10 +16,12 @@ struct HarvesterCycleTests {
     @Test("harvest → return → refine → redeploy → harvest again", .timeLimit(.minutes(1)))
     func fullCycle() throws {
         var repo = URL(fileURLWithPath: #filePath)
-        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }                  // Code/Tests/SimulationTests → repo
-        guard let unitData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
-              let buildData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc")),
-              let iconData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")) else { return }
+        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }  // Code/Tests/SimulationTests → repo
+        guard
+            let unitData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
+            let buildData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc")),
+            let iconData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP"))
+        else { return }
         let unitInfo = ScriptInfo(try Emc.Program(unitData))
         let buildInfo = ScriptInfo(try Emc.Program(buildData))
         let iconMap = try IconMap(iconData)
@@ -28,23 +31,28 @@ struct HarvesterCycleTests {
         _ = state.houseAllocate(index: 0)
         state.houses[0].unitCountMax = 100
         state.houses[0].credits = 1000
-        state.playerCreditsNoSilo = 5000        // keep starting credits from being clamped before a silo exists
+        state.playerCreditsNoSilo = 5000  // keep starting credits from being clamped before a silo exists
         state.tileIDs = TileIDs(iconMap: iconMap) ?? TileIDs()
-        state.iconMap = iconMap                                              // structureUpdateMap needs it to stamp tiles
-        state.mapScale = 0                                                   // the default map is all rock
+        state.iconMap = iconMap  // structureUpdateMap needs it to stamp tiles
+        state.mapScale = 0  // the default map is all rock
 
         // A thick-spice patch around (20,20) — plenty for several harvest loads.
         let thickSpice = state.tileIDs.landscape &+ 80
-        for y in 18 ... 22 { for x in 18 ... 22 {
-            state.map[Int(Tile32.packXY(x: UInt16(x), y: UInt16(y)))].groundTileID = thickSpice
-        } }
+        for y in 18 ... 22 {
+            for x in 18 ... 22 {
+                state.map[Int(Tile32.packXY(x: UInt16(x), y: UInt16(y)))].groundTileID = thickSpice
+            }
+        }
 
         // An idle refinery built *adjacent* to the spice (its east edge), as a player actually places one.
         // This matters: after refining, the harvester is redeployed onto a free ring tile nearest the spice
         // and resumes HARVEST by searching within radius 3 (the escalating wider search is, per UNIT.EMC,
         // for AI harvesters only). A refinery a long drive from spice would faithfully leave the deployed
         // player harvester with nothing in range — it STOPs, exactly as OpenDUNE does.
-        let ref = state.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(StructureType.refinery.rawValue))!
+        let ref = state.structureAllocate(
+            index: Pool.structureIndexInvalid,
+            type: UInt8(StructureType.refinery.rawValue)
+        )!
         let refCorner = Tile32.unpack(Tile32.packXY(x: 23, y: 20))
         state.structures[ref].o.houseID = 0
         state.structures[ref].o.position = Tile32(x: refCorner.x & 0xFF00, y: refCorner.y & 0xFF00)
@@ -62,18 +70,23 @@ struct HarvesterCycleTests {
         let harv = state.unitAllocate(index: 0, type: UInt8(UnitType.harvester.rawValue), houseID: 0)!
         state.units[harv].o.position = Tile32.unpack(Tile32.packXY(x: 16, y: 20))
         state.units[harv].o.hitpoints = UnitInfo[.harvester].o.hitpoints
-        UnitActions().setAction(slot: harv, action: UInt8(ActionType.harvest.rawValue), scriptInfo: unitInfo, in: &state)
+        UnitActions().setAction(
+            slot: harv,
+            action: UInt8(ActionType.harvest.rawValue),
+            scriptInfo: unitInfo,
+            in: &state
+        )
         state.unitUpdateMap(1, harv)
 
         var sim = Simulation(state: state, scriptInfo: unitInfo, structureScriptInfo: buildInfo)
         let creditsStart = sim.state.houses[0].credits
 
         // Drive the loop and record each phase as it happens.
-        var harvested = false          // gathered spice (amount > 0)
-        var docked = false             // entered the refinery (it received the harvester)
-        var refined = false            // credits rose (spice → money)
-        var emptiedAfterDock = false   // back on the map, unloaded
-        var harvestedAgain = false     // a *second* harvest after the round trip — the full loop closed
+        var harvested = false  // gathered spice (amount > 0)
+        var docked = false  // entered the refinery (it received the harvester)
+        var refined = false  // credits rose (spice → money)
+        var emptiedAfterDock = false  // back on the map, unloaded
+        var harvestedAgain = false  // a *second* harvest after the round trip — the full loop closed
 
         for _ in 0 ..< 14000 {
             sim.tick()

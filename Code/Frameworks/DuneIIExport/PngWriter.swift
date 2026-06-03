@@ -24,10 +24,10 @@ public enum PngWriter {
     ) throws -> Data {
         guard width > 0, height > 0, indices.count >= width * height else { throw WriteError.invalidDimensions }
 
-        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        var rgba = [ UInt8 ](repeating: 0, count: width * height * 4)
         for pixel in 0 ..< (width * height) {
             let index = Int(indices[pixel])
-            if let transparentIndex, index == transparentIndex { continue }   // leave (0,0,0,0)
+            if let transparentIndex, index == transparentIndex { continue }  // leave (0,0,0,0)
 
             let color = palette.rgba8(index)
             let offset = pixel * 4
@@ -59,7 +59,10 @@ public enum PngWriter {
         let output = NSMutableData()
         guard
             let destination = CGImageDestinationCreateWithData(
-                output as CFMutableData, UTType.png.identifier as CFString, 1, nil
+                output as CFMutableData,
+                UTType.png.identifier as CFString,
+                1,
+                nil
             )
         else { throw WriteError.encodeFailed }
 
@@ -78,7 +81,11 @@ public enum PngWriter {
         to url: URL
     ) throws {
         let data = try encode(
-            indices: indices, width: width, height: height, palette: palette, transparentIndex: transparentIndex
+            indices: indices,
+            width: width,
+            height: height,
+            palette: palette,
+            transparentIndex: transparentIndex
         )
         try data.write(to: url)
     }
@@ -86,9 +93,14 @@ public enum PngWriter {
     /// Encode an already-rendered `CGImage` (e.g. a `SpriteKitRenderer.snapshot`) to PNG data.
     public static func encode(image: CGImage) throws -> Data {
         let output = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(
-            output as CFMutableData, UTType.png.identifier as CFString, 1, nil
-        ) else { throw WriteError.encodeFailed }
+        guard
+            let destination = CGImageDestinationCreateWithData(
+                output as CFMutableData,
+                UTType.png.identifier as CFString,
+                1,
+                nil
+            )
+        else { throw WriteError.encodeFailed }
         CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else { throw WriteError.encodeFailed }
         return output as Data

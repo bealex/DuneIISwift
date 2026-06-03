@@ -1,6 +1,7 @@
-import Testing
 import DuneIIContracts
 import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
 
 /// Decision-trace coverage for `Unit_FindBestTargetEncoded` (`unit.c`) — the deterministic auto-target
@@ -10,7 +11,7 @@ struct TargetFinderTests {
     /// A used+allocated unit at `packed`, owned by `house`.
     private func place(_ s: inout GameState, _ type: UnitType, _ house: UInt8, _ packed: UInt16) -> Int {
         let slot = s.unitAllocate(index: 0, type: UInt8(type.rawValue), houseID: house)!
-        s.units[slot].o.flags.insert([.used, .allocated])
+        s.units[slot].o.flags.insert([ .used, .allocated ])
         s.units[slot].o.position = Tile32.unpack(packed)
         s.units[slot].o.hitpoints = UnitInfo[type].o.hitpoints
         return slot
@@ -31,7 +32,7 @@ struct TargetFinderTests {
         var s = world()
         let attacker = place(&s, .tank, 0, 1040)
         let target = place(&s, .tank, 2, 1042)
-        s.units[target].o.seenByHouses = 0xFF   // seen by all houses
+        s.units[target].o.seenByHouses = 0xFF  // seen by all houses
 
         let finder = TargetFinder()
         let encoded = finder.findBestTargetEncoded(slot: attacker, mode: 0, in: &s)
@@ -43,7 +44,7 @@ struct TargetFinderTests {
         var s = world()
         let attacker = place(&s, .tank, 0, 1040)
         let target = place(&s, .tank, 2, 1042)
-        s.units[target].o.seenByHouses = 0   // not seen by anyone
+        s.units[target].o.seenByHouses = 0  // not seen by anyone
 
         #expect(TargetFinder().findBestTargetEncoded(slot: attacker, mode: 0, in: &s) == 0)
     }
@@ -52,7 +53,7 @@ struct TargetFinderTests {
     func alliedIgnored() {
         var s = world()
         let attacker = place(&s, .tank, 0, 1040)
-        let friend = place(&s, .tank, 0, 1042)   // same house
+        let friend = place(&s, .tank, 0, 1042)  // same house
         s.units[friend].o.seenByHouses = 0xFF
 
         #expect(TargetFinder().findBestTargetEncoded(slot: attacker, mode: 0, in: &s) == 0)

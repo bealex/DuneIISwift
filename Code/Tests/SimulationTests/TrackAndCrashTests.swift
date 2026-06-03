@@ -1,9 +1,10 @@
-import Foundation
-import Testing
 import DuneIIContracts
 import DuneIIFormats
-@testable import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIISimulation
+@testable import DuneIIWorld
 
 /// Two visual-effect behaviours driven through the live `Simulation` under the real `UNIT.EMC`:
 ///   1. a **tracked** unit (tank) leaves **sand tracks** as it drives over sand (`Unit_Move` →
@@ -23,12 +24,15 @@ struct TrackAndCrashTests {
 
     private func load() -> Assets? {
         var repo = URL(fileURLWithPath: #filePath)
-        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }                  // Code/Tests/SimulationTests → repo
-        guard let unitData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
-              let buildData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc")),
-              let iconData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")),
-              let unit = try? Emc.Program(unitData), let build = try? Emc.Program(buildData),
-              let iconMap = try? IconMap(iconData) else { return nil }
+        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }  // Code/Tests/SimulationTests → repo
+        guard
+            let unitData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
+            let buildData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc")),
+            let iconData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")),
+            let unit = try? Emc.Program(unitData),
+            let build = try? Emc.Program(buildData),
+            let iconMap = try? IconMap(iconData)
+        else { return nil }
         return Assets(unit: ScriptInfo(unit), build: ScriptInfo(build), iconMap: iconMap)
     }
 
@@ -42,7 +46,7 @@ struct TrackAndCrashTests {
         state.tileIDs = TileIDs(iconMap: a.iconMap) ?? TileIDs()
         state.iconMap = a.iconMap
         state.mapScale = 0
-        let sand = state.tileIDs.landscape   // landscapeSpriteMap[0] == normalSand
+        let sand = state.tileIDs.landscape  // landscapeSpriteMap[0] == normalSand
         for i in 0 ..< state.map.count {
             state.map[i].groundTileID = sand
             state.map[i].isUnveiled = true
@@ -63,7 +67,10 @@ struct TrackAndCrashTests {
         state.unitUpdateMap(1, tank)
 
         var sim = Simulation(state: state, scriptInfo: a.unit, structureScriptInfo: a.build, tickAnimations: true)
-        UnitOrders(scriptInfo: a.unit).apply(.move(unit: UInt16(tank), tile: Tile32.packXY(x: 45, y: 20)), in: &sim.state)
+        UnitOrders(scriptInfo: a.unit).apply(
+            .move(unit: UInt16(tank), tile: Tile32.packXY(x: 45, y: 20)),
+            in: &sim.state
+        )
 
         // The track overlays come from the "Sand Tracks" icon group (5).
         let trackTiles = Set((sim.state.iconMap?.group(5)?.tileIDs ?? []).map { UInt8(truncatingIfNeeded: $0) })
@@ -78,7 +85,10 @@ struct TrackAndCrashTests {
         #expect(trackCount > 0, "the tank never left a sand-track overlay while driving over sand")
     }
 
-    @Test("a destroyed ornithopter shows the crash wreck (EXPLOSION_ORNITHOPTER_CRASH → map animation)", .timeLimit(.minutes(1)))
+    @Test(
+        "a destroyed ornithopter shows the crash wreck (EXPLOSION_ORNITHOPTER_CRASH → map animation)",
+        .timeLimit(.minutes(1))
+    )
     func ornithopterCrash() throws {
         guard let a = load() else { return }
         var state = sandWorld(a)
@@ -92,8 +102,13 @@ struct TrackAndCrashTests {
 
         // Tick both explosions and animations: the death script fires `Unit_ExplosionSingle(16)` (the crash
         // explosion), whose `SET_ANIMATION 0` starts the "Flying-Machine Crash" map animation (icon group 3).
-        var sim = Simulation(state: state, scriptInfo: a.unit, structureScriptInfo: a.build,
-                             tickExplosions: true, tickAnimations: true)
+        var sim = Simulation(
+            state: state,
+            scriptInfo: a.unit,
+            structureScriptInfo: a.build,
+            tickExplosions: true,
+            tickAnimations: true
+        )
 
         let wreckTiles = Set((sim.state.iconMap?.group(3)?.tileIDs ?? []).map { UInt8(truncatingIfNeeded: $0) })
         #expect(!wreckTiles.isEmpty, "ICON.MAP has no Flying-Machine Crash group")
@@ -102,7 +117,9 @@ struct TrackAndCrashTests {
         var sawWreck = false
         for _ in 0 ..< 3000 {
             sim.tick()
-            if sim.state.explosions.contains(where: { $0.active && $0.tableIndex == ExplosionType.ornithopterCrash.rawValue }) {
+            if sim.state.explosions.contains(where: {
+                $0.active && $0.tableIndex == ExplosionType.ornithopterCrash.rawValue
+            }) {
                 sawCrashExplosion = true
             }
             if sim.state.map.indices.contains(where: { wreckTiles.contains(sim.state.map[$0].overlayTileID) }) {

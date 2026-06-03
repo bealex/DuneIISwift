@@ -21,19 +21,19 @@ final class AssetLibrary {
             case animation = "Animations"
             case font = "Fonts"
             case sound = "Sounds"
-            case music = "Music"            // synthetic: a DUNE<file>.ADL track (AdLib FM / OPL3 preview)
+            case music = "Music"  // synthetic: a DUNE<file>.ADL track (AdLib FM / OPL3 preview)
             case script = "Scripts"
-            case iconGroup = "Icon Group"   // synthetic: an ICON.MAP icon group (building / terrain)
+            case iconGroup = "Icon Group"  // synthetic: an ICON.MAP icon group (building / terrain)
         }
 
         let id: String
         let pak: String
-        let name: String          // the PAK entry filename (what to load)
+        let name: String  // the PAK entry filename (what to load)
         let kind: Kind
-        let displayName: String   // sidebar label (a unit name for groups, else the filename)
-        let frameRange: Range<Int>?         // a sub-range of an SHP's frames, for unit groups
+        let displayName: String  // sidebar label (a unit name for groups, else the filename)
+        let frameRange: Range<Int>?  // a sub-range of an SHP's frames, for unit groups
         let groupKind: SpriteCatalog.GroupKind?
-        let iconGroup: Int?                 // an ICON.MAP group index, for building / terrain assets
+        let iconGroup: Int?  // an ICON.MAP group index, for building / terrain assets
         let music: (file: Int, song: Int)?  // a music track's (DUNE<file>.ADL, subsong), for `.music` assets
 
         init(
@@ -106,7 +106,9 @@ final class AssetLibrary {
     /// repo's `Resources/Audio/Music` (the `swift run rendertest`-from-`Code/` layout). Nil ⇒ no music preview.
     private static func locateMusicDirectory() -> URL? {
         var candidates: [URL] = []
-        if let resources = Bundle.main.resourceURL { candidates.append(resources.appendingPathComponent("Audio/Music")) }
+        if let resources = Bundle.main.resourceURL {
+            candidates.append(resources.appendingPathComponent("Audio/Music"))
+        }
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         candidates.append(cwd.appendingPathComponent("../Resources/Audio/Music"))
         candidates.append(cwd.appendingPathComponent("Resources/Audio/Music"))
@@ -138,14 +140,17 @@ final class AssetLibrary {
     }
 
     private func loadCategories() {
-        guard let entries = try? FileManager.default.contentsOfDirectory(at: installURL, includingPropertiesForKeys: nil) else {
+        guard
+            let entries = try? FileManager.default.contentsOfDirectory(at: installURL, includingPropertiesForKeys: nil)
+        else {
             loadError = "Cannot read install directory: \(installURL.path)"
             return
         }
 
         var fileAssets: [Asset.Kind: [Asset]] = [:]
-        var shpToPak: [String: String] = [:]   // uppercased SHP filename -> containing PAK
-        let paks = entries
+        var shpToPak: [String: String] = [:]  // uppercased SHP filename -> containing PAK
+        let paks =
+            entries
             .filter { $0.pathExtension.uppercased() == "PAK" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         for pak in paks {
@@ -164,7 +169,11 @@ final class AssetLibrary {
         let categories = Asset.Kind.allCases.compactMap { kind -> Category? in
             guard let assets = fileAssets[kind], !assets.isEmpty else { return nil }
 
-            return Category(id: kind.rawValue, title: kind.rawValue, assets: assets.sorted { $0.displayName < $1.displayName })
+            return Category(
+                id: kind.rawValue,
+                title: kind.rawValue,
+                assets: assets.sorted { $0.displayName < $1.displayName }
+            )
         }
 
         let unitAssets: [Asset] = SpriteCatalog.unitGroups.compactMap { group in
@@ -186,10 +195,17 @@ final class AssetLibrary {
 
         // Buildings & terrain: ICON.ICN tiles grouped by ICON.MAP icon groups.
         if let iconAsset = fileAssets[.tiles]?.first(where: { $0.name.uppercased() == "ICON.ICN" }),
-           let mapData = archives[iconAsset.pak]?.data(named: "ICON.MAP"),
-           let iconMap = try? IconMap(mapData) {
+            let mapData = archives[iconAsset.pak]?.data(named: "ICON.MAP"),
+            let iconMap = try? IconMap(mapData)
+        {
             func groupAsset(_ group: IconMap.Group) -> Asset {
-                Asset(pak: iconAsset.pak, name: iconAsset.name, kind: .iconGroup, displayName: group.name, iconGroup: group.index)
+                Asset(
+                    pak: iconAsset.pak,
+                    name: iconAsset.name,
+                    kind: .iconGroup,
+                    displayName: group.name,
+                    iconGroup: group.index
+                )
             }
 
             let buildings = iconMap.groups.filter { $0.isBuilding && !$0.tileIDs.isEmpty }.map(groupAsset)
@@ -201,9 +217,16 @@ final class AssetLibrary {
         // Music: every `g_table_musics` track whose `DUNE<file>.ADL` is present, as AdLib/OPL3 previews.
         if let dir = musicDirectory {
             let musicAssets: [Asset] = MusicDirector.previewTracks.compactMap { track in
-                guard FileManager.default.fileExists(atPath: dir.appendingPathComponent("DUNE\(track.file).ADL").path) else { return nil }
-                return Asset(pak: "MUSIC", name: "\(track.id)", kind: .music, displayName: track.name,
-                             music: (file: track.file, song: track.song))
+                guard
+                    FileManager.default.fileExists(atPath: dir.appendingPathComponent("DUNE\(track.file).ADL").path)
+                else { return nil }
+                return Asset(
+                    pak: "MUSIC",
+                    name: "\(track.id)",
+                    kind: .music,
+                    displayName: track.name,
+                    music: (file: track.file, song: track.song)
+                )
             }
             if !musicAssets.isEmpty { special.append(Category(id: "Music", title: "Music", assets: musicAssets)) }
         }
@@ -236,7 +259,7 @@ final class AssetLibrary {
     }
 
     private static func monochromePalette() -> Palette {
-        var bytes = [UInt8](repeating: 0, count: 768)
+        var bytes = [ UInt8 ](repeating: 0, count: 768)
         for index in 0 ..< 256 {
             let value = UInt8(index >> 2)
             bytes[index * 3] = value

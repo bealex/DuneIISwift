@@ -1,5 +1,6 @@
-import Testing
 import DuneIIContracts
+import Testing
+
 @testable import DuneIIWorld
 
 /// Tests for the object pools + the pool-dependent `Tools_Index_*` functions on `GameState`. These
@@ -15,7 +16,7 @@ struct GameStateTests {
     func unitAllocate() {
         var s = GameState()
         s.houses[0].unitCountMax = 100
-        let a = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)   // band [22, 101]
+        let a = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)  // band [22, 101]
         let b = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)
         #expect(a == 22)
         #expect(b == 23)
@@ -34,46 +35,46 @@ struct GameStateTests {
         s.houses[0].unitCountMax = 1000
         // A long game can drift the count to its uint16 max (a wrapped-from-underflow value); the next
         // allocate must wrap to 0, not crash on overflow (`&+= 1`, matching `h->unitCount++`).
-        s.houses[0].unitCount = .max                 // 65535
-        let slot = s.unitAllocate(index: 0, type: u(.carryall), houseID: 0)   // winger bypasses the cap
+        s.houses[0].unitCount = .max  // 65535
+        let slot = s.unitAllocate(index: 0, type: u(.carryall), houseID: 0)  // winger bypasses the cap
         #expect(slot != nil)
-        #expect(s.houses[0].unitCount == 0)          // wrapped, no trap
+        #expect(s.houses[0].unitCount == 0)  // wrapped, no trap
     }
 
     @Test("house unit cap blocks ground units but not wingers/slitherers")
     func unitCap() {
         var s = GameState()
-        s.houses[0].unitCountMax = 0   // already at cap
-        #expect(s.unitAllocate(index: 0, type: u(.tank), houseID: 0) == nil)   // ground unit blocked
-        #expect(s.unitAllocate(index: 0, type: u(.carryall), houseID: 0) != nil) // winger bypasses
-        let worm = s.unitAllocate(index: 0, type: u(.sandworm), houseID: 0)     // slither bypasses
+        s.houses[0].unitCountMax = 0  // already at cap
+        #expect(s.unitAllocate(index: 0, type: u(.tank), houseID: 0) == nil)  // ground unit blocked
+        #expect(s.unitAllocate(index: 0, type: u(.carryall), houseID: 0) != nil)  // winger bypasses
+        let worm = s.unitAllocate(index: 0, type: u(.sandworm), houseID: 0)  // slither bypasses
         #expect(worm != nil)
-        #expect(s.units[worm!].amount == 3)   // sandworm starts with amount 3
+        #expect(s.units[worm!].amount == 3)  // sandworm starts with amount 3
     }
 
     @Test("enforceUnitLimit=false lets a capped house build ground units past the limit")
     func unitCapDisabled() {
         var s = GameState()
-        s.houses[0].unitCountMax = 0          // at cap
-        s.enforceUnitLimit = false            // debug toggle: ignore the cap
-        #expect(s.unitAllocate(index: 0, type: u(.tank), houseID: 0) != nil)   // now allowed
-        #expect(s.unitAllocate(index: 0, type: u(.tank), houseID: 0) != nil)   // and again
-        #expect(s.houses[0].unitCount == 2)   // both counted
+        s.houses[0].unitCountMax = 0  // at cap
+        s.enforceUnitLimit = false  // debug toggle: ignore the cap
+        #expect(s.unitAllocate(index: 0, type: u(.tank), houseID: 0) != nil)  // now allowed
+        #expect(s.unitAllocate(index: 0, type: u(.tank), houseID: 0) != nil)  // and again
+        #expect(s.houses[0].unitCount == 2)  // both counted
     }
 
     @Test("structure allocate: specials route to fixed slots, normals take soft slots")
     func structureAllocate() {
         var s = GameState()
         let wall = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.wall))
-        #expect(wall == Int(Pool.structureIndexWall))      // 79
-        #expect(s.structureFindArray.isEmpty)              // specials never enter the find array
+        #expect(wall == Int(Pool.structureIndexWall))  // 79
+        #expect(s.structureFindArray.isEmpty)  // specials never enter the find array
         let slab = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.slab2x2))
-        #expect(slab == Int(Pool.structureIndexSlab2x2))   // 80
+        #expect(slab == Int(Pool.structureIndexSlab2x2))  // 80
         let refinery = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.refinery))
         #expect(refinery == 0)
-        #expect(s.structureFindArray == [0])
+        #expect(s.structureFindArray == [ 0 ])
         #expect(s.structures[0].o.flags.contains(.used))
-        #expect(!s.structures[0].o.flags.contains(.isUnit))   // structures are not units
+        #expect(!s.structures[0].o.flags.contains(.isUnit))  // structures are not units
     }
 
     @Test("unitFind iterates allocated units and filters by house/type")
@@ -86,7 +87,7 @@ struct GameStateTests {
 
         var all = PoolFind(); var found: [Int] = []
         while let i = s.unitFind(&all) { found.append(i) }
-        #expect(found == [22, 23])
+        #expect(found == [ 22, 23 ])
 
         var byHouse = PoolFind(houseID: 1); var h1: [Int] = []
         while let i = s.unitFind(&byHouse) { h1.append(i) }
@@ -95,7 +96,7 @@ struct GameStateTests {
 
         var byType = PoolFind(type: UInt16(UnitType.trike.rawValue)); var trikes: [Int] = []
         while let i = s.unitFind(&byType) { trikes.append(i) }
-        #expect(trikes == [23])
+        #expect(trikes == [ 23 ])
     }
 
     @Test("Tools_Index_* round-trip through the pools (unit / structure / tile)")
@@ -128,8 +129,8 @@ struct GameStateTests {
         #expect(Tools.indexDecode(encT) == packed)
         #expect(s.indexGetTile(encT) == Tile32.unpack(packed))
 
-        #expect(!s.indexIsValid(0))                  // 0 is never valid
-        let unallocated = s.indexEncode(99, type: .unit)   // slot 99 not allocated
+        #expect(!s.indexIsValid(0))  // 0 is never valid
+        let unallocated = s.indexEncode(99, type: .unit)  // slot 99 not allocated
         #expect(unallocated == 0)
     }
 
@@ -138,14 +139,14 @@ struct GameStateTests {
         var s = GameState()
         _ = s.houseAllocate(index: 0)
         s.houses[0].unitCountMax = 100
-        _ = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)   // slot 22
+        _ = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)  // slot 22
 
         // A unit placed directly into a slot (e.g. by a loader) is missing from the find array.
-        s.units[50].o.flags = [.used, .allocated, .isUnit]
+        s.units[50].o.flags = [ .used, .allocated, .isUnit ]
         s.units[50].o.houseID = 0
 
         s.unitRecount()
-        #expect(s.unitFindArray == [22, 50])
+        #expect(s.unitFindArray == [ 22, 50 ])
         #expect(s.houses[0].unitCount == 2)
     }
 
@@ -155,18 +156,18 @@ struct GameStateTests {
         s.houses[0].unitCountMax = 100
         let slot = s.unitAllocate(index: 0, type: u(.tank), houseID: 0)!
 
-        #expect(s.unitGetByPackedTile(100) == nil)   // tile not flagged → nothing there
-        s.map[100].hasUnit = true                    // hasUnit + 1-based index resolves to the slot
+        #expect(s.unitGetByPackedTile(100) == nil)  // tile not flagged → nothing there
+        s.map[100].hasUnit = true  // hasUnit + 1-based index resolves to the slot
         s.map[100].index = UInt8(slot + 1)
         #expect(s.unitGetByPackedTile(100) == slot)
-        #expect(s.unitGetByPackedTile(0xF000) == nil)   // off-map short-circuit
+        #expect(s.unitGetByPackedTile(0xF000) == nil)  // off-map short-circuit
 
         #expect(s.unitIsTypeOnMap(houseID: 0, typeID: u(.tank)))
         #expect(!s.unitIsTypeOnMap(houseID: 0, typeID: u(.trike)))
         #expect(!s.unitIsTypeOnMap(houseID: 1, typeID: u(.tank)))
-        #expect(s.unitIsTypeOnMap(houseID: Pool.houseInvalid, typeID: 0xFF))   // wildcards
+        #expect(s.unitIsTypeOnMap(houseID: Pool.houseInvalid, typeID: 0xFF))  // wildcards
         s.units[slot].o.flags.insert(.isNotOnMap)
-        #expect(!s.unitIsTypeOnMap(houseID: 0, typeID: u(.tank)))   // off-map units skipped
+        #expect(!s.unitIsTypeOnMap(houseID: 0, typeID: u(.tank)))  // off-map units skipped
     }
 
     @Test("house + team allocate")
@@ -175,33 +176,33 @@ struct GameStateTests {
         #expect(s.houseAllocate(index: 0) == 0)
         #expect(s.houses[0].flags.contains(.used))
         #expect(s.houses[0].starportLinkedID == 0xFFFF)
-        #expect(s.houseAllocate(index: 0) == nil)   // already used
+        #expect(s.houseAllocate(index: 0) == nil)  // already used
 
         let t = s.teamAllocate(index: Pool.teamIndexInvalid)
         #expect(t == 0)
         #expect(s.teams[0].flags.contains(.used))
-        #expect(s.teamFindArray == [0])
+        #expect(s.teamFindArray == [ 0 ])
     }
 
     @Test("unitFree clears the slot, compacts the find array, and decrements the house count")
     func unitFree() {
         var s = GameState()
         s.houses[0].unitCountMax = 100
-        let a = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)!   // 22
-        let b = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)!   // 23
-        let c = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)!   // 24
+        let a = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)!  // 22
+        let b = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)!  // 23
+        let c = s.unitAllocate(index: 0, type: u(.infantry), houseID: 0)!  // 24
         #expect(s.houses[0].unitCount == 3)
 
-        s.unitFree(b)   // free the middle one → the gap closes around it
+        s.unitFree(b)  // free the middle one → the gap closes around it
         #expect(!s.units[b].o.flags.contains(.used))
         #expect(!s.units[b].o.flags.contains(.allocated))
-        #expect(s.units[b].o.script.framePointer == 17)   // Script_Reset applied
+        #expect(s.units[b].o.script.framePointer == 17)  // Script_Reset applied
         #expect(s.units[b].o.script.stackPointer == 15)
-        #expect(s.unitFindArray == [UInt16(a), UInt16(c)])
+        #expect(s.unitFindArray == [ UInt16(a), UInt16(c) ])
         #expect(s.houses[0].unitCount == 2)
 
-        s.unitFree(c)   // free the last → no gap to close
-        #expect(s.unitFindArray == [UInt16(a)])
+        s.unitFree(c)  // free the last → no gap to close
+        #expect(s.unitFindArray == [ UInt16(a) ])
         #expect(s.houses[0].unitCount == 1)
     }
 
@@ -211,16 +212,16 @@ struct GameStateTests {
         let r0 = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.refinery))!  // 0
         let r1 = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.refinery))!  // 1
         let wall = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.wall))!
-        #expect(s.structureFindArray == [UInt16(r0), UInt16(r1)])
+        #expect(s.structureFindArray == [ UInt16(r0), UInt16(r1) ])
 
         s.structureFree(r0)
         #expect(!s.structures[r0].o.flags.contains(.used))
         #expect(s.structures[r0].o.script.framePointer == 17)
-        #expect(s.structureFindArray == [UInt16(r1)])   // gap closed
+        #expect(s.structureFindArray == [ UInt16(r1) ])  // gap closed
 
-        s.structureFree(wall)   // a special slot: cleared but never in the find array
+        s.structureFree(wall)  // a special slot: cleared but never in the find array
         #expect(!s.structures[wall].o.flags.contains(.used))
-        #expect(s.structureFindArray == [UInt16(r1)])   // unchanged
+        #expect(s.structureFindArray == [ UInt16(r1) ])  // unchanged
     }
 
     @Test("teamFree clears the slot and compacts the find array")
@@ -228,10 +229,10 @@ struct GameStateTests {
         var s = GameState()
         let t0 = s.teamAllocate(index: Pool.teamIndexInvalid)!
         let t1 = s.teamAllocate(index: Pool.teamIndexInvalid)!
-        #expect(s.teamFindArray == [UInt16(t0), UInt16(t1)])
+        #expect(s.teamFindArray == [ UInt16(t0), UInt16(t1) ])
 
         s.teamFree(t0)
         #expect(!s.teams[t0].flags.contains(.used))
-        #expect(s.teamFindArray == [UInt16(t1)])
+        #expect(s.teamFindArray == [ UInt16(t1) ])
     }
 }

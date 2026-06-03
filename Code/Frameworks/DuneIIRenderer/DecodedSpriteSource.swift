@@ -24,8 +24,12 @@ public struct DecodedSpriteSource: WorldSpriteSource {
     }
 
     public func unitFrame(globalIndex: Int) -> SpriteFrame? {
-        guard let (sheet, frame) = GlobalSprite.unit(globalIndex), let set = sheets[sheet.fileName],
-              frame >= 0, frame < set.frames.count else { return nil }
+        guard
+            let (sheet, frame) = GlobalSprite.unit(globalIndex),
+            let set = sheets[sheet.fileName],
+            frame >= 0,
+            frame < set.frames.count
+        else { return nil }
         let f = set.frames[frame]
         return SpriteFrame(width: f.width, height: f.height, pixels: f.pixels)
     }

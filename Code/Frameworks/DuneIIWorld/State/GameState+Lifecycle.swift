@@ -28,9 +28,11 @@ public extension GameState {
                 units[i].o.script.variables[4] = encoded
             case .structure(let i):
                 structures[i].o.script.variables[4] = encoded
-                guard let type = StructureType(rawValue: Int(structures[i].o.type)),
-                      StructureInfo[type].o.flags.contains(.busyStateIsIncoming),
-                      structureGetLinkedUnit(i) == nil else { return }
+                guard
+                    let type = StructureType(rawValue: Int(structures[i].o.type)),
+                    StructureInfo[type].o.flags.contains(.busyStateIsIncoming),
+                    structureGetLinkedUnit(i) == nil
+                else { return }
                 structureSetState(i, encoded == 0 ? .idle : .busy)
         }
     }
@@ -48,8 +50,12 @@ public extension GameState {
     /// `Object_Script_Variable4_Link` (`object.c`): form the two-way script-variable-4 link between two
     /// encoded objects (clearing any mismatched prior links first), but only if `from`'s slot is free.
     mutating func objectScriptVariable4Link(_ encodedFrom: UInt16, _ encodedTo: UInt16) {
-        guard indexIsValid(encodedFrom), indexIsValid(encodedTo),
-              let from = indexGetObject(encodedFrom), let to = indexGetObject(encodedTo) else { return }
+        guard
+            indexIsValid(encodedFrom),
+            indexIsValid(encodedTo),
+            let from = indexGetObject(encodedFrom),
+            let to = indexGetObject(encodedTo)
+        else { return }
         if object(from).script.variables[4] != object(to).script.variables[4] {
             objectScriptVariable4Clear(from)
             objectScriptVariable4Clear(to)
@@ -193,7 +199,7 @@ public extension GameState {
 
         for i in 0 ..< Int(layout.tileCount) {
             let curPacked = packed + Int(layout.tiles[i])
-            animationStopByTile(UInt16(truncatingIfNeeded: curPacked))   // stop the structure's idle anim
+            animationStopByTile(UInt16(truncatingIfNeeded: curPacked))  // stop the structure's idle anim
             if curPacked >= 0, curPacked < map.count { map[curPacked].hasStructure = false }
         }
         // Start the destruction/collapse animation (`Structure_Remove`, `structure.c:1305`:
@@ -203,9 +209,13 @@ public extension GameState {
         // (Headless/golden runs don't tick animations, exactly as the oracle's parity harness doesn't —
         // so the animation is queued but inert there, matching the oracle; the visual apps play it.)
         let si = StructureInfo[st]
-        animationStart(tableIndex: 0, tile: structures[slot].o.position,
-                       tileLayout: UInt16(si.layout.rawValue), houseID: structures[slot].o.houseID,
-                       iconGroup: UInt8(truncatingIfNeeded: Int(si.iconGroup)))
+        animationStart(
+            tableIndex: 0,
+            tile: structures[slot].o.position,
+            tileLayout: UInt16(si.layout.rawValue),
+            houseID: structures[slot].o.houseID,
+            iconGroup: UInt8(truncatingIfNeeded: Int(si.iconGroup))
+        )
         mapDirty = true
 
         // Remember the lost structure's type + position in the house's AI rebuild queue (`structure.c:1336`),
@@ -214,7 +224,7 @@ public extension GameState {
         let houseID = Int(structures[slot].o.houseID)
         let lostType = UInt16(structures[slot].o.type)
         for i in 0 ..< 5 where houses[houseID].aiStructureRebuild[i][0] == 0 {
-            houses[houseID].aiStructureRebuild[i] = [lostType, UInt16(truncatingIfNeeded: packed)]
+            houses[houseID].aiStructureRebuild[i] = [ lostType, UInt16(truncatingIfNeeded: packed) ]
             break
         }
 
@@ -238,9 +248,9 @@ public extension GameState {
         structures[slot].o.flags.remove(.allocated)
         structures[slot].o.flags.remove(.repairing)
         structures[slot].o.script.delay = 0
-        structures[slot].o.script.reset()                 // Script_Reset
+        structures[slot].o.script.reset()  // Script_Reset
         // SEAM: Script_Load(structure death script) — needs BUILD.EMC + the structure ScriptInfo.
-        emitSound(44, at: structures[slot].o.position)   // Voice_PlayAtTile(44) → voiceMapping → CRUMBLE collapse cue
+        emitSound(44, at: structures[slot].o.position)  // Voice_PlayAtTile(44) → voiceMapping → CRUMBLE collapse cue
 
         let linkedID = structures[slot].o.linkedID
         if linkedID != 0xFF {
@@ -306,8 +316,10 @@ public extension GameState {
             // its house name (22/23/24 for Harkonnen/Atreides/Ordos; no cue for other houses), an enemy's
             // says the generic "enemy structure destroyed" (21). Routed through the global feedback queue.
             if structures[slot].o.houseID == playerHouseID {
-                switch playerHouseID { case 0: pendingFeedback.append(22); case 1: pendingFeedback.append(23)
-                                       case 2: pendingFeedback.append(24); default: break }
+                switch playerHouseID { case 0: pendingFeedback.append(22);  case 1: pendingFeedback.append(23)
+                    case 2: pendingFeedback.append(24);
+                    default: break
+                }
             } else {
                 pendingFeedback.append(21)
             }
@@ -338,7 +350,7 @@ public extension GameState {
         // golden stream is untouched whether or not `flags.human` was set at load).
         guard houseID == playerHouseID else { return }
         if houses[h].timerStructureAttack != 0 { return }
-        pendingFeedback.append(48)   // Sound_Output_Feedback(48) — "your base is under attack"
+        pendingFeedback.append(48)  // Sound_Output_Feedback(48) — "your base is under attack"
         houses[h].timerStructureAttack = 8
     }
 
@@ -367,7 +379,10 @@ public extension GameState {
             if structures[s].o.flags.contains(.isNotOnMap) { continue }
             let t = structures[s].o.type
             if t == UInt8(StructureType.slab1x1.rawValue) || t == UInt8(StructureType.slab2x2.rawValue)
-                || t == UInt8(StructureType.wall.rawValue) { continue }
+                || t == UInt8(StructureType.wall.rawValue)
+            {
+                continue
+            }
             result |= UInt32(1) << UInt32(t)
             if t == UInt8(StructureType.windtrap.rawValue) { houses[Int(houseID)].windtrapCount &+= 1 }
         }
@@ -395,12 +410,12 @@ public extension GameState {
                 houses[h].powerUsage = houses[h].powerUsage &+ UInt16(si.powerUsage)
                 continue
             }
-            let capacity = UInt16(-Int(si.powerUsage))          // a plant's full production
+            let capacity = UInt16(-Int(si.powerUsage))  // a plant's full production
             let hp = structures[s].o.hitpoints
             let maxHP = si.o.hitpoints
             if hp >= maxHP {
                 houses[h].powerProduction &+= capacity
-            } else if hp <= maxHP / 2 {                          // 1.07: ≤ half HP → half output
+            } else if hp <= maxHP / 2 {  // 1.07: ≤ half HP → half output
                 houses[h].powerProduction &+= capacity / 2
             } else {
                 houses[h].powerProduction &+= UInt16(UInt32(capacity) * UInt32(hp) / UInt32(max(maxHP, 1)))
@@ -429,7 +444,10 @@ public extension GameState {
         while let s = structureFind(&find) {
             let t = structures[s].o.type
             if t == UInt8(StructureType.slab1x1.rawValue) || t == UInt8(StructureType.slab2x2.rawValue)
-                || t == UInt8(StructureType.wall.rawValue) { continue }
+                || t == UInt8(StructureType.wall.rawValue)
+            {
+                continue
+            }
             guard let st = StructureType(rawValue: Int(t)) else { continue }
             let si = StructureInfo[st]
 
@@ -440,7 +458,7 @@ public extension GameState {
             if hpMax >= structures[s].o.hitpoints { continue }
             _ = structureDamage(s, damage: 1, range: 0)
         }
-        houseUpdateRadarState(houseID)   // structure.c:630 (player-only inside)
+        houseUpdateRadarState(houseID)  // structure.c:630 (player-only inside)
     }
 
     /// `House_UpdateRadarState` (`house.c:402`): toggle the player's minimap radar as its outpost + power
@@ -483,7 +501,10 @@ public extension GameState {
             ret = true
         }
         if state == 0 || structures[slot].o.flags.contains(.repairing)
-            || structures[slot].o.hitpoints == StructureInfo[st].o.hitpoints { return ret }
+            || structures[slot].o.hitpoints == StructureInfo[st].o.hitpoints
+        {
+            return ret
+        }
 
         structures[slot].o.flags.insert(.onHold)
         structures[slot].o.flags.insert(.repairing)
@@ -510,7 +531,8 @@ public extension GameState {
     @discardableResult
     mutating func structureResumeBuild(_ slot: Int) -> Bool {
         guard slot >= 0, slot < structures.count else { return false }
-        let held = structures[slot].o.flags.contains(.onHold)
+        let held =
+            structures[slot].o.flags.contains(.onHold)
             || structures[slot].o.flags.contains(.repairing) || structures[slot].o.flags.contains(.upgrading)
         structures[slot].o.flags.remove(.repairing)
         structures[slot].o.flags.remove(.onHold)
@@ -535,7 +557,8 @@ public extension GameState {
             unitFree(linked)
         }
         if buildTime != 0 {
-            let refund = (Int(buildTime) - Int(structures[slot].countDown >> 8)) * 256 / Int(buildTime) * Int(buildCredits) / 256
+            let refund =
+                (Int(buildTime) - Int(structures[slot].countDown >> 8)) * 256 / Int(buildTime) * Int(buildCredits) / 256
             let h = Int(structures[slot].o.houseID)
             houses[h].credits = UInt16(truncatingIfNeeded: Int(houses[h].credits) + refund)
         }
@@ -560,7 +583,10 @@ public extension GameState {
             ret = true
         }
         if state == 0 || structures[slot].o.flags.contains(.upgrading)
-            || structures[slot].upgradeTimeLeft == 0 { return ret }
+            || structures[slot].upgradeTimeLeft == 0
+        {
+            return ret
+        }
 
         structures[slot].o.flags.insert(.onHold)
         structures[slot].o.flags.remove(.repairing)
@@ -576,10 +602,14 @@ public extension GameState {
 
         if houseID == UInt8(HouseID.harkonnen.rawValue), st == .highTech { return false }
         if houseID == UInt8(HouseID.ordos.rawValue), st == .heavyVehicle, level == 1,
-           si.upgradeCampaign[2] > UInt16(campaignID) { return false }
+            si.upgradeCampaign[2] > UInt16(campaignID)
+        {
+            return false
+        }
 
         if level < si.upgradeCampaign.count, si.upgradeCampaign[level] != 0,
-           si.upgradeCampaign[level] <= UInt16(campaignID) + 1 {
+            si.upgradeCampaign[level] <= UInt16(campaignID) + 1
+        {
             if st != .constructionYard { return true }
             if level != 1 { return true }
             let required = StructureInfo[.rocketTurret].o.structuresRequired
@@ -602,8 +632,10 @@ public extension GameState {
     /// post-load rather than inside the parity-golden `loadScenario` path (which leaves those globals unset).
     mutating func armPlacedFactoryUpgrades() {
         for slot in structures.indices where structures[slot].o.flags.contains(.used) {
-            guard let st = StructureType(rawValue: Int(structures[slot].o.type)),
-                  StructureInfo[st].o.flags.contains(.factory) else { continue }
+            guard
+                let st = StructureType(rawValue: Int(structures[slot].o.type)),
+                StructureInfo[st].o.flags.contains(.factory)
+            else { continue }
             let houseID = structures[slot].o.houseID
             if houseID == UInt8(HouseID.harkonnen.rawValue), st == .lightVehicle { structures[slot].upgradeLevel = 1 }
             structures[slot].upgradeTimeLeft = structureIsUpgradable(slot) ? 100 : 0
@@ -647,7 +679,8 @@ public extension GameState {
                     structures[slot].upgradeLevel &+= 1
                     structures[slot].o.flags.remove(.upgrading)
                     if structures[slot].o.houseID == UInt8(HouseID.ordos.rawValue), st == .heavyVehicle,
-                       structures[slot].upgradeLevel == 2 {
+                        structures[slot].upgradeLevel == 2
+                    {
                         structures[slot].upgradeLevel = 3
                     }
                     structures[slot].upgradeTimeLeft = structureIsUpgradable(slot) ? 100 : 0
@@ -673,7 +706,8 @@ public extension GameState {
         } else {
             // Factory production: advance a queued build.
             if !structures[slot].o.flags.contains(.onHold), structures[slot].countDown != 0,
-               structures[slot].o.linkedID != 0xFF, structures[slot].state == .busy, si.o.flags.contains(.factory) {
+                structures[slot].o.linkedID != 0xFF, structures[slot].state == .busy, si.o.flags.contains(.factory)
+            {
                 let buildCredits: UInt16, buildTime: UInt16
                 if st == .constructionYard {
                     let oi = StructureInfo[StructureType(rawValue: Int(structures[slot].objectType))!].o
@@ -714,14 +748,15 @@ public extension GameState {
                         // (AI construction-yard auto-place runs in the Simulation's `aiStructureMaintenance`.)
                     }
                 } else if structures[slot].o.houseID == playerHouseID {
-                    structures[slot].o.flags.insert(.onHold)   // out of money → hold (+ GUI text SEAM)
+                    structures[slot].o.flags.insert(.onHold)  // out of money → hold (+ GUI text SEAM)
                 }
             }
 
             // The repair pad also drives a linked unit's repair countdown.
             if st == .repair {
                 if !structures[slot].o.flags.contains(.onHold), structures[slot].countDown != 0,
-                   structures[slot].o.linkedID != 0xFF {
+                    structures[slot].o.linkedID != 0xFF
+                {
                     let ut = UnitType(rawValue: Int(units[Int(structures[slot].o.linkedID)].o.type))!
                     var repairSpeed: UInt32 = 256
                     if structures[slot].o.hitpoints < si.o.hitpoints {
@@ -740,7 +775,7 @@ public extension GameState {
                         }
                     }
                 } else if houses[hID].credits != 0 {
-                    structures[slot].o.flags.remove(.onHold)   // money is back → auto-resume
+                    structures[slot].o.flags.remove(.onHold)  // money is back → auto-resume
                 }
             }
         }
@@ -754,8 +789,10 @@ public extension GameState {
     /// damages it. Seams: the `g_unitSelected` deselect (render/UI) and `House_CalculatePowerAndCredit` (the
     /// House power/credit recompute — House subsystem); the 1.07-enhanced takeover untarget/unveil are off.
     mutating func unitEnterStructure(_ unitSlot: Int, _ structureSlot: Int) {
-        guard let ut = UnitType(rawValue: Int(units[unitSlot].o.type)),
-              let st = StructureType(rawValue: Int(structures[structureSlot].o.type)) else { return }
+        guard
+            let ut = UnitType(rawValue: Int(units[unitSlot].o.type)),
+            let st = StructureType(rawValue: Int(structures[structureSlot].o.type))
+        else { return }
         let ui = UnitInfo[ut]
         let si = StructureInfo[st]
         // SEAM: g_unitSelected → Unit_Select(NULL) / Map_SetSelection (render/UI).
@@ -769,15 +806,19 @@ public extension GameState {
         unitHide(unitSlot)
 
         // Allied: the structure receives the unit (harvester refines, repair heals) and links it in.
-        if House.areAllied(structures[structureSlot].o.houseID, unitHouseID(units[unitSlot]),
-                           playerHouseID: playerHouseID) {
+        if House.areAllied(
+            structures[structureSlot].o.houseID,
+            unitHouseID(units[unitSlot]),
+            playerHouseID: playerHouseID
+        ) {
             structureSetState(structureSlot, si.o.flags.contains(.busyStateIsIncoming) ? .ready : .busy)
 
             if st == .repair {
                 let maxHP = UInt32(ui.o.hitpoints)
                 var countDown: UInt16 = 1
                 if maxHP > 0 {
-                    let cd = (maxHP - UInt32(units[unitSlot].o.hitpoints)) * 256 / maxHP
+                    let cd =
+                        (maxHP - UInt32(units[unitSlot].o.hitpoints)) * 256 / maxHP
                         * (UInt32(ui.o.buildTime) << 6) / 256
                     countDown = cd > 1 ? UInt16(truncatingIfNeeded: cd) : 1
                 }
@@ -850,7 +891,7 @@ public extension GameState {
             }
             units[slot].o.seenByHouses &= ~bit
         }
-        units[slot].o.seenByHouses = 0   // ENHANCEMENT (g_dune2_enhanced), which we pin true here
+        units[slot].o.seenByHouses = 0  // ENHANCEMENT (g_dune2_enhanced), which we pin true here
     }
 
     /// `Unit_HouseUnitCount_Add` (`unit.c`): record that `houseID` now sees this unit — bump its
@@ -878,8 +919,7 @@ public extension GameState {
         let unitHouse = unitHouseID(units[slot])
         let allied = House.areAllied(houseID, unitHouse, playerHouseID: playerHouseID)
         if units[slot].o.seenByHouses & houseIDBit == 0 {
-            if allied { houses[Int(houseID)].unitCountAllied &+= 1 }
-            else { houses[Int(houseID)].unitCountEnemy &+= 1 }
+            if allied { houses[Int(houseID)].unitCountAllied &+= 1 } else { houses[Int(houseID)].unitCountEnemy &+= 1 }
         }
 
         if ui.movementType != .winger && !allied {
@@ -899,25 +939,35 @@ public extension GameState {
         if houseID == playerHouseID {
             if ut == .sandworm {
                 if houses[Int(houseID)].timerSandwormAttack == 0 {
-                    pendingFeedback.append(37)   // "Warning: sandworms roam Dune…"
+                    pendingFeedback.append(37)  // "Warning: sandworms roam Dune…"
                     houses[Int(houseID)].timerSandwormAttack = 8
                 }
             } else if !allied {
                 if houses[Int(houseID)].timerUnitAttack == 0 {
                     if ut == .saboteur {
-                        pendingFeedback.append(12)   // "Warning: saboteur approaching"
+                        pendingFeedback.append(12)  // "Warning: saboteur approaching"
                     } else if campaignID < 3 {
                         // Directional warning relative to the player's construction yard (or the non-directional
                         // feedback 1 if there is none): "enemy unit approaching from the <N/E/S/W>".
                         var feedbackID: UInt16 = 1
-                        var find = PoolFind(houseID: playerHouseID, type: UInt16(StructureType.constructionYard.rawValue))
+                        var find = PoolFind(
+                            houseID: playerHouseID,
+                            type: UInt16(StructureType.constructionYard.rawValue)
+                        )
                         if let cy = structureFind(&find) {
-                            let dir8 = Orientation.to8(UInt8(bitPattern: Tile32.direction(from: structures[cy].o.position, to: units[slot].o.position)))
+                            let dir8 = Orientation.to8(
+                                UInt8(
+                                    bitPattern: Tile32.direction(
+                                        from: structures[cy].o.position,
+                                        to: units[slot].o.position
+                                    )
+                                )
+                            )
                             feedbackID = UInt16((Int(dir8) + 1) & 7) / 2 + 2
                         }
                         pendingFeedback.append(feedbackID)
                     } else {
-                        pendingFeedback.append(UInt16(units[slot].o.houseID) &+ 6)   // late campaign: house-specific
+                        pendingFeedback.append(UInt16(units[slot].o.houseID) &+ 6)  // late campaign: house-specific
                     }
                     houses[Int(houseID)].timerUnitAttack = 8
                 }
@@ -930,7 +980,8 @@ public extension GameState {
         // with `aiFogOfWar` on, only to the player + AI houses that have already found the player. `|= mask`
         // equals `= 0xFF` with the flag off, so the stock path is byte-identical. (unit.c)
         if unitHouse == UInt8(HouseID.fremen.rawValue) && playerHouseID == UInt8(HouseID.atreides.rawValue)
-            || units[slot].o.houseID == playerHouseID {
+            || units[slot].o.houseID == playerHouseID
+        {
             units[slot].o.seenByHouses |= playerObjectVisibilityMask()
         } else {
             units[slot].o.seenByHouses |= houseIDBit
@@ -966,7 +1017,8 @@ public extension GameState {
             // time the unit steps onto a new tile (each move step re-stamps via `unitUpdateMap(1)`), not
             // only when the unit's script happens to call `Script_Unit_RemoveFog`.
             if House.areAllied(unitHouseID(u), playerHouseID, playerHouseID: playerHouseID),
-               u.o.type != UInt8(UnitType.sandworm.rawValue), !map[Int(packed)].isUnveiled {
+                u.o.type != UInt8(UnitType.sandworm.rawValue), !map[Int(packed)].isUnveiled
+            {
                 tileRemoveFogInRadius(u.o.position, radius: 1)
             }
             let occupied = map[Int(packed)].hasUnit || map[Int(packed)].hasStructure
@@ -978,7 +1030,7 @@ public extension GameState {
 
         if type == 0 {
             unitRemoveFromTile(slot, packed)
-            if ut == .harvester {   // the only 2×1 unit — also clear its trailing tiles
+            if ut == .harvester {  // the only 2×1 unit — also clear its trailing tiles
                 unitRemoveFromTile(slot, units[slot].targetPreLast.packed)
                 unitRemoveFromTile(slot, units[slot].targetLast.packed)
             }

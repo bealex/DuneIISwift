@@ -1,7 +1,8 @@
-import Foundation
-import Testing
 import DuneIIContracts
 import DuneIIFormats
+import Foundation
+import Testing
+
 @testable import DuneIIWorld
 
 /// `Structure_UpdateMap` (`structure.c`) — stamping a structure's tiles. In particular the overlay clear
@@ -36,21 +37,21 @@ struct StructureUpdateMapTests {
         let slot = placeTurret(&s, at: packed)
         // A real (unveiled) overlay — a crater — sitting on the tile before the building stamps it.
         s.map[Int(packed)].overlayTileID = 5
-        #expect(isUnveiledOverlay(5, veiled: s.tileIDs.veiled))   // sanity: 5 is a real overlay (not fog)
+        #expect(isUnveiledOverlay(5, veiled: s.tileIDs.veiled))  // sanity: 5 is a real overlay (not fog)
         s.structureUpdateMap(slot)
-        #expect(s.map[Int(packed)].overlayTileID == 0)   // cleared — the crater no longer renders on the turret
+        #expect(s.map[Int(packed)].overlayTileID == 0)  // cleared — the crater no longer renders on the turret
         #expect(s.map[Int(packed)].hasStructure)
     }
 
     @Test("a fog-veil overlay on the tile is left intact (only real overlays are cleared)")
     func keepsFogVeilOverlay() throws {
         var s = try loadedState()
-        let veil = UInt8(truncatingIfNeeded: Int(s.tileIDs.veiled))   // the full fog-veil tile (< 256)
+        let veil = UInt8(truncatingIfNeeded: Int(s.tileIDs.veiled))  // the full fog-veil tile (< 256)
         let packed = UInt16(22 * 64 + 22)
         let slot = placeTurret(&s, at: packed)
         s.map[Int(packed)].overlayTileID = veil
-        #expect(!isUnveiledOverlay(s.tileIDs.veiled, veiled: s.tileIDs.veiled))   // sanity: the veil isn't "unveiled"
+        #expect(!isUnveiledOverlay(s.tileIDs.veiled, veiled: s.tileIDs.veiled))  // sanity: the veil isn't "unveiled"
         s.structureUpdateMap(slot)
-        #expect(s.map[Int(packed)].overlayTileID == veil)     // preserved
+        #expect(s.map[Int(packed)].overlayTileID == veil)  // preserved
     }
 }

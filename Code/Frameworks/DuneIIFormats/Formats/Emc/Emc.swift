@@ -20,16 +20,19 @@ public enum Emc {
 
     public struct Program {
         public let text: [UInt8]
-        public let offsets: [Int]    // ORDR: per-type entry, as a word index into `data`
-        public let data: [UInt16]    // DATA: bytecode words (decoded from big-endian)
+        public let offsets: [Int]  // ORDR: per-type entry, as a word index into `data`
+        public let data: [UInt16]  // DATA: bytecode words (decoded from big-endian)
 
         public init(_ data: Data) throws {
             let reader = try Iff.Reader(data)
-            guard let ordr = reader.chunk("ORDR"), let code = reader.chunk("DATA") else {
+            guard
+                let ordr = reader.chunk("ORDR"),
+                let code = reader.chunk("DATA")
+            else {
                 throw DecodeError.missingChunk
             }
 
-            let ordrBytes = [UInt8](ordr)
+            let ordrBytes = [ UInt8 ](ordr)
             var offsets: [Int] = []
             var o = 0
             while o + 2 <= ordrBytes.count {
@@ -37,7 +40,7 @@ public enum Emc {
                 o += 2
             }
 
-            let codeBytes = [UInt8](code)
+            let codeBytes = [ UInt8 ](code)
             var words: [UInt16] = []
             var c = 0
             while c + 2 <= codeBytes.count {
@@ -45,18 +48,18 @@ public enum Emc {
                 c += 2
             }
 
-            self.text = [UInt8](reader.chunk("TEXT") ?? Data())
+            self.text = [ UInt8 ](reader.chunk("TEXT") ?? Data())
             self.offsets = offsets
             self.data = words
         }
     }
 
     public struct Instruction: Equatable {
-        public let address: Int       // word index into DATA
+        public let address: Int  // word index into DATA
         public let opcode: Int
         public let name: String
         public let operand: Int?
-        public let functionName: String?   // set when the opcode is FUNCTION (14)
+        public let functionName: String?  // set when the opcode is FUNCTION (14)
     }
 
     /// Disassemble the script for one object type, from its ORDR entry to the next entry's address.
@@ -83,13 +86,13 @@ public enum Emc {
             let opcode: Int
             var operand: Int?
             if word & 0x8000 != 0 {
-                opcode = 0   // forced JUMP
+                opcode = 0  // forced JUMP
                 operand = word & 0x7FFF
             } else {
                 opcode = (word >> 8) & 0x1F
                 if word & 0x4000 != 0 {
                     let raw = word & 0xFF
-                    operand = raw < 0x80 ? raw : raw - 0x100   // sign-extended 8-bit
+                    operand = raw < 0x80 ? raw : raw - 0x100  // sign-extended 8-bit
                 } else if word & 0x2000 != 0 {
                     if address < program.data.count {
                         operand = Int(program.data[address])
@@ -103,13 +106,15 @@ public enum Emc {
             if opcode == 14, let operand {
                 functionName = Emc.functionName(kind, index: operand & 0xFF)
             }
-            instructions.append(Instruction(
-                address: instructionAddress,
-                opcode: opcode,
-                name: name,
-                operand: operand,
-                functionName: functionName
-            ))
+            instructions.append(
+                Instruction(
+                    address: instructionAddress,
+                    opcode: opcode,
+                    name: name,
+                    operand: operand,
+                    functionName: functionName
+                )
+            )
         }
         return instructions
     }

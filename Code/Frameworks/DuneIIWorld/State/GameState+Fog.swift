@@ -53,7 +53,8 @@ public extension GameState {
         for i in units.indices where units[i].o.flags.contains(.used) && units[i].o.houseID == playerHouseID {
             units[i].o.seenByHouses |= bit
         }
-        for i in structures.indices where structures[i].o.flags.contains(.used) && structures[i].o.houseID == playerHouseID {
+        for i in structures.indices
+        where structures[i].o.flags.contains(.used) && structures[i].o.houseID == playerHouseID {
             structures[i].o.seenByHouses |= bit
         }
     }
@@ -65,11 +66,12 @@ public extension GameState {
     /// turning it **off** restores the stock all-houses visibility (`0xFF`).
     mutating func reapplyPlayerVisibility() {
         housesFoundPlayer = 0
-        let v = playerObjectVisibilityMask()   // 0xFF off, (1<<playerHouseID) on (housesFoundPlayer now 0)
+        let v = playerObjectVisibilityMask()  // 0xFF off, (1<<playerHouseID) on (housesFoundPlayer now 0)
         for i in units.indices where units[i].o.flags.contains(.used) && units[i].o.houseID == playerHouseID {
             units[i].o.seenByHouses = v
         }
-        for i in structures.indices where structures[i].o.flags.contains(.used) && structures[i].o.houseID == playerHouseID {
+        for i in structures.indices
+        where structures[i].o.flags.contains(.used) && structures[i].o.houseID == playerHouseID {
             structures[i].o.seenByHouses = v
         }
     }

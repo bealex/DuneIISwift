@@ -30,9 +30,9 @@ enum GoldenFixture {
         init(from decoder: Decoder) throws {
             let container = try decoder.singleValueContainer()
             if let scalar = try? container.decode(Int.self) {
-                values = [scalar]
+                values = [ scalar ]
             } else {
-                values = try container.decode([Int].self)
+                values = try container.decode([ Int ].self)
             }
         }
     }

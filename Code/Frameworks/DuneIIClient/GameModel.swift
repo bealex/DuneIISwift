@@ -21,9 +21,11 @@ public final class GameModel {
     /// selection to the music assets in `Resources/Audio/Music/` — either the Westwood `.ADL` files
     /// synthesised on an emulated OPL3 chip (authentic AdLib FM, the default) or the extracted MIDI songs
     /// through `AVMIDIPlayer` + a SoundFont/DLS bank. The backend is switchable live (Settings).
-    @ObservationIgnored let music = MusicDirector(musicDirectory: GameModel.musicURL(),
-                                                  soundBank: GameModel.soundBankURL(),
-                                                  backend: GameModel.savedMusicBackend())
+    @ObservationIgnored let music = MusicDirector(
+        musicDirectory: GameModel.musicURL(),
+        soundBank: GameModel.soundBankURL(),
+        backend: GameModel.savedMusicBackend()
+    )
     /// Master music toggle — also the neutrality switch for goldens (off ⇒ music never plays, sim untouched).
     var musicEnabled = true { didSet { music.enabled = musicEnabled } }
     /// Synthesis backend for the music (AdLib FM vs MIDI). Applied live and persisted across launches.
@@ -55,27 +57,31 @@ public final class GameModel {
     /// Debug: give the AI a fog of war so it only attacks after the player makes contact (instead of
     /// knowing the base from turn one). Applied to the live sim and to every scenario (re)load. Best set
     /// before loading a scenario — toggling mid-game only affects objects placed/sighted afterwards.
-    var aiFogOfWar = false { didSet {
-        simulation?.state.aiFogOfWar = aiFogOfWar
-        // Re-hide (or re-reveal) the already-placed base/army so toggling mid-game or after a scenario load
-        // takes effect immediately — otherwise objects keep the visibility they were placed with.
-        simulation?.state.reapplyPlayerVisibility()
-    } }
+    var aiFogOfWar = false {
+        didSet {
+            simulation?.state.aiFogOfWar = aiFogOfWar
+            // Re-hide (or re-reveal) the already-placed base/army so toggling mid-game or after a scenario load
+            // takes effect immediately — otherwise objects keep the visibility they were placed with.
+            simulation?.state.reapplyPlayerVisibility()
+        }
+    }
     /// Whether the per-house unit limit (the scenario's `MaxUnit`) is enforced. On (default) = follow the
     /// limit faithfully; off = build past it. Applied to the live sim and to every scenario (re)load.
     var enforceUnitLimit = true { didSet { simulation?.state.enforceUnitLimit = enforceUnitLimit } }
     /// Play indefinitely: skip the win/lose evaluation so the game never ends. Applied to the live sim and to
     /// every scenario (re)load. Turning it on also clears any already-latched outcome (and dismisses the
     /// banner) so a finished game can resume.
-    var playIndefinitely = false { didSet {
-        simulation?.state.disableLevelEnd = playIndefinitely
-        if playIndefinitely, simulation?.state.gameEndState != .playing {
-            simulation?.state.gameEndState = .playing
-            gameEnd = .playing
+    var playIndefinitely = false {
+        didSet {
+            simulation?.state.disableLevelEnd = playIndefinitely
+            if playIndefinitely, simulation?.state.gameEndState != .playing {
+                simulation?.state.gameEndState = .playing
+                gameEnd = .playing
+            }
         }
-    } }
+    }
     var showAllEconomies = false
-    var showHealthOverlay = true   // health/state bars over units + buildings are on by default (a normal HUD element)
+    var showHealthOverlay = true  // health/state bars over units + buildings are on by default (a normal HUD element)
     /// Debug: force the minimap on regardless of radar availability. Off (default) ⇒ the minimap obeys the
     /// player's radar (`radarActive`) — blank until an outpost + power bring it online, as in Dune II.
     var forceMinimap = false
@@ -103,8 +109,8 @@ public final class GameModel {
     @ObservationIgnored private(set) var radarStaticFrames: [CGImage] = []
     /// The static frame currently showing during a transition (`nil` ⇒ no transition in progress).
     private(set) var radarStaticFrameIndex: Int?
-    @ObservationIgnored private var radarStaticForward = true   // play forward (on) or backward (off)
-    @ObservationIgnored private var radarStaticTick = 0         // sub-frame counter (a few render frames per WSA frame)
+    @ObservationIgnored private var radarStaticForward = true  // play forward (on) or backward (off)
+    @ObservationIgnored private var radarStaticTick = 0  // sub-frame counter (a few render frames per WSA frame)
 
     /// Wall-clock speed multiplier (0.5×…4×). The scene paces sim ticks against real time × this — see
     /// `GameScene.update`. 1× ≈ the base 60-ticks/second cadence (one tick per drawn frame at 60 fps).
@@ -113,11 +119,13 @@ public final class GameModel {
     /// camera, selection, and orders still work; only game time stops. The **effective** pause: the player's
     /// own pause (`userPaused`) OR any open UI surface (`uiPauseCount` — a save/load dialog, the options or
     /// mentat popover). Read-only outside; drive it via `togglePause`/`beginUIPause`/`endUIPause`.
-    public private(set) var paused = false { didSet {
-        guard paused != oldValue else { return }
-        simulation?.state.paused = paused
-        paused ? music.pause() : music.resume()
-    } }
+    public private(set) var paused = false {
+        didSet {
+            guard paused != oldValue else { return }
+            simulation?.state.paused = paused
+            paused ? music.pause() : music.resume()
+        }
+    }
     /// The player's manual pause (space bar / game over) — what the game returns to when every transient UI
     /// surface closes.
     @ObservationIgnored private var userPaused = false
@@ -130,7 +138,10 @@ public final class GameModel {
     /// then `won`/`lost`; the client shows a banner + pauses. Reset to `playing` on each scenario/save load.
     private(set) var gameEnd: GameEndState = .playing
     /// The end-of-game banner text, or `nil` while playing.
-    public var outcomeText: String? { switch gameEnd { case .won: "Victory"; case .lost: "Defeat"; case .playing: nil } }
+    public var outcomeText: String? {
+        switch gameEnd { case .won: "Victory";  case .lost: "Defeat";  case .playing: nil
+        }
+    }
 
     // Derived per-frame info for the tool windows.
     private(set) var selection: SelectionInfo?
@@ -217,7 +228,7 @@ public final class GameModel {
         structureScript = assets.data("BUILD.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
 
         var state = GameState()
-        state.aiFogOfWar = aiFogOfWar   // before unit placement, so the player units honour the AI-fog mask
+        state.aiFogOfWar = aiFogOfWar  // before unit placement, so the player units honour the AI-fog mask
         state.enforceUnitLimit = enforceUnitLimit
         // Don't pin the AI houses active at load (that's a parity-harness shortcut). Like OpenDUNE's real game,
         // each AI house wakes (`isAIActive`) only when it first makes contact with an enemy — driven by our
@@ -235,7 +246,8 @@ public final class GameModel {
             _ = state.houseAllocate(index: UInt8(h))
             if state.houses[h].unitCountMax == 0 { state.houses[h].unitCountMax = 39 }
         }
-        playerHouse = AssetStore.playerHouse(in: ini)
+        playerHouse =
+            AssetStore.playerHouse(in: ini)
             ?? state.houses.first(where: { $0.flags.contains(.used) }).flatMap { HouseID(rawValue: Int($0.index)) }
             ?? .atreides
         state.playerHouseID = UInt8(playerHouse.rawValue)
@@ -274,15 +286,20 @@ public final class GameModel {
     /// set up the scene, camera, and minimap. Shared by `load` and `loadGame`.
     private func finishLoad(state: GameState, scenarioName: String?) {
         var state = state
-        state.disableLevelEnd = playIndefinitely   // the live "play indefinitely" preference wins on every load
-        let sim = Simulation(state: state, scriptInfo: unitScript, structureScriptInfo: structureScript,
-                             tickExplosions: true, tickAnimations: true)
+        state.disableLevelEnd = playIndefinitely  // the live "play indefinitely" preference wins on every load
+        let sim = Simulation(
+            state: state,
+            scriptInfo: unitScript,
+            structureScriptInfo: structureScript,
+            tickExplosions: true,
+            tickAnimations: true
+        )
         simulation = sim
         currentScenario = scenarioName
         playerHouse = HouseID(rawValue: Int(state.playerHouseID)) ?? .atreides
-        registerHouseVoices()      // the player-house announcement voices (the prefix can change per scenario)
+        registerHouseVoices()  // the player-house announcement voices (the prefix can change per scenario)
         userPaused = state.paused  // fresh scenario ⇒ false; a restored save ⇒ its saved pause
-        applyPause()               // keep any open UI surface's pause (e.g. the load dialog) in effect
+        applyPause()  // keep any open UI surface's pause (e.g. the load dialog) in effect
         gameEnd = state.gameEndState
         // Reset the transient hint state so the new base doesn't false-fire build-complete / under-attack.
         wasLowPower = false; readyFactories = []
@@ -295,23 +312,30 @@ public final class GameModel {
         // and start centred on it. The renderer blacks the border out independently (`FrameComposer`).
         viewport = Viewport()
         let a = frame.mapArea
-        viewport.area = CGRect(x: Double(a.minX) * Viewport.tilePx, y: Double(a.minY) * Viewport.tilePx,
-                               width: Double(a.width) * Viewport.tilePx, height: Double(a.height) * Viewport.tilePx)
+        viewport.area = CGRect(
+            x: Double(a.minX) * Viewport.tilePx,
+            y: Double(a.minY) * Viewport.tilePx,
+            width: Double(a.width) * Viewport.tilePx,
+            height: Double(a.height) * Viewport.tilePx
+        )
         viewport.center(onWorldX: viewport.area.midX, worldY: viewport.area.midY, viewSize: viewSize)
-        minimapSource = nil; minimapTilesHash = 0   // fresh scenario → rebuild the base from its tiles
+        minimapSource = nil; minimapTilesHash = 0  // fresh scenario → rebuild the base from its tiles
         refreshMinimapBase(frame)
-        if radarStaticFrames.isEmpty { radarStaticFrames = Minimap.radarStaticFrames(assets: assets) }   // STATIC.WSA, once
+        if radarStaticFrames.isEmpty { radarStaticFrames = Minimap.radarStaticFrames(assets: assets) }  // STATIC.WSA, once
         radarActive = frame.houses.first { $0.id == playerHouse }?.radarActivated ?? false
         radarStaticFrameIndex = nil
         refreshDerived(frame)
-        music.startInGame()   // a random in-mission map theme (musicID 8–15), rolling into the next at its end
+        music.startInGame()  // a random in-mission map theme (musicID 8–15), rolling into the next at its end
     }
 
     /// Where the extracted MIDI songs live — the app bundle's `Audio/Music/` when packaged, else the repo's
     /// `Resources/` relative to `Code/` (how `swift run duneii` is launched), mirroring `App.installURL()`.
     private static func musicURL() -> URL {
         if let bundled = Bundle.main.resourceURL?.appendingPathComponent("Audio/Music"),
-           FileManager.default.fileExists(atPath: bundled.path) { return bundled }
+            FileManager.default.fileExists(atPath: bundled.path)
+        {
+            return bundled
+        }
         return URL(fileURLWithPath: "../Resources/Audio/Music")
     }
 
@@ -323,8 +347,10 @@ public final class GameModel {
     /// Optional SoundFont for the MIDI synth: a bundled/repo `Audio/music.sf2` if present, else `nil` ⇒ the
     /// system's built-in General-MIDI DLS bank. Pluggable so a better bank can be dropped in later.
     private static func soundBankURL() -> URL? {
-        let candidates = [Bundle.main.resourceURL?.appendingPathComponent("Audio/music.sf2"),
-                          URL(fileURLWithPath: "../Resources/Audio/music.sf2")].compactMap { $0 }
+        let candidates = [
+            Bundle.main.resourceURL?.appendingPathComponent("Audio/music.sf2"),
+            URL(fileURLWithPath: "../Resources/Audio/music.sf2"),
+        ].compactMap { $0 }
         return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
@@ -426,10 +452,10 @@ public final class GameModel {
         guard let slot = unitSlot else { audio.play(.acknowledge); return }
         if isFootUnit(slot) {
             switch kind {
-                case .move:    audio.play(.moveOut)
+                case .move: audio.play(.moveOut)
                 case .attack, .retreat: audio.play(.overOut)
                 case .harvest: audio.play(.report3)
-                case nil:      audio.play(.acknowledge)
+                case nil: audio.play(.acknowledge)
             }
         } else {
             audio.play(Bool.random() ? .report3 : .acknowledge)
@@ -437,8 +463,11 @@ public final class GameModel {
     }
 
     private func isFootUnit(_ slot: Int) -> Bool {
-        guard let state = simulation?.state, slot < state.units.count,
-              let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return false }
+        guard
+            let state = simulation?.state,
+            slot < state.units.count,
+            let ut = UnitType(rawValue: Int(state.units[slot].o.type))
+        else { return false }
         return UnitInfo[ut].movementType == .foot
     }
 
@@ -482,7 +511,7 @@ public final class GameModel {
         simulation = sim
         let frame = sim.makeFrameInfo()
         lastFrame = frame
-        refreshMinimapBase(frame)   // keep the minimap terrain current (structures, walls, craters, spice)
+        refreshMinimapBase(frame)  // keep the minimap terrain current (structures, walls, craters, spice)
         refreshDerived(frame)
         return frame
     }
@@ -494,11 +523,11 @@ public final class GameModel {
     /// don't re-extract 64×64 tiles (and allocate a `CGImage`) every tick when nothing moved.
     private func refreshMinimapBase(_ frame: FrameInfo) {
         var hash = 5381
-        hash = (hash &* 33) ^ (showFog ? 1 : 0)   // toggling fog re-tints the whole base
+        hash = (hash &* 33) ^ (showFog ? 1 : 0)  // toggling fog re-tints the whole base
         for t in frame.tiles {
             hash = (hash &* 33) ^ t.groundSpriteIndex
             hash = (hash &* 33) ^ t.overlaySpriteIndex
-            if showFog { hash = (hash &* 33) ^ (t.isUnveiled ? 0 : 0x5A5A) }   // reveals darken/clear cells
+            if showFog { hash = (hash &* 33) ^ (t.isUnveiled ? 0 : 0x5A5A) }  // reveals darken/clear cells
         }
         guard hash != minimapTilesHash || minimapBase == nil else { return }
         minimapTilesHash = hash
@@ -539,9 +568,16 @@ public final class GameModel {
         let present = housesOnMap()
         let econ = frame.houses
             .filter { (showAllEconomies || $0.id == playerHouse) && present.contains(UInt8($0.id.rawValue)) }
-            .map { HouseEconomy(house: $0.id.displayName, isPlayer: $0.id == playerHouse,
-                                credits: $0.credits, storage: $0.creditsStorage,
-                                power: $0.powerProduction, powerUsed: $0.powerUsage) }
+            .map {
+                HouseEconomy(
+                    house: $0.id.displayName,
+                    isPlayer: $0.id == playerHouse,
+                    credits: $0.credits,
+                    storage: $0.creditsStorage,
+                    power: $0.powerProduction,
+                    powerUsed: $0.powerUsage
+                )
+            }
         if econ != economy { economy = econ }
 
         let credits = frame.houses.first { $0.id == playerHouse }?.credits ?? 0
@@ -605,8 +641,11 @@ public final class GameModel {
         var nowReady: Set<Int> = []
         for i in state.structures.indices where state.structures[i].o.flags.contains(.used) {
             let s = state.structures[i]
-            guard s.o.houseID == ph, let type = StructureType(rawValue: Int(s.o.type)),
-                  StructureInfo[type].o.flags.contains(.factory) else { continue }
+            guard
+                s.o.houseID == ph,
+                let type = StructureType(rawValue: Int(s.o.type)),
+                StructureInfo[type].o.flags.contains(.factory)
+            else { continue }
             if let bs = sim.buildState(structureSlot: i), bs.isReady {
                 nowReady.insert(i)
                 if !readyFactories.contains(i) { postNotice("\(bs.displayName) ready"); audio.play(.houseConstruct) }
@@ -637,25 +676,31 @@ public final class GameModel {
     /// Recompute the selected player structure's repair/upgrade availability + (for a starport) its CHOAM
     /// stock. Published only on change.
     private func refreshStructureActions() {
-        guard let slot = selectedStructureSlot, let sim = simulation,
-              let type = StructureType(rawValue: Int(sim.state.structures[slot].o.type)) else {
+        guard
+            let slot = selectedStructureSlot,
+            let sim = simulation,
+            let type = StructureType(rawValue: Int(sim.state.structures[slot].o.type))
+        else {
             if structureActions != nil { structureActions = nil }
             if isStarportSelected { isStarportSelected = false }
             if !starportStock.isEmpty { starportStock = [] }
             if !starportCart.isEmpty { starportCart = [:] }
             if starportDelivery != nil { starportDelivery = nil }
             if superWeapon != nil { superWeapon = nil }
-            if missileTargeting != nil { missileTargeting = nil }   // selection gone ⇒ abandon a pending target-select
+            if missileTargeting != nil { missileTargeting = nil }  // selection gone ⇒ abandon a pending target-select
             return
         }
         let s = sim.state.structures[slot]
 
         // A selected player palace: surface its house super-weapon + readiness (countdown at 0 = ready).
         if type == .palace, let house = HouseID(rawValue: Int(s.o.houseID)),
-           let weapon = SuperWeaponState.Weapon(rawValue: Int(HouseInfo[house].specialWeapon)) {
+            let weapon = SuperWeaponState.Weapon(rawValue: Int(HouseInfo[house].specialWeapon))
+        {
             let sw = SuperWeaponState(slot: slot, weapon: weapon, ready: s.countDown == 0)
             if sw != superWeapon { superWeapon = sw }
-        } else if superWeapon != nil { superWeapon = nil }
+        } else if superWeapon != nil {
+            superWeapon = nil
+        }
         let actions = StructureActions(
             slot: slot,
             canRepair: s.o.hitpoints < StructureInfo[type].o.hitpoints,
@@ -666,7 +711,8 @@ public final class GameModel {
             canUpgrade: s.upgradeTimeLeft != 0 && !s.o.flags.contains(.upgrading)
                 && s.o.hitpoints == StructureInfo[type].o.hitpoints,
             isRepairing: s.o.flags.contains(.repairing),
-            isUpgrading: s.o.flags.contains(.upgrading))
+            isUpgrading: s.o.flags.contains(.upgrading)
+        )
         if actions != structureActions { structureActions = actions }
 
         if isStarportSelected != (type == .starport) { isStarportSelected = type == .starport }
@@ -690,8 +736,14 @@ public final class GameModel {
             for t in sim.state.starportAvailable.indices where sim.state.starportAvailable[t] != 0 {
                 guard let ut = UnitType(rawValue: t) else { continue }
                 let price = starportPriceByType[t] ?? UInt16(clamping: Int(UnitInfo[ut].o.buildCredits))
-                stock.append(StarportItem(objectType: UInt16(t), displayName: ut.displayName,
-                                          cost: Int(price), available: max(0, Int(sim.state.starportAvailable[t]))))
+                stock.append(
+                    StarportItem(
+                        objectType: UInt16(t),
+                        displayName: ut.displayName,
+                        cost: Int(price),
+                        available: max(0, Int(sim.state.starportAvailable[t]))
+                    )
+                )
             }
             // Drop any cart line whose type sold out from under it (e.g. the AI bought the last one). Guarded
             // so the per-tick refresh doesn't churn observation when nothing changed.
@@ -705,7 +757,9 @@ public final class GameModel {
                 let f = total > 0 ? max(0, min(1, (total - left) / total)) : 0
                 let d = StarportDelivery(fraction: f)
                 if starportDelivery != d { starportDelivery = d }
-            } else if starportDelivery != nil { starportDelivery = nil }
+            } else if starportDelivery != nil {
+                starportDelivery = nil
+            }
         } else {
             if pricedStarport != nil { pricedStarport = nil; starportPriceByType = [:] }
             if !starportCart.isEmpty { starportCart = [:] }
@@ -716,9 +770,13 @@ public final class GameModel {
 
     /// The selected structure's pool slot iff it's a **player-owned** structure (any type, not just a factory).
     private var selectedStructureSlot: Int? {
-        guard case let .structure(slot) = controller.selection, let state = simulation?.state,
-              slot < state.structures.count, state.structures[slot].o.flags.contains(.used),
-              state.structures[slot].o.houseID == UInt8(playerHouse.rawValue) else { return nil }
+        guard
+            case let .structure(slot) = controller.selection,
+            let state = simulation?.state,
+            slot < state.structures.count,
+            state.structures[slot].o.flags.contains(.used),
+            state.structures[slot].o.houseID == UInt8(playerHouse.rawValue)
+        else { return nil }
         return slot
     }
 
@@ -727,9 +785,13 @@ public final class GameModel {
     var isBuildingSelected: Bool { selectedStructureSlot != nil }
 
     /// Toggle the selected structure's self-repair.
-    func repairSelected() { if let slot = selectedStructureSlot { enqueue(.repair(structure: UInt16(slot))); audio.play(.select) } }
+    func repairSelected() {
+        if let slot = selectedStructureSlot { enqueue(.repair(structure: UInt16(slot))); audio.play(.select) }
+    }
     /// Toggle the selected structure's upgrade.
-    func upgradeSelected() { if let slot = selectedStructureSlot { enqueue(.upgrade(structure: UInt16(slot))); audio.play(.select) } }
+    func upgradeSelected() {
+        if let slot = selectedStructureSlot { enqueue(.upgrade(structure: UInt16(slot))); audio.play(.select) }
+    }
     /// The `s` key for a selected building: stop an in-progress repair or upgrade (a no-op otherwise). Sends
     /// the repair/upgrade *toggle* command only when the matching flag is set, so it can only ever stop —
     /// never start — the activity.
@@ -754,7 +816,10 @@ public final class GameModel {
 
     /// The unit price for a starport item (the rolled CHOAM price), or its base cost if not yet rolled.
     private func starportPrice(_ objectType: UInt16) -> Int {
-        Int(starportPriceByType[Int(objectType)] ?? UInt16(clamping: (UnitType(rawValue: Int(objectType)).map { Int(UnitInfo[$0].o.buildCredits) }) ?? 0))
+        Int(
+            starportPriceByType[Int(objectType)]
+                ?? UInt16(clamping: (UnitType(rawValue: Int(objectType)).map { Int(UnitInfo[$0].o.buildCredits) }) ?? 0)
+        )
     }
     /// Total units staged in the CHOAM cart.
     var cartUnitCount: Int { starportCart.values.reduce(0, +) }
@@ -770,10 +835,17 @@ public final class GameModel {
     }
     /// Stage one more `objectType` in the cart (no charge yet), if `canAddToCart`.
     func cartAdd(_ objectType: UInt16) {
-        guard let item = starportStock.first(where: { $0.objectType == objectType }), canAddToCart(item) else {
-            if (starportStock.first { $0.objectType == objectType }).map({ cartCount(objectType) >= $0.available }) == true {
+        guard
+            let item = starportStock.first(where: { $0.objectType == objectType }),
+            canAddToCart(item)
+        else {
+            if (starportStock.first { $0.objectType == objectType }).map({ cartCount(objectType) >= $0.available })
+                == true
+            {
                 postNotice("Out of stock")
-            } else { noticeInsufficientFunds() }
+            } else {
+                noticeInsufficientFunds()
+            }
             return
         }
         starportCart[objectType, default: 0] += 1
@@ -826,7 +898,10 @@ public final class GameModel {
     /// Recompute the selected factory's buildable list + in-progress build (cheap; published only on change
     /// so the inspector doesn't churn each tick). Clears when the selection isn't a player-owned factory.
     private func refreshBuild() {
-        guard let slot = selectedFactorySlot, let sim = simulation else {
+        guard
+            let slot = selectedFactorySlot,
+            let sim = simulation
+        else {
             if isFactorySelected { isFactorySelected = false }
             if !buildOptions.isEmpty { buildOptions = [] }
             if buildProgress != nil { buildProgress = nil }
@@ -846,10 +921,11 @@ public final class GameModel {
     /// The selected structure's pool slot, iff it's a **player-owned factory** (else `nil`).
     private var selectedFactorySlot: Int? {
         guard case let .structure(slot) = controller.selection, let state = simulation?.state,
-              slot < state.structures.count, state.structures[slot].o.flags.contains(.used),
-              let type = StructureType(rawValue: Int(state.structures[slot].o.type)),
-              StructureInfo[type].o.flags.contains(.factory), type != .starport,   // the starport orders, not builds
-              state.structures[slot].o.houseID == UInt8(playerHouse.rawValue) else { return nil }
+            slot < state.structures.count, state.structures[slot].o.flags.contains(.used),
+            let type = StructureType(rawValue: Int(state.structures[slot].o.type)),
+            StructureInfo[type].o.flags.contains(.factory), type != .starport,  // the starport orders, not builds
+            state.structures[slot].o.houseID == UInt8(playerHouse.rawValue)
+        else { return nil }
         return slot
     }
 
@@ -862,9 +938,13 @@ public final class GameModel {
         let pending = controller.pendingOrder
         let wasArmed = pending != nil && !controller.selectedUnits.isEmpty
         controller.leftClick(tileX: x, tileY: y, hit: hit)
-        if wasArmed { playOrderVoice(unitSlot: controller.selectedUnits.first, kind: pending) }
-        else if hit.unitSlot != nil { playSelectVoice(unitSlot: hit.unitSlot) }
-        else if !hit.isEmpty { audio.play(.select) }   // a structure
+        if wasArmed {
+            playOrderVoice(unitSlot: controller.selectedUnits.first, kind: pending)
+        } else if hit.unitSlot != nil {
+            playSelectVoice(unitSlot: hit.unitSlot)
+        } else if !hit.isEmpty {
+            audio.play(.select)
+        }  // a structure
         pendingOrder = controller.pendingOrder
         selection = currentInfo()
         // Clicking a bare tile (nothing selectable there, not completing an order) inspects that tile;
@@ -883,8 +963,12 @@ public final class GameModel {
         var slots: [Int] = []
         for i in state.units.indices where state.units[i].o.flags.contains(.used) {
             let u = state.units[i]
-            guard u.o.houseID == ph, !u.o.flags.contains(.isNotOnMap),
-                  let ut = UnitType(rawValue: Int(u.o.type)), UnitInfo[ut].flags.contains(.isNormalUnit) else { continue }
+            guard
+                u.o.houseID == ph,
+                !u.o.flags.contains(.isNotOnMap),
+                let ut = UnitType(rawValue: Int(u.o.type)),
+                UnitInfo[ut].flags.contains(.isNormalUnit)
+            else { continue }
             let tx = Int(u.o.position.x) / 256, ty = Int(u.o.position.y) / 256
             if tx >= minX, tx <= maxX, ty >= minY, ty <= maxY { slots.append(i) }
         }
@@ -921,7 +1005,9 @@ public final class GameModel {
     }
 
     // Inspector actions.
-    func arm(_ kind: OrderKind) { controller.beginOrder(kind); audio.play(.select); pendingOrder = controller.pendingOrder }
+    func arm(_ kind: OrderKind) {
+        controller.beginOrder(kind); audio.play(.select); pendingOrder = controller.pendingOrder
+    }
     func stopSelected() { controller.stopSelected(); audio.play(.acknowledge) }
 
     /// Issue a `PanelAction` (inspector button or keyboard shortcut). A targeted action (Attack/Move/Harvest)
@@ -931,7 +1017,9 @@ public final class GameModel {
         if action.targeted, let kind = action.type.orderKind {
             arm(kind)
         } else if !controller.selectedUnits.isEmpty {
-            for slot in controller.selectedUnits { enqueue(.setAction(unit: UInt16(slot), action: UInt8(action.type.rawValue))) }
+            for slot in controller.selectedUnits {
+                enqueue(.setAction(unit: UInt16(slot), action: UInt8(action.type.rawValue)))
+            }
             audio.play(.acknowledge)
         }
     }
@@ -940,9 +1028,13 @@ public final class GameModel {
     /// player actions (`actionsPlayer`), so e.g. `a`=Attack is ignored for a harvester, `r`=Return for a tank.
     /// Targeted actions (`selectionType == .target`: Attack/Move/Harvest) arm a click; the rest apply at once.
     func issueAction(_ type: ActionType) {
-        guard let slot = controller.selectedUnits.first, let state = simulation?.state, slot < state.units.count,
-              let ut = UnitType(rawValue: Int(state.units[slot].o.type)),
-              UnitInfo[ut].o.actionsPlayer.contains(type) else { return }
+        guard
+            let slot = controller.selectedUnits.first,
+            let state = simulation?.state,
+            slot < state.units.count,
+            let ut = UnitType(rawValue: Int(state.units[slot].o.type)),
+            UnitInfo[ut].o.actionsPlayer.contains(type)
+        else { return }
         issue(PanelAction(type: type, targeted: ActionInfo[type].selectionType == .target))
     }
     func deselect() { controller.deselect(); selection = nil; pendingOrder = nil; inspectedTile = nil; tileInfo = nil }
@@ -950,7 +1042,11 @@ public final class GameModel {
     /// Derive the inspected bare tile's parameters from the live map (nil unless a tile is being inspected and
     /// nothing is selected). Republished only on change so the per-tick refresh doesn't churn SwiftUI.
     private func refreshTileInfo() {
-        guard selection == nil, let (x, y) = inspectedTile, let sim = simulation else {
+        guard
+            selection == nil,
+            let (x, y) = inspectedTile,
+            let sim = simulation
+        else {
             if tileInfo != nil { tileInfo = nil }
             return
         }
@@ -960,11 +1056,17 @@ public final class GameModel {
         // The tile's house only means something on owned terrain (concrete / wall / a stamped structure).
         let owned = land == .concreteSlab || land == .wall || land == .structure || land == .destroyedWall
         let info = TileInfo(
-            tileX: x, tileY: y, packed: Int(packed), landscape: land.displayName,
-            groundTileID: Int(tile.groundTileID), overlayTileID: Int(tile.overlayTileID),
+            tileX: x,
+            tileY: y,
+            packed: Int(packed),
+            landscape: land.displayName,
+            groundTileID: Int(tile.groundTileID),
+            overlayTileID: Int(tile.overlayTileID),
             isSpice: land == .spice || land == .thickSpice,
             owner: owned ? HouseID(rawValue: Int(tile.houseID))?.displayName : nil,
-            isUnveiled: tile.isUnveiled, isBuildable: LandscapeInfo[land].isValidForStructure)
+            isUnveiled: tile.isUnveiled,
+            isBuildable: LandscapeInfo[land].isValidForStructure
+        )
         if info != tileInfo { tileInfo = info }
     }
 
@@ -978,7 +1080,12 @@ public final class GameModel {
         guard let slot = selectedFactorySlot else { return }
         // A locked item (missing prerequisites / campaign / upgrade) can't be started — the panel greys it,
         // but guard here too so a stale tap is a no-op.
-        guard let option = buildOptions.first(where: { $0.item.objectType == objectType }), option.isAvailable else { return }
+        guard
+            let option = buildOptions.first(where: { $0.item.objectType == objectType }),
+            option.isAvailable
+        else {
+            return
+        }
         // No credit gate: construction may be *started* underfunded — like the original, the cost is billed
         // incrementally and the build auto-pauses (`.onHold`) when the house runs out of money mid-build
         // (`structureTickStructure`, `structure.c:266`). (Starport CHOAM orders, by contrast, are paid upfront
@@ -1012,17 +1119,27 @@ public final class GameModel {
 
     /// Enter placement mode for the selected construction yard's finished structure.
     func beginPlacement() {
-        guard let slot = selectedFactorySlot, let sim = simulation,
-              let bs = sim.buildState(structureSlot: slot), bs.isReady, bs.isStructure,
-              let type = StructureType(rawValue: Int(bs.objectType)) else { return }
+        guard
+            let slot = selectedFactorySlot,
+            let sim = simulation,
+            let bs = sim.buildState(structureSlot: slot),
+            bs.isReady,
+            bs.isStructure,
+            let type = StructureType(rawValue: Int(bs.objectType))
+        else { return }
         let layout = StructureLayoutInfo[StructureInfo[type].layout]
         // Seed the hover tile to the viewport centre so the footprint projection shows immediately on the
         // button click (before the mouse moves over the map), then follows the cursor.
         let cx = max(0, min(63, Int(viewport.centerX / Viewport.tilePx)))
         let cy = max(0, min(63, Int(viewport.centerY / Viewport.tilePx)))
-        placement = PlacementState(factorySlot: slot, type: type,
-                                   width: Int(layout.size.width), height: Int(layout.size.height),
-                                   hoverTileX: cx, hoverTileY: cy)
+        placement = PlacementState(
+            factorySlot: slot,
+            type: type,
+            width: Int(layout.size.width),
+            height: Int(layout.size.height),
+            hoverTileX: cx,
+            hoverTileY: cy
+        )
         audio.play(.select)
     }
 
@@ -1058,7 +1175,13 @@ public final class GameModel {
     }
 
     private func isEnemy(_ x: Int, _ y: Int) -> Bool {
-        guard let state = simulation?.state, let slot = controller.selection.unitSlot, slot < state.units.count else { return false }
+        guard
+            let state = simulation?.state,
+            let slot = controller.selection.unitSlot,
+            slot < state.units.count
+        else {
+            return false
+        }
         let mine = state.unitHouseID(state.units[slot])
         let packed = UInt16(y * 64 + x)
         if let u = state.unitGetByPackedTile(packed) { return state.unitHouseID(state.units[u]) != mine }
@@ -1072,14 +1195,19 @@ public final class GameModel {
     func zoomOut() { viewport.zoomOut() }
     func scroll(dx: Double, dy: Double) { viewport.scroll(dx: dx, dy: dy, viewSize: viewSize) }
     /// Centre the map on a world point (a minimap click), in world points.
-    func centerOn(worldX: Double, worldY: Double) { viewport.center(onWorldX: worldX, worldY: worldY, viewSize: viewSize) }
+    func centerOn(worldX: Double, worldY: Double) {
+        viewport.center(onWorldX: worldX, worldY: worldY, viewSize: viewSize)
+    }
 
     // MARK: - Selection info derivation
 
     func selectionFootprint() -> (Int, Int) {
-        guard case let .structure(slot) = controller.selection, let state = simulation?.state,
-              slot < state.structures.count,
-              let type = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return (1, 1) }
+        guard
+            case let .structure(slot) = controller.selection,
+            let state = simulation?.state,
+            slot < state.structures.count,
+            let type = StructureType(rawValue: Int(state.structures[slot].o.type))
+        else { return (1, 1) }
         let layout = StructureLayoutInfo[StructureInfo[type].layout]
         return (Int(layout.size.width), Int(layout.size.height))
     }
@@ -1091,14 +1219,21 @@ public final class GameModel {
         guard let state = simulation?.state else { return [] }
         let tile = 16.0
         if case let .structure(slot) = controller.selection,
-           slot < state.structures.count, state.structures[slot].o.flags.contains(.used) {
+            slot < state.structures.count, state.structures[slot].o.flags.contains(.used)
+        {
             let (w, h) = selectionFootprint()
             let cornerX = Double(state.structures[slot].o.position.x) * tile / 256
             let cornerY = Double(state.structures[slot].o.position.y) * tile / 256
-            return [(cornerX + Double(w) * tile / 2, cornerY + Double(h) * tile / 2, Double(w) * tile, Double(h) * tile, true)]
+            return [
+                (
+                    cornerX + Double(w) * tile / 2, cornerY + Double(h) * tile / 2, Double(w) * tile, Double(h) * tile,
+                    true
+                )
+            ]
         }
         var boxes: [(centerX: Double, centerY: Double, width: Double, height: Double, isStructure: Bool)] = []
-        for slot in controller.selectedUnits where slot < state.units.count && state.units[slot].o.flags.contains(.used) {
+        for slot in controller.selectedUnits where slot < state.units.count && state.units[slot].o.flags.contains(.used)
+        {
             let p = state.units[slot].o.position
             boxes.append((Double(p.x) * tile / 256, Double(p.y) * tile / 256, tile, tile, false))
         }
@@ -1112,10 +1247,10 @@ public final class GameModel {
         if s.objectType != 0 && s.countDown != 0 { return "Building" }
         switch s.state {
             case .justBuilt: return "Constructing"
-            case .busy:      return "Working"
-            case .ready:     return "Ready"
-            case .idle:      return "Idle"
-            case .detect:    return "—"
+            case .busy: return "Working"
+            case .ready: return "Ready"
+            case .idle: return "Idle"
+            case .detect: return "—"
         }
     }
 
@@ -1124,8 +1259,11 @@ public final class GameModel {
         switch controller.selection {
             case .none: return nil
             case let .unit(slot):
-                guard slot < state.units.count, state.units[slot].o.flags.contains(.used),
-                      let type = UnitType(rawValue: Int(state.units[slot].o.type)) else { return nil }
+                guard
+                    slot < state.units.count,
+                    state.units[slot].o.flags.contains(.used),
+                    let type = UnitType(rawValue: Int(state.units[slot].o.type))
+                else { return nil }
                 let u = state.units[slot]
                 let house = HouseID(rawValue: Int(state.unitHouseID(u))) ?? .harkonnen
                 let p = Int(u.o.position.packed)
@@ -1140,24 +1278,44 @@ public final class GameModel {
                         actions.append(PanelAction(type: a, targeted: ActionInfo[a].selectionType == .target))
                     }
                 }
-                return SelectionInfo(kind: .unit, name: type.displayName, house: house.displayName,
-                                     typeRaw: UInt16(type.rawValue), houseID: house,
-                                     isPlayer: house == playerHouse, state: stateText, hitpoints: Int(u.o.hitpoints),
-                                     hitpointsMax: Int(UnitInfo[type].o.hitpoints), tileX: p % 64, tileY: p / 64,
-                                     unitActions: actions)
+                return SelectionInfo(
+                    kind: .unit,
+                    name: type.displayName,
+                    house: house.displayName,
+                    typeRaw: UInt16(type.rawValue),
+                    houseID: house,
+                    isPlayer: house == playerHouse,
+                    state: stateText,
+                    hitpoints: Int(u.o.hitpoints),
+                    hitpointsMax: Int(UnitInfo[type].o.hitpoints),
+                    tileX: p % 64,
+                    tileY: p / 64,
+                    unitActions: actions
+                )
             case let .structure(slot):
-                guard slot < state.structures.count, state.structures[slot].o.flags.contains(.used),
-                      let type = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return nil }
+                guard
+                    slot < state.structures.count,
+                    state.structures[slot].o.flags.contains(.used),
+                    let type = StructureType(rawValue: Int(state.structures[slot].o.type))
+                else { return nil }
                 let s = state.structures[slot]
                 let house = HouseID(rawValue: Int(s.o.houseID)) ?? .harkonnen
                 let p = Int(s.o.position.packed)
-                return SelectionInfo(kind: .structure, name: type.displayName, house: house.displayName,
-                                     typeRaw: UInt16(type.rawValue), houseID: house,
-                                     isPlayer: house == playerHouse, state: Self.structureState(s),
-                                     hitpoints: Int(s.o.hitpoints),
-                                     // Base HP as the max (matching OpenDUNE's health bar), not the
-                                     // power-degraded `s.hitpointsMax` (which can read below current HP).
-                                     hitpointsMax: Int(StructureInfo[type].o.hitpoints), tileX: p % 64, tileY: p / 64)
+                return SelectionInfo(
+                    kind: .structure,
+                    name: type.displayName,
+                    house: house.displayName,
+                    typeRaw: UInt16(type.rawValue),
+                    houseID: house,
+                    isPlayer: house == playerHouse,
+                    state: Self.structureState(s),
+                    hitpoints: Int(s.o.hitpoints),
+                    // Base HP as the max (matching OpenDUNE's health bar), not the
+                    // power-degraded `s.hitpointsMax` (which can read below current HP).
+                    hitpointsMax: Int(StructureInfo[type].o.hitpoints),
+                    tileX: p % 64,
+                    tileY: p / 64
+                )
         }
     }
 }
@@ -1187,18 +1345,18 @@ extension LandscapeType {
     /// A short human label for the tile inspector.
     var displayName: String {
         switch self {
-            case .normalSand:       "Sand"
-            case .partialRock:      "Rock (partial)"
+            case .normalSand: "Sand"
+            case .partialRock: "Rock (partial)"
             case .entirelyDune, .partialDune: "Dune"
-            case .entirelyRock, .mostlyRock:  "Rock"
+            case .entirelyRock, .mostlyRock: "Rock"
             case .entirelyMountain, .partialMountain: "Mountain"
-            case .spice:            "Spice"
-            case .thickSpice:       "Thick spice"
-            case .concreteSlab:     "Concrete"
-            case .wall:             "Wall"
-            case .structure:        "Structure"
-            case .destroyedWall:    "Rubble"
-            case .bloomField:       "Spice bloom"
+            case .spice: "Spice"
+            case .thickSpice: "Thick spice"
+            case .concreteSlab: "Concrete"
+            case .wall: "Wall"
+            case .structure: "Structure"
+            case .destroyedWall: "Rubble"
+            case .bloomField: "Spice bloom"
         }
     }
 }
@@ -1210,7 +1368,7 @@ struct StarportItem: Equatable {
     var objectType: UInt16
     var displayName: String
     var cost: Int
-    var available: Int          // current stock (`g_starportAvailable`); 0 here = sold out (−1 in the sim)
+    var available: Int  // current stock (`g_starportAvailable`); 0 here = sold out (−1 in the sim)
     var soldOut: Bool { available <= 0 }
 }
 
@@ -1243,15 +1401,15 @@ struct SuperWeaponState: Equatable {
     /// The launch button's title.
     var title: String {
         switch weapon {
-            case .missile:  "Launch Death Hand"
-            case .fremen:   "Call Fremen"
+            case .missile: "Launch Death Hand"
+            case .fremen: "Call Fremen"
             case .saboteur: "Deploy Saboteur"
         }
     }
     var systemImage: String {
         switch weapon {
-            case .missile:  "flame"
-            case .fremen:   "person.3"
+            case .missile: "flame"
+            case .fremen: "person.3"
             case .saboteur: "bolt.trianglebadge.exclamationmark"
         }
     }

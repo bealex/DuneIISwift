@@ -1,7 +1,8 @@
-import Testing
 import DuneIIContracts
-@testable import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
+@testable import DuneIIWorld
 
 /// Scenario reinforcements — the `GameLoop_House` reinforcement block (`Simulation+Reinforcements`): a loaded
 /// `[REINFORCEMENTS]` entry counts down and deploys at zero (an edge entry places the unit at a map edge; an
@@ -9,7 +10,7 @@ import DuneIIContracts
 @Suite("Reinforcements")
 struct ReinforcementTests {
     // A synthetic unit script (so `unitScript`/`combat` exist and `setAction` resolves a default action).
-    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func base() -> Simulation {
         var s = GameState(); s.playerHouseID = 0; s.mapScale = 0
@@ -18,8 +19,14 @@ struct ReinforcementTests {
         return Simulation(state: s, scriptInfo: info)
     }
 
-    private func setReinforcement(_ sim: inout Simulation, slot: Int, type: UnitType, house: UInt8,
-                                  location: UInt8, timeLeft: UInt16) {
+    private func setReinforcement(
+        _ sim: inout Simulation,
+        slot: Int,
+        type: UnitType,
+        house: UInt8,
+        location: UInt8,
+        timeLeft: UInt16
+    ) {
         var r = Reinforcement()
         r.unitType = UInt8(type.rawValue); r.houseID = house
         r.locationID = location; r.timeLeft = timeLeft; r.timeBetween = timeLeft
@@ -38,7 +45,7 @@ struct ReinforcementTests {
         var sim = base()
         setReinforcement(&sim, slot: 0, type: .trike, house: 0, location: 0 /* NORTH */, timeLeft: 1)
 
-        sim.tickReinforcements()   // timeLeft 1 → 0 → deploy
+        sim.tickReinforcements()  // timeLeft 1 → 0 → deploy
 
         let trikes = units(sim.state, type: .trike, house: 0)
         #expect(trikes.count == 1)
@@ -75,8 +82,8 @@ struct ReinforcementTests {
 
         sim.tickReinforcements(); #expect(sim.state.scenario.reinforcements[0].timeLeft == 2)
         sim.tickReinforcements(); #expect(sim.state.scenario.reinforcements[0].timeLeft == 1)
-        #expect(units(sim.state, type: .trike, house: 0).isEmpty)   // not yet
-        sim.tickReinforcements()                                     // 1 → 0 → deploy
+        #expect(units(sim.state, type: .trike, house: 0).isEmpty)  // not yet
+        sim.tickReinforcements()  // 1 → 0 → deploy
         #expect(units(sim.state, type: .trike, house: 0).count == 1)
     }
 
@@ -85,8 +92,8 @@ struct ReinforcementTests {
         var sim = base()
         setReinforcement(&sim, slot: 0, type: .trike, house: 0, location: 2 /* SOUTH */, timeLeft: 1)
 
-        sim.tickReinforcements()   // deploys
-        sim.tickReinforcements()   // empty slot — no second unit
+        sim.tickReinforcements()  // deploys
+        sim.tickReinforcements()  // empty slot — no second unit
         #expect(units(sim.state, type: .trike, house: 0).count == 1)
     }
 }

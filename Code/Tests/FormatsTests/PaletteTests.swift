@@ -1,14 +1,15 @@
 import Foundation
 import Testing
+
 @testable import DuneIIFormats
 
 @Suite("Palette")
 struct PaletteTests {
     @Test("parses 256 six-bit RGB triples")
     func parse() throws {
-        var bytes = [UInt8](repeating: 0, count: 768)
-        bytes[0] = 63; bytes[1] = 0; bytes[2] = 32   // color 0
-        bytes[3] = 10                                // color 1, red
+        var bytes = [ UInt8 ](repeating: 0, count: 768)
+        bytes[0] = 63; bytes[1] = 0; bytes[2] = 32  // color 0
+        bytes[3] = 10  // color 1, red
         let palette = try Palette(Data(bytes))
         #expect(palette.colors.count == 256)
         #expect(palette.colors[0] == Palette.Color(red: 63, green: 0, blue: 32))
@@ -24,7 +25,7 @@ struct PaletteTests {
 
     @Test("rgba8 expands a color and is opaque")
     func rgba8() throws {
-        var bytes = [UInt8](repeating: 0, count: 768)
+        var bytes = [ UInt8 ](repeating: 0, count: 768)
         bytes[0] = 63; bytes[1] = 0; bytes[2] = 32
         let palette = try Palette(Data(bytes))
         let color = palette.rgba8(0)

@@ -26,7 +26,7 @@ public struct IconMap: Sendable, Codable {
     private let values: [Int]
 
     public init(_ data: Data) throws {
-        let bytes = [UInt8](data)
+        let bytes = [ UInt8 ](data)
         guard bytes.count >= 2 else { throw DecodeError.truncated }
 
         var values: [Int] = []
@@ -43,7 +43,7 @@ public struct IconMap: Sendable, Codable {
         guard index >= 1, index < values.count else { return nil }
 
         let start = values[index]
-        guard start > 0, start < values.count else { return nil }   // a 0 offset marks EOF
+        guard start > 0, start < values.count else { return nil }  // a 0 offset marks EOF
 
         let next = (index + 1 < values.count) ? values[index + 1] : 0
         let end = (next > start && next <= values.count) ? next : values.count
@@ -74,32 +74,32 @@ public struct IconMap: Sendable, Codable {
     }
 
     private static let names = [
-        "",                       // 0: count
-        "Rock Craters",           // 1
-        "Sand Craters",           // 2
-        "Flying-Machine Crash",   // 3
-        "Dead Bodies",            // 4
-        "Sand Tracks",            // 5
-        "Walls",                  // 6
-        "Fog of War",             // 7
-        "Concrete Slab",          // 8
-        "Landscape",              // 9
-        "Spice Bloom",            // 10
-        "Palace",                 // 11
-        "Light Factory",          // 12
-        "Heavy Factory",          // 13
-        "Hi-Tech Factory",        // 14
-        "IX Research",            // 15
-        "WOR Facility",           // 16
-        "Construction Yard",      // 17
-        "Barracks",               // 18
-        "Windtrap",               // 19
-        "Starport",               // 20
-        "Spice Refinery",         // 21
-        "Repair Centre",          // 22
-        "Gun Turret",             // 23
-        "Rocket Turret",          // 24
-        "Spice Silo",             // 25
-        "Radar Outpost",          // 26
+        "",  // 0: count
+        "Rock Craters",  // 1
+        "Sand Craters",  // 2
+        "Flying-Machine Crash",  // 3
+        "Dead Bodies",  // 4
+        "Sand Tracks",  // 5
+        "Walls",  // 6
+        "Fog of War",  // 7
+        "Concrete Slab",  // 8
+        "Landscape",  // 9
+        "Spice Bloom",  // 10
+        "Palace",  // 11
+        "Light Factory",  // 12
+        "Heavy Factory",  // 13
+        "Hi-Tech Factory",  // 14
+        "IX Research",  // 15
+        "WOR Facility",  // 16
+        "Construction Yard",  // 17
+        "Barracks",  // 18
+        "Windtrap",  // 19
+        "Starport",  // 20
+        "Spice Refinery",  // 21
+        "Repair Centre",  // 22
+        "Gun Turret",  // 23
+        "Rocket Turret",  // 24
+        "Spice Silo",  // 25
+        "Radar Outpost",  // 26
     ]
 }

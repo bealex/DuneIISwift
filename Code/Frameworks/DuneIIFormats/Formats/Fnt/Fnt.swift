@@ -16,8 +16,8 @@ public enum Fnt {
 
     public struct Glyph: Equatable {
         public let width: Int
-        public let topRows: Int       // blank rows above the bitmap (unusedLines)
-        public let bitmapRows: Int    // rows actually stored (usedLines)
+        public let topRows: Int  // blank rows above the bitmap (unusedLines)
+        public let bitmapRows: Int  // rows actually stored (usedLines)
         /// `width * bitmapRows` 4-bit color indices, row-major. Index 0 is transparent.
         public let pixels: [UInt8]
     }
@@ -32,7 +32,7 @@ public enum Fnt {
         }
 
         public init(_ data: Data) throws {
-            let bytes = [UInt8](data)
+            let bytes = [ UInt8 ](data)
             guard bytes.count >= 14 else { throw DecodeError.truncated }
             guard bytes[2] == 0x00, bytes[3] == 0x05 else { throw DecodeError.invalidMagic }
 

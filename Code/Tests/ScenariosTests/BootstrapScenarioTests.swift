@@ -1,8 +1,9 @@
-import Foundation
-import Testing
 import DuneIIContracts
 import DuneIIFormats
 import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIIScenarios
 
 /// The shared bootstrap scenario `.INI` loads through our engine: terrain generated from `[MAP] Seed`
@@ -12,10 +13,12 @@ import DuneIIWorld
 struct BootstrapScenarioTests {
     private func load() throws -> GameState? {
         var repo = URL(fileURLWithPath: #filePath)
-        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }   // Code/Tests/ScenariosTests → repo root
+        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }  // Code/Tests/ScenariosTests → repo root
         guard let icon = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")),
-              let iniData = try? Data(contentsOf: URL(fileURLWithPath: #filePath)
-                  .deletingLastPathComponent().appendingPathComponent("Fixtures/bootstrap.ini"))
+            let iniData = try? Data(
+                contentsOf: URL(fileURLWithPath: #filePath)
+                    .deletingLastPathComponent().appendingPathComponent("Fixtures/bootstrap.ini")
+            )
         else { return nil }
         var state = GameState()
         state.loadScenario(ini: Ini(iniData), iconMap: try IconMap(icon))

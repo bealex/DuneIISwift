@@ -62,22 +62,31 @@ public extension GameState {
                     case .setTimeout:
                         explosions[i].timeOut = timerGUI &+ UInt32(max(0, Int(parameter)))
                     case .setRandomTimeout:
-                        explosions[i].timeOut = timerGUI &+ UInt32(randomLCG.range(0, UInt16(truncatingIfNeeded: parameter)))
+                        explosions[i].timeOut =
+                            timerGUI &+ UInt32(randomLCG.range(0, UInt16(truncatingIfNeeded: parameter)))
                     case .moveYPosition:
-                        explosions[i].position.y = UInt16(truncatingIfNeeded: Int(explosions[i].position.y) + Int(parameter))
+                        explosions[i].position.y = UInt16(
+                            truncatingIfNeeded: Int(explosions[i].position.y) + Int(parameter)
+                        )
                     case .tileDamage:
                         explosionTileDamage(explosions[i].position.packed)
                     case .playVoice:
-                        emitSound(Int(parameter), at: explosions[i].position)   // Explosion_Func_PlayVoice
+                        emitSound(Int(parameter), at: explosions[i].position)  // Explosion_Func_PlayVoice
                     case .screenShake:
-                        break   // SEAM: video
+                        break  // SEAM: video
                     case .setAnimation:
                         // `Explosion_Func_SetAnimation` (explosion.c:175): start a map-effect animation — the
                         // crash wreck for the ornithopter (id 0) / carryall (id 4) crash explosions. Icon
                         // group 3 = "Flying-Machine Crash". Runs only on the explosion-ticking (visual) path,
                         // so it never perturbs a parity run.
-                        animationStart(tableIndex: Int(max(0, parameter)), tile: explosions[i].position,
-                                       tileLayout: 0, houseID: explosions[i].houseID, iconGroup: 3, kind: .map)
+                        animationStart(
+                            tableIndex: Int(max(0, parameter)),
+                            tile: explosions[i].position,
+                            tileLayout: 0,
+                            houseID: explosions[i].houseID,
+                            iconGroup: 3,
+                            kind: .map
+                        )
                     case .bloomExplosion:
                         // Explosion_Func_BloomExplosion (explosion.c:157): if the tile under the explosion is
                         // still the spice bloom, queue it for Map_Bloom_ExplodeSpice (a Simulation primitive,
@@ -120,7 +129,7 @@ public extension GameState {
     private func mapIsPositionUnveiled(_ pos: Int) -> Bool {
         guard map[pos].isUnveiled else { return false }
         let o = UInt16(map[pos].overlayTileID)
-        return o > tileIDs.veiled || o < tileIDs.veiled &- 15   // Tile_IsUnveiled
+        return o > tileIDs.veiled || o < tileIDs.veiled &- 15  // Tile_IsUnveiled
     }
 
     /// `Explosion_Func_Stop` (`explosion.c:205`): clear the tile's `hasExplosion` and free the slot.

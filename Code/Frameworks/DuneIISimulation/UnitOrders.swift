@@ -13,10 +13,12 @@ public struct UnitOrders: Sendable {
     public let map: any MapPrimitives
     public let scriptInfo: ScriptInfo
 
-    public init(scriptInfo: ScriptInfo,
-                interpreter: any ScriptInterpreter = DefaultScriptInterpreter(),
-                primitives: any UnitPrimitives = DefaultUnitPrimitives(),
-                map: any MapPrimitives = DefaultMapPrimitives()) {
+    public init(
+        scriptInfo: ScriptInfo,
+        interpreter: any ScriptInterpreter = DefaultScriptInterpreter(),
+        primitives: any UnitPrimitives = DefaultUnitPrimitives(),
+        map: any MapPrimitives = DefaultMapPrimitives()
+    ) {
         self.scriptInfo = scriptInfo
         self.actions = UnitActions(interpreter: interpreter)
         self.primitives = primitives
@@ -26,20 +28,25 @@ public struct UnitOrders: Sendable {
     /// Apply a `Command` (the input seam) to the unit / factory it names.
     public func apply(_ command: Command, in state: inout GameState) {
         switch command {
-            case let .move(unit, tile):    order(slot: Int(unit), action: .move, targetPacked: tile, in: &state)
-            case let .attack(unit, tile):  order(slot: Int(unit), action: .attack, targetPacked: tile, in: &state)
+            case let .move(unit, tile): order(slot: Int(unit), action: .move, targetPacked: tile, in: &state)
+            case let .attack(unit, tile): order(slot: Int(unit), action: .attack, targetPacked: tile, in: &state)
             case let .harvest(unit, tile): order(slot: Int(unit), action: .harvest, targetPacked: tile, in: &state)
             case let .retreat(unit, tile): order(slot: Int(unit), action: .retreat, targetPacked: tile, in: &state)
-            case let .stop(unit):          stop(slot: Int(unit), in: &state)
+            case let .stop(unit): stop(slot: Int(unit), in: &state)
             case let .setAction(unit, action): setUnitAction(slot: Int(unit), action: action, in: &state)
             case let .build(structure, objectType):
                 _ = combat.structureBuildObject(slot: Int(structure), objectType: objectType, in: &state)
             case let .starportOrder(structure, objectType, price):
-                _ = combat.structureStarportOrder(slot: Int(structure), objectType: objectType, price: price, in: &state)
+                _ = combat.structureStarportOrder(
+                    slot: Int(structure),
+                    objectType: objectType,
+                    price: price,
+                    in: &state
+                )
             case let .repair(structure):
-                _ = state.structureSetRepairingState(Int(structure), state: -1)   // toggle
+                _ = state.structureSetRepairingState(Int(structure), state: -1)  // toggle
             case let .upgrade(structure):
-                _ = state.structureSetUpgradingState(Int(structure), state: -1)    // toggle
+                _ = state.structureSetUpgradingState(Int(structure), state: -1)  // toggle
             case let .cancelBuild(structure):
                 state.structureCancelBuild(Int(structure))
             case let .pauseBuild(structure):
@@ -49,8 +56,8 @@ public struct UnitOrders: Sendable {
             case let .placeStructure(structure, tile):
                 combat.structurePlaceReady(factory: Int(structure), position: tile, in: &state)
             case .activateSuperWeapon, .launchHouseMissile:
-                break   // Palace super-weapon — handled at the Simulation level (`Simulation.applyPalaceCommand`),
-                        // which owns the activation context; the caller routes it there before this applier.
+                break  // Palace super-weapon — handled at the Simulation level (`Simulation.applyPalaceCommand`),
+        // which owns the activation context; the caller routes it there before this applier.
         }
     }
 
@@ -97,9 +104,9 @@ public struct UnitOrders: Sendable {
         actions.setAction(slot: slot, action: UInt8(action.rawValue), scriptInfo: scriptInfo, in: &state)
 
         switch action {
-            case .move:    setDestination(slot: slot, encoded, in: &state)
+            case .move: setDestination(slot: slot, encoded, in: &state)
             case .harvest: state.units[slot].targetMove = encoded
-            default:       setTarget(slot: slot, encoded, in: &state)
+            default: setTarget(slot: slot, encoded, in: &state)
         }
     }
 
@@ -121,7 +128,7 @@ public struct UnitOrders: Sendable {
     /// `Unit_FindTargetAround` (`unit.c`): the tile of a unit on or adjacent to `packed` (preferring a
     /// structure / bloom field at `packed` itself), else `packed`.
     public func findTargetAround(_ packed: UInt16, in state: GameState) -> UInt16 {
-        let around = [0, -1, 1, -64, 64, -65, -63, 65, 63]
+        let around = [ 0, -1, 1, -64, 64, -65, -63, 65, 63 ]
         if state.structureGetByPackedTile(packed) != nil { return packed }
         if map.landscapeType(state.map[Int(packed)], tileIDs: state.tileIDs) == .bloomField { return packed }
         for offset in around {

@@ -23,12 +23,20 @@ struct ContentView: View {
         // is the space bar).
         HStack(spacing: 0) {
             mapArea
-            GameSidebar(model: model, fullScreen: isFullScreen,
-                        onSave: { presentSaveGame(model) }, onLoad: { presentLoadGame(model) })
+            GameSidebar(
+                model: model,
+                fullScreen: isFullScreen,
+                onSave: { presentSaveGame(model) },
+                onLoad: { presentLoadGame(model) }
+            )
         }
         .background(WindowAccessor { window in tools.attachToMain(window) })
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in isFullScreen = true }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in isFullScreen = false }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+            isFullScreen = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+            isFullScreen = false
+        }
     }
 
     /// The map fills the window to the left of the sidebar (black where the world doesn't reach); the

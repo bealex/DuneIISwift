@@ -13,7 +13,7 @@ import DuneIIWorld
 /// (wall destruction) are seams — none change the deterministic *unit* state these assert; the structure
 /// path needs `Structure_Damage` (not yet ported) and is unreachable for the unit-vs-unit goldens.
 extension UnitMovement {
-    private static let explosionDeathHand: UInt16 = 11        // EXPLOSION_DEATH_HAND
+    private static let explosionDeathHand: UInt16 = 11  // EXPLOSION_DEATH_HAND
     private static let explosionSandwormSwallow: UInt16 = 13  // EXPLOSION_SANDWORM_SWALLOW
 
     /// `Unit_Damage` (`unit.c:1530`): apply `damage` to the unit, returning true iff it died. Drains
@@ -28,7 +28,7 @@ extension UnitMovement {
         let ui = UnitInfo[ut]
         if !ui.flags.contains(.isNormalUnit) && ut != .sandworm { return false }
 
-        let wasAlive = state.units[slot].o.hitpoints != 0   // for the death-cue gate (`Unit_Damage`'s `alive`)
+        let wasAlive = state.units[slot].o.hitpoints != 0  // for the death-cue gate (`Unit_Damage`'s `alive`)
         if state.units[slot].o.hitpoints >= damage {
             state.units[slot].o.hitpoints &-= damage
         } else {
@@ -41,9 +41,12 @@ extension UnitMovement {
 
         if state.units[slot].o.hitpoints == 0 {
             state.unitRemovePlayer(slot)
-            if ut == .harvester {   // a dying harvester spills its load as spice
-                map.fillCircleWithSpice(state.units[slot].o.position.packed,
-                                        radius: UInt16(state.units[slot].amount) / 32, in: &state)
+            if ut == .harvester {  // a dying harvester spills its load as spice
+                map.fillCircleWithSpice(
+                    state.units[slot].o.position.packed,
+                    radius: UInt16(state.units[slot].amount) / 32,
+                    in: &state
+                )
             }
             // The spoken "unit destroyed" cue (`Sound_Output_Feedback`, `unit.c:1558`): a saboteur uses its
             // own feedback (20); every other unit (unless it's flagged `noMessageOnDeath` — bullets/worm/
@@ -53,7 +56,9 @@ extension UnitMovement {
             if ut == .saboteur {
                 state.pendingFeedback.append(20)
             } else if !ui.o.flags.contains(.noMessageOnDeath), wasAlive {
-                state.pendingFeedback.append((houseID == state.playerHouseID || state.campaignID > 3) ? UInt16(houseID) &+ 14 : 13)
+                state.pendingFeedback.append(
+                    (houseID == state.playerHouseID || state.campaignID > 3) ? UInt16(houseID) &+ 14 : 13
+                )
             }
             actions.setAction(slot: slot, action: UInt8(ActionType.die.rawValue), scriptInfo: scriptInfo, in: &state)
             return true
@@ -62,13 +67,19 @@ extension UnitMovement {
         // A ranged hit leaves a visual impact crater at the unit (hitpoints 0 ⇒ no further damage/reactions,
         // so no recursion). IMPACT_SMALL for light hits, IMPACT_MEDIUM otherwise.
         if range != 0 {
-            mapMakeExplosion(type: UInt16(damage < 25 ? ExplosionType.impactSmall.rawValue : ExplosionType.impactMedium.rawValue),
-                             position: state.units[slot].o.position, hitpoints: 0, origin: 0, in: &state)
+            mapMakeExplosion(
+                type: UInt16(damage < 25 ? ExplosionType.impactSmall.rawValue : ExplosionType.impactMedium.rawValue),
+                position: state.units[slot].o.position,
+                hitpoints: 0,
+                origin: 0,
+                in: &state
+            )
         }
 
         if houseID != state.playerHouseID
             && state.units[slot].actionID == UInt8(ActionType.ambush.rawValue)
-            && ut != .harvester {
+            && ut != .harvester
+        {
             actions.setAction(slot: slot, action: UInt8(ActionType.attack.rawValue), scriptInfo: scriptInfo, in: &state)
         }
 
@@ -79,14 +90,19 @@ extension UnitMovement {
         }
 
         if ut == .troopers || ut == .infantry {
-            state.units[slot].o.type &+= 2   // infantry→soldier-pair, troopers→trooper-pair
+            state.units[slot].o.type &+= 2  // infantry→soldier-pair, troopers→trooper-pair
             if let ut2 = UnitType(rawValue: Int(state.units[slot].o.type)) {
                 state.units[slot].o.hitpoints = UnitInfo[ut2].o.hitpoints
             }
             // SEAM: Unit_UpdateMap(2) render redraw.
             let toughness = HouseInfo[HouseID(rawValue: Int(state.units[slot].o.houseID)) ?? .harkonnen].toughness
             if UInt16(state.random256.next()) < toughness {
-                actions.setAction(slot: slot, action: UInt8(ActionType.retreat.rawValue), scriptInfo: scriptInfo, in: &state)
+                actions.setAction(
+                    slot: slot,
+                    action: UInt8(ActionType.retreat.rawValue),
+                    scriptInfo: scriptInfo,
+                    in: &state
+                )
             }
         }
 
@@ -144,7 +160,13 @@ extension UnitMovement {
     /// `position`, then deviates every unit within `radius` tiles to `houseID` (probability 0 ⇒ each
     /// unit's owner toughness). Each eligible unit costs one `Random256` draw — gated off the goldens
     /// (no deviator missile appears in them).
-    public func mapDeviateArea(type: UInt16, position: Tile32, radius: UInt16, houseID: UInt8, in state: inout GameState) {
+    public func mapDeviateArea(
+        type: UInt16,
+        position: Tile32,
+        radius: UInt16,
+        houseID: UInt8,
+        in state: inout GameState
+    ) {
         state.explosionStart(type: Int(type), position: position)
         var find = PoolFind()
         while let u = state.unitFind(&find) {
@@ -162,10 +184,15 @@ extension UnitMovement {
         if state.validateStrictIfZero == 0 {
             if let u = state.unitGetByPackedTile(packed) { state.unitRemove(u) }
             state.map[Int(packed)].groundTileID = state.mapBaseTileID[Int(packed)] & 0x1FF
-            mapMakeExplosion(type: UInt16(ExplosionType.spiceBloomTremor.rawValue),
-                             position: Tile32.unpack(packed), hitpoints: 0, origin: 0, in: &state)
+            mapMakeExplosion(
+                type: UInt16(ExplosionType.spiceBloomTremor.rawValue),
+                position: Tile32.unpack(packed),
+                hitpoints: 0,
+                origin: 0,
+                in: &state
+            )
         }
-        if houseID == state.playerHouseID { state.pendingFeedback.append(36) }   // "Spice bloom located"
+        if houseID == state.playerHouseID { state.pendingFeedback.append(36) }  // "Spice bloom located"
         map.fillCircleWithSpice(packed, radius: 5, in: &state)
     }
 
@@ -175,7 +202,13 @@ extension UnitMovement {
     /// toward `origin` (team-staging → HUNT, harvesters flee a foot attacker, guards-by-scenario → HUNT,
     /// else `Unit_SetTarget`). Structure damage, wall destruction, and the `Explosion_Start` animation are
     /// seams. `hitpoints == 0` (a pure visual blast) does neither damage nor reactions.
-    public func mapMakeExplosion(type: UInt16, position: Tile32, hitpoints: UInt16, origin: UInt16, in state: inout GameState) {
+    public func mapMakeExplosion(
+        type: UInt16,
+        position: Tile32,
+        hitpoints: UInt16,
+        origin: UInt16,
+        in state: inout GameState
+    ) {
         let reactionDistance: UInt16 = (type == Self.explosionDeathHand) ? 32 : 16
         let positionPacked = position.packed
         let fns = UnitScriptFunctions(unitPrimitives: unit)
@@ -198,28 +231,46 @@ extension UnitMovement {
 
                 guard let us = state.indexGetUnit(origin) else { continue }
                 if us == u { continue }
-                if house.areAllied(state.unitHouseID(state.units[u]), state.unitHouseID(state.units[us]),
-                                   playerHouseID: state.playerHouseID) { continue }
+                if house.areAllied(
+                    state.unitHouseID(state.units[u]),
+                    state.unitHouseID(state.units[us]),
+                    playerHouseID: state.playerHouseID
+                ) {
+                    continue
+                }
 
                 // Team reaction (no team in the unit-vs-unit goldens, but ported faithfully).
                 if state.units[u].team != 0 {
                     let t = Int(state.units[u].team) - 1
                     if state.teams[t].action == UInt16(TeamActionType.staging.rawValue) {
                         state.unitRemoveFromTeam(u)
-                        actions.setAction(slot: u, action: UInt8(ActionType.hunt.rawValue), scriptInfo: scriptInfo, in: &state)
+                        actions.setAction(
+                            slot: u,
+                            action: UInt8(ActionType.hunt.rawValue),
+                            scriptInfo: scriptInfo,
+                            in: &state
+                        )
                         continue
                     }
-                    guard let target = state.indexGetUnit(state.teams[t].target),
-                          let tType = UnitType(rawValue: Int(state.units[target].o.type)) else { continue }
+                    guard
+                        let target = state.indexGetUnit(state.teams[t].target),
+                        let tType = UnitType(rawValue: Int(state.units[target].o.type))
+                    else { continue }
                     if UnitInfo[tType].bulletType == 0xFF { state.teams[t].target = origin }
                     continue
                 }
 
                 if uType == .harvester {
                     if let usType = UnitType(rawValue: Int(state.units[us].o.type)),
-                       UnitInfo[usType].movementType == .foot, state.units[u].targetMove == 0 {
+                        UnitInfo[usType].movementType == .foot, state.units[u].targetMove == 0
+                    {
                         if state.units[u].actionID != UInt8(ActionType.move.rawValue) {
-                            actions.setAction(slot: u, action: UInt8(ActionType.move.rawValue), scriptInfo: scriptInfo, in: &state)
+                            actions.setAction(
+                                slot: u,
+                                action: UInt8(ActionType.move.rawValue),
+                                scriptInfo: scriptInfo,
+                                in: &state
+                            )
                         }
                         state.units[u].targetMove = origin
                         continue
@@ -228,15 +279,28 @@ extension UnitMovement {
 
                 if ui.bulletType == 0xFF { continue }
 
-                if state.units[u].actionID == UInt8(ActionType.guard_.rawValue) && state.units[u].o.flags.contains(.byScenario) {
-                    actions.setAction(slot: u, action: UInt8(ActionType.hunt.rawValue), scriptInfo: scriptInfo, in: &state)
+                if state.units[u].actionID == UInt8(ActionType.guard_.rawValue)
+                    && state.units[u].o.flags.contains(.byScenario)
+                {
+                    actions.setAction(
+                        slot: u,
+                        action: UInt8(ActionType.hunt.rawValue),
+                        scriptInfo: scriptInfo,
+                        in: &state
+                    )
                 }
 
-                if state.units[u].targetAttack != 0 && state.units[u].actionID != UInt8(ActionType.hunt.rawValue) { continue }
+                if state.units[u].targetAttack != 0 && state.units[u].actionID != UInt8(ActionType.hunt.rawValue) {
+                    continue
+                }
 
                 if state.units[u].targetAttack != 0, state.indexGetUnit(state.units[u].targetAttack) != nil {
                     let packed = state.units[u].o.position.packed
-                    if Tile32.distancePacked(state.indexGetTile(state.units[u].targetAttack).packed, packed) <= ui.fireDistance { continue }
+                    if Tile32.distancePacked(state.indexGetTile(state.units[u].targetAttack).packed, packed)
+                        <= ui.fireDistance
+                    {
+                        continue
+                    }
                 }
 
                 fns.unitSetTarget(slot: u, origin, in: &state)
@@ -271,9 +335,13 @@ extension UnitMovement {
     /// The first half of a ground unit's DIE branch (`ExplosionSingle(type)` → `Die`).
     public func explosionSingle(slot: Int, type: UInt16, in state: inout GameState) -> UInt16 {
         guard let ut = UnitType(rawValue: Int(state.units[slot].o.type)) else { return 0 }
-        mapMakeExplosion(type: type, position: state.units[slot].o.position,
-                         hitpoints: UnitInfo[ut].o.hitpoints,
-                         origin: state.indexEncode(state.units[slot].o.index, type: .unit), in: &state)
+        mapMakeExplosion(
+            type: type,
+            position: state.units[slot].o.position,
+            hitpoints: UnitInfo[ut].o.hitpoints,
+            origin: state.indexEncode(state.units[slot].o.index, type: .unit),
+            in: &state
+        )
         return 0
     }
 
@@ -293,11 +361,16 @@ extension UnitMovement {
                 state.scenario.killedEnemy &+= 1; state.scenario.score &+= credits
             }
         }
-        state.unitRemove(slot)   // includes Unit_UntargetMe + Unit_HouseUnitCount_Remove + Script_Reset
+        state.unitRemove(slot)  // includes Unit_UntargetMe + Unit_HouseUnitCount_Remove + Script_Reset
         engine.reset()
         if isSaboteur {
-            mapMakeExplosion(type: UInt16(ExplosionType.saboteurDeath.rawValue), position: position,
-                             hitpoints: 300, origin: 0, in: &state)
+            mapMakeExplosion(
+                type: UInt16(ExplosionType.saboteurDeath.rawValue),
+                position: position,
+                hitpoints: 300,
+                origin: 0,
+                in: &state
+            )
         }
         return 0
     }
@@ -351,7 +424,7 @@ extension UnitMovement {
             // SEAM: Unit_UpdateMap(2) render redraw.
             if Int16(bitPattern: distance) < 32 { return 1 }
             engine.delay = 2
-            engine.scriptPC &-= 1                                       // re-run this opcode next time (Script_Run: script->script--)
+            engine.scriptPC &-= 1  // re-run this opcode next time (Script_Run: script->script--)
             return 0
         }
 
@@ -374,13 +447,23 @@ extension UnitMovement {
     /// argument order; C's arg-eval order is compiler-defined and this path isn't golden-pinned).
     public func explosionMultiple(slot: Int, radius: UInt16, in state: inout GameState) -> UInt16 {
         let pos = state.units[slot].o.position
-        mapMakeExplosion(type: UInt16(ExplosionType.deathHand.rawValue), position: pos,
-                         hitpoints: state.randomLCG.range(25, 50), origin: 0, in: &state)
+        mapMakeExplosion(
+            type: UInt16(ExplosionType.deathHand.rawValue),
+            position: pos,
+            hitpoints: state.randomLCG.range(25, 50),
+            origin: 0,
+            in: &state
+        )
         for _ in 0 ..< 7 {
             let p = Tile32.moveByRandom(pos, distance: radius, center: false, rng: &state.random256)
             let hp = state.randomLCG.range(75, 150)
-            mapMakeExplosion(type: UInt16(ExplosionType.deathHand.rawValue), position: p,
-                             hitpoints: hp, origin: 0, in: &state)
+            mapMakeExplosion(
+                type: UInt16(ExplosionType.deathHand.rawValue),
+                position: p,
+                hitpoints: hp,
+                origin: 0,
+                in: &state
+            )
         }
         return 0
     }

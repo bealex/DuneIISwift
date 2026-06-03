@@ -22,9 +22,9 @@ public enum SpriteCatalog {
 
     public struct Group: Hashable, Sendable {
         public let unit: String
-        public let part: String        // "body" or "turret"
-        public let shp: String         // e.g. "UNITS.SHP"
-        public let firstFrame: Int     // local frame index within `shp`
+        public let part: String  // "body" or "turret"
+        public let shp: String  // e.g. "UNITS.SHP"
+        public let firstFrame: Int  // local frame index within `shp`
         public let frameCount: Int
         public let kind: GroupKind
 

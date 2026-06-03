@@ -73,7 +73,7 @@ struct TeamScriptFunctions: Sendable {
         if count == 0 { return 0 }
         averageX /= count
         averageY /= count
-        state.teams[slot].position = Tile32(x: averageX << 8, y: averageY << 8)   // Tile_MakeXY
+        state.teams[slot].position = Tile32(x: averageX << 8, y: averageY << 8)  // Tile_MakeXY
 
         var distance: UInt16 = 0
         var find2 = PoolFind(houseID: houseID)
@@ -84,8 +84,10 @@ struct TeamScriptFunctions: Sendable {
         distance /= count
 
         if state.teams[slot].target == 0 || state.teams[slot].targetTile == 0 { return distance }
-        if Tile32.distancePacked(Tile32.packXY(x: averageX, y: averageY),
-                                 state.indexGetTile(state.teams[slot].target).packed) <= 10 {
+        if Tile32.distancePacked(
+            Tile32.packXY(x: averageX, y: averageY),
+            state.indexGetTile(state.teams[slot].target).packed
+        ) <= 10 {
             state.teams[slot].targetTile = 2
         }
         return distance
@@ -97,8 +99,14 @@ struct TeamScriptFunctions: Sendable {
     /// heading inward) is ordered to Move to a fresh random tile within `distance` of the centre; the rest
     /// Guard. Returns how many were (re)ordered to Move. Needs the unit-action layer (`Unit_SetAction` /
     /// `Unit_SetDestination`), so it clean-halts without the unit runner.
-    func moveOrGuardMembers(slot: Int, distance: UInt16, unitScript: ScriptInfo, actions: UnitActions,
-                            unitFuncs: UnitScriptFunctions, in state: inout GameState) -> UInt16 {
+    func moveOrGuardMembers(
+        slot: Int,
+        distance: UInt16,
+        unitScript: ScriptInfo,
+        actions: UnitActions,
+        unitFuncs: UnitScriptFunctions,
+        in state: inout GameState
+    ) -> UInt16 {
         let houseID = state.teams[slot].houseID
         let teamPos = state.teams[slot].position
         var count: UInt16 = 0
@@ -121,7 +129,8 @@ struct TeamScriptFunctions: Sendable {
             }
 
             if (distanceUnitDest < distanceTeamDest && (distance &+ 2) < distanceUnitTeam)
-                || (distanceUnitDest >= distanceTeamDest && distanceUnitTeam > distance) {
+                || (distanceUnitDest >= distanceTeamDest && distanceUnitTeam > distance)
+            {
                 actions.setAction(slot: u, action: UInt8(ActionType.move.rawValue), scriptInfo: unitScript, in: &state)
                 let tile = Tile32.moveByRandom(teamPos, distance: distance << 4, center: true, rng: &state.random256)
                 unitFuncs.unitSetDestination(slot: u, state.indexEncode(tile.packed, type: .tile), in: &state)
@@ -138,8 +147,13 @@ struct TeamScriptFunctions: Sendable {
     /// otherwise it's set to Attack, sent to a firing position offset a random direction-quadrant around
     /// the target (falling back to the target tile itself if that spot is occupied), and given the target.
     /// No-op (returns 0) when the team has no target. Needs the unit-action layer.
-    func issueAttackOrders(slot: Int, unitScript: ScriptInfo, actions: UnitActions,
-                           unitFuncs: UnitScriptFunctions, in state: inout GameState) -> UInt16 {
+    func issueAttackOrders(
+        slot: Int,
+        unitScript: ScriptInfo,
+        actions: UnitActions,
+        unitFuncs: UnitScriptFunctions,
+        in state: inout GameState
+    ) -> UInt16 {
         let target = state.teams[slot].target
         if target == 0 { return 0 }
         let houseID = state.teams[slot].houseID
@@ -158,7 +172,12 @@ struct TeamScriptFunctions: Sendable {
             }
 
             if state.units[u].actionID != UInt8(ActionType.attack.rawValue) {
-                actions.setAction(slot: u, action: UInt8(ActionType.attack.rawValue), scriptInfo: unitScript, in: &state)
+                actions.setAction(
+                    slot: u,
+                    action: UInt8(ActionType.attack.rawValue),
+                    scriptInfo: unitScript,
+                    in: &state
+                )
             }
 
             // A firing position: the target's facing quadrant toward the unit, jittered, `distance` out.
@@ -179,8 +198,14 @@ struct TeamScriptFunctions: Sendable {
     /// (`Script_Reset` + `Script_Load`). A no-op if it's already that action. The reload targets the
     /// passed-in `engine` (the live VM copy), not `state.teams[slot].script` — the runner writes the
     /// engine back after the run, so mutating `state` here would be clobbered.
-    func load(slot: Int, type: UInt16, interpreter: any ScriptInterpreter, scriptInfo: ScriptInfo,
-              engine: inout ScriptEngine, in state: inout GameState) -> UInt16 {
+    func load(
+        slot: Int,
+        type: UInt16,
+        interpreter: any ScriptInterpreter,
+        scriptInfo: ScriptInfo,
+        engine: inout ScriptEngine,
+        in state: inout GameState
+    ) -> UInt16 {
         if state.teams[slot].action == type { return 0 }
         state.teams[slot].action = type
         interpreter.load(&engine, info: scriptInfo, typeID: Int(type & 0xFF))
@@ -188,10 +213,21 @@ struct TeamScriptFunctions: Sendable {
     }
 
     /// `Script_Team_Load2` (`team.c:322`): reload the team's *starting* action script (`actionStart`).
-    func load2(slot: Int, interpreter: any ScriptInterpreter, scriptInfo: ScriptInfo,
-               engine: inout ScriptEngine, in state: inout GameState) -> UInt16 {
-        load(slot: slot, type: state.teams[slot].actionStart, interpreter: interpreter,
-             scriptInfo: scriptInfo, engine: &engine, in: &state)
+    func load2(
+        slot: Int,
+        interpreter: any ScriptInterpreter,
+        scriptInfo: ScriptInfo,
+        engine: inout ScriptEngine,
+        in state: inout GameState
+    ) -> UInt16 {
+        load(
+            slot: slot,
+            type: state.teams[slot].actionStart,
+            interpreter: interpreter,
+            scriptInfo: scriptInfo,
+            engine: &engine,
+            in: &state
+        )
     }
 
     /// `Script_Team_FindBestTarget` (`team.c:256`): scan the team's members for the first non-zero best
@@ -209,7 +245,9 @@ struct TeamScriptFunctions: Sendable {
             if state.teams[slot].target == target { return target }
             state.teams[slot].target = target
             state.teams[slot].targetTile = state.tileGetTileInDirectionOf(
-                from: state.units[u].o.position.packed, to: state.indexGetTile(target).packed)
+                from: state.units[u].o.position.packed,
+                to: state.indexGetTile(target).packed
+            )
             return target
         }
         return 0

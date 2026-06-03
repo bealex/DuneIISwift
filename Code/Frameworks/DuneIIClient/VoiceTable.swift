@@ -5,15 +5,15 @@
 enum VoiceTable {
     /// voiceID → `g_table_voices` index (the non-`0xFFFF` combat-relevant entries).
     static let mapping: [Int: Int] = [
-        24: 121, 35: 28, 39: 12, 40: 1, 41: 7, 42: 2,   // carryall-drop + squish + weapon/effect cues
-        44: 5, 49: 7, 50: 6, 51: 8, 54: 122,        // CRUMBLE (structure collapse) + explosion voices + EXTINY (mini-rocket)
-        56: 9, 57: 9, 58: 11, 59: 10, 63: 26,       // bulletSounds: cannon / gun / gun-multi / worm
+        24: 121, 35: 28, 39: 12, 40: 1, 41: 7, 42: 2,  // carryall-drop + squish + weapon/effect cues
+        44: 5, 49: 7, 50: 6, 51: 8, 54: 122,  // CRUMBLE (structure collapse) + explosion voices + EXTINY (mini-rocket)
+        56: 9, 57: 9, 58: 11, 59: 10, 63: 26,  // bulletSounds: cannon / gun / gun-multi / worm
     ]
     /// `g_table_voices` index → effect VOC filename (the `+`/`-`/`/` entries, prefix stripped).
     static let voc: [Int: String] = [
         1: "EXSAND.VOC", 2: "ROCKET.VOC", 5: "CRUMBLE.VOC", 6: "EXSMALL.VOC", 7: "EXMED.VOC", 8: "EXLARGE.VOC",
         9: "EXCANNON.VOC", 10: "GUNMULTI.VOC", 11: "GUN.VOC", 12: "EXGAS.VOC", 26: "WORMET3P.VOC",
-        28: "SQUISH2.VOC",                          // infantry crushed under a tracked/heavy unit
+        28: "SQUISH2.VOC",  // infantry crushed under a tracked/heavy unit
         121: "DROPEQ2P.VOC", 122: "EXTINY.VOC",
     ]
 

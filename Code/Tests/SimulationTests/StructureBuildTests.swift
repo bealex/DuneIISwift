@@ -1,14 +1,15 @@
-import Testing
 import DuneIIContracts
-@testable import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
+@testable import DuneIIWorld
 
 /// The build-GUI query + command seam: `Structure_GetBuildable` (`buildables`), the build-progress read
 /// (`buildState`), and the construction-yard place flow (`structurePlaceReady`) + the `Command` cases.
 /// See `Documentation/Architecture/BuildGUI.md`.
 @Suite("Structure build GUI seam")
 struct StructureBuildTests {
-    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func sim() -> Simulation {
         var s = GameState(); s.playerHouseID = 0
@@ -81,7 +82,11 @@ struct StructureBuildTests {
         #expect(facAvail == simulation.buildables(forStructure: fac))
         #expect(!facAvail.isEmpty)
         // The construction yard self-entry is never a build option.
-        #expect(!simulation.buildOptions(forStructure: cy).contains { $0.item.objectType == UInt16(StructureType.constructionYard.rawValue) })
+        #expect(
+            !simulation.buildOptions(forStructure: cy).contains {
+                $0.item.objectType == UInt16(StructureType.constructionYard.rawValue)
+            }
+        )
     }
 
     /// With every Heavy-Factory prerequisite built but the campaign too low, the Heavy Factory is listed but
@@ -93,14 +98,15 @@ struct StructureBuildTests {
         var s = GameState(); s.playerHouseID = 0
         _ = s.houseAllocate(index: 0)
         s.houses[0].structuresBuilt =
-            (1 << StructureType.windtrap.rawValue) | (1 << StructureType.outpost.rawValue) | (1 << StructureType.lightVehicle.rawValue)
+            (1 << StructureType.windtrap.rawValue) | (1 << StructureType.outpost.rawValue)
+            | (1 << StructureType.lightVehicle.rawValue)
         s.campaignID = 1
         let cy = addFactory(&s, .constructionYard)
         var sm = Simulation(state: s, scriptInfo: info)
         let heavy = UInt16(StructureType.heavyVehicle.rawValue)
         let locked = sm.buildOptions(forStructure: cy).first { $0.item.objectType == heavy }
         #expect(locked?.isAvailable == false)
-        #expect(locked?.blockers == [.campaign(level: 3)])
+        #expect(locked?.blockers == [ .campaign(level: 3) ])
         // Raising the campaign level removes the only blocker.
         sm.state.campaignID = 3
         let unlocked = sm.buildOptions(forStructure: cy).first { $0.item.objectType == heavy }
@@ -116,7 +122,8 @@ struct StructureBuildTests {
         _ = s.houseAllocate(index: 0)
         // Heavy Factory's prerequisites are all built, so its only block is the low campaign level → gated.
         s.houses[0].structuresBuilt =
-            (1 << StructureType.windtrap.rawValue) | (1 << StructureType.outpost.rawValue) | (1 << StructureType.lightVehicle.rawValue)
+            (1 << StructureType.windtrap.rawValue) | (1 << StructureType.outpost.rawValue)
+            | (1 << StructureType.lightVehicle.rawValue)
         s.campaignID = 1
         let cy = addFactory(&s, .constructionYard)
         let sm = Simulation(state: s, scriptInfo: info)
@@ -138,13 +145,15 @@ struct StructureBuildTests {
     func missingPrerequisiteBlockers() {
         var s = GameState(); s.playerHouseID = 0
         _ = s.houseAllocate(index: 0)
-        s.houses[0].structuresBuilt = 0   // nothing built yet
-        s.campaignID = 9                  // high enough that only structures are missing
+        s.houses[0].structuresBuilt = 0  // nothing built yet
+        s.campaignID = 9  // high enough that only structures are missing
         let cy = addFactory(&s, .constructionYard)
         var sm = Simulation(state: s, scriptInfo: info)
-        let heavy = sm.buildOptions(forStructure: cy).first { $0.item.objectType == UInt16(StructureType.heavyVehicle.rawValue) }
+        let heavy = sm.buildOptions(forStructure: cy).first {
+            $0.item.objectType == UInt16(StructureType.heavyVehicle.rawValue)
+        }
         #expect(heavy?.isAvailable == false)
-        #expect(heavy?.blockers == [.structure(.lightVehicle), .structure(.windtrap), .structure(.outpost)])
+        #expect(heavy?.blockers == [ .structure(.lightVehicle), .structure(.windtrap), .structure(.outpost) ])
     }
 
     /// `armPlacedFactoryUpgrades` (the client's post-load fixup that the hand-rolled scenario loader skips):
@@ -173,13 +182,13 @@ struct StructureBuildTests {
     func buildStateProgress() {
         var simulation = self.sim()
         let fac = addFactory(&simulation.state, .lightVehicle)
-        #expect(simulation.buildState(structureSlot: fac) == nil)   // idle ⇒ nothing
+        #expect(simulation.buildState(structureSlot: fac) == nil)  // idle ⇒ nothing
         let combat = simulation.unitScript!.combat
         _ = combat.structureBuildObject(slot: fac, objectType: UInt16(UnitType.trike.rawValue), in: &simulation.state)
         let started = simulation.buildState(structureSlot: fac)
         #expect(started?.displayName == UnitType.trike.displayName)
         #expect(started?.isReady == false)
-        #expect((started?.progress ?? 1) < 0.01)                    // just started
+        #expect((started?.progress ?? 1) < 0.01)  // just started
         // Force completion.
         simulation.state.structures[fac].countDown = 0
         simulation.state.structures[fac].state = .ready
@@ -191,10 +200,16 @@ struct StructureBuildTests {
     @Test("structurePlaceReady places the ready CY structure and resets the factory")
     func placeReady() {
         var simulation = self.sim()
-        simulation.state.validateStrictIfZero = 1   // bypass terrain/concrete checks for a synthetic map
+        simulation.state.validateStrictIfZero = 1  // bypass terrain/concrete checks for a synthetic map
         let cy = addFactory(&simulation.state, .constructionYard)
         let combat = simulation.unitScript!.combat
-        #expect(combat.structureBuildObject(slot: cy, objectType: UInt16(StructureType.windtrap.rawValue), in: &simulation.state))
+        #expect(
+            combat.structureBuildObject(
+                slot: cy,
+                objectType: UInt16(StructureType.windtrap.rawValue),
+                in: &simulation.state
+            )
+        )
         let product = Int(simulation.state.structures[cy].o.linkedID)
         simulation.state.structures[cy].countDown = 0
         simulation.state.structures[cy].state = .ready
@@ -210,21 +225,33 @@ struct StructureBuildTests {
 
     @Test("a player-placed structure is seen by all houses (stock) but only the player with aiFogOfWar on")
     func placedStructureVisibility() {
-        for fog in [false, true] {
-            var simulation = self.sim()                 // playerHouseID = 0
+        for fog in [ false, true ] {
+            var simulation = self.sim()  // playerHouseID = 0
             simulation.state.validateStrictIfZero = 1
             simulation.state.aiFogOfWar = fog
             let cy = addFactory(&simulation.state, .constructionYard)
             let combat = simulation.unitScript!.combat
-            #expect(combat.structureBuildObject(slot: cy, objectType: UInt16(StructureType.windtrap.rawValue), in: &simulation.state))
+            #expect(
+                combat.structureBuildObject(
+                    slot: cy,
+                    objectType: UInt16(StructureType.windtrap.rawValue),
+                    in: &simulation.state
+                )
+            )
             let product = Int(simulation.state.structures[cy].o.linkedID)
             simulation.state.structures[cy].countDown = 0
             simulation.state.structures[cy].state = .ready
-            #expect(combat.structurePlaceReady(factory: cy, position: Tile32.packXY(x: 20, y: 20), in: &simulation.state))
+            #expect(
+                combat.structurePlaceReady(factory: cy, position: Tile32.packXY(x: 20, y: 20), in: &simulation.state)
+            )
 
             let seen = simulation.state.structures[product].o.seenByHouses
-            if fog { #expect(seen == UInt8(1 << 0)) }    // only the player (house 0)
-            else { #expect(seen == 0xFF) }               // stock 1.07: seen by all houses
+            if fog {
+                #expect(seen == UInt8(1 << 0))
+            }  // only the player (house 0)
+            else {
+                #expect(seen == 0xFF)
+            }  // stock 1.07: seen by all houses
         }
     }
 
@@ -255,11 +282,13 @@ struct StructureBuildTests {
         placeRefinery(at: Tile32.packXY(x: 10, y: 10))
         #expect(harvesterCount() == 1)
         placeRefinery(at: Tile32.packXY(x: 30, y: 30))
-        #expect(harvesterCount() == 2)   // the fix: the 2nd refinery gets its own harvester (not gated on the 1st)
+        #expect(harvesterCount() == 2)  // the fix: the 2nd refinery gets its own harvester (not gated on the 1st)
 
         // Each ferried harvester carries its home-refinery `originEncoded` — the carryall-vs-cargo fix:
         // `structurePlaceReady` stamps it on the harvester (the unitCreateWrapper cargo), not the carryall.
-        let harvesters = s.unitFindArray.map { Int($0) }.filter { s.units[$0].o.type == UInt8(UnitType.harvester.rawValue) }
+        let harvesters = s.unitFindArray.map { Int($0) }.filter {
+            s.units[$0].o.type == UInt8(UnitType.harvester.rawValue)
+        }
         for h in harvesters {
             let origin = try #require(s.indexGetStructure(s.units[h].originEncoded))
             #expect(s.structures[origin].o.type == UInt8(StructureType.refinery.rawValue))
@@ -281,12 +310,17 @@ struct StructureBuildTests {
         s.map[Int(corner) - 64].houseID = 0
         #expect(combat.structurePlaceReady(factory: cy, position: corner, in: &s))
 
-        let refinery = try #require((0 ..< s.structures.count).first {
-            s.structures[$0].o.flags.contains(.used) && s.structures[$0].o.type == UInt8(StructureType.refinery.rawValue)
-        })
-        let harvester = try #require(s.unitFindArray.map { Int($0) }.first {
-            s.units[$0].o.type == UInt8(UnitType.harvester.rawValue)
-        })
+        let refinery = try #require(
+            (0 ..< s.structures.count).first {
+                s.structures[$0].o.flags.contains(.used)
+                    && s.structures[$0].o.type == UInt8(StructureType.refinery.rawValue)
+            }
+        )
+        let harvester = try #require(
+            s.unitFindArray.map { Int($0) }.first {
+                s.units[$0].o.type == UInt8(UnitType.harvester.rawValue)
+            }
+        )
         // Before the fix, `unitCreateWrapper` returned the carryall, so `structurePlaceReady` stamped the
         // carryall's originEncoded and the harvester's stayed 0. Now the wrapper returns the cargo (the
         // harvester), so the harvester points to its home refinery — matching OpenDUNE's `Unit_CreateWrapper`.
@@ -317,7 +351,10 @@ struct StructureBuildTests {
         let sp = addFactory(&simulation.state, .starport)
         simulation.state.structures[sp].o.houseID = 0
         simulation.state.starportAvailable[Int(UnitType.trike.rawValue)] = 3
-        orders.apply(.starportOrder(structure: UInt16(sp), objectType: UInt16(UnitType.trike.rawValue), price: 0), in: &simulation.state)
+        orders.apply(
+            .starportOrder(structure: UInt16(sp), objectType: UInt16(UnitType.trike.rawValue), price: 0),
+            in: &simulation.state
+        )
         #expect(simulation.state.houses[0].starportLinkedID != Pool.unitIndexInvalid)
     }
 
@@ -327,7 +364,11 @@ struct StructureBuildTests {
         simulation.state.validateStrictIfZero = 1
         let cy = addFactory(&simulation.state, .constructionYard)
         let combat = simulation.unitScript!.combat
-        _ = combat.structureBuildObject(slot: cy, objectType: UInt16(StructureType.windtrap.rawValue), in: &simulation.state)
+        _ = combat.structureBuildObject(
+            slot: cy,
+            objectType: UInt16(StructureType.windtrap.rawValue),
+            in: &simulation.state
+        )
         // Still .busy (not .ready) ⇒ no placement.
         #expect(!combat.structurePlaceReady(factory: cy, position: Tile32.packXY(x: 20, y: 20), in: &simulation.state))
     }
@@ -347,7 +388,7 @@ struct StructureBuildTests {
 
         // Mark a tile in the build site's surrounding ring as player-owned ⇒ adjacent ⇒ placeable.
         let corner = Tile32.packXY(x: 10, y: 10)
-        state.map[Int(corner) - 64].houseID = 1     // the north ring tile (a player concrete slab)
+        state.map[Int(corner) - 64].houseID = 1  // the north ring tile (a player concrete slab)
         #expect(combat.structureIsValidBuildLocation(corner, type: .windtrap, in: state) != 0)
         // (The construction yard is exempt from the adjacency rule — `type != .constructionYard` in the
         // port; not asserted here because the CY is `notOnConcrete` and can't sit on the synthetic
@@ -357,20 +398,22 @@ struct StructureBuildTests {
     @Test("placing concrete paints the slab tiles and frees the structure (not a selectable building)")
     func placeConcrete() {
         var state = GameState(); state.playerHouseID = 1
-        state.validateStrictIfZero = 1   // bypass terrain/adjacency (covered by placementAdjacency); isolate paint+free
+        state.validateStrictIfZero = 1  // bypass terrain/adjacency (covered by placementAdjacency); isolate paint+free
         state.tileIDs.builtSlab = 50
         _ = state.houseAllocate(index: 1)
         let combat = UnitCombat(movement: UnitMovement(scriptInfo: info))
 
         let corner = Tile32.packXY(x: 10, y: 10)
-        let slot = state.structureAllocate(index: Pool.structureIndexInvalid,
-                                           type: UInt8(StructureType.slab2x2.rawValue))!
+        let slot = state.structureAllocate(
+            index: Pool.structureIndexInvalid,
+            type: UInt8(StructureType.slab2x2.rawValue)
+        )!
         state.structures[slot].o.houseID = 1
         state.structures[slot].o.flags.insert(.isNotOnMap)
 
         #expect(combat.structurePlace(slot, position: corner, in: &state))
-        #expect(!state.structures[slot].o.flags.contains(.used))      // the structure was freed
-        #expect(state.structureGetByPackedTile(corner) == nil)        // ⇒ nothing selectable there
+        #expect(!state.structures[slot].o.flags.contains(.used))  // the structure was freed
+        #expect(state.structureGetByPackedTile(corner) == nil)  // ⇒ nothing selectable there
         // The 2×2 footprint is painted as the owner's concrete (builtSlab) tiles — not a baked structure sprite.
         let layout = StructureLayoutInfo[StructureInfo[.slab2x2].layout]
         for i in 0 ..< Int(layout.tileCount) {

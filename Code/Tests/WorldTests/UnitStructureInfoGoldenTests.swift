@@ -1,6 +1,7 @@
+import DuneIIContracts
 import Foundation
 import Testing
-import DuneIIContracts
+
 @testable import DuneIIWorld
 
 /// Field-for-field parity of the big `g_table_unitInfo` / `g_table_structureInfo` tables against the
@@ -127,16 +128,32 @@ struct UnitStructureInfoGoldenTests {
         for r in rows {
             let type = try #require(UnitType(rawValue: r.index))
             let u = UnitInfo[type]
-            checkObject(u.o, ObjectRow(
-                stringID_abbrev: r.stringID_abbrev, name: r.name, stringID_full: r.stringID_full,
-                wsa: r.wsa, objectFlags: r.objectFlags, spawnChance: r.spawnChance,
-                hitpoints: r.hitpoints, fogUncoverRadius: r.fogUncoverRadius, spriteID: r.spriteID,
-                buildCredits: r.buildCredits, buildTime: r.buildTime,
-                availableCampaign: r.availableCampaign, structuresRequired: r.structuresRequired,
-                sortPriority: r.sortPriority, upgradeLevelRequired: r.upgradeLevelRequired,
-                actionsPlayer: r.actionsPlayer, available: r.available, hintStringID: r.hintStringID,
-                priorityBuild: r.priorityBuild, priorityTarget: r.priorityTarget,
-                availableHouse: r.availableHouse))
+            checkObject(
+                u.o,
+                ObjectRow(
+                    stringID_abbrev: r.stringID_abbrev,
+                    name: r.name,
+                    stringID_full: r.stringID_full,
+                    wsa: r.wsa,
+                    objectFlags: r.objectFlags,
+                    spawnChance: r.spawnChance,
+                    hitpoints: r.hitpoints,
+                    fogUncoverRadius: r.fogUncoverRadius,
+                    spriteID: r.spriteID,
+                    buildCredits: r.buildCredits,
+                    buildTime: r.buildTime,
+                    availableCampaign: r.availableCampaign,
+                    structuresRequired: r.structuresRequired,
+                    sortPriority: r.sortPriority,
+                    upgradeLevelRequired: r.upgradeLevelRequired,
+                    actionsPlayer: r.actionsPlayer,
+                    available: r.available,
+                    hintStringID: r.hintStringID,
+                    priorityBuild: r.priorityBuild,
+                    priorityTarget: r.priorityTarget,
+                    availableHouse: r.availableHouse
+                )
+            )
             #expect(u.indexStart == r.indexStart)
             #expect(u.indexEnd == r.indexEnd)
             let f = u.flags
@@ -179,16 +196,32 @@ struct UnitStructureInfoGoldenTests {
         for r in rows {
             let type = try #require(StructureType(rawValue: r.index))
             let s = StructureInfo[type]
-            checkObject(s.o, ObjectRow(
-                stringID_abbrev: r.stringID_abbrev, name: r.name, stringID_full: r.stringID_full,
-                wsa: r.wsa, objectFlags: r.objectFlags, spawnChance: r.spawnChance,
-                hitpoints: r.hitpoints, fogUncoverRadius: r.fogUncoverRadius, spriteID: r.spriteID,
-                buildCredits: r.buildCredits, buildTime: r.buildTime,
-                availableCampaign: r.availableCampaign, structuresRequired: r.structuresRequired,
-                sortPriority: r.sortPriority, upgradeLevelRequired: r.upgradeLevelRequired,
-                actionsPlayer: r.actionsPlayer, available: r.available, hintStringID: r.hintStringID,
-                priorityBuild: r.priorityBuild, priorityTarget: r.priorityTarget,
-                availableHouse: r.availableHouse))
+            checkObject(
+                s.o,
+                ObjectRow(
+                    stringID_abbrev: r.stringID_abbrev,
+                    name: r.name,
+                    stringID_full: r.stringID_full,
+                    wsa: r.wsa,
+                    objectFlags: r.objectFlags,
+                    spawnChance: r.spawnChance,
+                    hitpoints: r.hitpoints,
+                    fogUncoverRadius: r.fogUncoverRadius,
+                    spriteID: r.spriteID,
+                    buildCredits: r.buildCredits,
+                    buildTime: r.buildTime,
+                    availableCampaign: r.availableCampaign,
+                    structuresRequired: r.structuresRequired,
+                    sortPriority: r.sortPriority,
+                    upgradeLevelRequired: r.upgradeLevelRequired,
+                    actionsPlayer: r.actionsPlayer,
+                    available: r.available,
+                    hintStringID: r.hintStringID,
+                    priorityBuild: r.priorityBuild,
+                    priorityTarget: r.priorityTarget,
+                    availableHouse: r.availableHouse
+                )
+            )
             #expect(s.enterFilter == r.enterFilter)
             #expect(s.creditsStorage == r.creditsStorage)
             #expect(s.powerUsage == r.powerUsage)

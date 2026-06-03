@@ -41,10 +41,21 @@ public struct FrameInfo: Sendable, Equatable {
     /// Defaults to the full `64×64` for directly-constructed frames. See `Documentation/Algorithms/MapBounds.md`.
     public var mapArea: MapArea
 
-    public init(tick: UInt32, mapWidth: Int, mapHeight: Int, tiles: [Tile], units: [Unit],
-                structures: [Structure], effects: [Effect], houses: [House],
-                viewportX: Int, viewportY: Int, veiledTileIndex: Int = 0, blurs: [Blur] = [],
-                mapArea: MapArea = .full) {
+    public init(
+        tick: UInt32,
+        mapWidth: Int,
+        mapHeight: Int,
+        tiles: [Tile],
+        units: [Unit],
+        structures: [Structure],
+        effects: [Effect],
+        houses: [House],
+        viewportX: Int,
+        viewportY: Int,
+        veiledTileIndex: Int = 0,
+        blurs: [Blur] = [],
+        mapArea: MapArea = .full
+    ) {
         self.tick = tick
         self.mapWidth = mapWidth
         self.mapHeight = mapHeight
@@ -97,8 +108,13 @@ public struct FrameInfo: Sendable, Equatable {
         /// because that slot carries walls (always shown), while fog edges are gated by `showFog`.
         public var fogEdgeSpriteIndex: Int
 
-        public init(groundSpriteIndex: Int, overlaySpriteIndex: Int, houseID: UInt8, isUnveiled: Bool,
-                    fogEdgeSpriteIndex: Int = 0) {
+        public init(
+            groundSpriteIndex: Int,
+            overlaySpriteIndex: Int,
+            houseID: UInt8,
+            isUnveiled: Bool,
+            fogEdgeSpriteIndex: Int = 0
+        ) {
             self.groundSpriteIndex = groundSpriteIndex
             self.overlaySpriteIndex = overlaySpriteIndex
             self.houseID = houseID
@@ -129,9 +145,21 @@ public struct FrameInfo: Sendable, Equatable {
         /// state chip drawn beside its health bar. Defaults to `.idle`.
         public var activity: UnitActivity
 
-        public init(id: UInt16, type: UnitType, house: HouseID, positionX: Int, positionY: Int,
-                    body: SpriteLayer, turret: SpriteLayer?, overlay: SpriteLayer? = nil, isSmoking: Bool,
-                    isAirUnit: Bool = false, hitpoints: Int, hitpointsMax: Int, activity: UnitActivity = .idle) {
+        public init(
+            id: UInt16,
+            type: UnitType,
+            house: HouseID,
+            positionX: Int,
+            positionY: Int,
+            body: SpriteLayer,
+            turret: SpriteLayer?,
+            overlay: SpriteLayer? = nil,
+            isSmoking: Bool,
+            isAirUnit: Bool = false,
+            hitpoints: Int,
+            hitpointsMax: Int,
+            activity: UnitActivity = .idle
+        ) {
             self.id = id
             self.type = type
             self.house = house
@@ -167,8 +195,16 @@ public struct FrameInfo: Sendable, Equatable {
         /// repairing) a queued object — `nil` when it isn't building. `0` = just started, `1` = complete.
         public var buildProgress: Double?
 
-        public init(id: UInt16, type: StructureType, house: HouseID, positionX: Int, positionY: Int,
-                    hitpoints: Int, hitpointsMax: Int, buildProgress: Double? = nil) {
+        public init(
+            id: UInt16,
+            type: StructureType,
+            house: HouseID,
+            positionX: Int,
+            positionY: Int,
+            hitpoints: Int,
+            hitpointsMax: Int,
+            buildProgress: Double? = nil
+        ) {
             self.id = id
             self.type = type
             self.house = house
@@ -219,8 +255,14 @@ public struct FrameInfo: Sendable, Equatable {
         /// The host gates the minimap on the player house's value.
         public var radarActivated: Bool
 
-        public init(id: HouseID, credits: Int, creditsStorage: Int,
-                    powerProduction: Int, powerUsage: Int, radarActivated: Bool = false) {
+        public init(
+            id: HouseID,
+            credits: Int,
+            creditsStorage: Int,
+            powerProduction: Int,
+            powerUsage: Int,
+            radarActivated: Bool = false
+        ) {
             self.id = id
             self.credits = credits
             self.creditsStorage = creditsStorage

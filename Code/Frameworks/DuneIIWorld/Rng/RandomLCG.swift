@@ -42,7 +42,7 @@ public struct RandomLCG: Sendable {
             result = UInt16(truncatingIfNeeded: value)
         } while result > hi
         #if DEBUG
-        traceSink?.recordLCG(result)   // parity/RNG-stream observation — stripped from release builds
+            traceSink?.recordLCG(result)  // parity/RNG-stream observation — stripped from release builds
         #endif
         return result
     }

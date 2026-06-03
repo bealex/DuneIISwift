@@ -12,7 +12,9 @@ struct InspectorPanel: View {
             VStack(alignment: .leading, spacing: 14) {
                 if let s = model.selection {
                     HStack {
-                        Image(systemName: s.kind == .unit ? "shippingbox.fill" : "building.2.fill").foregroundStyle(.secondary)
+                        Image(systemName: s.kind == .unit ? "shippingbox.fill" : "building.2.fill").foregroundStyle(
+                            .secondary
+                        )
                         Text(s.name).font(.title2.bold())
                         if model.selectedUnitCount > 1 {
                             Text("×\(model.selectedUnitCount)").font(.caption.bold())
@@ -26,11 +28,18 @@ struct InspectorPanel: View {
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(.tint)
                     Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                        GridRow { Text("House").foregroundStyle(.secondary); Text(s.house) }
-                        GridRow { Text("Tile").foregroundStyle(.secondary); Text("(\(s.tileX), \(s.tileY))") }
+                        GridRow {
+                            Text("House").foregroundStyle(.secondary); Text(s.house)
+                        }
+                        GridRow {
+                            Text("Tile").foregroundStyle(.secondary); Text("(\(s.tileX), \(s.tileY))")
+                        }
                     }.font(.callout)
                     VStack(alignment: .leading, spacing: 3) {
-                        HStack { Text("Health").foregroundStyle(.secondary); Spacer(); Text("\(s.hitpoints) / \(s.hitpointsMax)").monospacedDigit() }
+                        HStack {
+                            Text("Health").foregroundStyle(.secondary); Spacer();
+                            Text("\(s.hitpoints) / \(s.hitpointsMax)").monospacedDigit()
+                        }
                         ProgressView(value: Double(s.hitpoints), total: Double(max(s.hitpointsMax, 1)))
                             .tint(tint(s.hitpoints, s.hitpointsMax))
                     }.font(.callout)
@@ -38,7 +47,9 @@ struct InspectorPanel: View {
                         Divider()
                         Text("Commands").font(.headline)
                         ForEach(s.unitActions, id: \.self) { action in
-                            Button { model.issue(action) } label: {
+                            Button {
+                                model.issue(action)
+                            } label: {
                                 Label(action.label, systemImage: action.type.systemImage)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -46,7 +57,9 @@ struct InspectorPanel: View {
                             .tint(action.targeted && model.pendingOrder == action.type.orderKind ? .accentColor : nil)
                         }
                         if let p = model.pendingOrder {
-                            Label("Click a target to \(p.verb)…", systemImage: "scope").font(.caption).foregroundStyle(.secondary)
+                            Label("Click a target to \(p.verb)…", systemImage: "scope").font(.caption).foregroundStyle(
+                                .secondary
+                            )
                         }
                     }
                     structureSection()
@@ -55,9 +68,12 @@ struct InspectorPanel: View {
                 } else if let t = model.tileInfo {
                     tileSection(t)
                 } else {
-                    ContentUnavailableView("No selection", systemImage: "cursorarrow.rays",
-                                           description: Text("Left-click a tile to inspect it,\na unit or building to select it."))
-                        .padding(.top, 30)
+                    ContentUnavailableView(
+                        "No selection",
+                        systemImage: "cursorarrow.rays",
+                        description: Text("Left-click a tile to inspect it,\na unit or building to select it.")
+                    )
+                    .padding(.top, 30)
                 }
                 Spacer(minLength: 0)
             }
@@ -79,17 +95,32 @@ struct InspectorPanel: View {
         Label("Tile (\(t.tileX), \(t.tileY))", systemImage: "mappin.and.ellipse")
             .font(.callout.weight(.semibold)).foregroundStyle(.tint)
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-            GridRow { Text("Packed").foregroundStyle(.secondary); Text("\(t.packed)").monospacedDigit() }
-            GridRow { Text("Ground id").foregroundStyle(.secondary); Text("\(t.groundTileID)").monospacedDigit() }
-            GridRow { Text("Overlay id").foregroundStyle(.secondary); Text("\(t.overlayTileID)").monospacedDigit() }
+            GridRow {
+                Text("Packed").foregroundStyle(.secondary); Text("\(t.packed)").monospacedDigit()
+            }
+            GridRow {
+                Text("Ground id").foregroundStyle(.secondary); Text("\(t.groundTileID)").monospacedDigit()
+            }
+            GridRow {
+                Text("Overlay id").foregroundStyle(.secondary); Text("\(t.overlayTileID)").monospacedDigit()
+            }
             if t.isSpice {
-                GridRow { Text("Spice").foregroundStyle(.secondary); Text(t.landscape == "Thick spice" ? "thick" : "yes").foregroundStyle(.orange) }
+                GridRow {
+                    Text("Spice").foregroundStyle(.secondary);
+                    Text(t.landscape == "Thick spice" ? "thick" : "yes").foregroundStyle(.orange)
+                }
             }
             if let owner = t.owner {
-                GridRow { Text("Owner").foregroundStyle(.secondary); Text(owner) }
+                GridRow {
+                    Text("Owner").foregroundStyle(.secondary); Text(owner)
+                }
             }
-            GridRow { Text("Fog").foregroundStyle(.secondary); Text(t.isUnveiled ? "revealed" : "hidden") }
-            GridRow { Text("Buildable").foregroundStyle(.secondary); Text(t.isBuildable ? "yes" : "no") }
+            GridRow {
+                Text("Fog").foregroundStyle(.secondary); Text(t.isUnveiled ? "revealed" : "hidden")
+            }
+            GridRow {
+                Text("Buildable").foregroundStyle(.secondary); Text(t.isBuildable ? "yes" : "no")
+            }
         }.font(.callout)
     }
 
@@ -98,7 +129,9 @@ struct InspectorPanel: View {
         if let a = model.structureActions {
             Divider()
             HStack {
-                Button { model.repairSelected() } label: {
+                Button {
+                    model.repairSelected()
+                } label: {
                     Label(a.isRepairing ? "Repairing… (R)" : "Repair (R)", systemImage: "wrench.and.screwdriver")
                         .frame(maxWidth: .infinity)
                 }
@@ -106,7 +139,9 @@ struct InspectorPanel: View {
                 .disabled(!a.canRepair && !a.isRepairing)
                 .help(a.isRepairing ? "Stop repairing (R or S)" : "Repair to full health (R)")
 
-                Button { model.upgradeSelected() } label: {
+                Button {
+                    model.upgradeSelected()
+                } label: {
                     Label(a.isUpgrading ? "Upgrading… (U)" : "Upgrade (U)", systemImage: "arrow.up.circle")
                         .frame(maxWidth: .infinity)
                 }
@@ -118,7 +153,9 @@ struct InspectorPanel: View {
                 Text("Order (Starport)").font(.headline).padding(.top, 4)
                 VStack(spacing: 4) {
                     ForEach(model.starportStock, id: \.objectType) { item in
-                        Button { model.orderFromStarport(item.objectType) } label: {
+                        Button {
+                            model.orderFromStarport(item.objectType)
+                        } label: {
                             HStack {
                                 Text(item.displayName)
                                 Spacer()
@@ -141,7 +178,9 @@ struct InspectorPanel: View {
         if let sw = model.superWeapon {
             Divider()
             Text("Palace").font(.headline)
-            Button { model.launchSuperWeapon() } label: {
+            Button {
+                model.launchSuperWeapon()
+            } label: {
                 Label(sw.ready ? sw.title : "Recharging…", systemImage: sw.systemImage)
                     .frame(maxWidth: .infinity)
             }
@@ -166,28 +205,47 @@ struct InspectorPanel: View {
                     HStack {
                         Text(bs.displayName).bold()
                         Spacer()
-                        if bs.isReady { Text("Ready").font(.caption).foregroundStyle(.green) }
-                        else if bs.onHold { Text("On hold").font(.caption).foregroundStyle(.orange) }
+                        if bs.isReady {
+                            Text("Ready").font(.caption).foregroundStyle(.green)
+                        } else if bs.onHold {
+                            Text("On hold").font(.caption).foregroundStyle(.orange)
+                        }
                     }
                     ProgressView(value: bs.progress).tint(bs.onHold ? .orange : .accentColor)
                     HStack {
                         if bs.isReady && bs.isStructure {
-                            Button { model.beginPlacement() } label: { Label("Place it", systemImage: "mappin.and.ellipse") }
-                                .buttonStyle(.borderedProminent)
+                            Button {
+                                model.beginPlacement()
+                            } label: {
+                                Label("Place it", systemImage: "mappin.and.ellipse")
+                            }
+                            .buttonStyle(.borderedProminent)
                         } else if bs.isReady {
                             Label("Deploying…", systemImage: "arrow.down.circle").font(.caption).foregroundStyle(.green)
                         } else if bs.onHold {
                             // Held (player paused it, or it ran out of money). Resume clears the hold; the build
                             // continues next tick once the house can afford it (`widget_click.c:107`).
-                            Button { model.resumeBuild() } label: { Label("Resume", systemImage: "play.fill") }
-                                .buttonStyle(.borderedProminent)
+                            Button {
+                                model.resumeBuild()
+                            } label: {
+                                Label("Resume", systemImage: "play.fill")
+                            }
+                            .buttonStyle(.borderedProminent)
                         } else {
                             // Building. Pause holds it where it is (`widget_click.c:124`).
-                            Button { model.pauseBuild() } label: { Label("Pause", systemImage: "pause.fill") }
-                                .buttonStyle(.bordered)
-                        }
-                        Button(role: .destructive) { model.cancelBuild() } label: { Label("Cancel", systemImage: "xmark") }
+                            Button {
+                                model.pauseBuild()
+                            } label: {
+                                Label("Pause", systemImage: "pause.fill")
+                            }
                             .buttonStyle(.bordered)
+                        }
+                        Button(role: .destructive) {
+                            model.cancelBuild()
+                        } label: {
+                            Label("Cancel", systemImage: "xmark")
+                        }
+                        .buttonStyle(.bordered)
                     }
                     if model.placement != nil {
                         Label("Click a spot to place · Esc / right-click cancels", systemImage: "hand.tap")
@@ -205,7 +263,9 @@ struct InspectorPanel: View {
                     ForEach(model.buildOptions, id: \.item.objectType) { option in
                         let item = option.item
                         let underfunded = option.isAvailable && item.cost > model.playerCredits
-                        Button { model.startBuild(item.objectType) } label: {
+                        Button {
+                            model.startBuild(item.objectType)
+                        } label: {
                             HStack {
                                 Text(item.displayName)
                                 if !option.isAvailable {
@@ -235,7 +295,8 @@ struct InspectorPanel: View {
             return "Requires: " + option.blockers.map(\.summary).joined(separator: ", ")
         }
         if item.cost > model.playerCredits {
-            return "Costs \(item.cost) cr — you have \(model.playerCredits); construction will start and pause until you can pay."
+            return
+                "Costs \(item.cost) cr — you have \(model.playerCredits); construction will start and pause until you can pay."
         }
         return "Build \(item.displayName) (\(item.cost) cr)"
     }
@@ -258,7 +319,10 @@ struct EconomyPanel: View {
                             Text(e.house).font(.headline)
                             if e.isPlayer { Text("you").font(.caption).foregroundStyle(.green) }
                         }
-                        HStack { Text("Credits").foregroundStyle(.secondary); Spacer(); Text("\(e.credits) / \(e.storage)").monospacedDigit() }
+                        HStack {
+                            Text("Credits").foregroundStyle(.secondary); Spacer();
+                            Text("\(e.credits) / \(e.storage)").monospacedDigit()
+                        }
                         HStack {
                             Text("Power").foregroundStyle(.secondary); Spacer()
                             Text("\(e.power) − \(e.powerUsed)").monospacedDigit()
@@ -288,15 +352,23 @@ public struct DebugPanel: View {
             Toggle("Fog of war", isOn: Binding(get: { model.showFog }, set: { model.showFog = $0 }))
             Toggle("AI fog of war", isOn: Binding(get: { model.aiFogOfWar }, set: { model.aiFogOfWar = $0 }))
             if model.aiFogOfWar {
-                Text("The AI only attacks after you make contact (its units/your scouts sighting each other). Applies immediately, even mid-game.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    "The AI only attacks after you make contact (its units/your scouts sighting each other). Applies immediately, even mid-game."
+                )
+                .font(.caption).foregroundStyle(.secondary)
             }
-            Toggle("Follow unit limit", isOn: Binding(get: { model.enforceUnitLimit }, set: { model.enforceUnitLimit = $0 }))
+            Toggle(
+                "Follow unit limit",
+                isOn: Binding(get: { model.enforceUnitLimit }, set: { model.enforceUnitLimit = $0 })
+            )
             if !model.enforceUnitLimit {
                 Text("Unit cap (scenario MaxUnit) ignored — build past it.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Toggle("Play indefinitely", isOn: Binding(get: { model.playIndefinitely }, set: { model.playIndefinitely = $0 }))
+            Toggle(
+                "Play indefinitely",
+                isOn: Binding(get: { model.playIndefinitely }, set: { model.playIndefinitely = $0 })
+            )
             if model.playIndefinitely {
                 Text("Victory/defeat is disabled — the game never ends. Turning it on clears any current outcome.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -306,8 +378,14 @@ public struct DebugPanel: View {
                 Text("Off: the minimap obeys radar (needs an outpost + power). On: always shown.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Toggle("Show all economies", isOn: Binding(get: { model.showAllEconomies }, set: { model.showAllEconomies = $0 }))
-            Toggle("Health bars (units + buildings)", isOn: Binding(get: { model.showHealthOverlay }, set: { model.showHealthOverlay = $0 }))
+            Toggle(
+                "Show all economies",
+                isOn: Binding(get: { model.showAllEconomies }, set: { model.showAllEconomies = $0 })
+            )
+            Toggle(
+                "Health bars (units + buildings)",
+                isOn: Binding(get: { model.showHealthOverlay }, set: { model.showHealthOverlay = $0 })
+            )
             LabeledContent("Player house", value: model.playerHouse.displayName)
             LabeledContent("Scenario", value: model.scenarioTitle)
             LabeledContent("Campaign level", value: "\(model.campaignLevel)")
@@ -330,9 +408,15 @@ extension ActionType {
     /// Destruct `x` (Stop is the universal `s`, handled separately).
     var shortcut: String? {
         switch self {
-            case .attack: "A"; case .move: "M"; case .harvest: "H"; case .return: "R"
-            case .retreat: "E"; case .guard_, .areaGuard: "G"; case .deploy: "D"
-            case .sabotage: "B"; case .destruct: "X"
+            case .attack: "A";
+            case .move: "M";
+            case .harvest: "H";
+            case .return: "R"
+            case .retreat: "E";
+            case .guard_, .areaGuard: "G";
+            case .deploy: "D"
+            case .sabotage: "B";
+            case .destruct: "X"
             default: nil
         }
     }
@@ -340,7 +424,10 @@ extension ActionType {
     /// The matching armed-order kind for a targeted action, else `nil` (an immediate `.unit` action).
     var orderKind: OrderKind? {
         switch self {
-            case .attack: .attack; case .move: .move; case .harvest: .harvest; case .retreat: .retreat
+            case .attack: .attack;
+            case .move: .move;
+            case .harvest: .harvest;
+            case .retreat: .retreat
             default: nil
         }
     }
@@ -348,21 +435,40 @@ extension ActionType {
     /// SF Symbol for the action-panel button.
     var systemImage: String {
         switch self {
-            case .attack: "target"; case .move: "arrow.up.right"; case .harvest: "leaf"
-            case .retreat: "arrow.uturn.left"; case .guard_, .areaGuard: "shield"
-            case .return: "arrow.down.left.circle"; case .stop: "stop.fill"
-            case .deploy: "shippingbox"; case .destruct: "burst"; case .sabotage: "bolt.trianglebadge.exclamationmark"
-            case .ambush: "eye.slash"; case .hunt: "scope"; case .die: "xmark"
+            case .attack: "target";
+            case .move: "arrow.up.right";
+            case .harvest: "leaf"
+            case .retreat: "arrow.uturn.left";
+            case .guard_, .areaGuard: "shield"
+            case .return: "arrow.down.left.circle";
+            case .stop: "stop.fill"
+            case .deploy: "shippingbox";
+            case .destruct: "burst";
+            case .sabotage: "bolt.trianglebadge.exclamationmark"
+            case .ambush: "eye.slash";
+            case .hunt: "scope";
+            case .die: "xmark"
         }
     }
 }
 
 /// Presentation labels for the unit orders (the keyboard shortcuts are `m`/`a`/`h`/`r`, plus `s` for stop).
 extension OrderKind {
-    var label: String { switch self { case .move: "Move"; case .attack: "Attack"; case .harvest: "Harvest"; case .retreat: "Retreat" } }
-    var verb: String { switch self { case .move: "move"; case .attack: "attack"; case .harvest: "harvest"; case .retreat: "retreat" } }
-    var shortcut: String { switch self { case .move: "M"; case .attack: "A"; case .harvest: "H"; case .retreat: "R" } }
+    var label: String {
+        switch self { case .move: "Move";  case .attack: "Attack";  case .harvest: "Harvest";  case .retreat: "Retreat"
+        }
+    }
+    var verb: String {
+        switch self { case .move: "move";  case .attack: "attack";  case .harvest: "harvest";  case .retreat: "retreat"
+        }
+    }
+    var shortcut: String {
+        switch self { case .move: "M";  case .attack: "A";  case .harvest: "H";  case .retreat: "R"
+        }
+    }
     var systemImage: String {
-        switch self { case .move: "arrow.up.right"; case .attack: "target"; case .harvest: "leaf"; case .retreat: "arrow.uturn.left" }
+        switch self { case .move: "arrow.up.right";  case .attack: "target";  case .harvest: "leaf";  case .retreat:
+            "arrow.uturn.left"
+        }
     }
 }

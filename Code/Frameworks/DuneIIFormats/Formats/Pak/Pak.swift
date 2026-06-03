@@ -21,7 +21,7 @@ public enum Pak {
         private let bytes: [UInt8]
 
         public init(_ data: Data) throws {
-            let bytes = [UInt8](data)
+            let bytes = [ UInt8 ](data)
             let total = bytes.count
             var entries: [Entry] = []
             var cursor = 0

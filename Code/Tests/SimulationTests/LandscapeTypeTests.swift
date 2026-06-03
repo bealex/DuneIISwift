@@ -1,7 +1,8 @@
-import Foundation
-import Testing
 import DuneIIFormats
 import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIISimulation
 
 /// Golden parity for `Map_GetLandscapeType`: generate a map from a seed (bit-exact) and classify every
@@ -14,7 +15,7 @@ struct LandscapeTypeTests {
     @Test("landscapeType matches the oracle for every tile of every seed")
     func landscapeTypes() throws {
         var repo = URL(fileURLWithPath: #filePath)
-        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }     // Code/Tests/SimulationTests/ → repo root
+        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }  // Code/Tests/SimulationTests/ → repo root
         let iconMap = try IconMap(Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
         let fixture = repo.appendingPathComponent("Code/Tests/WorldTests/Fixtures/createlandscape-golden.jsonl")
         let text = try String(contentsOf: fixture, encoding: .utf8)

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import DuneIIWorld
 
 /// `AnimationTables.structure` matches the oracle's `g_table_animation_structure` (the Swift rows are
@@ -19,7 +20,7 @@ struct AnimationTableTests {
                 #expect(Int(command.command.rawValue) == row.cmds[i][0], "row \(row.index) cmd \(i)")
                 #expect(Int(command.parameter) == row.cmds[i][1], "row \(row.index) param \(i)")
             }
-            for i in mine.count ..< 16 { #expect(row.cmds[i] == [0, 0], "row \(row.index) padding \(i)") }
+            for i in mine.count ..< 16 { #expect(row.cmds[i] == [ 0, 0 ], "row \(row.index) padding \(i)") }
         }
     }
 }

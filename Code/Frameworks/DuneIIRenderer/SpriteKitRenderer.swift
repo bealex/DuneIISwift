@@ -24,13 +24,15 @@ public final class SpriteKitRenderer {
     private let source: WorldSpriteSource
     private let basePalette: Palette
 
-    private let terrainNode = SKSpriteNode()      // the static landscape, drawn once
-    private let overlayLayer = SKNode()           // dynamic terrain cells (animations + wind light)
-    private let blurLayer = SKNode()              // sandworm shimmer patches (terrain displacement)
-    private let spritesLayer = SKNode()           // units + effects (pooled nodes)
+    private let terrainNode = SKSpriteNode()  // the static landscape, drawn once
+    private let overlayLayer = SKNode()  // dynamic terrain cells (animations + wind light)
+    private let blurLayer = SKNode()  // sandworm shimmer patches (terrain displacement)
+    private let spritesLayer = SKNode()  // units + effects (pooled nodes)
 
     // Caches (kept for the renderer's whole life — memory is cheap, recolorizing isn't).
-    private struct TileKey: Hashable { let tileId: Int; let overlayId: Int; let fogEdge: Int; let houseID: UInt8; let windColour: Int; let fog: Bool }
+    private struct TileKey: Hashable {
+        let tileId: Int; let overlayId: Int; let fogEdge: Int; let houseID: UInt8; let windColour: Int; let fog: Bool
+    }
     private struct SpriteKey: Hashable { let index: Int; let house: Int; let flipped: Bool; let flippedV: Bool }
     private var tileCache: [TileKey: SKTexture] = [:]
     private var tileUsesWindCache: [Int: Bool] = [:]
@@ -49,9 +51,9 @@ public final class SpriteKitRenderer {
     // Dynamic-terrain bookkeeping. Each cell's appearance is (ground, overlay, house); a cell gets a small
     // overlay node when it differs from the static background or pulses with the wind.
     private struct CellAppearance: Equatable { var ground: Int; var overlay: Int; var house: UInt8; var fogEdge: Int }
-    private var baseline: [CellAppearance] = []   // what each cell shows in the static background
+    private var baseline: [CellAppearance] = []  // what each cell shows in the static background
     private var displayed: [CellAppearance] = []  // what each cell currently shows (overlay node or base)
-    private var windCells: Set<Int> = []          // cells whose tile uses the wind-trap colour (223)
+    private var windCells: Set<Int> = []  // cells whose tile uses the wind-trap colour (223)
     private var overlayNodes: [Int: SKSpriteNode] = [:]
     private var initialized = false
 
@@ -86,7 +88,7 @@ public final class SpriteKitRenderer {
         self.basePalette = basePalette
         self.showFog = showFog
         var seeded = basePalette.colors
-        PaletteAnimator.seedAnimatedColours(&seeded)    // no magenta windtrap-light flash at tick 0 (#4)
+        PaletteAnimator.seedAnimatedColours(&seeded)  // no magenta windtrap-light flash at tick 0 (#4)
         self.colours = seeded
     }
 
@@ -129,8 +131,12 @@ public final class SpriteKitRenderer {
         // larger than the logical `side`. `crop` is in logical points (image-space, y-down) — scale it to
         // pixels by the measured ratio so the requested tile region is captured at any backing scale.
         let scale = CGFloat(full.width) / side
-        let pixels = CGRect(x: crop.minX * scale, y: crop.minY * scale,
-                            width: crop.width * scale, height: crop.height * scale)
+        let pixels = CGRect(
+            x: crop.minX * scale,
+            y: crop.minY * scale,
+            width: crop.width * scale,
+            height: crop.height * scale
+        )
         return full.cropping(to: pixels)
     }
 
@@ -138,9 +144,9 @@ public final class SpriteKitRenderer {
     public func attach(to scene: SKScene) {
         terrainNode.zPosition = 0
         overlayLayer.zPosition = 1
-        blurLayer.zPosition = 2          // worm shimmer sits on the terrain, under the unit sprites
+        blurLayer.zPosition = 2  // worm shimmer sits on the terrain, under the unit sprites
         spritesLayer.zPosition = 10
-        for node in [terrainNode as SKNode, overlayLayer, blurLayer, spritesLayer] where node.parent == nil {
+        for node in [ terrainNode as SKNode, overlayLayer, blurLayer, spritesLayer ] where node.parent == nil {
             scene.addChild(node)
         }
     }
@@ -185,8 +191,12 @@ public final class SpriteKitRenderer {
         // with fog OFF a veiled overlay renders as plain ground (`cell()` skips it), so normalise it to 0 so
         // a continuous fog reveal doesn't needlessly dirty every tile a unit drives past in the no-fog view.
         let overlay = (!showFog && tile.overlaySpriteIndex == veiledTileIndex) ? 0 : tile.overlaySpriteIndex
-        return CellAppearance(ground: tile.groundSpriteIndex, overlay: overlay, house: tile.houseID,
-                              fogEdge: showFog ? tile.fogEdgeSpriteIndex : 0)
+        return CellAppearance(
+            ground: tile.groundSpriteIndex,
+            overlay: overlay,
+            house: tile.houseID,
+            fogEdge: showFog ? tile.fogEdgeSpriteIndex : 0
+        )
     }
 
     private func buildStaticBackground(_ frame: FrameInfo, palette: Palette) {
@@ -253,8 +263,10 @@ public final class SpriteKitRenderer {
         let tx = cell % mapWidth, ty = cell / mapWidth
         let side = tileSize * mapWidth
         // Image space is y-down; the scene is y-up. Cell centre.
-        node.position = CGPoint(x: tx * tileSize + tileSize / 2,
-                                y: side - (ty * tileSize + tileSize / 2))
+        node.position = CGPoint(
+            x: tx * tileSize + tileSize / 2,
+            y: side - (ty * tileSize + tileSize / 2)
+        )
         overlayLayer.addChild(node)
         return node
     }
@@ -265,13 +277,19 @@ public final class SpriteKitRenderer {
         // the same ground/overlay/house but different edge masks need different textures — otherwise a
         // re-textured dirty cell gets a stale cached edge and the fog frontier looks wrong as units reveal
         // neighbours (the full-rebuild path doesn't hit this cache, hence toggling fog "fixes" it).
-        let key = TileKey(tileId: tile.groundSpriteIndex, overlayId: tile.overlaySpriteIndex,
-                          fogEdge: showFog ? tile.fogEdgeSpriteIndex : 0,
-                          houseID: tile.houseID, windColour: usesWind ? packedWindColour() : 0, fog: showFog)
+        let key = TileKey(
+            tileId: tile.groundSpriteIndex,
+            overlayId: tile.overlaySpriteIndex,
+            fogEdge: showFog ? tile.fogEdgeSpriteIndex : 0,
+            houseID: tile.houseID,
+            windColour: usesWind ? packedWindColour() : 0,
+            fog: showFog
+        )
         if let cached = tileCache[key] { return cached }
         // The cell pixels — ground + overlay (walls) or a black fog cell — exactly as the static buffer.
-        guard let pixels = FrameComposer.cell(tile, veiledTileIndex: veiledTileIndex, showFog: showFog, source: source),
-              let image = IndexedImage.cgImage(indices: pixels, width: tileSize, height: tileSize, palette: palette)
+        guard
+            let pixels = FrameComposer.cell(tile, veiledTileIndex: veiledTileIndex, showFog: showFog, source: source),
+            let image = IndexedImage.cgImage(indices: pixels, width: tileSize, height: tileSize, palette: palette)
         else { return nil }
         let texture = nearest(image)
         tileCache[key] = texture
@@ -298,25 +316,42 @@ public final class SpriteKitRenderer {
             node.size = texture.size()
             node.position = CGPoint(x: CGFloat(sprite.centerX), y: CGFloat(side - sprite.centerY))
             node.zPosition = CGFloat(sprite.z)
-            node.xScale = 1                                  // the mirror is baked into the texture, not a transform
+            node.xScale = 1  // the mirror is baked into the texture, not a transform
             node.isHidden = false
         }
         for i in used ..< spritePool.count { spritePool[i].isHidden = true }
     }
 
     private func spriteTexture(_ sprite: ComposedSprite, palette: Palette) -> SKTexture? {
-        let key = SpriteKey(index: sprite.spriteIndex, house: sprite.house?.rawValue ?? -1,
-                            flipped: sprite.flipped, flippedV: sprite.flippedV)
+        let key = SpriteKey(
+            index: sprite.spriteIndex,
+            house: sprite.house?.rawValue ?? -1,
+            flipped: sprite.flipped,
+            flippedV: sprite.flippedV
+        )
         if let cached = spriteCache[key] { return cached }
-        let remap: (UInt8) -> UInt8 = sprite.house.map { house in { HouseRemap.sprite($0, house: house) } }
+        let remap: (UInt8) -> UInt8 =
+            sprite.house.map { house in { HouseRemap.sprite($0, house: house) } }
             ?? { $0 }
         // Bake the mirror(s) into the pixels rather than relying on a node transform — pre-rendered, and
         // immune to any transform quirk. Air units use a vertical mirror for their southern facings.
-        let pixels = Self.mirror(sprite.frame.pixels, width: sprite.frame.width, height: sprite.frame.height,
-                                 horizontal: sprite.flipped, vertical: sprite.flippedV)
-        guard let image = IndexedImage.cgImage(indices: pixels, width: sprite.frame.width,
-                                               height: sprite.frame.height, palette: palette,
-                                               transparentIndex: 0, remap: remap) else { return nil }
+        let pixels = Self.mirror(
+            sprite.frame.pixels,
+            width: sprite.frame.width,
+            height: sprite.frame.height,
+            horizontal: sprite.flipped,
+            vertical: sprite.flippedV
+        )
+        guard
+            let image = IndexedImage.cgImage(
+                indices: pixels,
+                width: sprite.frame.width,
+                height: sprite.frame.height,
+                palette: palette,
+                transparentIndex: 0,
+                remap: remap
+            )
+        else { return nil }
         let texture = nearest(image)
         spriteCache[key] = texture
         return texture
@@ -324,8 +359,13 @@ public final class SpriteKitRenderer {
 
     /// A row-major indexed buffer mirrored horizontally (each row reversed) and/or vertically (row order
     /// reversed). `horizontal` is the W-half/RTL flip; `vertical` is the air units' southern-facing flip.
-    nonisolated static func mirror(_ pixels: [UInt8], width: Int, height: Int,
-                                   horizontal: Bool, vertical: Bool) -> [UInt8] {
+    nonisolated static func mirror(
+        _ pixels: [UInt8],
+        width: Int,
+        height: Int,
+        horizontal: Bool,
+        vertical: Bool
+    ) -> [UInt8] {
         guard width > 0, height > 0, pixels.count >= width * height, horizontal || vertical else { return pixels }
         var out = pixels
         for y in 0 ..< height {
@@ -357,30 +397,49 @@ public final class SpriteKitRenderer {
         guard shimmerThrottle.tick() else { return }
         shimmerRebuildCount += 1
         let side = tileSize * frame.mapWidth
-        blurIndex = (blurIndex + 1) % ShimmerEffect.blurOffsets.count   // advance the heat-haze each frame
+        blurIndex = (blurIndex + 1) % ShimmerEffect.blurOffsets.count  // advance the heat-haze each frame
         let offset = ShimmerEffect.blurOffsets[blurIndex]
         var used = 0
         // When fog is shown, suppress shimmer pixels over/into veiled terrain (so the worm shows nothing in
         // the fog and doesn't drag the dithered fog edge into its silhouette at a boundary). Pixel → tile.
-        let veiled: ((Int, Int) -> Bool)? = showFog ? { [tileSize] px, py in
-            let tx = px / tileSize, ty = py / tileSize
-            guard tx >= 0, tx < frame.mapWidth, ty >= 0, ty < frame.mapHeight else { return false }
-            return !frame.tiles[ty * frame.mapWidth + tx].isUnveiled
-        } : nil
+        let veiled: ((Int, Int) -> Bool)? = showFog
+            ? { [tileSize] px, py in
+                let tx = px / tileSize, ty = py / tileSize
+                guard tx >= 0, tx < frame.mapWidth, ty >= 0, ty < frame.mapHeight else { return false }
+                return !frame.tiles[ty * frame.mapWidth + tx].isUnveiled
+            } : nil
         for blur in frame.blurs {
             // A sandworm in the fog is hidden, like any other unit (`viewport.c`'s sandworm pass masks by
             // `isUnveiled`).
-            if FrameComposer.isHiddenByFog(frame, worldX: blur.positionX, worldY: blur.positionY, showFog: showFog) { continue }
+            if FrameComposer.isHiddenByFog(frame, worldX: blur.positionX, worldY: blur.positionY, showFog: showFog) {
+                continue
+            }
             guard let frameSprite = source.unitFrame(globalIndex: blur.sprite.spriteIndex) else { continue }
-            let mask = Self.mirror(frameSprite.pixels, width: frameSprite.width, height: frameSprite.height,
-                                   horizontal: blur.sprite.flipped, vertical: blur.sprite.flippedV)
+            let mask = Self.mirror(
+                frameSprite.pixels,
+                width: frameSprite.width,
+                height: frameSprite.height,
+                horizontal: blur.sprite.flipped,
+                vertical: blur.sprite.flippedV
+            )
             let cx = blur.positionX * tileSize / 256 + blur.sprite.offsetX
             let cy = blur.positionY * tileSize / 256 + blur.sprite.offsetY
-            let left = cx - frameSprite.width / 2, top = cy - frameSprite.height / 2   // DRAWSPRITE_FLAG_CENTER
-            guard let patch = ShimmerEffect.patch(
-                terrain: terrainIndices, terrainWidth: side, terrainHeight: side,
-                left: left, top: top, mask: mask, wormWidth: frameSprite.width, wormHeight: frameSprite.height,
-                offset: offset, palette: palette, veiled: veiled) else { continue }
+            let left = cx - frameSprite.width / 2, top = cy - frameSprite.height / 2  // DRAWSPRITE_FLAG_CENTER
+            guard
+                let patch = ShimmerEffect.patch(
+                    terrain: terrainIndices,
+                    terrainWidth: side,
+                    terrainHeight: side,
+                    left: left,
+                    top: top,
+                    mask: mask,
+                    wormWidth: frameSprite.width,
+                    wormHeight: frameSprite.height,
+                    offset: offset,
+                    palette: palette,
+                    veiled: veiled
+                )
+            else { continue }
             let node = pooledBlur(used); used += 1
             node.texture = nearest(patch)
             node.size = CGSize(width: frameSprite.width, height: frameSprite.height)

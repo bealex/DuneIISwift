@@ -23,7 +23,7 @@ public enum MentatHelp {
                 case UInt8(ascii: "2"): self = .structures
                 case UInt8(ascii: "3"): self = .vehicles
                 case UInt8(ascii: "4"): self = .specials
-                default:                self = .general
+                default: self = .general
             }
         }
     }
@@ -49,15 +49,18 @@ public enum MentatHelp {
     /// first-char (`couples[(c>>3)<<3 + (c&7) + 16]` = `couples[c+16]`).
     private static let couples = Array(
         " etainosrlhcdupmtasio wb rnsdalmh ieorasnrtlc synstcloer dtgesionr ufmsw tep.icae oiadur laeiyodeia otruetoakhlr eiu,.oansrctlaileoiratpeaoip bm"
-            .utf8)
+            .utf8
+    )
 
     /// Parse every topic from a `MENTAT<HOUSE>.ENG` file.
     public static func topics(_ data: Data) throws -> [Topic] {
         let reader = try Iff.Reader(data)
-        guard let nameRange = reader.chunks.first(where: { $0.id == "NAME" })?.range else {
+        guard
+            let nameRange = reader.chunks.first(where: { $0.id == "NAME" })?.range
+        else {
             throw DecodeError.noNameChunk
         }
-        let bytes = [UInt8](data)
+        let bytes = [ UInt8 ](data)
         var result: [Topic] = []
         var i = nameRange.lowerBound
         while i < nameRange.upperBound {
@@ -73,8 +76,18 @@ public enum MentatHelp {
             let name = String(decoding: entry[7 ..< end], as: UTF8.self)
             let campaign = Int(entry[size - 1])
             let (wsa, title, attrs, body) = parseDescription(decompress(bytes, at: offset))
-            result.append(Topic(section: section, isHeader: isHeader, name: name, campaign: campaign,
-                                wsa: wsa, title: title, attributes: attrs, body: body))
+            result.append(
+                Topic(
+                    section: section,
+                    isHeader: isHeader,
+                    name: name,
+                    campaign: campaign,
+                    wsa: wsa,
+                    title: title,
+                    attributes: attrs,
+                    body: body
+                )
+            )
             i += size
         }
         return result
@@ -109,8 +122,8 @@ public enum MentatHelp {
             var c = bytes[i]
             if c & 0x80 != 0 {
                 c &= 0x7F
-                out.append(couples[Int(c) >> 3])               // 1st char of the pair
-                out.append(couples[Int(c) + 16])               // 2nd char
+                out.append(couples[Int(c) >> 3])  // 1st char of the pair
+                out.append(couples[Int(c) + 16])  // 2nd char
                 i += 1
                 continue
             } else if c == 0x1B {

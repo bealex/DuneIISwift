@@ -22,7 +22,7 @@ public protocol AudioSink: AnyObject {
 }
 
 public extension AudioSink {
-    func setListener(x: Int, y: Int) {}   // default: no attenuation (NullAudio / sinks that don't care)
+    func setListener(x: Int, y: Int) {}  // default: no attenuation (NullAudio / sinks that don't care)
 }
 
 public extension AudioSink {

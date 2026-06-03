@@ -1,5 +1,6 @@
-import Testing
 import DuneIIContracts
+import Testing
+
 @testable import DuneIIWorld
 
 /// `structureTickStructure` — the `tickStructure` body of `GameLoop_Structure` (`structure.c:53`): the
@@ -9,8 +10,13 @@ import DuneIIContracts
 /// stat tables so the tests track the tables, not hand-copied numbers.
 @Suite("Structure production + repair (tickStructure)")
 struct StructureProductionTests {
-    private func place(_ s: inout GameState, _ type: StructureType, house: UInt8 = 0,
-                       hp: UInt16? = nil, state: StructureState = .idle) -> Int {
+    private func place(
+        _ s: inout GameState,
+        _ type: StructureType,
+        house: UInt8 = 0,
+        hp: UInt16? = nil,
+        state: StructureState = .idle
+    ) -> Int {
         let slot = s.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(type.rawValue))!
         s.structures[slot].o.houseID = house
         s.structures[slot].o.hitpoints = hp ?? StructureInfo[type].o.hitpoints
@@ -30,16 +36,16 @@ struct StructureProductionTests {
 
         let cost = UInt16((2 * 256 / UInt32(full) * UInt32(StructureInfo[.windtrap].o.buildCredits) + 128) / 256)
         s.structureTickStructure(slot)
-        #expect(s.structures[slot].o.hitpoints == full - 15)        // +5 (player)
+        #expect(s.structures[slot].o.hitpoints == full - 15)  // +5 (player)
         #expect(s.houses[0].credits == 1000 - cost)
-        #expect(s.structures[slot].o.flags.contains(.repairing))    // not done yet
+        #expect(s.structures[slot].o.flags.contains(.repairing))  // not done yet
     }
 
     @Test("repair clamps at full HP and clears the repairing/onHold flags")
     func repairFinishes() {
         var s = GameState(); _ = s.houseAllocate(index: 0)
         let full = StructureInfo[.windtrap].o.hitpoints
-        let slot = place(&s, .windtrap, hp: full - 2)              // +5 overshoots → clamps
+        let slot = place(&s, .windtrap, hp: full - 2)  // +5 overshoots → clamps
         s.structures[slot].o.flags.insert(.repairing)
         s.structures[slot].o.flags.insert(.onHold)
         s.houses[0].credits = 1000
@@ -71,7 +77,7 @@ struct StructureProductionTests {
     func factoryProgresses() {
         var s = GameState(); _ = s.houseAllocate(index: 0)
         let slot = place(&s, .lightVehicle, state: .busy)
-        s.structures[slot].o.linkedID = 0          // something is queued (≠ 0xFF)
+        s.structures[slot].o.linkedID = 0  // something is queued (≠ 0xFF)
         s.structures[slot].objectType = UInt16(UnitType.trike.rawValue)
         s.structures[slot].countDown = 1000
         s.houses[0].credits = 5000
@@ -90,7 +96,7 @@ struct StructureProductionTests {
         let slot = place(&s, .lightVehicle, state: .busy)
         s.structures[slot].o.linkedID = 0
         s.structures[slot].objectType = UInt16(UnitType.trike.rawValue)
-        s.structures[slot].countDown = 100         // < buildSpeed (256) → finishes this tick
+        s.structures[slot].countDown = 100  // < buildSpeed (256) → finishes this tick
         s.structures[slot].buildCostRemainder = 200
         s.houses[0].credits = 5000
 
@@ -112,7 +118,7 @@ struct StructureProductionTests {
 
         s.structureTickStructure(slot)
         #expect(s.structures[slot].o.flags.contains(.onHold))
-        #expect(s.structures[slot].countDown == 1000)   // no progress
+        #expect(s.structures[slot].countDown == 1000)  // no progress
     }
 
     // MARK: - Player pause / resume (widget_click.c STR_D_DONE / STR_ON_HOLD)
@@ -132,7 +138,7 @@ struct StructureProductionTests {
         #expect(wasBuilding)
         #expect(s.structures[slot].o.flags.contains(.onHold))
         s.structureTickStructure(slot)
-        #expect(s.structures[slot].countDown == 1000)   // held → no progress, no billing
+        #expect(s.structures[slot].countDown == 1000)  // held → no progress, no billing
         #expect(s.houses[0].credits == 5000)
 
         // Resume (clicking "ON HOLD"): the hold clears and the build advances again.
@@ -153,14 +159,14 @@ struct StructureProductionTests {
         s.structures[slot].objectType = UInt16(UnitType.trike.rawValue)
         s.structures[slot].countDown = 1000
         s.houses[0].credits = 0
-        s.structureTickStructure(slot)                      // out of money → on hold
+        s.structureTickStructure(slot)  // out of money → on hold
         #expect(s.structures[slot].o.flags.contains(.onHold))
 
         // Resume while still broke: the hold clears, but the very next tick re-holds it (no money).
         s.structureResumeBuild(slot)
         s.structureTickStructure(slot)
         #expect(s.structures[slot].o.flags.contains(.onHold))
-        #expect(s.structures[slot].countDown == 1000)       // still no progress
+        #expect(s.structures[slot].countDown == 1000)  // still no progress
 
         // Credits arrive, resume again → it advances.
         s.houses[0].credits = 5000
@@ -172,7 +178,7 @@ struct StructureProductionTests {
     @Test("an idle (not BUSY) factory does nothing")
     func factoryIdleNoop() {
         var s = GameState(); _ = s.houseAllocate(index: 0)
-        let slot = place(&s, .lightVehicle, state: .idle)   // not BUSY → the guard fails
+        let slot = place(&s, .lightVehicle, state: .idle)  // not BUSY → the guard fails
         s.structures[slot].o.linkedID = 0
         s.structures[slot].objectType = UInt16(UnitType.trike.rawValue)
         s.structures[slot].countDown = 1000
@@ -208,7 +214,7 @@ struct StructureProductionTests {
         let unit = s.unitAllocate(index: 0xFFFF, type: UInt8(UnitType.tank.rawValue), houseID: 0)!
         let slot = place(&s, .repair, state: .busy)
         s.structures[slot].o.linkedID = UInt8(unit)
-        s.structures[slot].countDown = 100         // < repairSpeed → finishes
+        s.structures[slot].countDown = 100  // < repairSpeed → finishes
         s.houses[0].credits = 5000
 
         s.structureTickStructure(slot)
@@ -220,7 +226,7 @@ struct StructureProductionTests {
     func repairPadAutoResume() {
         var s = GameState(); _ = s.houseAllocate(index: 0)
         let slot = place(&s, .repair, state: .idle)
-        s.structures[slot].o.linkedID = 0xFF       // nothing linked
+        s.structures[slot].o.linkedID = 0xFF  // nothing linked
         s.structures[slot].o.flags.insert(.onHold)
         s.houses[0].credits = 100
 
@@ -248,16 +254,16 @@ struct StructureProductionTests {
     @Test("a finished upgrade bumps the level, clears upgrading, and re-arms when another upgrade remains")
     func upgradeCompletesAndRearms() {
         var s = GameState(); _ = s.houseAllocate(index: 1)
-        s.campaignID = 5                                   // Heavy Vehicle: upgradeCampaign [4,5,6]
+        s.campaignID = 5  // Heavy Vehicle: upgradeCampaign [4,5,6]
         let slot = place(&s, .heavyVehicle, house: 1)
         s.structures[slot].o.flags.insert(.upgrading)
-        s.structures[slot].upgradeTimeLeft = 5             // ≤ 5 → finishes this tick
+        s.structures[slot].upgradeTimeLeft = 5  // ≤ 5 → finishes this tick
         s.houses[1].credits = 1000
 
         s.structureTickStructure(slot)
         #expect(s.structures[slot].upgradeLevel == 1)
         #expect(!s.structures[slot].o.flags.contains(.upgrading))
-        #expect(s.structures[slot].upgradeTimeLeft == 100) // level-1 upgrade (campaign 5 ≥ 5) still available
+        #expect(s.structures[slot].upgradeTimeLeft == 100)  // level-1 upgrade (campaign 5 ≥ 5) still available
     }
 
     @Test("a finished final upgrade re-arms to 0 (nothing more to upgrade)")
@@ -270,7 +276,7 @@ struct StructureProductionTests {
 
         s.structureTickStructure(slot)
         #expect(s.structures[slot].upgradeLevel == 1)
-        #expect(s.structures[slot].upgradeTimeLeft == 0)   // upgradeCampaign[1] == 0 → not upgradable
+        #expect(s.structures[slot].upgradeTimeLeft == 0)  // upgradeCampaign[1] == 0 → not upgradable
     }
 
     @Test("the Ordos Heavy Vehicle gets its last upgrade free (level jumps 1 → 3)")
@@ -284,7 +290,7 @@ struct StructureProductionTests {
         s.houses[2].credits = 1000
 
         s.structureTickStructure(slot)
-        #expect(s.structures[slot].upgradeLevel == 3)       // 2 → 3 (free last upgrade)
+        #expect(s.structures[slot].upgradeLevel == 3)  // 2 → 3 (free last upgrade)
     }
 
     @Test("an upgrade with no money is cancelled")
@@ -310,7 +316,7 @@ struct StructureProductionTests {
         let barracks = place(&s, .barracks)
         #expect(s.structureIsUpgradable(barracks))
         let light = place(&s, .lightVehicle)
-        #expect(!s.structureIsUpgradable(light))            // 3 > campaignID(1)+1
+        #expect(!s.structureIsUpgradable(light))  // 3 > campaignID(1)+1
 
         // Harkonnen Hi-Tech is never upgradable.
         s.campaignID = 9
@@ -321,11 +327,11 @@ struct StructureProductionTests {
     @Test("the construction yard's 2nd upgrade requires the rocket turret's prerequisites")
     func isUpgradableConstructionYard() {
         var s = GameState(); _ = s.houseAllocate(index: 0)
-        s.campaignID = 5                                    // CY upgradeCampaign [4,6,0]; level-1 needs 6 ≤ 6
+        s.campaignID = 5  // CY upgradeCampaign [4,6,0]; level-1 needs 6 ≤ 6
         let cy = place(&s, .constructionYard)
         s.structures[cy].upgradeLevel = 1
 
-        #expect(!s.structureIsUpgradable(cy))               // no prerequisite structures built
+        #expect(!s.structureIsUpgradable(cy))  // no prerequisite structures built
         s.houses[0].structuresBuilt = StructureInfo[.rocketTurret].o.structuresRequired
         #expect(s.structureIsUpgradable(cy))
     }

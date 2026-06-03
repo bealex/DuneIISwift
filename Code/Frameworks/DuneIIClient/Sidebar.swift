@@ -29,8 +29,12 @@ import SwiftUI
     private struct DecodedFrame { let pixels: [UInt8]; let w: Int; let h: Int; let hasLookup: Bool }
 
     private static func unitFrame(_ globalIndex: Int, assets: AssetStore) -> DecodedFrame? {
-        guard let (sheet, frame) = GlobalSprite.unit(globalIndex), let set = assets.shp(sheet.fileName),
-              frame >= 0, frame < set.frames.count else { return nil }
+        guard
+            let (sheet, frame) = GlobalSprite.unit(globalIndex),
+            let set = assets.shp(sheet.fileName),
+            frame >= 0,
+            frame < set.frames.count
+        else { return nil }
         let f = set.frames[frame]
         return DecodedFrame(pixels: f.pixels, w: f.width, h: f.height, hasLookup: f.hasLookup)
     }
@@ -49,9 +53,18 @@ import SwiftUI
 
         // Units with a turret (tanks, launcher, sonic, deviator, …) composite it on top at its
         // orientation-0 pixel offset (`UnitSprites.turretOffset`, `viewport.c`).
-        guard info.turretSpriteID != 0xFFFF, let turret = unitFrame(Int(info.turretSpriteID), assets: assets) else {
-            return IndexedImage.cgImage(indices: body.pixels, width: body.w, height: body.h, palette: assets.palette,
-                                        transparentIndex: 0, remap: { resolve($0, body.hasLookup) })
+        guard
+            info.turretSpriteID != 0xFFFF,
+            let turret = unitFrame(Int(info.turretSpriteID), assets: assets)
+        else {
+            return IndexedImage.cgImage(
+                indices: body.pixels,
+                width: body.w,
+                height: body.h,
+                palette: assets.palette,
+                transparentIndex: 0,
+                remap: { resolve($0, body.hasLookup) }
+            )
         }
         let (tdx, tdy) = turretOffset0(info.turretSpriteID)
         // Bounding box of body (centred) + turret (centred + offset) so the gun barrel isn't clipped.
@@ -60,38 +73,47 @@ import SwiftUI
         let minX = min(bx0, tx0), minY = min(by0, ty0)
         let cw = max(bx0 + body.w, tx0 + turret.w) - minX, ch = max(by0 + body.h, ty0 + turret.h) - minY
         guard cw > 0, ch > 0 else { return nil }
-        var canvas = [UInt8](repeating: 0, count: cw * ch)
+        var canvas = [ UInt8 ](repeating: 0, count: cw * ch)
         func blit(_ f: DecodedFrame, atX ox: Int, atY oy: Int) {
             for y in 0 ..< f.h {
                 for x in 0 ..< f.w {
                     let s = y * f.w + x
                     guard s < f.pixels.count else { continue }
                     let idx = f.pixels[s]
-                    if idx == 0 { continue }   // transparent
+                    if idx == 0 { continue }  // transparent
                     canvas[(oy + y) * cw + (ox + x)] = resolve(idx, f.hasLookup)
                 }
             }
         }
         blit(body, atX: bx0 - minX, atY: by0 - minY)
-        blit(turret, atX: tx0 - minX, atY: ty0 - minY)   // gun on top
-        return IndexedImage.cgImage(indices: canvas, width: cw, height: ch, palette: assets.palette,
-                                    transparentIndex: 0, remap: { $0 })   // already house-resolved
+        blit(turret, atX: tx0 - minX, atY: ty0 - minY)  // gun on top
+        return IndexedImage.cgImage(
+            indices: canvas,
+            width: cw,
+            height: ch,
+            palette: assets.palette,
+            transparentIndex: 0,
+            remap: { $0 }
+        )  // already house-resolved
     }
 
     /// Orientation-0 turret pixel offset — the north-facing slice of `UnitSprites.turretOffset` (`viewport.c`).
     private static func turretOffset0(_ turretSpriteID: UInt16) -> (Int, Int) {
         switch turretSpriteID {
-            case 141: return (0, -2)   // sonic tank
-            case 146: return (0, -3)   // launcher / deviator
-            case 126: return (0, -5)   // siege tank
-            case 136: return (0, -4)   // devastator
-            default:  return (0, 0)    // combat tank, …
+            case 141: return (0, -2)  // sonic tank
+            case 146: return (0, -3)  // launcher / deviator
+            case 126: return (0, -5)  // siege tank
+            case 136: return (0, -4)  // devastator
+            default: return (0, 0)  // combat tank, …
         }
     }
 
     private static func structureImage(_ objectType: UInt16, house: HouseID, assets: AssetStore) -> CGImage? {
-        guard let type = StructureType(rawValue: Int(objectType)),
-              let tiles = assets.tileSet, let iconMap = assets.iconMap else { return nil }
+        guard
+            let type = StructureType(rawValue: Int(objectType)),
+            let tiles = assets.tileSet,
+            let iconMap = assets.iconMap
+        else { return nil }
         let groupIndex = Int(StructureInfo[type].iconGroup)
         guard let group = iconMap.group(groupIndex), let first = group.tileIDs.first else { return nil }
         // The structure's footprint in tiles (from its layout) — works for every group, including the special
@@ -113,12 +135,19 @@ import SwiftUI
         // finished icon is `tileIDs[2*perState ..< 3*perState]`. This is what makes turrets show their gun,
         // walls look intact (not rubble), and concrete render clean (no placement-grid lines).
         let base = 2 * perState
-        guard group.tileIDs.count >= base + perState else {
-            return IndexedImage.cgImage(indices: tiles.tile(first), width: tw, height: th,
-                                        palette: assets.palette, remap: remap)
+        guard
+            group.tileIDs.count >= base + perState
+        else {
+            return IndexedImage.cgImage(
+                indices: tiles.tile(first),
+                width: tw,
+                height: th,
+                palette: assets.palette,
+                remap: remap
+            )
         }
         let fw = w * tw, fh = h * th
-        var indices = [UInt8](repeating: 0, count: fw * fh)
+        var indices = [ UInt8 ](repeating: 0, count: fw * fh)
         for i in 0 ..< perState {
             let pixels = tiles.tile(group.tileIDs[base + i])
             guard !pixels.isEmpty else { continue }
@@ -209,9 +238,12 @@ public struct GameSidebar: View {
     let fullScreen: Bool
     @Environment(\.colorScheme) private var systemScheme
 
-
-    public init(model: GameModel, fullScreen: Bool = false,
-                onSave: @escaping () -> Void, onLoad: @escaping () -> Void) {
+    public init(
+        model: GameModel,
+        fullScreen: Bool = false,
+        onSave: @escaping () -> Void,
+        onLoad: @escaping () -> Void
+    ) {
         _model = State(initialValue: model)
         self.fullScreen = fullScreen
         self.onSave = onSave
@@ -221,9 +253,9 @@ public struct GameSidebar: View {
     /// Black in full-screen (matches the map); the standard window background when windowed.
     private var sidebarBackground: Color {
         #if os(macOS)
-        fullScreen ? .black : Color(nsColor: .windowBackgroundColor)
+            fullScreen ? .black : Color(nsColor: .windowBackgroundColor)
         #else
-        .black
+            .black
         #endif
     }
 
@@ -320,7 +352,9 @@ public struct GameSidebar: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text("HP").font(.caption).foregroundStyle(.secondary)
-                    Text("\(s.hitpoints) / \(s.hitpointsMax)").font(.caption.monospacedDigit()).frame(maxWidth: .infinity)
+                    Text("\(s.hitpoints) / \(s.hitpointsMax)").font(.caption.monospacedDigit()).frame(
+                        maxWidth: .infinity
+                    )
                 }
                 ProgressView(value: Double(s.hitpoints), total: Double(max(s.hitpointsMax, 1)))
                     .tint(hpTint(s.hitpoints, s.hitpointsMax))
@@ -338,29 +372,44 @@ public struct GameSidebar: View {
         if !s.unitActions.isEmpty {
             HStack(spacing: 0) {
                 ForEach(s.unitActions, id: \.self) { a in
-                    ActionIcon(systemImage: a.type.systemImage, badge: a.type.shortcut,
-                               active: a.targeted && model.pendingOrder == a.type.orderKind,
-                               help: a.label) { model.issue(a) }
-                        .frame(maxWidth: .infinity)
+                    ActionIcon(
+                        systemImage: a.type.systemImage,
+                        badge: a.type.shortcut,
+                        active: a.targeted && model.pendingOrder == a.type.orderKind,
+                        help: a.label
+                    ) { model.issue(a) }
+                    .frame(maxWidth: .infinity)
                 }
             }
         }
         if model.structureActions != nil || model.superWeapon != nil {
             HStack(spacing: 0) {
                 if let sa = model.structureActions {
-                    ActionIcon(systemImage: "wrench.and.screwdriver", badge: "R", active: sa.isRepairing,
-                               help: sa.isRepairing ? "Stop repairing (R)" : "Repair (R)",
-                               disabled: !sa.canRepair && !sa.isRepairing) { model.repairSelected() }
-                        .frame(maxWidth: .infinity)
-                    ActionIcon(systemImage: "arrow.up.circle", badge: "U", active: sa.isUpgrading,
-                               help: sa.isUpgrading ? "Stop upgrading (U)" : "Upgrade (U)",
-                               disabled: !sa.canUpgrade && !sa.isUpgrading) { model.upgradeSelected() }
-                        .frame(maxWidth: .infinity)
+                    ActionIcon(
+                        systemImage: "wrench.and.screwdriver",
+                        badge: "R",
+                        active: sa.isRepairing,
+                        help: sa.isRepairing ? "Stop repairing (R)" : "Repair (R)",
+                        disabled: !sa.canRepair && !sa.isRepairing
+                    ) { model.repairSelected() }
+                    .frame(maxWidth: .infinity)
+                    ActionIcon(
+                        systemImage: "arrow.up.circle",
+                        badge: "U",
+                        active: sa.isUpgrading,
+                        help: sa.isUpgrading ? "Stop upgrading (U)" : "Upgrade (U)",
+                        disabled: !sa.canUpgrade && !sa.isUpgrading
+                    ) { model.upgradeSelected() }
+                    .frame(maxWidth: .infinity)
                 }
                 if let sw = model.superWeapon {
-                    ActionIcon(systemImage: sw.systemImage, active: model.missileTargeting != nil,
-                               help: sw.ready ? sw.title : "Recharging…", disabled: !sw.ready) { model.launchSuperWeapon() }
-                        .frame(maxWidth: .infinity)
+                    ActionIcon(
+                        systemImage: sw.systemImage,
+                        active: model.missileTargeting != nil,
+                        help: sw.ready ? sw.title : "Recharging…",
+                        disabled: !sw.ready
+                    ) { model.launchSuperWeapon() }
+                    .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -399,13 +448,19 @@ public struct GameSidebar: View {
                             )
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
-                            .background(Color.gray.opacity(option.isAvailable ? 0.2 : 0), in: RoundedRectangle(cornerRadius: 6))
+                            .background(
+                                Color.gray.opacity(option.isAvailable ? 0.2 : 0),
+                                in: RoundedRectangle(cornerRadius: 6)
+                            )
                         }
                         .buttonStyle(.borderless)
                         .frame(maxWidth: .infinity)
                         .help(buildHelp(option))
                         .popover(
-                            isPresented: Binding(get: { requirementsFor == item.objectType }, set: { if !$0 { requirementsFor = nil } }),
+                            isPresented: Binding(
+                                get: { requirementsFor == item.objectType },
+                                set: { if !$0 { requirementsFor = nil } }
+                            ),
                             arrowEdge: .leading
                         ) {
                             RequirementsPopover(name: item.displayName, blockers: option.blockers)
@@ -444,12 +499,16 @@ public struct GameSidebar: View {
                     }
                     .padding(.top, 2)
                     HStack(spacing: 6) {
-                        Button { model.sendStarportOrder() } label: {
+                        Button {
+                            model.sendStarportOrder()
+                        } label: {
                             Label("Order", systemImage: "paperplane.fill").frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(model.cartTotalCost > model.playerCredits)
-                        Button(role: .destructive) { model.clearStarportCart() } label: {
+                        Button(role: .destructive) {
+                            model.clearStarportCart()
+                        } label: {
                             Label("Clear", systemImage: "xmark").frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
@@ -465,11 +524,17 @@ public struct GameSidebar: View {
     @ViewBuilder private func starportRow(_ item: StarportItem) -> some View {
         let count = model.cartCount(item.objectType)
         HStack(spacing: 6) {
-            SpriteThumbnail(objectType: item.objectType, isStructure: false, house: model.playerHouse,
-                            height: 24, provider: sprites, assets: model.assets)
-                .frame(width: 24, height: 24)
-                .clipShape(RoundedRectangle(cornerRadius: 3))
-                .opacity(item.soldOut ? 0.4 : 1)
+            SpriteThumbnail(
+                objectType: item.objectType,
+                isStructure: false,
+                house: model.playerHouse,
+                height: 24,
+                provider: sprites,
+                assets: model.assets
+            )
+            .frame(width: 24, height: 24)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .opacity(item.soldOut ? 0.4 : 1)
             VStack(alignment: .leading, spacing: 0) {
                 Text(item.displayName).font(.caption).lineLimit(1)
                     .foregroundStyle(item.soldOut ? .secondary : .primary)
@@ -492,8 +557,11 @@ public struct GameSidebar: View {
         }
     }
 
-    private func stepButton(_ systemImage: String, disabled: Bool = false,
-                            _ action: @escaping () -> Void) -> some View {
+    private func stepButton(
+        _ systemImage: String,
+        disabled: Bool = false,
+        _ action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage).font(.system(size: 10, weight: .bold)).frame(width: 18, height: 18)
         }
@@ -501,15 +569,23 @@ public struct GameSidebar: View {
     }
 
     private func optionRow(
-        objectType: UInt16, isStructure: Bool, name: String, cost: Int,
-        locked: Bool, underfunded: Bool
+        objectType: UInt16,
+        isStructure: Bool,
+        name: String,
+        cost: Int,
+        locked: Bool,
+        underfunded: Bool
     ) -> some View {
         HStack(spacing: 6) {
             // A fixed, leading-pinned square so every row's thumbnail occupies identical space and the title
             // starts at the same x — the icon is left-aligned to the row, never centred in a wider column.
             SpriteThumbnail(
-                objectType: objectType, isStructure: isStructure, house: model.playerHouse,
-                height: 39, provider: sprites, assets: model.assets
+                objectType: objectType,
+                isStructure: isStructure,
+                house: model.playerHouse,
+                height: 39,
+                provider: sprites,
+                assets: model.assets
             )
             .frame(width: 39, height: 39)
             .clipShape(RoundedRectangle(cornerRadius: 3))
@@ -530,7 +606,9 @@ public struct GameSidebar: View {
                     }
                 }
 
-                Text("\(cost)").font(.caption.monospacedDigit()).foregroundStyle(underfunded ? Color.red : Color.secondary)
+                Text("\(cost)").font(.caption.monospacedDigit()).foregroundStyle(
+                    underfunded ? Color.red : Color.secondary
+                )
             }
         }
     }
@@ -539,8 +617,14 @@ public struct GameSidebar: View {
         VStack(alignment: .leading, spacing: 10) {
             // Big icon (2× the list thumbnails) + the product name, pinned top-trailing; no status text.
             HStack(alignment: .top, spacing: 10) {
-                SpriteThumbnail(objectType: bs.objectType, isStructure: bs.isStructure, house: model.playerHouse,
-                                height: 44, provider: sprites, assets: model.assets)
+                SpriteThumbnail(
+                    objectType: bs.objectType,
+                    isStructure: bs.isStructure,
+                    house: model.playerHouse,
+                    height: 44,
+                    provider: sprites,
+                    assets: model.assets
+                )
                 Spacer(minLength: 0)
                 Text(bs.displayName).font(.headline).lineLimit(2).lineHeight(.tight)
                     .multilineTextAlignment(.trailing)
@@ -549,8 +633,10 @@ public struct GameSidebar: View {
             // Only the action that applies right now (place / resume / pause) + stop, evenly distributed.
             HStack(spacing: 0) {
                 if bs.isReady && bs.isStructure {
-                    ActionIcon(systemImage: "mappin.and.ellipse", active: true, help: "Place") { model.beginPlacement() }
-                        .frame(maxWidth: .infinity)
+                    ActionIcon(systemImage: "mappin.and.ellipse", active: true, help: "Place") {
+                        model.beginPlacement()
+                    }
+                    .frame(maxWidth: .infinity)
                 } else if bs.onHold {
                     ActionIcon(systemImage: "play.fill", active: true, help: "Resume") { model.resumeBuild() }
                         .frame(maxWidth: .infinity)
@@ -586,8 +672,12 @@ public struct GameSidebar: View {
         .padding(6)
     }
 
-    private func sidebarButton(_ systemImage: String, help: String, disabled: Bool = false,
-                               action: @escaping () -> Void) -> some View {
+    private func sidebarButton(
+        _ systemImage: String,
+        help: String,
+        disabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage).frame(width: 30, height: 30)
         }
@@ -603,7 +693,8 @@ public struct GameSidebar: View {
         let item = option.item
         if !option.isAvailable { return "Requires: " + option.blockers.map(\.summary).joined(separator: ", ") }
         if item.cost > model.playerCredits {
-            return "Costs \(item.cost) cr — you have \(model.playerCredits); construction starts and pauses until you can pay."
+            return
+                "Costs \(item.cost) cr — you have \(model.playerCredits); construction starts and pauses until you can pay."
         }
         return "Build \(item.displayName) (\(item.cost) cr)"
     }
@@ -622,11 +713,15 @@ struct OptionsPopover: View {
         VStack(spacing: 0) {
             Form {
                 LabeledContent("Scenario") {
-                    Button { showScenario = true } label: { Label(model.scenarioTitle, systemImage: "map") }
-                        .disabled(model.assets.scenarioNames.isEmpty)
-                        .popover(isPresented: $showScenario, arrowEdge: .leading) {
-                            ScenarioPicker(model: model, isPresented: $showScenario)
-                        }
+                    Button {
+                        showScenario = true
+                    } label: {
+                        Label(model.scenarioTitle, systemImage: "map")
+                    }
+                    .disabled(model.assets.scenarioNames.isEmpty)
+                    .popover(isPresented: $showScenario, arrowEdge: .leading) {
+                        ScenarioPicker(model: model, isPresented: $showScenario)
+                    }
                 }
                 Picker("Game speed", selection: Binding(get: { model.gameSpeed }, set: { model.gameSpeed = $0 })) {
                     Text("0.5×").tag(0.5)
@@ -641,13 +736,13 @@ struct OptionsPopover: View {
             Divider()
             DebugPanel(model: model)
             #if os(macOS)
-            // The audio settings live in the macOS `Settings` scene (⌘,); iOS has no such window.
-            Divider()
-            HStack {
-                SettingsLink { Label("Settings…", systemImage: "slider.horizontal.3") }
-                Spacer()
-            }
-            .padding(10)
+                // The audio settings live in the macOS `Settings` scene (⌘,); iOS has no such window.
+                Divider()
+                HStack {
+                    SettingsLink { Label("Settings…", systemImage: "slider.horizontal.3") }
+                    Spacer()
+                }
+                .padding(10)
             #endif
         }
         .frame(width: 320, height: 540)
@@ -676,10 +771,9 @@ struct RequirementsPopover: View {
 
     private func icon(for blocker: BuildBlocker) -> String {
         switch blocker {
-            case .campaign:     "calendar"
-            case .structure:    "building.2.fill"
+            case .campaign: "calendar"
+            case .structure: "building.2.fill"
             case .upgradeLevel: "arrow.up.circle"
         }
     }
 }
-

@@ -12,7 +12,7 @@ struct DuneIIiOSApp: App {
         WindowGroup {
             ContentView(model: model)
                 .preferredColorScheme(.dark)
-                .persistentSystemOverlays(.hidden)   // hide the home indicator for the full-screen map
+                .persistentSystemOverlays(.hidden)  // hide the home indicator for the full-screen map
         }
     }
 

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import DuneIIWorld
 
 /// Tests for the runtime data-model PODs. The bitfield layouts (`ObjectFlags`, `MapTile`) are golden-
@@ -35,19 +36,19 @@ struct ModelTests {
         for row in rows {
             var t = MapTile()
             switch row.field {
-            case "groundTileID":  t.groundTileID = UInt16(row.value)
-            case "overlayTileID": t.overlayTileID = UInt8(row.value)
-            case "houseID":       t.houseID = UInt8(row.value)
-            case "isUnveiled":    t.isUnveiled = row.value != 0
-            case "hasUnit":       t.hasUnit = row.value != 0
-            case "hasStructure":  t.hasStructure = row.value != 0
-            case "hasAnimation":  t.hasAnimation = row.value != 0
-            case "hasExplosion":  t.hasExplosion = row.value != 0
-            case "index":         t.index = UInt8(row.value)
-            default:              Issue.record("unknown Tile field \(row.field)")
+                case "groundTileID": t.groundTileID = UInt16(row.value)
+                case "overlayTileID": t.overlayTileID = UInt8(row.value)
+                case "houseID": t.houseID = UInt8(row.value)
+                case "isUnveiled": t.isUnveiled = row.value != 0
+                case "hasUnit": t.hasUnit = row.value != 0
+                case "hasStructure": t.hasStructure = row.value != 0
+                case "hasAnimation": t.hasAnimation = row.value != 0
+                case "hasExplosion": t.hasExplosion = row.value != 0
+                case "index": t.index = UInt8(row.value)
+                default: Issue.record("unknown Tile field \(row.field)")
             }
             #expect(t.packed == row.packed)
-            #expect(MapTile(packed: row.packed) == t)              // unpack(pack) == identity
+            #expect(MapTile(packed: row.packed) == t)  // unpack(pack) == identity
             #expect(MapTile(packed: row.packed).packed == row.packed)
         }
     }
@@ -93,7 +94,7 @@ struct ModelTests {
         #expect(o.flags.contains(.isUnit))
 
         var h = House()
-        h.flags = [.used, .human]
+        h.flags = [ .used, .human ]
         #expect(h.flags.contains(.human))
         #expect(!h.flags.contains(.isAIActive))
     }

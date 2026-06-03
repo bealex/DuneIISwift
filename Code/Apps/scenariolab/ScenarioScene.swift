@@ -81,8 +81,12 @@ final class ScenarioScene: SKScene {
     }
 
     private func blitTerrain() {
-        guard let world, let assets, let buffer = ScenarioImageBuilder.terrainIndices(world, assets),
-              let image = ScenarioImageBuilder.colorize(buffer, palette: assets.palette) else { return }
+        guard
+            let world,
+            let assets,
+            let buffer = ScenarioImageBuilder.terrainIndices(world, assets),
+            let image = ScenarioImageBuilder.colorize(buffer, palette: assets.palette)
+        else { return }
         let texture = SKTexture(cgImage: image)
         texture.filteringMode = .nearest
         if let terrainNode {
@@ -90,7 +94,10 @@ final class ScenarioScene: SKScene {
             terrainNode.size = texture.size()
         } else {
             let node = SKSpriteNode(texture: texture)
-            node.position = CGPoint(x: CGFloat(ScenarioImageBuilder.sidePx) / 2, y: CGFloat(ScenarioImageBuilder.sidePx) / 2)
+            node.position = CGPoint(
+                x: CGFloat(ScenarioImageBuilder.sidePx) / 2,
+                y: CGFloat(ScenarioImageBuilder.sidePx) / 2
+            )
             node.zPosition = 0
             addChild(node)
             terrainNode = node
@@ -104,12 +111,13 @@ final class ScenarioScene: SKScene {
         spriteNodes = []
         guard let world, let assets else { return }
         let side = ScenarioImageBuilder.sidePx
-        let sprites = ScenarioImageBuilder.unitSprites(world, assets) + ScenarioImageBuilder.effectSprites(world, assets)
+        let sprites =
+            ScenarioImageBuilder.unitSprites(world, assets) + ScenarioImageBuilder.effectSprites(world, assets)
         for sprite in sprites {
             let texture = SKTexture(cgImage: sprite.image)
             texture.filteringMode = .nearest
             let node = SKSpriteNode(texture: texture)
-            node.position = CGPoint(x: CGFloat(sprite.centerX), y: CGFloat(side - sprite.centerY))   // flip y to scene space
+            node.position = CGPoint(x: CGFloat(sprite.centerX), y: CGFloat(side - sprite.centerY))  // flip y to scene space
             node.zPosition = sprite.z
             if sprite.flipped { node.xScale = -1 }
             addChild(node)
@@ -127,16 +135,23 @@ final class ScenarioScene: SKScene {
         text.horizontalAlignmentMode = .center
 
         let pad: CGFloat = 4
-        let bg = SKShapeNode(rectOf: CGSize(width: text.frame.width + pad * 2,
-                                            height: text.frame.height + pad * 2), cornerRadius: 3)
+        let bg = SKShapeNode(
+            rectOf: CGSize(
+                width: text.frame.width + pad * 2,
+                height: text.frame.height + pad * 2
+            ),
+            cornerRadius: 3
+        )
         bg.fillColor = SKColor.black.withAlphaComponent(0.7)
         bg.strokeColor = .green
         bg.lineWidth = 1
 
         let container = SKNode()
         container.zPosition = 100
-        container.position = CGPoint(x: CGFloat(ScenarioImageBuilder.sidePx) / 2,
-                                     y: CGFloat(ScenarioImageBuilder.sidePx) - bg.frame.height)
+        container.position = CGPoint(
+            x: CGFloat(ScenarioImageBuilder.sidePx) / 2,
+            y: CGFloat(ScenarioImageBuilder.sidePx) - bg.frame.height
+        )
         container.addChild(bg)
         container.addChild(text)
         addChild(container)

@@ -1,7 +1,8 @@
-import Foundation
-import Testing
 import DuneIIFormats
 import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIISimulation
 
 /// Golden parity for `Map_SearchSpice`: generate a map from a seed (no units/structures placed) and
@@ -15,7 +16,7 @@ struct SearchSpiceTests {
     @Test("searchSpice matches the oracle for every query")
     func searchSpice() throws {
         var repo = URL(fileURLWithPath: #filePath)
-        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }     // Code/Tests/SimulationTests/ → repo root
+        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }  // Code/Tests/SimulationTests/ → repo root
         let iconMap = try IconMap(Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
         let fixture = repo.appendingPathComponent("Code/Tests/WorldTests/Fixtures/searchspice-golden.jsonl")
         let text = try String(contentsOf: fixture, encoding: .utf8)
@@ -26,13 +27,15 @@ struct SearchSpiceTests {
         // The generated landscape depends only on the seed, so cache one GameState per seed.
         var bySeed: [UInt32: GameState] = [:]
         for row in rows {
-            let state = bySeed[row.seed] ?? {
-                var s = GameState()
-                s.tileIDs = TileIDs(iconMap: iconMap) ?? TileIDs()
-                s.createLandscape(seed: row.seed, iconMap: iconMap)
-                bySeed[row.seed] = s
-                return s
-            }()
+            let state =
+                bySeed[row.seed]
+                ?? {
+                    var s = GameState()
+                    s.tileIDs = TileIDs(iconMap: iconMap) ?? TileIDs()
+                    s.createLandscape(seed: row.seed, iconMap: iconMap)
+                    bySeed[row.seed] = s
+                    return s
+                }()
             let result = map.searchSpice(row.packed, radius: row.radius, in: state)
             #expect(result == row.result, "seed \(row.seed) packed \(row.packed) radius \(row.radius)")
         }

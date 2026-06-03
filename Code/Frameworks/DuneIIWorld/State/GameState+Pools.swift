@@ -22,7 +22,8 @@ public extension GameState {
             let skip = u.o.flags.contains(.isNotOnMap) && validateStrictIfZero == 0
             if !skip
                 && (find.houseID == Pool.houseInvalid || find.houseID == unitHouseID(u))
-                && (find.type == 0xFFFF || find.type == UInt16(u.o.type)) {
+                && (find.type == 0xFFFF || find.type == UInt16(u.o.type))
+            {
                 return Int(slot)
             }
             find.index = find.index &+ 1
@@ -54,7 +55,8 @@ public extension GameState {
                 let skip = s.o.flags.contains(.isNotOnMap) && validateStrictIfZero == 0
                 if !skip
                     && (find.houseID == Pool.houseInvalid || find.houseID == s.o.houseID)
-                    && (find.type == 0xFFFF || find.type == UInt16(s.o.type)) {
+                    && (find.type == 0xFFFF || find.type == UInt16(s.o.type))
+                {
                     return idx
                 }
             }
@@ -161,7 +163,7 @@ public extension GameState {
         u.o.type = type
         u.o.houseID = houseID
         u.o.linkedID = 0xFF
-        u.o.flags = [.used, .allocated, .isUnit]
+        u.o.flags = [ .used, .allocated, .isUnit ]
         u.route[0] = 0xFF
         if unitType == .sandworm { u.amount = 3 }
         units[idx] = u
@@ -178,7 +180,7 @@ public extension GameState {
         switch Int(type) {
             case StructureType.slab1x1.rawValue: idx = Int(Pool.structureIndexSlab1x1)
             case StructureType.slab2x2.rawValue: idx = Int(Pool.structureIndexSlab2x2)
-            case StructureType.wall.rawValue:    idx = Int(Pool.structureIndexWall)
+            case StructureType.wall.rawValue: idx = Int(Pool.structureIndexWall)
             default:
                 special = false
                 if index == Pool.structureIndexInvalid {
@@ -198,7 +200,7 @@ public extension GameState {
         s.o.index = UInt16(idx)
         s.o.type = type
         s.o.linkedID = 0xFF
-        s.o.flags = [.used, .allocated]
+        s.o.flags = [ .used, .allocated ]
         structures[idx] = s
 
         if !special { structureFindArray.append(UInt16(idx)) }
@@ -212,7 +214,7 @@ public extension GameState {
 
         var h = House()
         h.index = index
-        h.flags = [.used]
+        h.flags = [ .used ]
         h.starportLinkedID = Pool.unitIndexInvalid
         houses[Int(index)] = h
 
@@ -237,7 +239,7 @@ public extension GameState {
 
         var t = Team()
         t.index = UInt16(idx)
-        t.flags = [.used]
+        t.flags = [ .used ]
         teams[idx] = t
 
         teamFindArray.append(UInt16(idx))
@@ -251,8 +253,14 @@ public extension GameState {
     /// (`GameLoop_Team` won't run an unloaded script). `action == actionStart` initially (so `Load2` can
     /// restore it). Returns the slot, or `nil` if the team pool is full.
     @discardableResult
-    mutating func teamCreate(houseID: UInt8, teamActionType: UInt8, movementType: UInt8,
-                             minMembers: UInt16, maxMembers: UInt16, scriptPC: UInt16) -> Int? {
+    mutating func teamCreate(
+        houseID: UInt8,
+        teamActionType: UInt8,
+        movementType: UInt8,
+        minMembers: UInt16,
+        maxMembers: UInt16,
+        scriptPC: UInt16
+    ) -> Int? {
         guard let slot = teamAllocate(index: Pool.teamIndexInvalid) else { return nil }
         teams[slot].houseID = houseID
         teams[slot].action = UInt16(teamActionType)
@@ -260,7 +268,7 @@ public extension GameState {
         teams[slot].movementType = UInt16(movementType)
         teams[slot].minMembers = minMembers
         teams[slot].maxMembers = maxMembers
-        teams[slot].script.reset()              // Script_Reset(&t->script, g_scriptTeam)
+        teams[slot].script.reset()  // Script_Reset(&t->script, g_scriptTeam)
         teams[slot].script.scriptPC = scriptPC  // Script_Load(&t->script, teamActionType)
         teams[slot].script.delay = 0
         return slot
@@ -288,7 +296,10 @@ public extension GameState {
         let type = Int(structures[slot].o.type)
         if type == StructureType.slab1x1.rawValue
             || type == StructureType.slab2x2.rawValue
-            || type == StructureType.wall.rawValue { return }
+            || type == StructureType.wall.rawValue
+        {
+            return
+        }
         if let i = structureFindArray.firstIndex(of: UInt16(slot)) { structureFindArray.remove(at: i) }
     }
 
@@ -305,7 +316,7 @@ public extension GameState {
     mutating func unitRecount() {
         for i in houseFindArray { houses[Int(i)].unitCount = 0 }
         unitFindArray.removeAll(keepingCapacity: true)
-        for index in 0..<Pool.unitIndexMax where units[index].o.flags.contains(.used) {
+        for index in 0 ..< Pool.unitIndexMax where units[index].o.flags.contains(.used) {
             houses[Int(units[index].o.houseID)].unitCount &+= 1
             unitFindArray.append(UInt16(index))
         }

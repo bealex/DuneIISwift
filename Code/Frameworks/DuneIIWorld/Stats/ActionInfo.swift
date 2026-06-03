@@ -18,8 +18,10 @@ public enum ActionType: Int, CaseIterable, Sendable {
     /// `Unit_ActionStringToType` (`unit.c`): the scenario-`.INI` action name (case-insensitive), matching
     /// `g_table_actionInfo[].name`. `nil` for an unknown name (OpenDUNE's `ACTION_INVALID`).
     public static func named(_ name: String) -> ActionType? {
-        let names = ["attack", "move", "retreat", "guard", "area guard", "harvest", "return", "stop",
-                     "ambush", "sabotage", "die", "hunt", "deploy", "destruct"]
+        let names = [
+            "attack", "move", "retreat", "guard", "area guard", "harvest", "return", "stop",
+            "ambush", "sabotage", "die", "hunt", "deploy", "destruct",
+        ]
         return names.firstIndex(of: name.lowercased()).flatMap { ActionType(rawValue: $0) }
     }
 }
@@ -42,15 +44,15 @@ public enum SelectionType: Int, Sendable {
 ///
 /// Verified field-for-field against an OpenDUNE golden dump — see `Documentation/Algorithms/StatTables.md`.
 public struct ActionInfo: Sendable, Equatable {
-    public let stringID: UInt16             // index into the string table (the action's display name)
+    public let stringID: UInt16  // index into the string table (the action's display name)
     public let name: String
-    public let switchType: UInt16           // 0 queue-if-needed, 1 change immediately, 2 via subroutine
+    public let switchType: UInt16  // 0 queue-if-needed, 1 change immediately, 2 via subroutine
     public let selectionType: SelectionType
-    public let soundID: UInt16              // played for a Foot unit (0xFFFF = none)
+    public let soundID: UInt16  // played for a Foot unit (0xFFFF = none)
 
     /// The four AI default-action choices, a port of OpenDUNE's `g_table_actionsAI[4]`
     /// (`src/table/unitinfo.c:12`): the actions an AI unit cycles through.
-    public static let actionsAI: [ActionType] = [.hunt, .areaGuard, .ambush, .guard_]
+    public static let actionsAI: [ActionType] = [ .hunt, .areaGuard, .ambush, .guard_ ]
 
     /// Stats for `action`.
     public static subscript(_ action: ActionType) -> ActionInfo { table[action.rawValue] }

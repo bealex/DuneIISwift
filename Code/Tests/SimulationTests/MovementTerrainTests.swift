@@ -1,7 +1,8 @@
-import Testing
 import DuneIIContracts
-@testable import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
+@testable import DuneIIWorld
 
 /// Verifies `Unit_StartMovement` (`unit.c:1059`) sets the per-step speed from the **terrain of the tile
 /// being entered** — i.e. terrain is accounted for *at the start* of each move, not only mid-traversal.
@@ -18,8 +19,8 @@ struct MovementTerrainTests {
     }
 
     /// groundTileID whose `landscapeSpriteMap[offset]` is the wanted type: 0 → normalSand, 1 → partialRock.
-    private let sandTile: UInt16 = 0   // landscapeSpriteMap[0] = 0 (normalSand)  → wheeled speed 160
-    private let rockTile: UInt16 = 1   // landscapeSpriteMap[1] = 1 (partialRock) → wheeled speed 64
+    private let sandTile: UInt16 = 0  // landscapeSpriteMap[0] = 0 (normalSand)  → wheeled speed 160
+    private let rockTile: UInt16 = 1  // landscapeSpriteMap[1] = 1 (partialRock) → wheeled speed 64
 
     /// Place a full-HP trike (wheeled) facing north at tile (20,20), set the current tile and the
     /// tile-being-entered (one row north, packed−64) to the given terrain, run `Unit_StartMovement`,
@@ -31,11 +32,11 @@ struct MovementTerrainTests {
         let slot = s.unitAllocate(index: 0, type: UInt8(UnitType.trike.rawValue), houseID: 0)!
         let packed = Tile32.packXY(x: 20, y: 20)
         s.units[slot].o.position = Tile32.unpack(packed)
-        s.units[slot].o.hitpoints = UnitInfo[.trike].o.hitpoints   // full HP → no half-HP penalty
-        s.units[slot].orientation[0].current = 0                   // faces north ⇒ entered tile = packed − 64
+        s.units[slot].o.hitpoints = UnitInfo[.trike].o.hitpoints  // full HP → no half-HP penalty
+        s.units[slot].orientation[0].current = 0  // faces north ⇒ entered tile = packed − 64
         s.map[Int(packed)].groundTileID = currentTile
         s.map[Int(packed) - 64].groundTileID = enteredTile
-        let movement = UnitMovement(scriptInfo: ScriptInfo(program: [0], offsets: [UInt16](repeating: 0, count: 64)))
+        let movement = UnitMovement(scriptInfo: ScriptInfo(program: [ 0 ], offsets: [ UInt16 ](repeating: 0, count: 64)))
         var engine = s.units[slot].o.script
         let started = movement.startMovement(slot: slot, engine: &engine, in: &s)
         return (started, s.units[slot].speedPerTick)

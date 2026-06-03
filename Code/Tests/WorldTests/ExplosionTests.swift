@@ -1,5 +1,6 @@
-import Testing
 import DuneIIContracts
+import Testing
+
 @testable import DuneIIWorld
 
 /// The explosion subsystem (`GameState+Explosion.swift`) — a port of OpenDUNE `src/explosion.c`.
@@ -44,12 +45,12 @@ struct ExplosionTests {
         let slot = try! #require(state.explosions.firstIndex { $0.active })
 
         // [setSprite 153, setTimeout 3, bloom 0, setSprite 153, setTimeout 3, stop]
-        step(&state); #expect(state.explosions[slot].spriteID == 153)   // setSprite 153
-        step(&state)                                                    // setTimeout 3
-        step(&state)                                                    // bloom (seam)
-        step(&state); #expect(state.explosions[slot].spriteID == 153)   // setSprite 153
-        step(&state)                                                    // setTimeout 3
-        step(&state)                                                    // stop
+        step(&state); #expect(state.explosions[slot].spriteID == 153)  // setSprite 153
+        step(&state)  // setTimeout 3
+        step(&state)  // bloom (seam)
+        step(&state); #expect(state.explosions[slot].spriteID == 153)  // setSprite 153
+        step(&state)  // setTimeout 3
+        step(&state)  // stop
         #expect(!state.explosions[slot].active)
         #expect(!state.map[Int(pos.packed)].hasExplosion)
     }
@@ -63,28 +64,28 @@ struct ExplosionTests {
         let slot = try! #require(state.explosions.firstIndex { $0.active })
 
         var lcgBefore = state.randomLCG
-        step(&state)                                                    // setRandomTimeout 60 → one LCG draw
+        step(&state)  // setRandomTimeout 60 → one LCG draw
         var lcgAfter = state.randomLCG
         var r256After = state.random256
-        #expect(lcgAfter.next() != lcgBefore.next())                    // LCG advanced (one draw)
-        #expect(r256After.next() == r256Before.next())                  // but the 256-RNG is untouched
+        #expect(lcgAfter.next() != lcgBefore.next())  // LCG advanced (one draw)
+        #expect(r256After.next() == r256Before.next())  // but the 256-RNG is untouched
 
-        step(&state); #expect(state.explosions[slot].spriteID == 188)   // setSprite 188
+        step(&state); #expect(state.explosions[slot].spriteID == 188)  // setSprite 188
         state.soundEvents.removeAll()
-        step(&state)                                                    // playVoice 51 → emits a sound
+        step(&state)  // playVoice 51 → emits a sound
         #expect(state.soundEvents.contains { $0.sound == SoundID(51) && $0.positionX == Int(pos.x) })
-        step(&state)                                                    // setTimeout 7
-        step(&state); #expect(state.explosions[slot].spriteID == 189)   // setSprite 189
-        step(&state)                                                    // bloom (seam)
-        step(&state)                                                    // screenShake (seam)
-        step(&state)                                                    // setTimeout 3
+        step(&state)  // setTimeout 7
+        step(&state); #expect(state.explosions[slot].spriteID == 189)  // setSprite 189
+        step(&state)  // bloom (seam)
+        step(&state)  // screenShake (seam)
+        step(&state)  // setTimeout 3
         step(&state); #expect(state.explosions[slot].spriteID == 190)
-        step(&state)                                                    // setTimeout 3
+        step(&state)  // setTimeout 3
         step(&state); #expect(state.explosions[slot].spriteID == 191)
-        step(&state)                                                    // setTimeout 3
+        step(&state)  // setTimeout 3
         step(&state); #expect(state.explosions[slot].spriteID == 192)
-        step(&state)                                                    // setTimeout 3
-        step(&state)                                                    // stop
+        step(&state)  // setTimeout 3
+        step(&state)  // stop
         #expect(!state.explosions[slot].active)
     }
 
@@ -92,10 +93,10 @@ struct ExplosionTests {
     func emitSoundBounds() {
         var state = GameState()
         let pos = Tile32.unpack(Tile32.packXY(x: 3, y: 7))
-        state.emitSound(57, at: pos)        // valid
-        state.emitSound(0xFFFF, at: pos)    // no-sound sentinel
-        state.emitSound(-1, at: pos)        // below range
-        state.emitSound(120, at: pos)       // above range
+        state.emitSound(57, at: pos)  // valid
+        state.emitSound(0xFFFF, at: pos)  // no-sound sentinel
+        state.emitSound(-1, at: pos)  // below range
+        state.emitSound(120, at: pos)  // above range
         #expect(state.soundEvents.count == 1)
         #expect(state.soundEvents[0].sound == SoundID(57))
         #expect(state.soundEvents[0].positionX == Int(pos.x))
@@ -108,11 +109,11 @@ struct ExplosionTests {
         state.tileIDs.builtSlab = 100; state.tileIDs.wall = 50; state.tileIDs.veiled = 200
         let p = Int(Tile32.packXY(x: 9, y: 9))
         func makeSlab() {
-            state.map[p].groundTileID = 100       // a built concrete slab
+            state.map[p].groundTileID = 100  // a built concrete slab
             state.map[p].isUnveiled = true
-            state.map[p].overlayTileID = 0        // revealed (0 < veiled − 15)
+            state.map[p].overlayTileID = 0  // revealed (0 < veiled − 15)
             state.map[p].hasStructure = false
-            state.mapBaseTileID[p] = 30           // the seed base landscape tile under it
+            state.mapBaseTileID[p] = 30  // the seed base landscape tile under it
         }
         // The slab is blasted back to the base tile (Explosion_Func_TileDamage's LST_CONCRETE_SLAB branch).
         makeSlab(); state.explosionTileDamage(UInt16(p))
@@ -142,11 +143,11 @@ struct ExplosionTests {
             state.map[p].groundTileID = 77; state.map[p].isUnveiled = true; state.map[p].overlayTileID = 0
         }
         openTile(); state.explosionTileDamage(UInt16(p))
-        #expect(state.pendingCraters == [UInt16(p)])          // recorded for drainCraters
+        #expect(state.pendingCraters == [ UInt16(p) ])  // recorded for drainCraters
         openTile(); state.map[p].hasStructure = true; state.explosionTileDamage(UInt16(p))
-        #expect(state.pendingCraters.isEmpty)                 // a structure tile records nothing
+        #expect(state.pendingCraters.isEmpty)  // a structure tile records nothing
         openTile(); state.map[p].isUnveiled = false; state.explosionTileDamage(UInt16(p))
-        #expect(state.pendingCraters.isEmpty)                 // a fogged tile records nothing
+        #expect(state.pendingCraters.isEmpty)  // a fogged tile records nothing
     }
 
     @Test("the IMPACT_EXPLODE sequence reaches TILE_DAMAGE and destroys the slab in the VM")
@@ -169,14 +170,14 @@ struct ExplosionTests {
         state.tileIDs.bloom = 200
         let pos = Tile32.unpack(Tile32.packXY(x: 6, y: 6))
         let p = Int(pos.packed)
-        state.map[p].groundTileID = 200                 // the bloom under the blast
+        state.map[p].groundTileID = 200  // the bloom under the blast
         state.explosionStart(type: ExplosionType.impactSmall.rawValue, position: pos)
         // [setSprite 153, setTimeout 3, BLOOM, …] — step to the BLOOM command.
-        step(&state)                                    // setSprite
-        step(&state)                                    // setTimeout
+        step(&state)  // setSprite
+        step(&state)  // setTimeout
         #expect(state.pendingBloomDetonations.isEmpty)
-        step(&state)                                    // BLOOM → queues the tile
-        #expect(state.pendingBloomDetonations == [UInt16(p)])
+        step(&state)  // BLOOM → queues the tile
+        #expect(state.pendingBloomDetonations == [ UInt16(p) ])
     }
 
     @Test("an explosion on a non-bloom tile queues nothing at the BLOOM command")
@@ -184,9 +185,9 @@ struct ExplosionTests {
         var state = GameState()
         state.tileIDs.bloom = 200
         let pos = Tile32.unpack(Tile32.packXY(x: 6, y: 6))
-        state.map[Int(pos.packed)].groundTileID = 50    // not a bloom
+        state.map[Int(pos.packed)].groundTileID = 50  // not a bloom
         state.explosionStart(type: ExplosionType.impactSmall.rawValue, position: pos)
-        step(&state); step(&state); step(&state)        // through the BLOOM command
+        step(&state); step(&state); step(&state)  // through the BLOOM command
         #expect(state.pendingBloomDetonations.isEmpty)
     }
 
@@ -202,7 +203,7 @@ struct ExplosionTests {
         let active = state.explosions.indices.filter { state.explosions[$0].active }
         #expect(active.count == 1)
         #expect(state.explosions[active[0]].tableIndex == ExplosionType.tankExplode.rawValue)
-        #expect(first == active[0])   // reused the freed slot
+        #expect(first == active[0])  // reused the freed slot
         #expect(state.map[Int(pos.packed)].hasExplosion)
     }
 

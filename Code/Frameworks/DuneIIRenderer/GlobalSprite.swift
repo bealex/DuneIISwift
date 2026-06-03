@@ -4,7 +4,7 @@
 public enum UnitSpriteSheet: String, Sendable, CaseIterable {
     case units2 = "UNITS2.SHP"
     case units1 = "UNITS1.SHP"
-    case units  = "UNITS.SHP"
+    case units = "UNITS.SHP"
 
     /// The on-disk SHP file name (the key the asset stores use).
     public var fileName: String { rawValue }

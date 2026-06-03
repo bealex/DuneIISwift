@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import DuneIIWorld
 
 /// Bit-exact parity of the two RNGs against OpenDUNE, from the shared golden fixture (see
@@ -28,7 +29,10 @@ struct RngGoldenTests {
             var rng = RandomLCG(seed: UInt16(record.seed!))
             for (index, expected) in record.out.values.enumerated() {
                 let actual = rng.range(record.min!, record.max!)
-                #expect(actual == UInt16(expected), "seed \(record.seed!) [\(record.min!),\(record.max!)] draw \(index): \(actual) != \(expected)")
+                #expect(
+                    actual == UInt16(expected),
+                    "seed \(record.seed!) [\(record.min!),\(record.max!)] draw \(index): \(actual) != \(expected)"
+                )
             }
         }
     }
@@ -37,7 +41,11 @@ struct RngGoldenTests {
     /// sequence — this pins the bare generator independently of the range scaling/rejection.
     @Test("RandomLCG.next matches the identity-range golden stream")
     func lcgRaw() throws {
-        let record = try #require(GoldenFixture.records("rng-golden.jsonl", fn: "Tools_RandomLCG_Range").first { $0.min == 0 && $0.max == 32767 })
+        let record = try #require(
+            GoldenFixture.records("rng-golden.jsonl", fn: "Tools_RandomLCG_Range").first {
+                $0.min == 0 && $0.max == 32767
+            }
+        )
         var rng = RandomLCG(seed: UInt16(record.seed!))
         for expected in record.out.values {
             #expect(Int(rng.next()) == expected)

@@ -60,8 +60,8 @@ public enum BuildBlocker: Sendable, Equatable {
     /// A short human label for the build tooltip.
     public var summary: String {
         switch self {
-            case .campaign(let level):     "Campaign \(level)"
-            case .structure(let type):     type.displayName
+            case .campaign(let level): "Campaign \(level)"
+            case .structure(let type): type.displayName
             case .upgradeLevel(let level): "Factory upgrade \(level)"
         }
     }
@@ -100,8 +100,11 @@ public extension Simulation {
     /// `availableCampaign`, the active `campaignID`, and the factory's `upgradeLevel`. Unit factories list
     /// units; the construction yard lists structures. Upgrade-first items (`available == -1`) are omitted.
     func buildables(forStructure slot: Int) -> [Buildable] {
-        guard slot >= 0, slot < state.structures.count,
-              let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return [] }
+        guard
+            slot >= 0,
+            slot < state.structures.count,
+            let st = StructureType(rawValue: Int(state.structures[slot].o.type))
+        else { return [] }
         let s = state.structures[slot]
         let structuresBuilt = state.houses[Int(s.o.houseID)].structuresBuilt
         let player = state.playerHouseID
@@ -124,8 +127,14 @@ public extension Simulation {
                     if (structuresBuilt & ui.structuresRequired) != ui.structuresRequired { continue }
                     if (ui.availableHouse & (1 << s.creatorHouseID)) == 0 { continue }
                     if UInt16(s.upgradeLevel) >= upgradeRequired {
-                        result.append(Buildable(objectType: UInt16(ut.rawValue), isStructure: false,
-                                                cost: Int(ui.buildCredits), buildTime: Int(ui.buildTime)))
+                        result.append(
+                            Buildable(
+                                objectType: UInt16(ut.rawValue),
+                                isStructure: false,
+                                cost: Int(ui.buildCredits),
+                                buildTime: Int(ui.buildTime)
+                            )
+                        )
                     }
                 }
 
@@ -139,12 +148,27 @@ public extension Simulation {
                         structuresRequired &= ~(UInt32(1) << StructureType.barracks.rawValue)
                         availableCampaign = 2
                     }
-                    guard (structuresBuilt & structuresRequired) == structuresRequired || s.o.houseID != player else { continue }
+                    guard
+                        (structuresBuilt & structuresRequired) == structuresRequired || s.o.houseID != player
+                    else {
+                        continue
+                    }
                     if s.o.houseID != harkonnen && stType == .lightVehicle { availableCampaign = 2 }
-                    guard campaign >= availableCampaign &- 1, (lsi.availableHouse & (1 << s.o.houseID)) != 0 else { continue }
+                    guard
+                        campaign >= availableCampaign &- 1,
+                        (lsi.availableHouse & (1 << s.o.houseID)) != 0
+                    else {
+                        continue
+                    }
                     if UInt16(s.upgradeLevel) >= UInt16(lsi.upgradeLevelRequired) || s.o.houseID != player {
-                        result.append(Buildable(objectType: UInt16(i), isStructure: true,
-                                                cost: Int(lsi.buildCredits), buildTime: Int(lsi.buildTime)))
+                        result.append(
+                            Buildable(
+                                objectType: UInt16(i),
+                                isStructure: true,
+                                cost: Int(lsi.buildCredits),
+                                buildTime: Int(lsi.buildTime)
+                            )
+                        )
                     }
                 }
 
@@ -160,8 +184,11 @@ public extension Simulation {
     /// house can't build at all (`availableHouse`) and the construction-yard self-entry (`FLAG_STRUCTURE_NEVER`)
     /// are excluded. Intended for a player-owned factory (no AI/non-player prerequisite bypass).
     func buildOptions(forStructure slot: Int) -> [BuildOption] {
-        guard slot >= 0, slot < state.structures.count,
-              let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { return [] }
+        guard
+            slot >= 0,
+            slot < state.structures.count,
+            let st = StructureType(rawValue: Int(state.structures[slot].o.type))
+        else { return [] }
         let s = state.structures[slot]
         let structuresBuilt = state.houses[Int(s.o.houseID)].structuresBuilt
         let campaign = UInt16(state.campaignID)
@@ -181,11 +208,22 @@ public extension Simulation {
                     if (ui.availableHouse & (1 << s.creatorHouseID)) == 0 { continue }
                     var upgradeRequired = UInt16(ui.upgradeLevelRequired)
                     if ut == .siegeTank && s.creatorHouseID == ordos { upgradeRequired &-= 1 }
-                    var blockers = Self.missingStructureBlockers(required: ui.structuresRequired, built: structuresBuilt)
+                    var blockers = Self.missingStructureBlockers(
+                        required: ui.structuresRequired,
+                        built: structuresBuilt
+                    )
                     if UInt16(s.upgradeLevel) < upgradeRequired { blockers.append(.upgradeLevel(Int(upgradeRequired))) }
-                    result.append(BuildOption(item: Buildable(objectType: UInt16(ut.rawValue), isStructure: false,
-                                                              cost: Int(ui.buildCredits), buildTime: Int(ui.buildTime)),
-                                              blockers: blockers))
+                    result.append(
+                        BuildOption(
+                            item: Buildable(
+                                objectType: UInt16(ut.rawValue),
+                                isStructure: false,
+                                cost: Int(ui.buildCredits),
+                                buildTime: Int(ui.buildTime)
+                            ),
+                            blockers: blockers
+                        )
+                    )
                 }
 
             case .constructionYard:
@@ -203,13 +241,23 @@ public extension Simulation {
                     }
                     if s.o.houseID != harkonnen && stType == .lightVehicle { availableCampaign = 2 }
                     var blockers = Self.missingStructureBlockers(required: structuresRequired, built: structuresBuilt)
-                    if campaign < availableCampaign &- 1 { blockers.append(.campaign(level: Int(availableCampaign) - 1)) }
+                    if campaign < availableCampaign &- 1 {
+                        blockers.append(.campaign(level: Int(availableCampaign) - 1))
+                    }
                     if UInt16(s.upgradeLevel) < UInt16(lsi.upgradeLevelRequired) {
                         blockers.append(.upgradeLevel(Int(lsi.upgradeLevelRequired)))
                     }
-                    result.append(BuildOption(item: Buildable(objectType: UInt16(i), isStructure: true,
-                                                              cost: Int(lsi.buildCredits), buildTime: Int(lsi.buildTime)),
-                                              blockers: blockers))
+                    result.append(
+                        BuildOption(
+                            item: Buildable(
+                                objectType: UInt16(i),
+                                isStructure: true,
+                                cost: Int(lsi.buildCredits),
+                                buildTime: Int(lsi.buildTime)
+                            ),
+                            blockers: blockers
+                        )
+                    )
                 }
 
             default: break
@@ -232,17 +280,25 @@ public extension Simulation {
     func buildState(structureSlot slot: Int) -> BuildState? {
         guard slot >= 0, slot < state.structures.count else { return nil }
         let s = state.structures[slot]
-        guard let st = StructureType(rawValue: Int(s.o.type)), StructureInfo[st].o.flags.contains(.factory),
-              s.o.linkedID != 0xFF, s.objectType != 0xFFFF else { return nil }
+        guard
+            let st = StructureType(rawValue: Int(s.o.type)),
+            StructureInfo[st].o.flags.contains(.factory),
+            s.o.linkedID != 0xFF,
+            s.objectType != 0xFFFF
+        else { return nil }
         let isStructure = (st == .constructionYard)
         let buildTime: Int = isStructure
             ? StructureType(rawValue: Int(s.objectType)).map { Int(StructureInfo[$0].o.buildTime) } ?? 0
             : UnitType(rawValue: Int(s.objectType)).map { Int(UnitInfo[$0].o.buildTime) } ?? 0
         let total = buildTime << 8
         let progress = total > 0 ? 1 - Double(s.countDown) / Double(total) : (s.state == .ready ? 1 : 0)
-        return BuildState(objectType: s.objectType, isStructure: isStructure,
-                          progress: min(1, max(0, progress)), isReady: s.state == .ready,
-                          onHold: s.o.flags.contains(.onHold))
+        return BuildState(
+            objectType: s.objectType,
+            isStructure: isStructure,
+            progress: min(1, max(0, progress)),
+            isReady: s.state == .ready,
+            onHold: s.o.flags.contains(.onHold)
+        )
     }
 
     /// `Structure_IsValidBuildLocation` (`structure.c:734`) for the placement preview: ≥1 = valid (all on

@@ -1,6 +1,7 @@
+import DuneIIFormats
 import Foundation
 import Testing
-import DuneIIFormats
+
 @testable import DuneIIWorld
 
 /// `TileIDs` (sprite tile-id init, a port of `Sprites_Init`) derived from the committed real
@@ -11,7 +12,7 @@ struct TileIDsTests {
     @Test("TileIDs derived from the real ICON.MAP match Sprites_Init")
     func fromIconMap() throws {
         var url = URL(fileURLWithPath: #filePath)
-        for _ in 0 ..< 4 { url.deleteLastPathComponent() }   // Code/Tests/WorldTests/ → repo root
+        for _ in 0 ..< 4 { url.deleteLastPathComponent() }  // Code/Tests/WorldTests/ → repo root
         url.appendPathComponent("Resources/Tiles/Maps/ICON.MAP")
 
         let iconMap = try IconMap(Data(contentsOf: url))

@@ -66,24 +66,36 @@ public struct Simulation: Sendable {
         self.mapPrimitives = mapPrimitives
         self.housePrimitives = housePrimitives
         let unitRunner = scriptInfo.map {
-            UnitScriptRunner(scriptInfo: $0, unitPrimitives: unitPrimitives,
-                             mapPrimitives: mapPrimitives, housePrimitives: housePrimitives)
+            UnitScriptRunner(
+                scriptInfo: $0,
+                unitPrimitives: unitPrimitives,
+                mapPrimitives: mapPrimitives,
+                housePrimitives: housePrimitives
+            )
         }
         self.unitScript = unitRunner
         // A structure script needs the unit layer (its death natives spawn units + reuse the explosion
         // path), so it's built only when both EMCs are present.
         self.structureScript = (structureScriptInfo != nil && unitRunner != nil)
-            ? StructureScriptRunner(scriptInfo: structureScriptInfo!, combat: unitRunner!.combat,
-                                    interpreter: unitRunner!.interpreter, tracer: structureTracer)
+            ? StructureScriptRunner(
+                scriptInfo: structureScriptInfo!,
+                combat: unitRunner!.combat,
+                interpreter: unitRunner!.interpreter,
+                tracer: structureTracer
+            )
             : nil
         self.teamScript = teamScriptInfo.map {
-            TeamScriptRunner(scriptInfo: $0, interpreter: unitRunner?.interpreter ?? DefaultScriptInterpreter(),
-                             unit: unitRunner)
+            TeamScriptRunner(
+                scriptInfo: $0,
+                interpreter: unitRunner?.interpreter ?? DefaultScriptInterpreter(),
+                unit: unitRunner
+            )
         }
     }
 
     public init(
-        random256Seed: UInt32 = 0, randomLCGSeed: UInt16 = 0,
+        random256Seed: UInt32 = 0,
+        randomLCGSeed: UInt16 = 0,
         scriptInfo: ScriptInfo? = nil,
         structureScriptInfo: ScriptInfo? = nil,
         teamScriptInfo: ScriptInfo? = nil,
@@ -93,19 +105,25 @@ public struct Simulation: Sendable {
         mapPrimitives: any MapPrimitives = DefaultMapPrimitives(),
         housePrimitives: any HousePrimitives = DefaultHousePrimitives()
     ) {
-        self.init(state: GameState(random256Seed: random256Seed, randomLCGSeed: randomLCGSeed),
-                  scriptInfo: scriptInfo, structureScriptInfo: structureScriptInfo,
-                  teamScriptInfo: teamScriptInfo, tickExplosions: tickExplosions, tickAnimations: tickAnimations,
-                  unitPrimitives: unitPrimitives, mapPrimitives: mapPrimitives,
-                  housePrimitives: housePrimitives)
+        self.init(
+            state: GameState(random256Seed: random256Seed, randomLCGSeed: randomLCGSeed),
+            scriptInfo: scriptInfo,
+            structureScriptInfo: structureScriptInfo,
+            teamScriptInfo: teamScriptInfo,
+            tickExplosions: tickExplosions,
+            tickAnimations: tickAnimations,
+            unitPrimitives: unitPrimitives,
+            mapPrimitives: mapPrimitives,
+            housePrimitives: housePrimitives
+        )
     }
 
     /// One simulation tick: advance the clocks (pause-aware) then run the four game-loop phases.
     /// Mirrors the headless parity driver (`src/parity.c` `Parity_Run`).
     public mutating func tick() {
-        state.soundEvents.removeAll(keepingCapacity: true)   // the host drained last tick's sounds
-        state.pendingFeedback.removeAll(keepingCapacity: true)   // …and last tick's global UI feedback
-        if !state.scenario.spiceFields.isEmpty { applyScenarioSpiceFields() }   // [MAP] Field — once, at start
+        state.soundEvents.removeAll(keepingCapacity: true)  // the host drained last tick's sounds
+        state.pendingFeedback.removeAll(keepingCapacity: true)  // …and last tick's global UI feedback
+        if !state.scenario.spiceFields.isEmpty { applyScenarioSpiceFields() }  // [MAP] Field — once, at start
         state.timerGUI &+= 1
         if state.paused { return }
         state.timerGame &+= 1
@@ -114,14 +132,14 @@ public struct Simulation: Sendable {
         gameLoopUnit()
         gameLoopStructure()
         gameLoopHouse()
-        evaluateLevelEnd()   // latch won/lost when a WinFlags condition is met (RNG-free; doesn't halt)
+        evaluateLevelEnd()  // latch won/lost when a WinFlags condition is met (RNG-free; doesn't halt)
         // Visual subsystems the oracle's parity harness doesn't tick (both draw RNG) — gated off the
         // golden/oracle-matched path, on for the visual apps. See `tickAnimations`/`tickExplosions`.
-        if tickAnimations { state.animationTick() }   // structure animations (mutates the map ground tiles)
+        if tickAnimations { state.animationTick() }  // structure animations (mutates the map ground tiles)
         if tickExplosions {
-            state.explosionTick()                     // explosion sprite animations
-            drainBloomDetonations()                   // pop any bloom a blast's VM landed on (shoot-the-bloom)
-            drainCraters()                            // stamp the crater overlay a TILE_DAMAGE blast left
+            state.explosionTick()  // explosion sprite animations
+            drainBloomDetonations()  // pop any bloom a blast's VM landed on (shoot-the-bloom)
+            drainCraters()  // stamp the crater overlay a TILE_DAMAGE blast left
         }
     }
 
@@ -129,7 +147,10 @@ public struct Simulation: Sendable {
     /// the World layer only records the tile, since `Map_Bloom_ExplodeSpice` (spice-fill + tremor) is a
     /// Simulation primitive. Runs only on the explosion-ticking (visual-app) path, so it's golden-neutral.
     private mutating func drainBloomDetonations() {
-        guard !state.pendingBloomDetonations.isEmpty, let movement = unitScript?.movement else {
+        guard
+            !state.pendingBloomDetonations.isEmpty,
+            let movement = unitScript?.movement
+        else {
             state.pendingBloomDetonations.removeAll(keepingCapacity: true)
             return
         }
@@ -145,7 +166,11 @@ public struct Simulation: Sendable {
     /// of two — one `Random_256` draw), deduct spice, and pop a bloom underneath. Gated to `tickExplosions`
     /// (off for goldens), so the `Random_256` draw never perturbs a parity run.
     private mutating func drainCraters() {
-        guard !state.pendingCraters.isEmpty, let movement = unitScript?.movement, let iconMap = state.iconMap else {
+        guard
+            !state.pendingCraters.isEmpty,
+            let movement = unitScript?.movement,
+            let iconMap = state.iconMap
+        else {
             state.pendingCraters.removeAll(keepingCapacity: true)
             return
         }
@@ -156,21 +181,23 @@ public struct Simulation: Sendable {
             guard pos >= 0, pos < state.map.count else { continue }
             let type = movement.map.landscapeType(state.map[pos], tileIDs: state.tileIDs)
             let craterType = Int(LandscapeInfo[type].craterType)
-            if craterType == 0 { continue }   // mountain / structure / etc. take no crater
+            if craterType == 0 { continue }  // mountain / structure / etc. take no crater
             // craterIconMapIndex {-1, 2(sand), 1(rock)}: craterType 1 → Sand Craters (group 2), 2 → Rock (1).
             let group = craterType == 1 ? 2 : 1
-            guard let base = iconMap.tileID(group: group, offset: 0),
-                  let top = iconMap.tileID(group: group, offset: 10) else { continue }
+            guard
+                let base = iconMap.tileID(group: group, offset: 0),
+                let top = iconMap.tileID(group: group, offset: 10)
+            else { continue }
             let existing = Int(state.map[pos].overlayTileID)
             var overlay: Int
-            if existing >= base, existing <= top {   // there's already a crater → make it bigger
+            if existing >= base, existing <= top {  // there's already a crater → make it bigger
                 overlay = existing - base
                 if overlay < 4 { overlay += 2 }
             } else {
-                overlay = Int(state.random256.next()) & 1   // randomly pick 1 of the 2 base craters
+                overlay = Int(state.random256.next()) & 1  // randomly pick 1 of the 2 base craters
             }
             movement.map.changeSpiceAmount(packed, -1, in: &state)
-            if state.map[pos].groundTileID == state.tileIDs.bloom {   // a bloom under the blast pops
+            if state.map[pos].groundTileID == state.tileIDs.bloom {  // a bloom under the blast pops
                 movement.mapBloomExplodeSpice(packed: packed, houseID: state.playerHouseID, in: &state)
                 continue
             }
@@ -181,8 +208,13 @@ public struct Simulation: Sendable {
 
     /// `Tools_AdjustToGameSpeed` with this run's `gameSpeed`.
     func adjustToGameSpeed(normal: UInt16, minimum: UInt16, maximum: UInt16, inverse: Bool) -> UInt16 {
-        Tools.adjustToGameSpeed(normal: normal, minimum: minimum, maximum: maximum,
-                                inverseSpeed: inverse, gameSpeed: state.gameSpeed)
+        Tools.adjustToGameSpeed(
+            normal: normal,
+            minimum: minimum,
+            maximum: maximum,
+            inverseSpeed: inverse,
+            gameSpeed: state.gameSpeed
+        )
     }
 }
 
@@ -191,12 +223,12 @@ public struct UnitTickFlags: OptionSet, Sendable, Equatable {
     public let rawValue: UInt8
     public init(rawValue: UInt8) { self.rawValue = rawValue }
 
-    public static let movement  = UnitTickFlags(rawValue: 1 << 0)
-    public static let rotation  = UnitTickFlags(rawValue: 1 << 1)
-    public static let blinking  = UnitTickFlags(rawValue: 1 << 2)
-    public static let unknown4  = UnitTickFlags(rawValue: 1 << 3)
-    public static let script    = UnitTickFlags(rawValue: 1 << 4)
-    public static let unknown5  = UnitTickFlags(rawValue: 1 << 5)
+    public static let movement = UnitTickFlags(rawValue: 1 << 0)
+    public static let rotation = UnitTickFlags(rawValue: 1 << 1)
+    public static let blinking = UnitTickFlags(rawValue: 1 << 2)
+    public static let unknown4 = UnitTickFlags(rawValue: 1 << 3)
+    public static let script = UnitTickFlags(rawValue: 1 << 4)
+    public static let unknown5 = UnitTickFlags(rawValue: 1 << 5)
     public static let deviation = UnitTickFlags(rawValue: 1 << 6)
 }
 
@@ -235,9 +267,10 @@ extension Simulation {
                         // chasing an *aircraft* (a winger target) re-aims at the moving target each tick.
                         var tile = state.units[slot].currentDestination
                         if Tools.indexType(state.units[slot].targetAttack) == .unit,
-                           let tslot = state.indexGetUnit(state.units[slot].targetAttack),
-                           let tut = UnitType(rawValue: Int(state.units[tslot].o.type)),
-                           UnitInfo[tut].movementType == .winger {
+                            let tslot = state.indexGetUnit(state.units[slot].targetAttack),
+                            let tut = UnitType(rawValue: Int(state.units[tslot].o.type)),
+                            UnitInfo[tut].movementType == .winger
+                        {
                             tile = state.indexGetTile(state.units[slot].targetAttack)
                         }
                         var u = state.units[slot]
@@ -295,7 +328,8 @@ extension Simulation {
                         }
                     }
                     if ut == .ornithopter && state.units[slot].o.flags.contains(.allocated)
-                        && state.units[slot].spriteOffset >= 0 {
+                        && state.units[slot].spriteOffset >= 0
+                    {
                         state.units[slot].spriteOffset = (state.units[slot].spriteOffset & 0x3F) &+ 1
                         state.units[slot].timer = 1
                     }
@@ -318,8 +352,10 @@ extension Simulation {
                     if runner.interpreter.isLoaded(state.units[slot].o.script) {
                         // SCRIPT_UNIT_OPCODES_PER_TICK + 2, but an off-viewport unit (and not flagged
                         // scriptNoSlowdown) is throttled to 3 — `Map_IsPositionInViewport` (unit.c:289).
-                        let inView = Tile32.isPositionInViewport(state.units[slot].o.position,
-                                                                 viewport: state.viewportPosition)
+                        let inView = Tile32.isPositionInViewport(
+                            state.units[slot].o.position,
+                            viewport: state.viewportPosition
+                        )
                         let budget = (!ui.o.flags.contains(.scriptNoSlowdown) && !inView) ? 3 : 52
                         state.units[slot].o.script.variables[3] = UInt16(state.playerHouseID)
                         runner.run(slot: slot, in: &state, budget: budget)
@@ -385,7 +421,7 @@ extension Simulation {
         if state.teamLoopTick > state.timerGame { return }
         state.teamLoopTick = state.timerGame &+ UInt32(state.random256.next() & 7) &+ 5
 
-        guard let runner = teamScript else { return }   // cursor advanced; without a bridged script, no team runs
+        guard let runner = teamScript else { return }  // cursor advanced; without a bridged script, no team runs
 
         var find = PoolFind()
         while let slot = state.teamFind(&find) {
@@ -395,7 +431,7 @@ extension Simulation {
                 continue
             }
             if !runner.interpreter.isLoaded(state.teams[slot].script) { continue }
-            if !runner.runOne(slot: slot, in: &state) { break }   // 1.07: a halt aborts the remaining teams
+            if !runner.runOne(slot: slot, in: &state) { break }  // 1.07: a halt aborts the remaining teams
         }
     }
 
@@ -412,12 +448,14 @@ extension Simulation {
         var tickDegrade = false
         if state.structureTick.degrade <= g && state.campaignID > 1 {
             tickDegrade = true
-            state.structureTick.degrade = g &+ UInt32(adjustToGameSpeed(normal: 10800, minimum: 5400, maximum: 21600, inverse: true))
+            state.structureTick.degrade =
+                g &+ UInt32(adjustToGameSpeed(normal: 10800, minimum: 5400, maximum: 21600, inverse: true))
         }
         var tickStructure = false
         if state.structureTick.structure <= g {
             tickStructure = true
-            state.structureTick.structure = g &+ UInt32(adjustToGameSpeed(normal: 30, minimum: 15, maximum: 60, inverse: true))
+            state.structureTick.structure =
+                g &+ UInt32(adjustToGameSpeed(normal: 30, minimum: 15, maximum: 60, inverse: true))
         }
         var tickScript = false
         if state.structureTick.script <= g {
@@ -436,7 +474,10 @@ extension Simulation {
         while let slot = state.structureFind(&find) {
             let t = state.structures[slot].o.type
             if t == UInt8(StructureType.slab1x1.rawValue) || t == UInt8(StructureType.slab2x2.rawValue)
-                || t == UInt8(StructureType.wall.rawValue) { continue }
+                || t == UInt8(StructureType.wall.rawValue)
+            {
+                continue
+            }
 
             // Palace special weapon (`structure.c:106`): every palace tick, count the special-weapon
             // countdown down; when it hits zero an AI palace fires its house weapon (the player's launch is a
@@ -446,7 +487,8 @@ extension Simulation {
                 if state.structures[slot].countDown != 0 { state.structures[slot].countDown &-= 1 }
                 let house = Int(state.structures[slot].o.houseID)
                 if state.structures[slot].countDown == 0, !state.houses[house].flags.contains(.human),
-                   state.houses[house].flags.contains(.isAIActive) {
+                    state.houses[house].flags.contains(.isAIActive)
+                {
                     structureActivateSpecial(slot)
                 }
             }
@@ -454,8 +496,9 @@ extension Simulation {
             // Campaign degrade (`structure.c:121`): a `degrades` structure above half its *base* hitpoints
             // takes its house's `degradingAmount` each degrade tick.
             if tickDegrade, state.structures[slot].o.flags.contains(.degrades),
-               let si = StructureType(rawValue: Int(t)).map({ StructureInfo[$0] }),
-               state.structures[slot].o.hitpoints > si.o.hitpoints / 2 {
+                let si = StructureType(rawValue: Int(t)).map({ StructureInfo[$0] }),
+                state.structures[slot].o.hitpoints > si.o.hitpoints / 2
+            {
                 let house = HouseID(rawValue: Int(state.structures[slot].o.houseID)) ?? .harkonnen
                 _ = state.structureDamage(slot, damage: HouseInfo[house].degradingAmount, range: 0)
             }
@@ -480,7 +523,7 @@ extension Simulation {
                     // (Re)load the type's script — the start path and the death-script restart (Structure_Destroy
                     // resets the script, so its death branch loads here with the death flag already set).
                     guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)) else { continue }
-                    state.structures[slot].o.script.reset()                          // Script_Reset
+                    state.structures[slot].o.script.reset()  // Script_Reset
                     var engine = state.structures[slot].o.script
                     runner.interpreter.load(&engine, info: runner.scriptInfo, typeID: Int(st.rawValue))  // Script_Load
                     state.structures[slot].o.script = engine
@@ -503,23 +546,28 @@ extension Simulation {
         var tickHouse = false, tickPowerMaintenance = false
         var tickStarport = false, tickStarportAvailability = false
         if state.houseTick.house <= g { tickHouse = true; state.houseTick.house = g &+ 900 }
-        if state.houseTick.powerMaintenance <= g { tickPowerMaintenance = true; state.houseTick.powerMaintenance = g &+ 10800 }
+        if state.houseTick.powerMaintenance <= g {
+            tickPowerMaintenance = true; state.houseTick.powerMaintenance = g &+ 10800
+        }
         if state.houseTick.starport <= g { tickStarport = true; state.houseTick.starport = g &+ 180 }
         var tickReinforcement = false
         if state.houseTick.reinforcement <= g { tickReinforcement = true; state.houseTick.reinforcement = g &+ 600 }
         // The AI palace missile launches directly (`structureActivateSpecial`); this cursor is only the
         // human's 7-second `g_houseMissileCountdown` target-select window — a Phase-6 GUI seam.
         if state.houseTick.missileCountdown <= g { state.houseTick.missileCountdown = g &+ 60 }
-        if state.houseTick.starportAvailability <= g { tickStarportAvailability = true; state.houseTick.starportAvailability = g &+ 1800 }
+        if state.houseTick.starportAvailability <= g {
+            tickStarportAvailability = true; state.houseTick.starportAvailability = g &+ 1800
+        }
 
         // Scenario reinforcements: count each loaded entry down; deploy at zero (once per loop, not per house).
         if tickReinforcement { tickReinforcements() }
 
         // Starport stock: randomly bump one already-available unit type (≤ 10). Sold-out (−1) → 1.
         if tickStarportAvailability {
-            let type = Int(state.randomLCG.range(0, 26))   // 0…UNIT_MAX-1
+            let type = Int(state.randomLCG.range(0, 26))  // 0…UNIT_MAX-1
             if state.starportAvailable[type] != 0 && state.starportAvailable[type] < 10 {
-                state.starportAvailable[type] = state.starportAvailable[type] == -1 ? 1 : state.starportAvailable[type] &+ 1
+                state.starportAvailable[type] =
+                    state.starportAvailable[type] == -1 ? 1 : state.starportAvailable[type] &+ 1
             }
         }
 
@@ -551,16 +599,22 @@ extension Simulation {
                     var frigate: Int? = nil
                     while let s = state.structureFind(&sf) {
                         if state.structures[s].o.linkedID != 0xFF { continue }
-                        frigate = combat?.unitCreateWrapper(houseID: houseIndex, type: .frigate,
-                                                            destination: state.indexEncode(state.structures[s].o.index, type: .structure), in: &state) ?? nil
+                        frigate =
+                            combat?.unitCreateWrapper(
+                                houseID: houseIndex,
+                                type: .frigate,
+                                destination: state.indexEncode(state.structures[s].o.index, type: .structure),
+                                in: &state
+                            ) ?? nil
                         break
                     }
                     if let f = frigate {
                         state.units[f].o.linkedID = UInt8(truncatingIfNeeded: state.houses[h].starportLinkedID)
                         state.houses[h].starportLinkedID = 0xFFFF
                         state.units[f].o.flags.insert(.inTransport)
-                        state.pendingFeedback.append(38)   // Sound_Output_Feedback(38) — "frigate has arrived"
-                        state.houses[h].starportTimeLeft = HouseInfo[HouseID(rawValue: Int(houseIndex)) ?? .harkonnen].starportDeliveryTime
+                        state.pendingFeedback.append(38)  // Sound_Output_Feedback(38) — "frigate has arrived"
+                        state.houses[h].starportTimeLeft =
+                            HouseInfo[HouseID(rawValue: Int(houseIndex)) ?? .harkonnen].starportDeliveryTime
                     } else {
                         state.houses[h].starportTimeLeft = 1
                     }
@@ -574,7 +628,8 @@ extension Simulation {
                 if state.houses[h].timerSandwormAttack != 0 { state.houses[h].timerSandwormAttack &-= 1 }
                 if state.houses[h].timerStructureAttack != 0 { state.houses[h].timerStructureAttack &-= 1 }
                 if state.houses[h].harvestersIncoming > 0, let combat,
-                   combat.unitCreateWrapper(houseID: houseIndex, type: .harvester, destination: 0, in: &state) != nil {
+                    combat.unitCreateWrapper(houseID: houseIndex, type: .harvester, destination: 0, in: &state) != nil
+                {
                     state.houses[h].harvestersIncoming &-= 1
                 }
             }

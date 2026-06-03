@@ -23,21 +23,21 @@ public enum StructureCatalog {
     }
 
     private static let layouts: [Int: (width: Int, height: Int)] = [
-        11: (3, 3),   // Palace
-        12: (2, 2),   // Light Vehicle Factory
-        13: (3, 2),   // Heavy Vehicle Factory
-        14: (3, 2),   // Hi-Tech Factory
-        15: (2, 2),   // IX Research
-        16: (2, 2),   // WOR Trooper Facility
-        17: (2, 2),   // Construction Yard
-        18: (2, 2),   // Infantry Barracks
-        19: (2, 2),   // Windtrap
-        20: (3, 3),   // Starport
-        21: (3, 2),   // Spice Refinery
-        22: (3, 2),   // Repair Centre
-        23: (1, 1),   // Gun Turret (each group tile is a facing — not assembled)
-        24: (1, 1),   // Rocket Turret (each group tile is a facing — not assembled)
-        25: (2, 2),   // Spice Silo
-        26: (2, 2),   // Radar Outpost
+        11: (3, 3),  // Palace
+        12: (2, 2),  // Light Vehicle Factory
+        13: (3, 2),  // Heavy Vehicle Factory
+        14: (3, 2),  // Hi-Tech Factory
+        15: (2, 2),  // IX Research
+        16: (2, 2),  // WOR Trooper Facility
+        17: (2, 2),  // Construction Yard
+        18: (2, 2),  // Infantry Barracks
+        19: (2, 2),  // Windtrap
+        20: (3, 3),  // Starport
+        21: (3, 2),  // Spice Refinery
+        22: (3, 2),  // Repair Centre
+        23: (1, 1),  // Gun Turret (each group tile is a facing — not assembled)
+        24: (1, 1),  // Rocket Turret (each group tile is a facing — not assembled)
+        25: (2, 2),  // Spice Silo
+        26: (2, 2),  // Radar Outpost
     ]
 }

@@ -6,7 +6,7 @@ import Foundation
 /// values are the source of truth; expansion is a display concern. See `Documentation/Formats/Palette.md`.
 public struct Palette: Equatable {
     public struct Color: Equatable {
-        public var red: UInt8       // 0...63
+        public var red: UInt8  // 0...63
         public var green: UInt8
         public var blue: UInt8
 
@@ -33,7 +33,7 @@ public struct Palette: Equatable {
     public init(_ data: Data) throws {
         guard data.count >= Palette.colorCount * 3 else { throw DecodeError.wrongSize }
 
-        let bytes = [UInt8](data)
+        let bytes = [ UInt8 ](data)
         var colors: [Color] = []
         colors.reserveCapacity(Palette.colorCount)
         for index in 0 ..< Palette.colorCount {

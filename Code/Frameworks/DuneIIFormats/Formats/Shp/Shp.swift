@@ -28,7 +28,7 @@ public enum Shp {
         public let frames: [Frame]
 
         public init(_ data: Data) throws {
-            let bytes = [UInt8](data)
+            let bytes = [ UInt8 ](data)
             guard bytes.count >= 6 else { throw DecodeError.truncated }
 
             let count = bytes.u16LE(at: 0)
@@ -82,7 +82,7 @@ public enum Shp {
 
             rle = Array(bytes[payload ..< payload + decodedSize])
         } else {
-            rle = [UInt8](try Format80.decode(Data(bytes[payload...]), destinationLength: decodedSize))
+            rle = [ UInt8 ](try Format80.decode(Data(bytes[payload...]), destinationLength: decodedSize))
         }
 
         let pixelCount = width * height

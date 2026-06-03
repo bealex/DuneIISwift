@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import DuneIIWorld
 
 /// Bit-exact parity of the misc `Tools_*` primitives against OpenDUNE, from the per-category golden
@@ -18,8 +19,10 @@ struct ToolsGoldenTests {
                 inverseSpeed: record.inverse! != 0,
                 gameSpeed: record.gameSpeed!
             )
-            #expect(Int(actual) == record.out.scalar,
-                    "speed \(record.gameSpeed!) inv \(record.inverse!) n=\(record.normal!) [\(record.min!),\(record.max!)]")
+            #expect(
+                Int(actual) == record.out.scalar,
+                "speed \(record.gameSpeed!) inv \(record.inverse!) n=\(record.normal!) [\(record.min!),\(record.max!)]"
+            )
         }
     }
 

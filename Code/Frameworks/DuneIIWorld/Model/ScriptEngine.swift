@@ -11,14 +11,14 @@ public struct ScriptEngine: Sendable, Equatable, Codable {
     /// `scriptPC` value standing in for OpenDUNE's NULL `script` pointer (not loaded / errored).
     public static let scriptNull: UInt16 = 0xFFFF
 
-    public var delay: UInt16 = 0                    // ticks the script is suspended (0 = running)
-    public var scriptPC: UInt16 = scriptNull        // offset from scriptInfo.start, or scriptNull (NULL)
-    public var returnValue: UInt16 = 0      // return value from sub-routines
+    public var delay: UInt16 = 0  // ticks the script is suspended (0 = running)
+    public var scriptPC: UInt16 = scriptNull  // offset from scriptInfo.start, or scriptNull (NULL)
+    public var returnValue: UInt16 = 0  // return value from sub-routines
     public var framePointer: UInt8 = 0
     public var stackPointer: UInt8 = 0
-    public var variables = Inline<5, UInt16>(repeating: 0)   // outside-stack storage (POD, inline — no heap/ARC)
-    public var stack = Inline<15, UInt16>(repeating: 0)      // engine stack (fills from the end; POD, inline)
-    public var isSubroutine: UInt8 = 0      // the executing script is a sub-routine
+    public var variables = Inline<5, UInt16>(repeating: 0)  // outside-stack storage (POD, inline — no heap/ARC)
+    public var stack = Inline<15, UInt16>(repeating: 0)  // engine stack (fills from the end; POD, inline)
+    public var isSubroutine: UInt8 = 0  // the executing script is a sub-routine
 
     public init() {}
 

@@ -37,14 +37,22 @@ public struct ComposedSprite: Equatable, Sendable {
     /// Image-space centre in base pixels (tile size 16).
     public let centerX: Int
     public let centerY: Int
-    public let flipped: Bool      // horizontal mirror
-    public let flippedV: Bool     // vertical mirror (air units' southern facings)
+    public let flipped: Bool  // horizontal mirror
+    public let flippedV: Bool  // vertical mirror (air units' southern facings)
     /// The house to recolour to, or `nil` for house-neutral sprites (explosions, smoke).
     public let house: House?
     public let z: Int
 
-    public init(spriteIndex: Int, frame: SpriteFrame, centerX: Int, centerY: Int, flipped: Bool,
-                flippedV: Bool = false, house: House?, z: Int) {
+    public init(
+        spriteIndex: Int,
+        frame: SpriteFrame,
+        centerX: Int,
+        centerY: Int,
+        flipped: Bool,
+        flippedV: Bool = false,
+        house: House?,
+        z: Int
+    ) {
         self.spriteIndex = spriteIndex
         self.frame = frame
         self.centerX = centerX
@@ -66,10 +74,10 @@ public enum FrameComposer {
     public enum ZOrder {
         public static let terrain = 0
         public static let body = 1
-        public static let overlay = 2     // harvester "harvesting" layer, above the body
+        public static let overlay = 2  // harvester "harvesting" layer, above the body
         public static let turret = 3
-        public static let effect = 4      // explosions + smoke, above ground units
-        public static let airBody = 5     // winger units (carryall/ornithopter/frigate/missiles) on top
+        public static let effect = 4  // explosions + smoke, above ground units
+        public static let airBody = 5  // winger units (carryall/ornithopter/frigate/missiles) on top
         public static let airTurret = 6
     }
 
@@ -88,12 +96,16 @@ public enum FrameComposer {
     /// overlay is the **veil** and `showFog` is on, the cell is a solid black fog square; with `showFog`
     /// off a veiled cell shows its ground (the verification "debug scenario" view). Returns `nil` if the
     /// ground tile id is unknown.
-    public static func cell(_ tile: FrameInfo.Tile, veiledTileIndex: Int, showFog: Bool,
-                            source: WorldSpriteSource) -> [UInt8]? {
+    public static func cell(
+        _ tile: FrameInfo.Tile,
+        veiledTileIndex: Int,
+        showFog: Bool,
+        source: WorldSpriteSource
+    ) -> [UInt8]? {
         let ts = source.terrainTileSize
         // Fully-veiled cell: a black square (OpenDUNE never draws the veil sprite, it fills colour 12).
         if showFog && tile.overlaySpriteIndex != 0 && tile.overlaySpriteIndex == veiledTileIndex {
-            return [UInt8](repeating: fogColourIndex, count: ts * ts)
+            return [ UInt8 ](repeating: fogColourIndex, count: ts * ts)
         }
         guard let ground = source.terrainTile(tile.groundSpriteIndex), ground.count >= ts * ts else { return nil }
         // House-recolour owned (structure / house-coloured wall) tiles; terrain / Harkonnen is identity.
@@ -105,13 +117,15 @@ public enum FrameComposer {
         // colour-0 transparency, so only its non-zero pixels overwrite the ground (the rest shows through).
         let overlayId = tile.overlaySpriteIndex
         if overlayId != 0, overlayId != veiledTileIndex,
-           let overlay = source.terrainTile(overlayId), overlay.count >= ts * ts {
+            let overlay = source.terrainTile(overlayId), overlay.count >= ts * ts
+        {
             for i in 0 ..< (ts * ts) where overlay[i] != 0 { out[i] = recolour(overlay[i]) }
         }
         // A partial fog edge (a revealed tile bordering the unknown) — only with fog on. House-neutral
         // (fog colours aren't in the house-remap block); same colour-0 transparency as any overlay.
         if showFog, tile.fogEdgeSpriteIndex != 0,
-           let fog = source.terrainTile(tile.fogEdgeSpriteIndex), fog.count >= ts * ts {
+            let fog = source.terrainTile(tile.fogEdgeSpriteIndex), fog.count >= ts * ts
+        {
             for i in 0 ..< (ts * ts) where fog[i] != 0 { out[i] = fog[i] }
         }
         return out
@@ -123,8 +137,8 @@ public enum FrameComposer {
     public static func terrainBuffer(_ frame: FrameInfo, source: WorldSpriteSource, showFog: Bool = false) -> [UInt8] {
         let ts = source.terrainTileSize
         let side = ts * frame.mapWidth
-        var buffer = [UInt8](repeating: 0, count: side * (ts * frame.mapHeight))
-        let border = [UInt8](repeating: borderColourIndex, count: ts * ts)
+        var buffer = [ UInt8 ](repeating: 0, count: side * (ts * frame.mapHeight))
+        let border = [ UInt8 ](repeating: borderColourIndex, count: ts * ts)
         for ty in 0 ..< frame.mapHeight {
             for tx in 0 ..< frame.mapWidth {
                 // Outside the scenario's playable rectangle: the unused border draws solid black, never the
@@ -132,8 +146,12 @@ public enum FrameComposer {
                 let pixels: [UInt8]
                 if !frame.mapArea.contains(tileX: tx, tileY: ty) {
                     pixels = border
-                } else if let p = cell(frame.tiles[ty * frame.mapWidth + tx], veiledTileIndex: frame.veiledTileIndex,
-                                       showFog: showFog, source: source) {
+                } else if let p = cell(
+                    frame.tiles[ty * frame.mapWidth + tx],
+                    veiledTileIndex: frame.veiledTileIndex,
+                    showFog: showFog,
+                    source: source
+                ) {
                     pixels = p
                 } else {
                     continue
@@ -170,7 +188,8 @@ public enum FrameComposer {
     /// When `showFog` is on, units/effects on a still-veiled tile are omitted (`viewport.c` masks each
     /// entity pass by the tile's `isUnveiled` — enemies in the fog aren't drawn). A unit/effect outside the
     /// playable rectangle (`mapArea`) is likewise dropped so nothing paints over the black border.
-    public static func sprites(_ frame: FrameInfo, source: WorldSpriteSource, showFog: Bool = false) -> [ComposedSprite] {
+    public static func sprites(_ frame: FrameInfo, source: WorldSpriteSource, showFog: Bool = false) -> [ComposedSprite]
+    {
         let ts = source.terrainTileSize
         var result: [ComposedSprite] = []
 
@@ -186,24 +205,48 @@ public enum FrameComposer {
             let bodyZ = u.isAirUnit ? ZOrder.airBody : ZOrder.body
             let turretZ = u.isAirUnit ? ZOrder.airTurret : ZOrder.turret
             if let body = source.unitFrame(globalIndex: u.body.spriteIndex) {
-                result.append(ComposedSprite(spriteIndex: u.body.spriteIndex, frame: body,
-                                             centerX: cx + u.body.offsetX, centerY: cy + u.body.offsetY,
-                                             flipped: u.body.flipped, flippedV: u.body.flippedV,
-                                             house: house, z: bodyZ))
+                result.append(
+                    ComposedSprite(
+                        spriteIndex: u.body.spriteIndex,
+                        frame: body,
+                        centerX: cx + u.body.offsetX,
+                        centerY: cy + u.body.offsetY,
+                        flipped: u.body.flipped,
+                        flippedV: u.body.flippedV,
+                        house: house,
+                        z: bodyZ
+                    )
+                )
             }
             // The harvesting overlay is drawn without the house palette (`viewport.c:546` — its
             // `GetSprite_HousePalette` call is commented out), so it is house-neutral.
             if let overlay = u.overlay, let frame = source.unitFrame(globalIndex: overlay.spriteIndex) {
-                result.append(ComposedSprite(spriteIndex: overlay.spriteIndex, frame: frame,
-                                             centerX: cx + overlay.offsetX, centerY: cy + overlay.offsetY,
-                                             flipped: overlay.flipped, flippedV: overlay.flippedV,
-                                             house: nil, z: ZOrder.overlay))
+                result.append(
+                    ComposedSprite(
+                        spriteIndex: overlay.spriteIndex,
+                        frame: frame,
+                        centerX: cx + overlay.offsetX,
+                        centerY: cy + overlay.offsetY,
+                        flipped: overlay.flipped,
+                        flippedV: overlay.flippedV,
+                        house: nil,
+                        z: ZOrder.overlay
+                    )
+                )
             }
             if let turret = u.turret, let frame = source.unitFrame(globalIndex: turret.spriteIndex) {
-                result.append(ComposedSprite(spriteIndex: turret.spriteIndex, frame: frame,
-                                             centerX: cx + turret.offsetX, centerY: cy + turret.offsetY,
-                                             flipped: turret.flipped, flippedV: turret.flippedV,
-                                             house: house, z: turretZ))
+                result.append(
+                    ComposedSprite(
+                        spriteIndex: turret.spriteIndex,
+                        frame: frame,
+                        centerX: cx + turret.offsetX,
+                        centerY: cy + turret.offsetY,
+                        flipped: turret.flipped,
+                        flippedV: turret.flippedV,
+                        house: house,
+                        z: turretZ
+                    )
+                )
             }
         }
 
@@ -211,10 +254,17 @@ public enum FrameComposer {
             if isOutsideMapArea(frame, worldX: e.positionX, worldY: e.positionY) { continue }
             if isHiddenByFog(frame, worldX: e.positionX, worldY: e.positionY, showFog: showFog) { continue }
             guard let f = source.unitFrame(globalIndex: e.sprite.spriteIndex) else { continue }
-            result.append(ComposedSprite(spriteIndex: e.sprite.spriteIndex, frame: f,
-                                         centerX: imageX(e.positionX) + e.sprite.offsetX,
-                                         centerY: imageY(e.positionY) + e.sprite.offsetY,
-                                         flipped: e.sprite.flipped, house: nil, z: ZOrder.effect))
+            result.append(
+                ComposedSprite(
+                    spriteIndex: e.sprite.spriteIndex,
+                    frame: f,
+                    centerX: imageX(e.positionX) + e.sprite.offsetX,
+                    centerY: imageY(e.positionY) + e.sprite.offsetY,
+                    flipped: e.sprite.flipped,
+                    house: nil,
+                    z: ZOrder.effect
+                )
+            )
         }
         return result
     }

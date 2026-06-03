@@ -9,8 +9,12 @@ public extension GameState {
     /// its idle animation (per `StructureInfo.animationIndex[state]`; `0xFF` = no animation).
     mutating func structureUpdateMap(_ index: Int) {
         let s = structures[index]
-        guard s.o.flags.contains(.used), !s.o.flags.contains(.isNotOnMap),
-              let type = StructureType(rawValue: Int(s.o.type)), let iconMap else { return }
+        guard
+            s.o.flags.contains(.used),
+            !s.o.flags.contains(.isNotOnMap),
+            let type = StructureType(rawValue: Int(s.o.type)),
+            let iconMap
+        else { return }
         let si = StructureInfo[type]
         let layout = StructureLayoutInfo[si.layout]
         let count = Int(layout.tileCount)
@@ -41,22 +45,38 @@ public extension GameState {
             let stateIndex = min(Int(s.state.rawValue), Int(StructureState.ready.rawValue))
             let animID = Int(si.animationIndex[stateIndex])
             if animID == 0xFF {
-                map[packed].hasAnimation = true            // Animation_Start(NULL): static, no slot
+                map[packed].hasAnimation = true  // Animation_Start(NULL): static, no slot
                 map[packed].houseID = s.o.houseID
             } else {
-                animationStart(tableIndex: animID, tile: s.o.position, tileLayout: layoutRaw,
-                               houseID: s.o.houseID, iconGroup: iconGroup)
+                animationStart(
+                    tableIndex: animID,
+                    tile: s.o.position,
+                    tileLayout: layoutRaw,
+                    houseID: s.o.houseID,
+                    iconGroup: iconGroup
+                )
             }
         } else {
-            animationStart(tableIndex: 1, tile: s.o.position, tileLayout: layoutRaw,
-                           houseID: s.o.houseID, iconGroup: iconGroup)
+            animationStart(
+                tableIndex: 1,
+                tile: s.o.position,
+                tileLayout: layoutRaw,
+                houseID: s.o.houseID,
+                iconGroup: iconGroup
+            )
         }
     }
 
     /// `Animation_Start`. `kind` selects the command table (structure ground-cycle by default; a unit
     /// corpse-overlay table for `Script_Unit_StartAnimation`).
-    mutating func animationStart(tableIndex: Int, tile: Tile32, tileLayout: UInt16, houseID: UInt8,
-                                 iconGroup: UInt8, kind: AnimationKind = .structure) {
+    mutating func animationStart(
+        tableIndex: Int,
+        tile: Tile32,
+        tileLayout: UInt16,
+        houseID: UInt8,
+        iconGroup: UInt8,
+        kind: AnimationKind = .structure
+    ) {
         animationStopByTile(tile.packed)
         let packed = Int(tile.packed)
         for i in animations.indices where !animations[i].active {
@@ -95,11 +115,11 @@ public extension GameState {
             if animations[i].tickNext <= timerGUI {
                 let table: [[AnimationCommandStruct]]
                 switch animations[i].kind {
-                    case .structure:   table = AnimationTables.structure
+                    case .structure: table = AnimationTables.structure
                     case .unitScript1: table = AnimationTables.unitScript1
                     case .unitScript2: table = AnimationTables.unitScript2
-                    case .unitMove:    table = AnimationTables.unitMove
-                    case .map:         table = AnimationTables.map
+                    case .unitMove: table = AnimationTables.unitMove
+                    case .map: table = AnimationTables.map
                 }
                 let row = table[animations[i].tableIndex]
                 let cursor = Int(animations[i].current)
@@ -111,11 +131,16 @@ public extension GameState {
                     case .stop: animationStop(i)
                     case .abort: animationAbort(i)
                     case .setOverlayTile: animationSetOverlayTile(i, command.parameter)
-                    case .pause: animations[i].tickNext = timerGUI &+ UInt32(max(0, Int(command.parameter))) &+ UInt32(random256.next() % 4)
+                    case .pause:
+                        animations[i].tickNext =
+                            timerGUI &+ UInt32(max(0, Int(command.parameter))) &+ UInt32(random256.next() % 4)
                     case .rewind: animations[i].current = 0
-                    case .playVoice: emitSound(Int(command.parameter), at: animations[i].tile)   // Animation_Func_PlayVoice
+                    case .playVoice: emitSound(Int(command.parameter), at: animations[i].tile)  // Animation_Func_PlayVoice
                     case .setGroundTile: animationSetGroundTile(i, command.parameter)
-                    case .forward: animations[i].current = UInt8(truncatingIfNeeded: Int(animations[i].current) + Int(command.parameter) - 1)
+                    case .forward:
+                        animations[i].current = UInt8(
+                            truncatingIfNeeded: Int(animations[i].current) + Int(command.parameter) - 1
+                        )
                     case .setIconGroup: animations[i].iconGroup = UInt8(truncatingIfNeeded: command.parameter)
                 }
                 if !animations[i].active { continue }

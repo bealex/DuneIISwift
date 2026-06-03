@@ -26,8 +26,14 @@ public protocol UnitPrimitives: Sendable {
     /// `Unit_GetTileEnterScore` (`unit.c:2335`): the cost of `unit` entering tile `packed` arriving
     /// along `orient8`. `256` = inaccessible, `-1`/`-2` = an accessible structure, otherwise an
     /// inverted-speed estimate (lower = faster). Read-only; composes the map + house primitives.
-    func tileEnterScore(_ unit: Unit, packed: UInt16, orient8: UInt16, in state: GameState,
-                        map: any MapPrimitives, house: any HousePrimitives) -> Int16
+    func tileEnterScore(
+        _ unit: Unit,
+        packed: UInt16,
+        orient8: UInt16,
+        in state: GameState,
+        map: any MapPrimitives,
+        house: any HousePrimitives
+    ) -> Int16
 }
 
 /// The OpenDUNE-faithful implementation of `UnitPrimitives`. Stateless; the default the `Simulation`
@@ -98,8 +104,13 @@ public struct DefaultUnitPrimitives: UnitPrimitives {
 
         // Units in the air don't feel the effect of gameSpeed.
         if info.movementType != .winger {
-            speed = Tools.adjustToGameSpeed(normal: speed, minimum: 1, maximum: 255,
-                                            inverseSpeed: false, gameSpeed: gameSpeed)
+            speed = Tools.adjustToGameSpeed(
+                normal: speed,
+                minimum: 1,
+                maximum: 255,
+                inverseSpeed: false,
+                gameSpeed: gameSpeed
+            )
         }
 
         var speedPerTick = speed << 4
@@ -115,8 +126,10 @@ public struct DefaultUnitPrimitives: UnitPrimitives {
     }
 
     public func isValidMovementIntoStructure(_ unit: Unit, _ s: Structure, in state: GameState) -> UInt16 {
-        guard let st = StructureType(rawValue: Int(s.o.type)),
-              let ut = UnitType(rawValue: Int(unit.o.type)) else { return 0 }
+        guard
+            let st = StructureType(rawValue: Int(s.o.type)),
+            let ut = UnitType(rawValue: Int(unit.o.type))
+        else { return 0 }
         let si = StructureInfo[st]
         let ui = UnitInfo[ut]
 
@@ -144,8 +157,14 @@ public struct DefaultUnitPrimitives: UnitPrimitives {
         return s.o.linkedID == 0xFF ? 1 : 0
     }
 
-    public func tileEnterScore(_ unit: Unit, packed: UInt16, orient8: UInt16, in state: GameState,
-                               map: any MapPrimitives, house: any HousePrimitives) -> Int16 {
+    public func tileEnterScore(
+        _ unit: Unit,
+        packed: UInt16,
+        orient8: UInt16,
+        in state: GameState,
+        map: any MapPrimitives,
+        house: any HousePrimitives
+    ) -> Int16 {
         guard let ut = UnitType(rawValue: Int(unit.o.type)) else { return 0 }
         let ui = UnitInfo[ut]
 
@@ -159,8 +178,11 @@ public struct DefaultUnitPrimitives: UnitPrimitives {
                 if ut == .saboteur && unit.targetMove == state.indexEncode(u.o.index, type: .unit) {
                     return 0
                 }
-                if house.areAllied(state.unitHouseID(u), state.unitHouseID(unit),
-                                   playerHouseID: state.playerHouseID) {
+                if house.areAllied(
+                    state.unitHouseID(u),
+                    state.unitHouseID(unit),
+                    playerHouseID: state.playerHouseID
+                ) {
                     return 256
                 }
                 let occupantMt = (UnitType(rawValue: Int(u.o.type)).map { UnitInfo[$0].movementType }) ?? .foot
@@ -180,8 +202,11 @@ public struct DefaultUnitPrimitives: UnitPrimitives {
         var res = UInt16(LandscapeInfo[type].speed(ui.movementType))
 
         if ut == .saboteur && type == .wall {
-            if !house.areAllied(state.map[Int(packed)].houseID, state.unitHouseID(unit),
-                                playerHouseID: state.playerHouseID) {
+            if !house.areAllied(
+                state.map[Int(packed)].houseID,
+                state.unitHouseID(unit),
+                playerHouseID: state.playerHouseID
+            ) {
                 res = 255
             }
         }

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import DuneIIWorld
 
 /// Golden parity of the Tier-A tile-motion primitives (`Tile_Center`, `Tile_MoveByDirection`,
@@ -38,9 +39,14 @@ struct TileMotionGoldenTests {
         #expect(records.count == 350)
         for r in records {
             let result = Tile32.moveByDirection(
-                Tile32(x: r.in![0], y: r.in![1]), orientation: r.orientation!, distance: r.distance!)
-            #expect(result == Tile32(x: UInt16(r.out.values[0]), y: UInt16(r.out.values[1])),
-                    "in \(r.in!) orient \(r.orientation!) dist \(r.distance!)")
+                Tile32(x: r.in![0], y: r.in![1]),
+                orientation: r.orientation!,
+                distance: r.distance!
+            )
+            #expect(
+                result == Tile32(x: UInt16(r.out.values[0]), y: UInt16(r.out.values[1])),
+                "in \(r.in!) orient \(r.orientation!) dist \(r.distance!)"
+            )
         }
     }
 
@@ -58,11 +64,17 @@ struct TileMotionGoldenTests {
         let records = rows("Tile_MoveByRandom")
         #expect(records.count == 250)
         for r in records {
-            var rng = Random256(seed: r.seed!)   // bit-exact RNG ⇒ same draws as the oracle
+            var rng = Random256(seed: r.seed!)  // bit-exact RNG ⇒ same draws as the oracle
             let result = Tile32.moveByRandom(
-                Tile32(x: r.in![0], y: r.in![1]), distance: r.distance!, center: r.center! != 0, rng: &rng)
-            #expect(result == Tile32(x: UInt16(r.out.values[0]), y: UInt16(r.out.values[1])),
-                    "seed \(r.seed!) in \(r.in!) dist \(r.distance!) center \(r.center!)")
+                Tile32(x: r.in![0], y: r.in![1]),
+                distance: r.distance!,
+                center: r.center! != 0,
+                rng: &rng
+            )
+            #expect(
+                result == Tile32(x: UInt16(r.out.values[0]), y: UInt16(r.out.values[1])),
+                "seed \(r.seed!) in \(r.in!) dist \(r.distance!) center \(r.center!)"
+            )
         }
     }
 }

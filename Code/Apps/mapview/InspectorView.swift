@@ -18,7 +18,9 @@ struct InspectorView: View {
                     ContentUnavailableView {
                         Label("No selection", systemImage: "cursorarrow.rays")
                     } description: {
-                        Text("Left-click a unit or building to select it.\nRight-click to move (open ground) or attack (an enemy).")
+                        Text(
+                            "Left-click a unit or building to select it.\nRight-click to move (open ground) or attack (an enemy)."
+                        )
                     }
                     .padding(.top, 40)
                 }
@@ -37,8 +39,12 @@ struct InspectorView: View {
             Text(s.name).font(.title2.bold())
         }
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-            GridRow { Text("House").foregroundStyle(.secondary); Text(s.house) }
-            GridRow { Text("Tile").foregroundStyle(.secondary); Text("(\(s.tileX), \(s.tileY))") }
+            GridRow {
+                Text("House").foregroundStyle(.secondary); Text(s.house)
+            }
+            GridRow {
+                Text("Tile").foregroundStyle(.secondary); Text("(\(s.tileX), \(s.tileY))")
+            }
         }
         .font(.callout)
         VStack(alignment: .leading, spacing: 3) {
@@ -59,14 +65,18 @@ struct InspectorView: View {
             Text("No commands for this building.").font(.callout).foregroundStyle(.secondary)
         }
         ForEach(s.commands, id: \.self) { kind in
-            Button { model.arm(kind) } label: {
+            Button {
+                model.arm(kind)
+            } label: {
                 Label(title(kind), systemImage: icon(kind)).frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.bordered)
             .tint(model.pendingOrder == kind ? .accentColor : nil)
         }
         if s.canStop {
-            Button { model.stopSelected() } label: {
+            Button {
+                model.stopSelected()
+            } label: {
                 Label("Stop", systemImage: "stop.fill").frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.bordered)

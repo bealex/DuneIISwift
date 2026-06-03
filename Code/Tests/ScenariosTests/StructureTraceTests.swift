@@ -1,9 +1,10 @@
-import Foundation
-import Testing
 import DuneIIContracts
 import DuneIIFormats
-import DuneIIWorld
 import DuneIISimulation
+import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIIScenarios
 
 /// **Tier-2a structure decision-trace** — the strongest structure-script parity check. The oracle's
@@ -25,10 +26,13 @@ struct StructureTraceTests {
         for _ in 0 ..< 4 { repo.deleteLastPathComponent() }
         let fix = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures")
         guard let icon = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")),
-              let emc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
-              let buildEmc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc")),
-              let ini = try? Data(contentsOf: fix.appendingPathComponent("attack-structure.ini")),
-              let traceText = try? String(contentsOf: fix.appendingPathComponent("attack-structure-struct0-trace.txt"), encoding: .utf8)
+            let emc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
+            let buildEmc = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc")),
+            let ini = try? Data(contentsOf: fix.appendingPathComponent("attack-structure.ini")),
+            let traceText = try? String(
+                contentsOf: fix.appendingPathComponent("attack-structure-struct0-trace.txt"),
+                encoding: .utf8
+            )
         else { return }
 
         let expected = traceText.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
@@ -50,8 +54,12 @@ struct StructureTraceTests {
 
         // Trace structure index 0 (the windtrap) across the whole 400-tick run.
         let tracer = StructureScriptTracer(structureIndex: 0)
-        var sim = Simulation(state: state, scriptInfo: scriptInfo,
-                             structureScriptInfo: structureScriptInfo, structureTracer: tracer)
+        var sim = Simulation(
+            state: state,
+            scriptInfo: scriptInfo,
+            structureScriptInfo: structureScriptInfo,
+            structureTracer: tracer
+        )
         for _ in 0 ..< 400 { sim.tick() }
 
         let ours = tracer.lines

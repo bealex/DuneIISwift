@@ -11,16 +11,18 @@ public struct Pathfinder: Sendable {
     public let map: any MapPrimitives
     public let house: any HousePrimitives
 
-    public init(primitives: any UnitPrimitives = DefaultUnitPrimitives(),
-                map: any MapPrimitives = DefaultMapPrimitives(),
-                house: any HousePrimitives = DefaultHousePrimitives()) {
+    public init(
+        primitives: any UnitPrimitives = DefaultUnitPrimitives(),
+        map: any MapPrimitives = DefaultMapPrimitives(),
+        house: any HousePrimitives = DefaultHousePrimitives()
+    ) {
         self.primitives = primitives
         self.map = map
         self.house = house
     }
 
     /// Tile-index delta for each of the 8 directions (`s_mapDirection`).
-    static let mapDirection: [Int] = [-64, -63, 1, 65, 64, 63, -1, -65]
+    static let mapDirection: [Int] = [ -64, -63, 1, 65, 64, 63, -1, -65 ]
 
     /// A found route: `buffer` holds direction steps (0–7) ending in `0xFF`; `routeSize` counts the
     /// steps; `score` is the summed enter cost.
@@ -42,8 +44,14 @@ public struct Pathfinder: Sendable {
     /// `Script_Unit_Pathfind_GetScore` (non-enhanced): `Unit_GetTileEnterScore(unit, packed, dir << 5)`,
     /// mapping the structure sentinel `-1` to 256 (blocked).
     private func score(_ packed: UInt16, _ dir: UInt8, _ unit: Unit, _ state: GameState) -> Int16 {
-        var res = primitives.tileEnterScore(unit, packed: packed, orient8: UInt16(dir) << 5,
-                                            in: state, map: map, house: house)
+        var res = primitives.tileEnterScore(
+            unit,
+            packed: packed,
+            orient8: UInt16(dir) << 5,
+            in: state,
+            map: map,
+            house: house
+        )
         if res == -1 { res = 256 }
         return res
     }
@@ -114,8 +122,14 @@ public struct Pathfinder: Sendable {
     }
 
     /// `Script_Unit_Pathfinder_Connect` — wall-follow from `data.packed` toward `packedDst`.
-    private func connect(_ packedDst: UInt16, _ data: inout Data, _ searchDirection: Int,
-                         _ directionStart: UInt8, _ unit: Unit, _ state: GameState) -> Bool {
+    private func connect(
+        _ packedDst: UInt16,
+        _ data: inout Data,
+        _ searchDirection: Int,
+        _ directionStart: UInt8,
+        _ unit: Unit,
+        _ state: GameState
+    ) -> Bool {
         var packedCur = data.packed
         var bufferSize = 0
         var dirStart = directionStart
@@ -158,7 +172,7 @@ public struct Pathfinder: Sendable {
 
     /// `Script_Unit_Pathfinder_Smoothen` — remove redundant direction changes, then compact the route.
     private func smoothen(_ data: inout Data, _ unit: Unit, _ state: GameState) {
-        let directionOffset: [Int8] = [0, 0, 1, 2, 3, -2, -1, 0]
+        let directionOffset: [Int8] = [ 0, 0, 1, 2, 3, -2, -1, 0 ]
         data.buffer[data.routeSize] = 0xFF
         var packed = data.packed
 
@@ -172,13 +186,13 @@ public struct Pathfinder: Sendable {
                 let diff = Int(Int8(bitPattern: (data.buffer[to] &- data.buffer[from]) & 0x7))
                 let direction = directionOffset[Int(UInt8(truncatingIfNeeded: diff)) & 7]
 
-                if direction == 3 {                       // opposite directions — both removable
+                if direction == 3 {  // opposite directions — both removable
                     data.buffer[from] = 0xFE
                     data.buffer[to] = 0xFE
                     to += 1
                     continue
                 }
-                if direction == 0 {                       // same direction — follow
+                if direction == 0 {  // same direction — follow
                     packed = step(packed, Int(data.buffer[from]))
                     to += 1
                     continue
@@ -187,7 +201,7 @@ public struct Pathfinder: Sendable {
                 var dir: UInt8
                 if data.buffer[from] & 1 != 0 {
                     dir = UInt8((Int(data.buffer[from]) + (direction < 0 ? -1 : 1)) & 7)
-                    if abs(Int(direction)) == 1 {         // 45° with a 90° difference — can go straight
+                    if abs(Int(direction)) == 1 {  // 45° with a 90° difference — can go straight
                         if score(step(packed, Int(dir)), dir, unit, state) <= 255 {
                             data.buffer[to] = dir
                             data.buffer[from] = dir

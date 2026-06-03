@@ -1,14 +1,14 @@
 /// A single animation command. A port of OpenDUNE's `AnimationCommand` (`src/animation.h`).
 public enum AnimationCommand: UInt8, Sendable, Equatable, Codable {
-    case stop = 0            // gracefully stop + clean up the tiles
-    case abort = 1           // stop, leaving the tiles as they are
+    case stop = 0  // gracefully stop + clean up the tiles
+    case abort = 1  // stop, leaving the tiles as they are
     case setOverlayTile = 2  // param: new overlay tile (icon-group offset)
-    case pause = 3           // param: ticks to pause (+ 0…3 random jitter)
-    case rewind = 4          // restart the command list
-    case playVoice = 5       // param: voice id (no-op headless)
-    case setGroundTile = 6   // param: icon-group state to stamp into the layout's ground tiles
-    case forward = 7         // param: relative command jump (param − 1 added to the cursor)
-    case setIconGroup = 8    // param: new icon group
+    case pause = 3  // param: ticks to pause (+ 0…3 random jitter)
+    case rewind = 4  // restart the command list
+    case playVoice = 5  // param: voice id (no-op headless)
+    case setGroundTile = 6  // param: icon-group state to stamp into the layout's ground tiles
+    case forward = 7  // param: relative command jump (param − 1 added to the cursor)
+    case setIconGroup = 8  // param: new icon group
 }
 
 /// One `(command, parameter)` step. A port of `AnimationCommandStruct` (`src/animation.h`).
@@ -35,9 +35,9 @@ public struct Animation: Sendable, Equatable, Codable {
     public var tickNext: UInt32 = 0
     public var tileLayout: UInt16 = 0
     public var houseID: UInt8 = 0
-    public var current: UInt8 = 0          // cursor into the command list
+    public var current: UInt8 = 0  // cursor into the command list
     public var iconGroup: UInt8 = 0
-    public var tableIndex: Int = -1        // row in the `kind`'s command table
+    public var tableIndex: Int = -1  // row in the `kind`'s command table
     public var kind: AnimationKind = .structure
     public var tile: Tile32 = Tile32(x: 0, y: 0)
     public var active = false
@@ -51,29 +51,59 @@ public enum AnimationTables {
         [ cmd(.setGroundTile, 1), cmd(.pause, 300), cmd(.abort, 0) ],
         [ cmd(.setGroundTile, 0), cmd(.abort, 0) ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 300), cmd(.abort, 0) ],
-        [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.setGroundTile, 4), cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.rewind, 0) ],
+        [
+            cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.setGroundTile, 4),
+            cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.rewind, 0),
+        ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
-        [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.setGroundTile, 6), cmd(.pause, 30), cmd(.setGroundTile, 7), cmd(.pause, 30), cmd(.rewind, 0) ],
+        [
+            cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.setGroundTile, 6),
+            cmd(.pause, 30), cmd(.setGroundTile, 7), cmd(.pause, 30), cmd(.rewind, 0),
+        ],
         [ cmd(.setGroundTile, 8), cmd(.pause, 30), cmd(.setGroundTile, 9), cmd(.pause, 30), cmd(.rewind, 0) ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
-        [ cmd(.setGroundTile, 7), cmd(.pause, 30), cmd(.setGroundTile, 6), cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.setGroundTile, 4), cmd(.pause, 30), cmd(.forward, -4) ],
-        [ cmd(.setGroundTile, 4), cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.setGroundTile, 6), cmd(.pause, 30), cmd(.setGroundTile, 7), cmd(.pause, 30), cmd(.forward, -4) ],
+        [
+            cmd(.setGroundTile, 7), cmd(.pause, 30), cmd(.setGroundTile, 6), cmd(.pause, 30), cmd(.setGroundTile, 5),
+            cmd(.pause, 30), cmd(.setGroundTile, 4), cmd(.pause, 30), cmd(.forward, -4),
+        ],
+        [
+            cmd(.setGroundTile, 4), cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.setGroundTile, 6),
+            cmd(.pause, 30), cmd(.setGroundTile, 7), cmd(.pause, 30), cmd(.forward, -4),
+        ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
-        [ cmd(.setGroundTile, 4), cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.setGroundTile, 6), cmd(.pause, 30), cmd(.setGroundTile, 7), cmd(.pause, 30), cmd(.forward, -4) ],
+        [
+            cmd(.setGroundTile, 4), cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.setGroundTile, 6),
+            cmd(.pause, 30), cmd(.setGroundTile, 7), cmd(.pause, 30), cmd(.forward, -4),
+        ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
-        [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.setGroundTile, 4), cmd(.pause, 30), cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.setGroundTile, 4), cmd(.pause, 30), cmd(.forward, -4) ],
+        [
+            cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.setGroundTile, 3),
+            cmd(.pause, 30), cmd(.setGroundTile, 4), cmd(.pause, 30), cmd(.setGroundTile, 2), cmd(.pause, 30),
+            cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.setGroundTile, 4), cmd(.pause, 30), cmd(.forward, -4),
+        ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
-        [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.setGroundTile, 6), cmd(.pause, 30), cmd(.setGroundTile, 7), cmd(.pause, 30), cmd(.rewind, 0) ],
+        [
+            cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 5), cmd(.pause, 30), cmd(.setGroundTile, 6),
+            cmd(.pause, 30), cmd(.setGroundTile, 7), cmd(.pause, 30), cmd(.rewind, 0),
+        ],
         [ cmd(.setGroundTile, 8), cmd(.pause, 30), cmd(.setGroundTile, 9), cmd(.pause, 30), cmd(.rewind, 0) ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
-        [ cmd(.setGroundTile, 8), cmd(.pause, 60), cmd(.setGroundTile, 9), cmd(.pause, 60), cmd(.setGroundTile, 6), cmd(.pause, 60), cmd(.setGroundTile, 5), cmd(.pause, 60), cmd(.setGroundTile, 2), cmd(.pause, 60), cmd(.setGroundTile, 3), cmd(.pause, 60), cmd(.forward, -4) ],
+        [
+            cmd(.setGroundTile, 8), cmd(.pause, 60), cmd(.setGroundTile, 9), cmd(.pause, 60), cmd(.setGroundTile, 6),
+            cmd(.pause, 60), cmd(.setGroundTile, 5), cmd(.pause, 60), cmd(.setGroundTile, 2), cmd(.pause, 60),
+            cmd(.setGroundTile, 3), cmd(.pause, 60), cmd(.forward, -4),
+        ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 60), cmd(.setGroundTile, 3), cmd(.pause, 60), cmd(.rewind, 0) ],
-        [ cmd(.setGroundTile, 2), cmd(.pause, 60), cmd(.setGroundTile, 5), cmd(.pause, 60), cmd(.setGroundTile, 6), cmd(.pause, 60), cmd(.setGroundTile, 9), cmd(.pause, 60), cmd(.setGroundTile, 8), cmd(.pause, 60), cmd(.forward, -4) ],
+        [
+            cmd(.setGroundTile, 2), cmd(.pause, 60), cmd(.setGroundTile, 5), cmd(.pause, 60), cmd(.setGroundTile, 6),
+            cmd(.pause, 60), cmd(.setGroundTile, 9), cmd(.pause, 60), cmd(.setGroundTile, 8), cmd(.pause, 60),
+            cmd(.forward, -4),
+        ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],
         [ cmd(.setGroundTile, 2), cmd(.pause, 30), cmd(.setGroundTile, 3), cmd(.pause, 30), cmd(.rewind, 0) ],

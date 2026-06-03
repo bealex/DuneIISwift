@@ -1,7 +1,8 @@
-import Foundation
-import Testing
 import DuneIIFormats
 import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIISimulation
 
 /// Golden parity for `Map_ChangeSpiceAmount` (+ `Map_FixupSpiceEdges`): generate a map from a seed,
@@ -16,7 +17,7 @@ struct SpiceTests {
     @Test("changeSpiceAmount reproduces the oracle's ground grid per seed/direction")
     func changeSpiceAmount() throws {
         var repo = URL(fileURLWithPath: #filePath)
-        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }     // Code/Tests/SimulationTests/ → repo root
+        for _ in 0 ..< 4 { repo.deleteLastPathComponent() }  // Code/Tests/SimulationTests/ → repo root
         let iconMap = try IconMap(Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
         let fixture = repo.appendingPathComponent("Code/Tests/WorldTests/Fixtures/spice-golden.jsonl")
         let text = try String(contentsOf: fixture, encoding: .utf8)

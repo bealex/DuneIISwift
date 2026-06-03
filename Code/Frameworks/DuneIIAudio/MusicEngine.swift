@@ -11,8 +11,8 @@ public enum MusicBackend: String, CaseIterable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .adlib: "AdLib FM (OPL3)"
-        case .midi: "MIDI (SoundFont)"
+            case .adlib: "AdLib FM (OPL3)"
+            case .midi: "MIDI (SoundFont)"
         }
     }
 }

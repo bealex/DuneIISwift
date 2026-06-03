@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import DuneIISimulation
 
 /// Golden parity for the Tier-D/E primitives that are dependency-ready: `Map_IsValidPosition` and
@@ -21,8 +22,8 @@ struct MapHouseTests {
     /// shared file from this sibling test target.
     static func rows(_ fn: String) -> [Row] {
         var url = URL(fileURLWithPath: #filePath)
-        url.deleteLastPathComponent()                 // .../Tests/SimulationTests/
-        url.deleteLastPathComponent()                 // .../Tests/
+        url.deleteLastPathComponent()  // .../Tests/SimulationTests/
+        url.deleteLastPathComponent()  // .../Tests/
         url.appendPathComponent("WorldTests/Fixtures/maphouse-golden.jsonl")
         let text = try! String(contentsOf: url, encoding: .utf8)
         let decoder = JSONDecoder()
@@ -37,8 +38,10 @@ struct MapHouseTests {
         let records = Self.rows("Map_IsValidPosition")
         #expect(records.count == 30)
         for r in records {
-            #expect(p.isValidPosition(r.position!, mapScale: r.mapScale!) == (r.out != 0),
-                    "position \(r.position!) scale \(r.mapScale!)")
+            #expect(
+                p.isValidPosition(r.position!, mapScale: r.mapScale!) == (r.out != 0),
+                "position \(r.position!) scale \(r.mapScale!)"
+            )
         }
     }
 
@@ -48,8 +51,10 @@ struct MapHouseTests {
         let records = Self.rows("House_AreAllied")
         #expect(records.count == 147)
         for r in records {
-            #expect(p.areAllied(r.h1!, r.h2!, playerHouseID: r.playerHouseID!) == (r.out != 0),
-                    "h1 \(r.h1!) h2 \(r.h2!) player \(r.playerHouseID!)")
+            #expect(
+                p.areAllied(r.h1!, r.h2!, playerHouseID: r.playerHouseID!) == (r.out != 0),
+                "h1 \(r.h1!) h2 \(r.h2!) player \(r.playerHouseID!)"
+            )
         }
     }
 }

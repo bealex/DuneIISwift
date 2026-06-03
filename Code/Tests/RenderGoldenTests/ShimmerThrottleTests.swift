@@ -1,4 +1,5 @@
 import Testing
+
 @testable import DuneIIRenderer
 
 /// The sandworm heat-haze rebuild — the biggest per-frame `SKTexture` upload — is rate-limited by
@@ -7,8 +8,12 @@ import Testing
 /// Install-gated: short-circuits like the render goldens when the original install is absent.
 @Suite("Shimmer throttle")
 struct ShimmerThrottleTests {
-    private static let wormCase = RenderHarness.Case("throttle-probe", scenario: "SCENA001.INI",
-                                                     tick: 0, worm: (35, 22))
+    private static let wormCase = RenderHarness.Case(
+        "throttle-probe",
+        scenario: "SCENA001.INI",
+        tick: 0,
+        worm: (35, 22)
+    )
 
     @MainActor
     @Test("interval 2 rebuilds the shimmer every other frame")

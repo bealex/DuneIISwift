@@ -24,7 +24,7 @@ public extension StructureType {
 public extension MovementType {
     /// `Unit_MovementStringToType` (`unit.c:375`, `g_table_movementTypeName`). Note "Winged" → `.winger`.
     static func named(_ name: String) -> MovementType? {
-        let names = ["Foot", "Tracked", "Harvester", "Wheeled", "Winged", "Slither"]
+        let names = [ "Foot", "Tracked", "Harvester", "Wheeled", "Winged", "Slither" ]
         guard let i = names.firstIndex(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return nil }
         return MovementType(rawValue: i)
     }
@@ -33,7 +33,7 @@ public extension MovementType {
 public extension TeamActionType {
     /// `Team_ActionStringToType` (`team.c:108`, `g_table_teamActionName`).
     static func named(_ name: String) -> TeamActionType? {
-        let names = ["Normal", "Staging", "Flee", "Kamikaze", "Guard"]
+        let names = [ "Normal", "Staging", "Flee", "Kamikaze", "Guard" ]
         guard let i = names.firstIndex(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return nil }
         return TeamActionType(rawValue: i)
     }
@@ -51,8 +51,12 @@ public extension GameState {
     /// The parity harness (and the OpenDUNE `parity.c` oracle) pins it on because the harness doesn't tick fog,
     /// so the golden default is `true`; the live game passes `false` so the AI stays dormant (no production /
     /// rebuild / house-missile) until the player actually meets it — otherwise it attacks far too early.
-    mutating func loadScenario(ini: Ini, iconMap: IconMap, teamScriptOffsets: [UInt16] = [],
-                               activateTeamHousesAI: Bool = true) {
+    mutating func loadScenario(
+        ini: Ini,
+        iconMap: IconMap,
+        teamScriptOffsets: [UInt16] = [],
+        activateTeamHousesAI: Bool = true
+    ) {
         tileIDs = TileIDs(iconMap: iconMap) ?? TileIDs()
         mapScale = UInt8(clamping: ini.integer(section: "BASIC", key: "MapScale"))
         scenario.winFlags = UInt16(clamping: ini.integer(section: "BASIC", key: "WinFlags"))
@@ -76,7 +80,11 @@ public extension GameState {
         }
         // `[TEAMS]` = "<House>,<TeamAction>,<MovementType>,<minMembers>,<maxMembers>" → `Team_Create`.
         for key in ini.keys(section: "TEAMS") {
-            loadTeam(ini.string(section: "TEAMS", key: key), offsets: teamScriptOffsets, activateAI: activateTeamHousesAI)
+            loadTeam(
+                ini.string(section: "TEAMS", key: key),
+                offsets: teamScriptOffsets,
+                activateAI: activateTeamHousesAI
+            )
         }
         // `[REINFORCEMENTS]` = "<index>=<House>,<UnitType>,<Location>,<timeBetween>[+]" → the timed-spawn table.
         for key in ini.keys(section: "REINFORCEMENTS") {
@@ -116,8 +124,10 @@ public extension GameState {
     private mutating func loadHouses(ini: Ini) {
         for house in HouseID.allCases {
             let name = HouseInfo[house].name
-            guard let brain = ini.string(section: name, key: "Brain")?.uppercased(),
-                  brain == "HUMAN" || brain == "CPU" else { continue }
+            guard
+                let brain = ini.string(section: name, key: "Brain")?.uppercased(),
+                brain == "HUMAN" || brain == "CPU"
+            else { continue }
             let h = houseAllocate(index: UInt8(house.rawValue)) ?? Int(house.rawValue)
             houses[h].credits = UInt16(clamping: ini.integer(section: name, key: "Credits"))
             houses[h].creditsQuota = UInt16(clamping: ini.integer(section: name, key: "Quota"))
@@ -167,16 +177,19 @@ public extension GameState {
     /// `House,UnitType,HP%,packedPosition,orientation,actionState`.
     private mutating func loadUnit(_ value: String?) {
         let parts = fields(value)
-        guard parts.count >= 5,
-              let house = HouseID.named(parts[0]),
-              let type = UnitType.named(parts[1]) else { return }
+        guard parts.count >= 5, let house = HouseID.named(parts[0]), let type = UnitType.named(parts[1]) else { return }
 
         let hpPercent = Int(parts[2]) ?? 256
         let packed = UInt16(clamping: Int(parts[3]) ?? 0)
         let orientation = Int8(bitPattern: UInt8(truncatingIfNeeded: Int(parts[4]) ?? 0))
 
-        guard let i = unitAllocate(index: Pool.unitIndexInvalid, type: UInt8(type.rawValue),
-                                   houseID: UInt8(house.rawValue)) else { return }
+        guard
+            let i = unitAllocate(
+                index: Pool.unitIndexInvalid,
+                type: UInt8(type.rawValue),
+                houseID: UInt8(house.rawValue)
+            )
+        else { return }
         units[i].o.hitpoints = UInt16(hpPercent * Int(UnitInfo[type].o.hitpoints) / 256)
         units[i].o.position = Tile32.unpack(packed)
         units[i].orientation[0].current = orientation
@@ -197,9 +210,11 @@ public extension GameState {
     private mutating func loadStructure(key: String, value: String?) {
         let parts = fields(value)
         let isGen = key.uppercased().hasPrefix("GEN")
-        guard parts.count >= 2,
-              let house = HouseID.named(parts[0]),
-              let type = StructureType.named(parts[1]) else { return }
+        guard
+            parts.count >= 2,
+            let house = HouseID.named(parts[0]),
+            let type = StructureType.named(parts[1])
+        else { return }
 
         let packed: UInt16
         if isGen {
@@ -213,12 +228,11 @@ public extension GameState {
         // frees the object (they have no script, so nothing would ever stamp them later). Place + return.
         switch type {
             case .slab1x1, .slab2x2: placeSlab(type, houseID: UInt8(house.rawValue), at: packed); return
-            case .wall:              placeWall(houseID: UInt8(house.rawValue), at: packed); return
+            case .wall: placeWall(houseID: UInt8(house.rawValue), at: packed); return
             default: break
         }
 
-        guard let i = structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(type.rawValue))
-        else { return }
+        guard let i = structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(type.rawValue)) else { return }
         structures[i].o.houseID = UInt8(house.rawValue)
         // A structure stores its tile *corner*, not the centred sub-tile — `Structure_Place` zeroes the
         // 0x80 (`s->o.position &= 0xFF00`). Units centre; structures don't. The 128px offset matters for
@@ -236,16 +250,23 @@ public extension GameState {
     /// `offsets[teamAction]` (or left unloaded — `scriptNull` — when no team script is supplied).
     private mutating func loadTeam(_ value: String?, offsets: [UInt16], activateAI: Bool) {
         let parts = fields(value)
-        guard parts.count >= 5,
-              let house = HouseID.named(parts[0]),
-              let action = TeamActionType.named(parts[1]),
-              let movement = MovementType.named(parts[2]) else { return }
+        guard
+            parts.count >= 5,
+            let house = HouseID.named(parts[0]),
+            let action = TeamActionType.named(parts[1]),
+            let movement = MovementType.named(parts[2])
+        else { return }
         let minMembers = UInt16(clamping: Int(parts[3]) ?? 0)
         let maxMembers = UInt16(clamping: Int(parts[4]) ?? 0)
         let scriptPC = action.rawValue < offsets.count ? offsets[action.rawValue] : ScriptEngine.scriptNull
-        teamCreate(houseID: UInt8(house.rawValue), teamActionType: UInt8(action.rawValue),
-                   movementType: UInt8(movement.rawValue), minMembers: minMembers, maxMembers: maxMembers,
-                   scriptPC: scriptPC)
+        teamCreate(
+            houseID: UInt8(house.rawValue),
+            teamActionType: UInt8(action.rawValue),
+            movementType: UInt8(movement.rawValue),
+            minMembers: minMembers,
+            maxMembers: maxMembers,
+            scriptPC: scriptPC
+        )
         // In a real game `isAIActive` is set when the AI first sees an enemy (`Unit_HouseUnitCount_Add`), not at
         // load — so the live game passes `activateAI: false` and relies on the fog/contact path. The parity
         // harness pins it on (it doesn't tick fog), mirroring the OpenDUNE `parity.c` oracle's `Scen_LoadTeam`.
@@ -259,10 +280,8 @@ public extension GameState {
     private mutating func loadReinforcement(key: String, value: String?) {
         guard let index = Int(key), index >= 0, index < scenario.reinforcements.count else { return }
         let parts = fields(value)
-        guard parts.count >= 4,
-              let house = HouseID.named(parts[0]),
-              let type = UnitType.named(parts[1]) else { return }
-        let locations = ["NORTH", "EAST", "SOUTH", "WEST", "AIR", "VISIBLE", "ENEMYBASE", "HOMEBASE"]
+        guard parts.count >= 4, let house = HouseID.named(parts[0]), let type = UnitType.named(parts[1]) else { return }
+        let locations = [ "NORTH", "EAST", "SOUTH", "WEST", "AIR", "VISIBLE", "ENEMYBASE", "HOMEBASE" ]
         guard let locationID = locations.firstIndex(of: parts[2].uppercased()) else { return }
 
         var r = Reinforcement()
@@ -271,7 +290,7 @@ public extension GameState {
         r.locationID = UInt8(locationID)
         r.timeBetween = UInt16(clamping: (Int(parts[3].filter(\.isNumber)) ?? 0) * 6 + 1)
         r.timeLeft = r.timeBetween
-        r.repeats = false   // 1.07 non-enhanced: the '+' is always dropped (`scenario.c` parse bug).
+        r.repeats = false  // 1.07 non-enhanced: the '+' is always dropped (`scenario.c` parse bug).
         scenario.reinforcements[index] = r
     }
 

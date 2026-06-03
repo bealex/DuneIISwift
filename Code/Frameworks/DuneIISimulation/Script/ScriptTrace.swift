@@ -1,14 +1,14 @@
-import Synchronization
 import DuneIIWorld
+import Synchronization
 
 /// One per-opcode decision-trace line — the Tier-2a parity unit. Captures the pre-execution state at the
 /// top of a `Script_Run` (the same point + fields OpenDUNE's `--parity-script-trace` emits in
 /// `script/script.c`), so our trace can be diffed against the oracle's line-by-line. See
 /// `Documentation/Architecture/ParityHarness.md` / `ScenarioHarness.md`.
 public struct ScriptTraceLine: Sendable, Equatable {
-    public let pc: Int          // opcode offset from `scriptInfo.start`, before it is read
-    public let op: Int          // decoded opcode (flags stripped; a 13-bit GOTO decodes to op 0)
-    public let param: Int       // decoded parameter (signed, as the oracle prints `(int)(int16)`)
+    public let pc: Int  // opcode offset from `scriptInfo.start`, before it is read
+    public let op: Int  // decoded opcode (flags stripped; a 13-bit GOTO decodes to op 0)
+    public let param: Int  // decoded parameter (signed, as the oracle prints `(int)(int16)`)
     public let delay: Int, sp: Int, fp: Int, returnValue: Int, current: Int
 
     /// Byte-for-byte the oracle's `fprintf` format (`pc=… op=… param=… delay=… SP=… FP=… return=… current=0x…`).
@@ -29,16 +29,23 @@ public struct ScriptTraceLine: Sendable, Equatable {
         var op = Int((current >> 8) & 0x1F)
         var param = 0
         if current & 0x8000 != 0 {
-            op = 0; param = Int(current & 0x7FFF)                                   // 13-bit GOTO
+            op = 0; param = Int(current & 0x7FFF)  // 13-bit GOTO
         } else if current & 0x4000 != 0 {
-            param = Int(Int16(Int8(bitPattern: UInt8(current & 0xFF))))             // sign-extended int8
+            param = Int(Int16(Int8(bitPattern: UInt8(current & 0xFF))))  // sign-extended int8
         } else if current & 0x2000 != 0, pc + 1 < program.count {
-            param = Int(Int16(bitPattern: program[pc + 1]))                         // the next word
+            param = Int(Int16(bitPattern: program[pc + 1]))  // the next word
         }
 
-        return ScriptTraceLine(pc: pc, op: op, param: param, delay: Int(engine.delay),
-                               sp: Int(engine.stackPointer), fp: Int(engine.framePointer),
-                               returnValue: Int(engine.returnValue), current: Int(current))
+        return ScriptTraceLine(
+            pc: pc,
+            op: op,
+            param: param,
+            delay: Int(engine.delay),
+            sp: Int(engine.stackPointer),
+            fp: Int(engine.framePointer),
+            returnValue: Int(engine.returnValue),
+            current: Int(current)
+        )
     }
 }
 

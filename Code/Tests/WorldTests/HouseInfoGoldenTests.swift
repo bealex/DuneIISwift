@@ -1,6 +1,7 @@
+import DuneIIContracts
 import Foundation
 import Testing
-import DuneIIContracts
+
 @testable import DuneIIWorld
 
 /// Field-for-field parity of `HouseInfo.table` against OpenDUNE's `g_table_houseInfo[]`, from the

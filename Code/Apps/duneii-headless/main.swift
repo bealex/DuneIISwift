@@ -1,9 +1,9 @@
-import Foundation
 import DuneIIContracts
 import DuneIIFormats
-import DuneIIWorld
-import DuneIISimulation
 import DuneIIScenarios
+import DuneIISimulation
+import DuneIIWorld
+import Foundation
 
 // Headless test/oracle driver: loads the EMC scripts + ICON.MAP, builds the behavioural scenarios, and runs
 // them deterministically with no renderer/input/audio — printing a concise event summary. A smoke-test of
@@ -14,25 +14,30 @@ func resourcesDir() -> URL? {
     let cwd = URL(fileURLWithPath: fm.currentDirectoryPath)
     let candidates: [URL] = [
         CommandLine.arguments.dropFirst().first.map { URL(fileURLWithPath: $0) },
-        cwd.appendingPathComponent("../Resources"),   // `swift run` from Code/
+        cwd.appendingPathComponent("../Resources"),  // `swift run` from Code/
         cwd.appendingPathComponent("Resources"),
     ].compactMap { $0 }
     return candidates.first { fm.fileExists(atPath: $0.appendingPathComponent("Tiles/Maps/ICON.MAP").path) }
 }
 
-guard let res = resourcesDir(),
-      let icon = try? Data(contentsOf: res.appendingPathComponent("Tiles/Maps/ICON.MAP")),
-      let iconMap = try? IconMap(icon),
-      let unitEmc = try? Data(contentsOf: res.appendingPathComponent("Scripts/UNIT/UNIT.emc")),
-      let buildEmc = try? Data(contentsOf: res.appendingPathComponent("Scripts/BUILD/BUILD.emc")),
-      let unitProgram = try? Emc.Program(unitEmc), let buildProgram = try? Emc.Program(buildEmc) else {
+guard
+    let res = resourcesDir(),
+    let icon = try? Data(contentsOf: res.appendingPathComponent("Tiles/Maps/ICON.MAP")),
+    let iconMap = try? IconMap(icon),
+    let unitEmc = try? Data(contentsOf: res.appendingPathComponent("Scripts/UNIT/UNIT.emc")),
+    let buildEmc = try? Data(contentsOf: res.appendingPathComponent("Scripts/BUILD/BUILD.emc")),
+    let unitProgram = try? Emc.Program(unitEmc),
+    let buildProgram = try? Emc.Program(buildEmc)
+else {
     print("duneii-headless: Resources not found. Pass the Resources dir as argument 1, or run from Code/.")
     exit(1)
 }
 
-let builder = ScenarioBuilder(iconMap: iconMap,
-                              unitScript: ScriptInfo(unitProgram),
-                              structureScript: ScriptInfo(buildProgram))
+let builder = ScenarioBuilder(
+    iconMap: iconMap,
+    unitScript: ScriptInfo(unitProgram),
+    structureScript: ScriptInfo(buildProgram)
+)
 
 func structureSummary(_ state: GameState) -> String {
     state.structures.indices.filter { state.structures[$0].o.flags.contains(.used) }.map { i in
@@ -52,7 +57,10 @@ func runDemo(_ builder: ScenarioBuilder, _ kind: ScenarioKind, ticks: Int) {
         let before = world.state.structures.filter { $0.o.flags.contains(.used) }.count
         world.tick()
         if firstBullet < 0,
-           world.state.units.contains(where: { $0.o.flags.contains(.used) && $0.o.type == UInt8(UnitType.bullet.rawValue) }) {
+            world.state.units.contains(where: {
+                $0.o.flags.contains(.used) && $0.o.type == UInt8(UnitType.bullet.rawValue)
+            })
+        {
             firstBullet = t
         }
         if destroyed < 0, world.state.structures.filter({ $0.o.flags.contains(.used) }).count < before { destroyed = t }
@@ -73,8 +81,10 @@ func runEconomyDemo(_ builder: ScenarioBuilder, _ kind: ScenarioKind, type: Stru
     func line(_ label: String) {
         guard let s = find() else { return }
         let credits = world.state.houses[Int(HouseID.harkonnen.rawValue)].credits
-        print("  \(label) credits \(credits)  hp \(s.o.hitpoints)  countDown \(s.countDown)  "
-            + "upgrade \(s.upgradeLevel)/\(s.upgradeTimeLeft)  state \(s.state.rawValue)")
+        print(
+            "  \(label) credits \(credits)  hp \(s.o.hitpoints)  countDown \(s.countDown)  "
+                + "upgrade \(s.upgradeLevel)/\(s.upgradeTimeLeft)  state \(s.state.rawValue)"
+        )
     }
     print("── \(kind.title) ──")
     line("t0  ")

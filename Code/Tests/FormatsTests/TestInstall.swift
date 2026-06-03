@@ -32,4 +32,3 @@ enum TestInstall {
         return archive.data(entry)
     }
 }
-

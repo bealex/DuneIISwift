@@ -51,8 +51,8 @@ final class ScenarioLabModel {
         running = false
         let scenario = TestScenario(kind: kind, unit1: unit1, unit2: unit2, terrainSeed: seed)
         var world = builder.build(scenario)
-        world.tickExplosions = true   // the lab animates impacts/deaths/destruction (not golden-pinned)
-        world.tickAnimations = true   // …and structure animations (power lights, factory cycles)
+        world.tickExplosions = true  // the lab animates impacts/deaths/destruction (not golden-pinned)
+        world.tickAnimations = true  // …and structure animations (power lights, factory cycles)
         scene.load(world: world, assets: assets, running: false)
     }
 }

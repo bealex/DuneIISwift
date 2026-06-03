@@ -18,8 +18,13 @@ public struct SpriteLayer: Sendable, Equatable {
     public var offsetX: Int
     public var offsetY: Int
 
-    public init(spriteIndex: Int, flipped: Bool = false, flippedV: Bool = false,
-                offsetX: Int = 0, offsetY: Int = 0) {
+    public init(
+        spriteIndex: Int,
+        flipped: Bool = false,
+        flippedV: Bool = false,
+        offsetX: Int = 0,
+        offsetY: Int = 0
+    ) {
         self.spriteIndex = spriteIndex
         self.flipped = flipped
         self.flippedV = flippedV

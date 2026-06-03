@@ -45,7 +45,9 @@ public final class MusicPlayer: MusicEngine {
     /// the end. A missing file is a no-op (logged) rather than a crash — the engine runs without the assets.
     public func play(file: Int, song: Int, loop: Bool) {
         let url = musicDirectory.appendingPathComponent(Self.filename(file: file, song: song))
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        guard
+            FileManager.default.fileExists(atPath: url.path)
+        else {
             log.warning("music file missing: \(url.lastPathComponent, privacy: .public)")
             return
         }
@@ -66,7 +68,7 @@ public final class MusicPlayer: MusicEngine {
     /// Freeze playback, remembering the position so `resume()` continues seamlessly.
     public func pause() {
         guard let player, player.isPlaying else { return }
-        generation &+= 1          // invalidate the completion handler this stop may fire
+        generation &+= 1  // invalidate the completion handler this stop may fire
         pausedPosition = player.currentPosition
         player.stop()
     }
@@ -92,13 +94,15 @@ public final class MusicPlayer: MusicEngine {
                 Task { @MainActor [weak self] in self?.finished(token: token) }
             }
         } catch {
-            log.error("music load failed for \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            log.error(
+                "music load failed for \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
             player = nil
         }
     }
 
     private func finished(token: Int) {
-        guard token == generation else { return }   // a stop/pause/new-play happened after this one started
+        guard token == generation else { return }  // a stop/pause/new-play happened after this one started
         if looping, let current {
             let url = musicDirectory.appendingPathComponent(Self.filename(file: current.file, song: current.song))
             start(url: url, from: nil)

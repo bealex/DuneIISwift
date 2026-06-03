@@ -12,7 +12,7 @@ struct ContentView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            SpriteView(scene: model.scene, options: [.ignoresSiblingOrder])
+            SpriteView(scene: model.scene, options: [ .ignoresSiblingOrder ])
                 .background(.black)
                 .ignoresSafeArea()
                 .overlay(alignment: .top) {
@@ -50,9 +50,13 @@ struct ContentView: View {
 
     /// Load the most recently written quicksave.
     private func loadGame() {
-        let saves = (try? FileManager.default.contentsOfDirectory(
-            at: documentsURL, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
-        let latest = saves
+        let saves =
+            (try? FileManager.default.contentsOfDirectory(
+                at: documentsURL,
+                includingPropertiesForKeys: [ .contentModificationDateKey ]
+            )) ?? []
+        let latest =
+            saves
             .filter { $0.pathExtension == "duneiisave" }
             .max { date($0) < date($1) }
         guard let latest else { flash("No saved games"); return }
@@ -63,11 +67,13 @@ struct ContentView: View {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
     private func date(_ url: URL) -> Date {
-        (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        (try? url.resourceValues(forKeys: [ .contentModificationDateKey ]).contentModificationDate) ?? .distantPast
     }
     private func stripExtension(_ name: String) -> String { (name as NSString).deletingPathExtension }
     private func flash(_ message: String) {
         notice = message
-        Task { try? await Task.sleep(for: .seconds(2)); if notice == message { notice = nil } }
+        Task {
+            try? await Task.sleep(for: .seconds(2)); if notice == message { notice = nil }
+        }
     }
 }

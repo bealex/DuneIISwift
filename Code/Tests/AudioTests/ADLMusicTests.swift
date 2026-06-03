@@ -3,6 +3,7 @@ import Foundation
 import SwiftOPL3
 import Testing
 import WestwoodADL
+
 @testable import DuneIIAudio
 
 /// The authentic AdLib FM music backend (`ADLMusicPlayer`, SwiftOPL3 + WestwoodADL) and the `MusicBackend`
@@ -14,16 +15,16 @@ import WestwoodADL
 struct ADLMusicTests {
     /// Repo `Resources/Audio/Music`, or `nil` when the assets aren't checked out (tests short-circuit).
     private static func musicDir() -> URL? {
-        let dir = URL(filePath: #filePath)              // …/Code/Tests/AudioTests/ADLMusicTests.swift
+        let dir = URL(filePath: #filePath)  // …/Code/Tests/AudioTests/ADLMusicTests.swift
             .deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()   // → repo root
+            .deletingLastPathComponent().deletingLastPathComponent()  // → repo root
             .appending(path: "Resources/Audio/Music")
         return FileManager.default.fileExists(atPath: dir.path) ? dir : nil
     }
 
     @Test("the AdLib backend is the default and exposes both engines")
     func backendCases() {
-        #expect(MusicBackend.allCases == [.adlib, .midi])
+        #expect(MusicBackend.allCases == [ .adlib, .midi ])
         #expect(MusicBackend(rawValue: "adlib") == .adlib)
         #expect(MusicBackend.adlib.displayName.isEmpty == false)
     }
@@ -37,7 +38,10 @@ struct ADLMusicTests {
         for id in ids {
             let track = try #require(MusicDirector.table[id], "musicID \(id) has no track")
             let file = dir.appending(path: String(format: "DUNE%d.ADL", track.file))
-            #expect(FileManager.default.fileExists(atPath: file.path), "missing \(file.lastPathComponent) for musicID \(id)")
+            #expect(
+                FileManager.default.fileExists(atPath: file.path),
+                "missing \(file.lastPathComponent) for musicID \(id)"
+            )
         }
     }
 
@@ -47,7 +51,7 @@ struct ADLMusicTests {
     @Test("the OPL3 path synthesises non-silent PCM for a selected track")
     func opl3RendersAudio() throws {
         let dir = try #require(Self.musicDir(), "music assets absent — skipping")
-        let track = try #require(MusicDirector.table[8])            // ambient map theme = DUNE1.ADL subsong 6
+        let track = try #require(MusicDirector.table[8])  // ambient map theme = DUNE1.ADL subsong 6
         let url = dir.appending(path: String(format: "DUNE%d.ADL", track.file))
         let data = try Data(contentsOf: url)
 
@@ -81,10 +85,10 @@ struct ADLMusicTests {
         let d = MusicDirector(musicDirectory: empty, backend: .adlib)
         d.win(house: .ordos)
         #expect(d.currentMusicID == 5)
-        d.backend = .midi          // live swap — selection survives, re-issued to the new engine
+        d.backend = .midi  // live swap — selection survives, re-issued to the new engine
         #expect(d.currentMusicID == 5)
         #expect(d.backend == .midi)
-        d.backend = .midi          // setting the same backend is a no-op
+        d.backend = .midi  // setting the same backend is a no-op
         #expect(d.currentMusicID == 5)
     }
 }

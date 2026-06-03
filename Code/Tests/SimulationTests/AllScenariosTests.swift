@@ -1,8 +1,9 @@
-import Foundation
-import Testing
 import DuneIIContracts
 import DuneIIFormats
 import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIISimulation
 
 /// Loads every committed scenario `.INI` and checks, for all of them: each placed unit/structure sits
@@ -21,7 +22,7 @@ struct AllScenariosTests {
         let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
             .filter { $0.lastPathComponent.uppercased().hasPrefix("SCEN") && $0.pathExtension.uppercased() == "INI" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
-        #expect(files.count > 20)   // ~22 campaign scenarios
+        #expect(files.count > 20)  // ~22 campaign scenarios
 
         var totalUnits = 0, totalStructures = 0
         for file in files {
@@ -45,7 +46,10 @@ struct AllScenariosTests {
             }
 
             for u in state.units where u.o.flags.contains(.used) {
-                #expect(unitPositions.contains(u.o.position.packed), "\(name): unit at \(u.o.position.packed) not in INI")
+                #expect(
+                    unitPositions.contains(u.o.position.packed),
+                    "\(name): unit at \(u.o.position.packed) not in INI"
+                )
                 let type = try #require(UnitType(rawValue: Int(u.o.type)))
                 let sprites = try #require(UnitSprites.info(for: u), "\(name): unit \(type) sprite unresolved")
                 let expectsTurret = UnitInfo[type].turretSpriteID != 0xFFFF
@@ -54,7 +58,10 @@ struct AllScenariosTests {
                 totalUnits += 1
             }
             for s in state.structures where s.o.flags.contains(.used) {
-                #expect(structurePositions.contains(s.o.position.packed), "\(name): structure at \(s.o.position.packed) not in INI")
+                #expect(
+                    structurePositions.contains(s.o.position.packed),
+                    "\(name): structure at \(s.o.position.packed) not in INI"
+                )
                 totalStructures += 1
             }
         }

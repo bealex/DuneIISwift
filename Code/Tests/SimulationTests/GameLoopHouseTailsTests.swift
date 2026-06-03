@@ -1,13 +1,14 @@
-import Testing
 import DuneIIContracts
-@testable import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
+@testable import DuneIIWorld
 
 /// Slice 5 — the `GameLoop_House` tails: `Map_FindLocationTile`, `Unit_CreateWrapper`,
 /// `House_EnsureHarvesterAvailable`, the starport stock bump, and the frigate delivery.
 @Suite("GameLoop_House tails")
 struct GameLoopHouseTailsTests {
-    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func combatBase() -> (GameState, UnitCombat) {
         var s = GameState(random256Seed: 0x55, randomLCGSeed: 0x55)
@@ -16,7 +17,9 @@ struct GameLoopHouseTailsTests {
         return (s, UnitCombat(movement: UnitMovement(scriptInfo: info)))
     }
 
-    private func addStructure(_ s: inout GameState, _ type: StructureType, house: UInt8, at packed: UInt16? = nil) -> Int {
+    private func addStructure(_ s: inout GameState, _ type: StructureType, house: UInt8, at packed: UInt16? = nil)
+        -> Int
+    {
         let slot = s.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(type.rawValue))!
         s.structures[slot].o.houseID = house
         s.structures[slot].o.hitpoints = StructureInfo[type].o.hitpoints
@@ -48,8 +51,8 @@ struct GameLoopHouseTailsTests {
         let ret = combat.unitCreateWrapper(houseID: 0, type: .harvester, destination: 0, in: &s)
         let cargo = try! #require(ret)
         #expect(s.units[cargo].o.type == UInt8(UnitType.harvester.rawValue))
-        #expect(s.units[cargo].amount == 1)                       // a fresh harvester carries 1
-        #expect(s.units[cargo].o.flags.contains(.isNotOnMap))     // riding inside
+        #expect(s.units[cargo].amount == 1)  // a fresh harvester carries 1
+        #expect(s.units[cargo].o.flags.contains(.isNotOnMap))  // riding inside
         // The carryall (on-map, in transport) links to that cargo.
         var f = PoolFind(houseID: 0, type: UInt16(UnitType.carryall.rawValue))
         let carryall = try! #require(s.unitFind(&f))
@@ -64,7 +67,7 @@ struct GameLoopHouseTailsTests {
         let u = try! #require(made)
         #expect(s.units[u].o.type == UInt8(UnitType.carryall.rawValue))
         #expect(s.units[u].o.flags.contains(.byScenario))
-        #expect(s.units[u].o.linkedID == 0xFF)                    // a winger isn't ferried
+        #expect(s.units[u].o.linkedID == 0xFF)  // a winger isn't ferried
     }
 
     // MARK: - House_EnsureHarvesterAvailable
@@ -87,7 +90,7 @@ struct GameLoopHouseTailsTests {
         s.units[harv].o.position = Tile32.unpack(Tile32.packXY(x: 31, y: 30))
         s.unitUpdateMap(1, harv)
         combat.houseEnsureHarvesterAvailable(houseID: 0, in: &s)
-        #expect(!s.unitIsTypeOnMap(houseID: 0, typeID: UInt8(UnitType.carryall.rawValue)))   // none dispatched
+        #expect(!s.unitIsTypeOnMap(houseID: 0, typeID: UInt8(UnitType.carryall.rawValue)))  // none dispatched
     }
 
     // MARK: - GameLoop_House tail bodies (driven through a tick)
@@ -95,11 +98,11 @@ struct GameLoopHouseTailsTests {
     @Test("the starport-availability tick bumps one in-stock unit type")
     func starportStockBump() {
         var s = combatBase().0
-        s.starportAvailable = Array(repeating: 1, count: 27)   // all in stock ⇒ whichever is drawn bumps
-        s.houseTick.house = 1_000_000                          // isolate the starport-availability body
+        s.starportAvailable = Array(repeating: 1, count: 27)  // all in stock ⇒ whichever is drawn bumps
+        s.houseTick.house = 1_000_000  // isolate the starport-availability body
         s.houseTick.powerMaintenance = 1_000_000
         var sim = Simulation(state: s, scriptInfo: info)
-        sim.tick()   // tick 1 → starportAvailability fires
+        sim.tick()  // tick 1 → starportAvailability fires
         #expect(sim.state.starportAvailable.map(Int.init).reduce(0, +) == 27 + 1)
     }
 
@@ -107,18 +110,18 @@ struct GameLoopHouseTailsTests {
     func frigateDelivery() {
         var s = combatBase().0
         let starport = addStructure(&s, .starport, house: 0, at: Tile32.packXY(x: 30, y: 30))
-        s.structures[starport].o.linkedID = 0xFF               // free to receive a frigate
+        s.structures[starport].o.linkedID = 0xFF  // free to receive a frigate
         let cargo = s.unitAllocate(index: 5, type: UInt8(UnitType.trike.rawValue), houseID: 0)!
         s.units[cargo].o.flags.insert(.isNotOnMap)
         s.houses[0].starportLinkedID = UInt16(s.units[cargo].o.index)
-        s.houses[0].starportTimeLeft = 1                       // elapses to 0 this tick
-        s.houseTick.house = 1_000_000                          // isolate the starport body
+        s.houses[0].starportTimeLeft = 1  // elapses to 0 this tick
+        s.houseTick.house = 1_000_000  // isolate the starport body
         s.houseTick.powerMaintenance = 1_000_000
 
         var sim = Simulation(state: s, scriptInfo: info)
-        sim.tick()   // tick 1 → tickStarport fires
+        sim.tick()  // tick 1 → tickStarport fires
 
-        #expect(sim.state.houses[0].starportLinkedID == 0xFFFF)   // delivery consumed the link
+        #expect(sim.state.houses[0].starportLinkedID == 0xFFFF)  // delivery consumed the link
         #expect(sim.state.unitIsTypeOnMap(houseID: 0, typeID: UInt8(UnitType.frigate.rawValue)))
     }
 }

@@ -27,8 +27,14 @@ struct RenderGoldenTests {
         // The same worm with fog of war on: the shimmer must sample the **fog-free** terrain, so the worm
         // silhouette shows a clean heat-haze — never the dithered fog-edge checkerboard (which the fogged
         // terrain buffer bakes into still-`isUnveiled` edge tiles). Guards the fog-edge shimmer fix.
-        .init("scena001-worm-fog-t60", scenario: "SCENA001.INI", tick: 60, rect: (30, 20, 7, 7),
-              fog: true, worm: (33, 23)),
+        .init(
+            "scena001-worm-fog-t60",
+            scenario: "SCENA001.INI",
+            tick: 60,
+            rect: (30, 20, 7, 7),
+            fog: true,
+            worm: (33, 23)
+        ),
     ]
 
     static var recording: Bool { ProcessInfo.processInfo.environment["DUNEII_RENDER_RECORD"] != nil }
@@ -36,7 +42,9 @@ struct RenderGoldenTests {
     @Test(arguments: cases)
     func renderGolden(_ c: RenderHarness.Case) throws {
         guard RenderHarness.installURL != nil else { print("render-golden \(c.name): no install — skipped"); return }
-        guard let image = RenderHarness.capture(c) else {
+        guard
+            let image = RenderHarness.capture(c)
+        else {
             print("render-golden \(c.name): no off-screen GPU context — skipped"); return
         }
 
@@ -49,14 +57,19 @@ struct RenderGoldenTests {
             return
         }
 
-        guard let expected = PngImage(contentsOf: reference) else {
-            Issue.record("render-golden \(c.name): missing reference \(reference.path) — run Scripts/gen-render-goldens.sh")
+        guard
+            let expected = PngImage(contentsOf: reference)
+        else {
+            Issue.record(
+                "render-golden \(c.name): missing reference \(reference.path) — run Scripts/gen-render-goldens.sh"
+            )
             return
         }
         let actual = PngImage(image)
         let d = actual.diff(expected)
         let firstPx = d.first.map { "(\($0.x),\($0.y))" } ?? "-"
-        let msg = "render-golden \(c.name): \(d.mismatches) px differ (max channel Δ \(d.maxDelta), first at "
+        let msg =
+            "render-golden \(c.name): \(d.mismatches) px differ (max channel Δ \(d.maxDelta), first at "
             + "\(firstPx)); actual \(actual.width)×\(actual.height) vs reference \(expected.width)×\(expected.height)"
         #expect(d.mismatches == 0, Comment(rawValue: msg))
     }

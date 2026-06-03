@@ -1,6 +1,7 @@
-import Testing
 import DuneIIContracts
 import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
 
 /// Per-function coverage for the `Script_General_*` natives (`GeneralScriptFunctions`). Each function is
@@ -37,7 +38,7 @@ struct GeneralScriptFunctionsTests {
 
     @Test("delayRandom = Random256 * max / 256 / 5, drawing one RNG byte")
     func delayRandom() {
-        for (seed, maxTicks) in [(UInt32(0), UInt16(100)), (42, 255), (0xC0DE, 50), (7, 1000)] {
+        for (seed, maxTicks) in [ (UInt32(0), UInt16(100)), (42, 255), (0xC0DE, 50), (7, 1000) ] {
             var probe = GameState(random256Seed: seed)
             let r = probe.random256.next()
             let expected = UInt16(UInt32(r) * UInt32(maxTicks) / 256) / 5
@@ -48,8 +49,8 @@ struct GeneralScriptFunctionsTests {
 
     @Test("randomRange wraps RandomLCG.range")
     func randomRange() {
-        for seed in [UInt16(0), 1, 0x1234, 0x7FFF] {
-            for (lo, hi) in [(UInt16(0), UInt16(100)), (1, 6), (5, 5), (0, 255)] {
+        for seed in [ UInt16(0), 1, 0x1234, 0x7FFF ] {
+            for (lo, hi) in [ (UInt16(0), UInt16(100)), (1, 6), (5, 5), (0, 255) ] {
                 var probe = GameState(randomLCGSeed: seed)
                 let expected = probe.randomLCG.range(lo, hi)
                 var s = GameState(randomLCGSeed: seed)
@@ -62,12 +63,12 @@ struct GeneralScriptFunctionsTests {
     func getDistanceToTile() {
         let s = makeState()
         let from = Tile32.unpack(20 * 64 + 20)
-        for packed: UInt16 in [0, 100, 1300, 2080, 4000] {
+        for packed: UInt16 in [ 0, 100, 1300, 2080, 4000 ] {
             let encoded = s.indexEncode(packed, type: .tile)
             let expected = Tile32.distance(from: from, to: s.indexGetTile(encoded))
             #expect(gen.getDistanceToTile(from: from, encoded: encoded, in: s) == expected)
         }
-        #expect(gen.getDistanceToTile(from: from, encoded: 0, in: s) == 0xFFFF)   // invalid
+        #expect(gen.getDistanceToTile(from: from, encoded: 0, in: s) == 0xFFFF)  // invalid
     }
 
     @Test("getDistanceToObject: unit/tile to its tile, structure to its facing edge, invalid ⇒ 0xFFFF")
@@ -75,19 +76,23 @@ struct GeneralScriptFunctionsTests {
         var s = makeState()
         let from = Tile32.unpack(20 * 64 + 20)
 
-        #expect(gen.getDistanceToObject(from: from, encoded: 0, in: s) == 0xFFFF)   // invalid
+        #expect(gen.getDistanceToObject(from: from, encoded: 0, in: s) == 0xFFFF)  // invalid
 
         // A tile target ⇒ distance to that tile (same as getDistanceToTile).
         let tileEnc = s.indexEncode(30 * 64 + 30, type: .tile)
-        #expect(gen.getDistanceToObject(from: from, encoded: tileEnc, in: s)
-                == Tile32.distance(from: from, to: s.indexGetTile(tileEnc)))
+        #expect(
+            gen.getDistanceToObject(from: from, encoded: tileEnc, in: s)
+                == Tile32.distance(from: from, to: s.indexGetTile(tileEnc))
+        )
 
         // A unit target ⇒ distance to the unit's tile.
         let unit = s.unitAllocate(index: 0, type: u(.tank), houseID: 2)!
         s.units[unit].o.position = Tile32.unpack(25 * 64 + 25)
         let unitEnc = s.indexEncode(s.units[unit].o.index, type: .unit)
-        #expect(gen.getDistanceToObject(from: from, encoded: unitEnc, in: s)
-                == Tile32.distance(from: from, to: s.units[unit].o.position))
+        #expect(
+            gen.getDistanceToObject(from: from, encoded: unitEnc, in: s)
+                == Tile32.distance(from: from, to: s.units[unit].o.position)
+        )
 
         // A structure target ⇒ distance to the edge tile facing `from` (≠ the naive origin distance).
         let str = s.structureAllocate(index: Pool.structureIndexInvalid, type: st(.refinery))!
@@ -110,8 +115,10 @@ struct GeneralScriptFunctionsTests {
 
         #expect(gen.isEnemy(currentHouseID: 0, encoded: s.indexEncode(UInt16(mine), type: .unit), in: s) == 0)
         #expect(gen.isEnemy(currentHouseID: 0, encoded: s.indexEncode(UInt16(enemy), type: .unit), in: s) == 1)
-        #expect(gen.isEnemy(currentHouseID: 0, encoded: s.indexEncode(UInt16(enemyStruct), type: .structure), in: s) == 1)
-        #expect(gen.isEnemy(currentHouseID: 0, encoded: 0, in: s) == 0)   // invalid index
+        #expect(
+            gen.isEnemy(currentHouseID: 0, encoded: s.indexEncode(UInt16(enemyStruct), type: .structure), in: s) == 1
+        )
+        #expect(gen.isEnemy(currentHouseID: 0, encoded: 0, in: s) == 0)  // invalid index
 
         // A deviated unit counts as Ordos (house 2), so it reads as an enemy of house 0.
         s.units[mine].deviated = 1
@@ -126,7 +133,7 @@ struct GeneralScriptFunctionsTests {
 
         #expect(gen.isFriendly(currentHouseID: 0, encoded: s.indexEncode(UInt16(mine), type: .unit), in: s) == 1)
         #expect(gen.isFriendly(currentHouseID: 0, encoded: s.indexEncode(UInt16(enemy), type: .unit), in: s) == 0xFFFF)
-        #expect(gen.isFriendly(currentHouseID: 0, encoded: 0, in: s) == 0)   // no object
+        #expect(gen.isFriendly(currentHouseID: 0, encoded: 0, in: s) == 0)  // no object
 
         s.units[mine].o.flags.insert(.isNotOnMap)
         #expect(gen.isFriendly(currentHouseID: 0, encoded: s.indexEncode(UInt16(mine), type: .unit), in: s) == 0)
@@ -141,10 +148,10 @@ struct GeneralScriptFunctionsTests {
         let structEnc = s.indexEncode(UInt16(structure), type: .structure)
         let tileEnc = s.indexEncode(1300, type: .tile)
 
-        #expect(gen.getIndexType(encoded: unitEnc, in: s) == 2)       // IT_UNIT
-        #expect(gen.getIndexType(encoded: structEnc, in: s) == 3)     // IT_STRUCTURE
-        #expect(gen.getIndexType(encoded: tileEnc, in: s) == 1)       // IT_TILE
-        #expect(gen.getIndexType(encoded: 0, in: s) == 0xFFFF)        // invalid
+        #expect(gen.getIndexType(encoded: unitEnc, in: s) == 2)  // IT_UNIT
+        #expect(gen.getIndexType(encoded: structEnc, in: s) == 3)  // IT_STRUCTURE
+        #expect(gen.getIndexType(encoded: tileEnc, in: s) == 1)  // IT_TILE
+        #expect(gen.getIndexType(encoded: 0, in: s) == 0xFFFF)  // invalid
 
         #expect(gen.decodeIndex(encoded: unitEnc, in: s) == UInt16(unit))
         #expect(gen.decodeIndex(encoded: structEnc, in: s) == UInt16(structure))
@@ -158,11 +165,11 @@ struct GeneralScriptFunctionsTests {
         s.units[unit].orientation[0].current = 64
         #expect(gen.getOrientation(encoded: s.indexEncode(UInt16(unit), type: .unit), in: s) == 64)
 
-        s.units[unit].orientation[0].current = -1   // sign-extends to 0xFFFF
+        s.units[unit].orientation[0].current = -1  // sign-extends to 0xFFFF
         #expect(gen.getOrientation(encoded: s.indexEncode(UInt16(unit), type: .unit), in: s) == 0xFFFF)
 
         let structEnc = s.indexEncode(0, type: .structure)
-        #expect(gen.getOrientation(encoded: structEnc, in: s) == 128)   // not a unit
+        #expect(gen.getOrientation(encoded: structEnc, in: s) == 128)  // not a unit
     }
 
     @Test("getLinkedUnitType: the linked unit's type, or 0xFFFF")

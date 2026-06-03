@@ -1,9 +1,10 @@
-import Foundation
-import Testing
 import DuneIIContracts
 import DuneIIFormats
-@testable import DuneIIWorld
+import Foundation
+import Testing
+
 @testable import DuneIISimulation
+@testable import DuneIIWorld
 
 /// The harvester **delivery** lifecycle — `House_EnsureHarvesterAvailable` (`UnitCombat`): when a house has
 /// a refinery but no harvester (none on the map, none docked, none in a carryall), a fresh harvester is
@@ -12,7 +13,7 @@ import DuneIIFormats
 /// loop is `HarvesterCycleTests`.
 @Suite("Harvester delivery")
 struct HarvesterDeliveryTests {
-    private let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    private let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     private func base() -> (GameState, UnitCombat) {
         var s = GameState(); s.playerHouseID = 0; s.mapScale = 0
@@ -21,8 +22,11 @@ struct HarvesterDeliveryTests {
     }
 
     @discardableResult
-    private func addRefinery(_ s: inout GameState, house: UInt8 = 0,
-                             at packed: UInt16 = Tile32.packXY(x: 30, y: 30)) -> Int {
+    private func addRefinery(
+        _ s: inout GameState,
+        house: UInt8 = 0,
+        at packed: UInt16 = Tile32.packXY(x: 30, y: 30)
+    ) -> Int {
         let slot = s.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(StructureType.refinery.rawValue))!
         let corner = Tile32.unpack(packed)
         s.structures[slot].o.houseID = house
@@ -34,7 +38,9 @@ struct HarvesterDeliveryTests {
     }
 
     private func carryalls(_ s: GameState) -> [Int] {
-        s.units.indices.filter { s.units[$0].o.flags.contains(.used) && s.units[$0].o.type == UInt8(UnitType.carryall.rawValue) }
+        s.units.indices.filter {
+            s.units[$0].o.flags.contains(.used) && s.units[$0].o.type == UInt8(UnitType.carryall.rawValue)
+        }
     }
     private func harvesterType() -> UInt8 { UInt8(UnitType.harvester.rawValue) }
 
@@ -52,7 +58,7 @@ struct HarvesterDeliveryTests {
         let cargo = Int(s.units[carryall].o.linkedID)
         #expect(cargo != 0xFF)
         #expect(s.units[cargo].o.type == harvesterType())
-        #expect(s.units[cargo].o.flags.contains(.isNotOnMap))     // riding inside the carryall
+        #expect(s.units[cargo].o.flags.contains(.isNotOnMap))  // riding inside the carryall
         #expect(s.units[carryall].targetMove == s.indexEncode(s.structures[ref].o.index, type: .structure))
 
         // A second check is a no-op — the in-flight delivery already covers the house.
@@ -75,12 +81,12 @@ struct HarvesterDeliveryTests {
         s.units[harv].o.position = Tile32.unpack(Tile32.packXY(x: 25, y: 25))
 
         combat.houseEnsureHarvesterAvailable(houseID: 0, in: &s)
-        #expect(carryalls(s).isEmpty)            // the live harvester already covers the house
+        #expect(carryalls(s).isEmpty)  // the live harvester already covers the house
 
-        s.unitRemove(harv)                       // the only harvester is destroyed
+        s.unitRemove(harv)  // the only harvester is destroyed
         combat.houseEnsureHarvesterAvailable(houseID: 0, in: &s)
         let cs = carryalls(s)
-        #expect(cs.count == 1)                   // a replacement delivery is summoned
+        #expect(cs.count == 1)  // a replacement delivery is summoned
         let cargo = Int(s.units[try #require(cs.first)].o.linkedID)
         #expect(s.units[cargo].o.type == harvesterType())
     }
@@ -89,9 +95,11 @@ struct HarvesterDeliveryTests {
     func carryallDeliversHarvester() throws {
         var repo = URL(fileURLWithPath: #filePath)
         for _ in 0 ..< 4 { repo.deleteLastPathComponent() }
-        guard let unitData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
-              let buildData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc")),
-              let iconData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")) else { return }
+        guard
+            let unitData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/UNIT/UNIT.emc")),
+            let buildData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Scripts/BUILD/BUILD.emc")),
+            let iconData = try? Data(contentsOf: repo.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP"))
+        else { return }
         let unitInfo = ScriptInfo(try Emc.Program(unitData))
         let buildInfo = ScriptInfo(try Emc.Program(buildData))
         let iconMap = try IconMap(iconData)
@@ -101,10 +109,10 @@ struct HarvesterDeliveryTests {
         _ = state.houseAllocate(index: 0)
         state.houses[0].unitCountMax = 100
         state.tileIDs = TileIDs(iconMap: iconMap) ?? TileIDs()
-        state.iconMap = iconMap                                  // structureUpdateMap needs it to stamp tiles
+        state.iconMap = iconMap  // structureUpdateMap needs it to stamp tiles
         state.mapScale = 0
         let ref = addRefinery(&state)
-        state.structureUpdateMap(ref)                            // stamp it so the carryall can deliver into it
+        state.structureUpdateMap(ref)  // stamp it so the carryall can deliver into it
 
         var sim = Simulation(state: state, scriptInfo: unitInfo, structureScriptInfo: buildInfo)
         let combat = sim.unitScript!.combat

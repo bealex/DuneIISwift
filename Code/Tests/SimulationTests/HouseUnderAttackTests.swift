@@ -1,6 +1,7 @@
-import Testing
 import DuneIIContracts
 import DuneIIWorld
+import Testing
+
 @testable import DuneIISimulation
 
 /// Decision-trace coverage for `Structure_HouseUnderAttack` (`structure.c:1933`) and its sole trigger site,
@@ -10,7 +11,7 @@ import DuneIIWorld
 /// `structureDamage` directly and must leave `pendingFeedback` empty).
 @Suite("Structure_HouseUnderAttack")
 struct HouseUnderAttackTests {
-    let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+    let info = ScriptInfo(program: [ UInt16 ](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
 
     /// Allocate a structure for `house`, give it full HP, and stamp it on the map at `packed` so
     /// `structureGetByPackedTile` resolves it (mirrors the minimal placement used by other sim tests).
@@ -38,7 +39,7 @@ struct HouseUnderAttackTests {
     func playerRaisesFeedback() {
         var (s, _) = setup(player: 0)
         s.structureHouseUnderAttack(0)
-        #expect(s.pendingFeedback == [48])
+        #expect(s.pendingFeedback == [ 48 ])
         #expect(s.houses[0].timerStructureAttack == 8)
         #expect(s.houses[0].flags.contains(.doneFullScaleAttack))
     }
@@ -47,15 +48,15 @@ struct HouseUnderAttackTests {
     func playerTimerGates() {
         var (s, _) = setup(player: 0)
         s.structureHouseUnderAttack(0)
-        s.pendingFeedback.removeAll()          // simulate the host draining last tick's feedback
-        s.structureHouseUnderAttack(0)         // timer still 8 ⇒ suppressed
+        s.pendingFeedback.removeAll()  // simulate the host draining last tick's feedback
+        s.structureHouseUnderAttack(0)  // timer still 8 ⇒ suppressed
         #expect(s.pendingFeedback.isEmpty)
     }
 
     @Test("AI house hit: flips doneFullScaleAttack but never raises the player feedback")
     func aiNoFeedback() {
         var (s, _) = setup(player: 0)
-        s.structureHouseUnderAttack(2)         // house 2 is the AI
+        s.structureHouseUnderAttack(2)  // house 2 is the AI
         #expect(s.pendingFeedback.isEmpty)
         #expect(s.houses[2].flags.contains(.doneFullScaleAttack))
         #expect(s.houses[2].timerStructureAttack == 0)
@@ -79,7 +80,7 @@ struct HouseUnderAttackTests {
         let packed: UInt16 = 20 * 64 + 20
         _ = place(&s, .windtrap, house: 0, at: packed)
         combat.movement.mapMakeExplosion(type: 0, position: Tile32.unpack(packed), hitpoints: 30, origin: 0, in: &s)
-        #expect(s.pendingFeedback == [48])
+        #expect(s.pendingFeedback == [ 48 ])
         #expect(s.houses[0].timerStructureAttack == 8)
     }
 

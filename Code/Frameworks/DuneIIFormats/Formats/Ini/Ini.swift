@@ -40,7 +40,9 @@ public struct Ini {
     }
 
     public func string(section: String, key: String, default defaultValue: String? = nil) -> String? {
-        guard let match = entries(section)?.first(where: { $0.key.caseInsensitiveCompare(key) == .orderedSame }) else {
+        guard
+            let match = entries(section)?.first(where: { $0.key.caseInsensitiveCompare(key) == .orderedSame })
+        else {
             return defaultValue
         }
 

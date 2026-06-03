@@ -1,5 +1,6 @@
 import DuneIIFormats
 import Testing
+
 @testable import DuneIIRenderer
 
 /// `ShimmerEffect` — the sandworm `DRAWSPRITE_FLAG_BLUR` realized as a CoreGraphics terrain displacement.
@@ -14,7 +15,7 @@ struct ShimmerEffectTests {
 
     @Test("the blur offsets are the gui.c:935 cycle")
     func offsets() {
-        #expect(ShimmerEffect.blurOffsets == [1, 3, 2, 5, 4, 3, 2, 1])
+        #expect(ShimmerEffect.blurOffsets == [ 1, 3, 2, 5, 4, 3, 2, 1 ])
     }
 
     @Test("within the mask each pixel samples terrain offset-columns to the right; outside is transparent")
@@ -24,13 +25,24 @@ struct ShimmerEffectTests {
         let terrain = (0 ..< tw * th).map { UInt8($0 % tw) }
         // A 4×2 worm at (left 5, top 1), fully opaque except the top-left pixel (to test transparency).
         let ww = 4, wh = 2, left = 5, top = 1, offset = 3
-        var mask = [UInt8](repeating: 1, count: ww * wh)
+        var mask = [ UInt8 ](repeating: 1, count: ww * wh)
         mask[0] = 0
         let pal = palette
 
-        let rgba = try #require(ShimmerEffect.patchRGBA(
-            terrain: terrain, terrainWidth: tw, terrainHeight: th,
-            left: left, top: top, mask: mask, wormWidth: ww, wormHeight: wh, offset: offset, palette: pal))
+        let rgba = try #require(
+            ShimmerEffect.patchRGBA(
+                terrain: terrain,
+                terrainWidth: tw,
+                terrainHeight: th,
+                left: left,
+                top: top,
+                mask: mask,
+                wormWidth: ww,
+                wormHeight: wh,
+                offset: offset,
+                palette: pal
+            )
+        )
         #expect(rgba.count == ww * wh * 4)
 
         func px(_ x: Int, _ y: Int) -> (r: UInt8, a: UInt8) { let o = (y * ww + x) * 4; return (rgba[o], rgba[o + 3]) }
@@ -40,7 +52,7 @@ struct ShimmerEffectTests {
         for y in 0 ..< wh {
             for x in 0 ..< ww where !(x == 0 && y == 0) {
                 #expect(px(x, y).a == 255)
-                #expect(px(x, y).r == pal.rgba8(left + x + offset).red)   // the horizontal displacement
+                #expect(px(x, y).r == pal.rgba8(left + x + offset).red)  // the horizontal displacement
             }
         }
         // The displacement is a real shift: adjacent output columns differ (terrain isn't uniform here).
@@ -52,20 +64,31 @@ struct ShimmerEffectTests {
         // Terrain 20×4, index == x. Worm 4×2 at left 5, offset 3 → pixel x samples column (5+x+3)=8+x.
         let tw = 20, th = 4, ww = 4, wh = 2, left = 5, top = 1, offset = 3
         let terrain = (0 ..< tw * th).map { UInt8($0 % tw) }
-        let mask = [UInt8](repeating: 1, count: ww * wh)
+        let mask = [ UInt8 ](repeating: 1, count: ww * wh)
         let pal = palette
         // Mark columns ≥ 10 as veiled (fog to the right). Samples for x=2,3 are columns 10,11 → veiled.
-        let rgba = try #require(ShimmerEffect.patchRGBA(
-            terrain: terrain, terrainWidth: tw, terrainHeight: th,
-            left: left, top: top, mask: mask, wormWidth: ww, wormHeight: wh, offset: offset, palette: pal,
-            veiled: { px, _ in px >= 10 }))
+        let rgba = try #require(
+            ShimmerEffect.patchRGBA(
+                terrain: terrain,
+                terrainWidth: tw,
+                terrainHeight: th,
+                left: left,
+                top: top,
+                mask: mask,
+                wormWidth: ww,
+                wormHeight: wh,
+                offset: offset,
+                palette: pal,
+                veiled: { px, _ in px >= 10 }
+            )
+        )
 
         func alpha(_ x: Int, _ y: Int) -> UInt8 { rgba[(y * ww + x) * 4 + 3] }
         for y in 0 ..< wh {
-            #expect(alpha(0, y) == 255)   // disp 5 / sample 8  — revealed
-            #expect(alpha(1, y) == 255)   // disp 6 / sample 9  — revealed
-            #expect(alpha(2, y) == 0)     // disp 7 / sample 10 — sample veiled ⇒ no fog dragged in
-            #expect(alpha(3, y) == 0)     // disp 8 / sample 11 — sample veiled
+            #expect(alpha(0, y) == 255)  // disp 5 / sample 8  — revealed
+            #expect(alpha(1, y) == 255)  // disp 6 / sample 9  — revealed
+            #expect(alpha(2, y) == 0)  // disp 7 / sample 10 — sample veiled ⇒ no fog dragged in
+            #expect(alpha(3, y) == 0)  // disp 8 / sample 11 — sample veiled
         }
     }
 }

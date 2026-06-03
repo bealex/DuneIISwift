@@ -9,7 +9,7 @@ struct ContentView: View {
     @State private var house: House = .harkonnen
     @State private var scale = 2
     @State private var fps = 10.0
-    @State private var collapsed: Set<String> = []   // category ids the user has collapsed
+    @State private var collapsed: Set<String> = []  // category ids the user has collapsed
 
     var body: some View {
         NavigationSplitView {
@@ -24,7 +24,11 @@ struct ContentView: View {
     private var sidebar: some View {
         Group {
             if let error = library.loadError {
-                ContentUnavailableView("Install not found", systemImage: "exclamationmark.triangle", description: Text(error))
+                ContentUnavailableView(
+                    "Install not found",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(error)
+                )
             } else {
                 List(selection: $selection) {
                     ForEach(library.categories) { category in
@@ -138,7 +142,9 @@ struct AssetDetailView: View {
                     }
                 }
                 if let sound { GroupBox("Sound") { soundView(sound) } }
-                if let music = asset.music { GroupBox("AdLib FM (OPL3) preview") { musicView(file: music.file, song: music.song) } }
+                if let music = asset.music {
+                    GroupBox("AdLib FM (OPL3) preview") { musicView(file: music.file, song: music.song) }
+                }
                 if let scriptText {
                     GroupBox("Disassembly") {
                         Text(scriptText)
@@ -168,8 +174,12 @@ struct AssetDetailView: View {
                 }
 
                 if (!isPlaying || !canPlay), rawFrames.count > 1 {
-                    Stepper("\(stepLabel) \(currentFrame) / \(rawFrames.count - 1)", value: $frameIndex, in: 0 ... (rawFrames.count - 1))
-                        .fixedSize()
+                    Stepper(
+                        "\(stepLabel) \(currentFrame) / \(rawFrames.count - 1)",
+                        value: $frameIndex,
+                        in: 0 ... (rawFrames.count - 1)
+                    )
+                    .fixedSize()
                 }
                 if paletteAnimatable {
                     Toggle("Palette cycling", isOn: $animatePalette).toggleStyle(.switch)
@@ -192,7 +202,8 @@ struct AssetDetailView: View {
             TimelineView(.animation) { context in
                 let elapsed = context.date.timeIntervalSince(startDate)
                 let tick = max(Int(elapsed * 60), 0)
-                let index = (isPlaying && canPlay && rawFrames.count > 1) ? Int(elapsed * fps) % rawFrames.count : currentFrame
+                let index =
+                    (isPlaying && canPlay && rawFrames.count > 1) ? Int(elapsed * fps) % rawFrames.count : currentFrame
                 previewImage(frame: index, tick: tick)
             }
         } else {
@@ -211,7 +222,11 @@ struct AssetDetailView: View {
     }
 
     private var framesGrid: some View {
-        LazyVGrid(columns: [ GridItem(.adaptive(minimum: 80), spacing: 12, alignment: .top) ], alignment: .leading, spacing: 12) {
+        LazyVGrid(
+            columns: [ GridItem(.adaptive(minimum: 80), spacing: 12, alignment: .top) ],
+            alignment: .leading,
+            spacing: 12
+        ) {
             ForEach(rawFrames.indices, id: \.self) { index in
                 let raw = rawFrames[index]
                 VStack(spacing: 4) {
@@ -315,8 +330,12 @@ struct AssetDetailView: View {
             return index
         }
         return IndexedImage.cgImage(
-            indices: frame.indices, width: frame.width, height: frame.height,
-            palette: palette, transparentIndex: transparentIndex, remap: remap
+            indices: frame.indices,
+            width: frame.width,
+            height: frame.height,
+            palette: palette,
+            transparentIndex: transparentIndex,
+            remap: remap
         )
     }
 
@@ -333,7 +352,7 @@ struct AssetDetailView: View {
         isPlaying = false
         frameIndex = 0
         startDate = Date()
-        library.stopMusic()   // selecting any asset stops a music preview that was playing
+        library.stopMusic()  // selecting any asset stops a music preview that was playing
         musicPlaying = false
 
         // Music tracks carry no PAK data — they're previewed from `asset.music` via the OPL3 player.
@@ -347,26 +366,36 @@ struct AssetDetailView: View {
         switch asset.kind {
             case .sprite:
                 guard let set = try? Shp.FrameSet(data) else { info = "(SHP decode failed)"; return }
-                let selected = asset.frameRange.map { Array(set.frames[$0.clamped(to: set.frames.indices)]) } ?? set.frames
+                let selected =
+                    asset.frameRange.map { Array(set.frames[$0.clamped(to: set.frames.indices)]) } ?? set.frames
                 rawFrames = selected.compactMap { frame in
                     frame.width > 0 && frame.height > 0
-                        ? RawFrame(indices: frame.pixels, width: frame.width, height: frame.height, hasLookup: frame.hasLookup)
+                        ? RawFrame(
+                            indices: frame.pixels,
+                            width: frame.width,
+                            height: frame.height,
+                            hasLookup: frame.hasLookup
+                        )
                         : nil
                 }
                 transparentIndex = 0
                 remapKind = .sprite
-                displayPalette = contextPalette(for: asset.name)   // e.g. mercenary mentat face → BENE.PAL
+                displayPalette = contextPalette(for: asset.name)  // e.g. mercenary mentat face → BENE.PAL
                 let kindLabel = asset.groupKind.map { $0 == .animation ? " · animation" : " · directional" } ?? ""
                 info = "\(selected.count) frames\(kindLabel)"
             case .image:
                 guard let image = try? Cps.decode(data) else { info = "(CPS decode failed)"; return }
-                rawFrames = [ RawFrame(indices: image.pixels, width: image.width, height: image.height, hasLookup: false) ]
-                displayPalette = image.palette ?? contextPalette(for: asset.name)   // e.g. MENTATM.CPS → BENE.PAL
+                rawFrames = [
+                    RawFrame(indices: image.pixels, width: image.width, height: image.height, hasLookup: false)
+                ]
+                displayPalette = image.palette ?? contextPalette(for: asset.name)  // e.g. MENTATM.CPS → BENE.PAL
                 info = "\(image.width)×\(image.height)"
             case .tiles:
                 guard let tiles = try? Icn.TileSet(data) else { info = "(ICN decode failed)"; return }
                 let sheet = tileSheet(tiles)
-                rawFrames = [ RawFrame(indices: sheet.indices, width: sheet.width, height: sheet.height, hasLookup: false) ]
+                rawFrames = [
+                    RawFrame(indices: sheet.indices, width: sheet.width, height: sheet.height, hasLookup: false)
+                ]
                 remapKind = .tile
                 info = "\(tiles.tileCount) tiles · \(tiles.tileWidth)×\(tiles.tileHeight) (16 per row)"
             case .animation:
@@ -374,12 +403,14 @@ struct AssetDetailView: View {
                 rawFrames = animation.frames.map {
                     RawFrame(indices: $0, width: animation.width, height: animation.height, hasLookup: false)
                 }
-                displayPalette = animation.palette ?? contextPalette(for: asset.name)   // intro/finale WSAs → INTRO.PAL
+                displayPalette = animation.palette ?? contextPalette(for: asset.name)  // intro/finale WSAs → INTRO.PAL
                 info = "\(animation.frames.count) frames · \(animation.width)×\(animation.height)"
             case .font:
                 guard let font = try? Fnt.Font(data) else { info = "(FNT decode failed)"; return }
                 let sheet = fontSheet(font)
-                rawFrames = [ RawFrame(indices: sheet.indices, width: sheet.width, height: sheet.height, hasLookup: false) ]
+                rawFrames = [
+                    RawFrame(indices: sheet.indices, width: sheet.width, height: sheet.height, hasLookup: false)
+                ]
                 displayPalette = AssetDetailView.monochrome
                 transparentIndex = 0
                 info = "\(font.glyphs.count) glyphs · height \(font.height)"
@@ -387,7 +418,7 @@ struct AssetDetailView: View {
                 sound = try? Voc.decode(data)
                 info = sound.map { "\($0.sampleRate) Hz · \($0.samples.count) samples" } ?? "(VOC decode failed)"
             case .music:
-                break   // handled before the `guard let data` above (music has no PAK data)
+                break  // handled before the `guard let data` above (music has no PAK data)
             case .script:
                 scriptText = (try? Emc.Program(data)).map { emcText($0) }
                 info = "EMC script"
@@ -402,9 +433,15 @@ struct AssetDetailView: View {
                 remapKind = .tile
                 // A multi-tile structure: assemble each build/animation state into a whole building.
                 if let layout = StructureCatalog.layout(iconGroup: index),
-                   layout.width * layout.height > 1,
-                   group.tileIDs.count % (layout.width * layout.height) == 0 {
-                    rawFrames = assembleStructure(tiles, tileIDs: group.tileIDs, width: layout.width, height: layout.height)
+                    layout.width * layout.height > 1,
+                    group.tileIDs.count % (layout.width * layout.height) == 0
+                {
+                    rawFrames = assembleStructure(
+                        tiles,
+                        tileIDs: group.tileIDs,
+                        width: layout.width,
+                        height: layout.height
+                    )
                     // Default to the completed building (state 2, per Structure_UpdateMap, structure.c:1779)
                     // rather than the foundation: its animated power light (palette index 223) lives here.
                     frameIndex = min(2, max(rawFrames.count - 1, 0))
@@ -412,7 +449,14 @@ struct AssetDetailView: View {
                 } else {
                     rawFrames = group.tileIDs.compactMap { tileID in
                         let pixels = tiles.tile(tileID)
-                        return pixels.isEmpty ? nil : RawFrame(indices: pixels, width: tiles.tileWidth, height: tiles.tileHeight, hasLookup: false)
+                        return pixels.isEmpty
+                            ? nil
+                            : RawFrame(
+                                indices: pixels,
+                                width: tiles.tileWidth,
+                                height: tiles.tileHeight,
+                                hasLookup: false
+                            )
                     }
                     info = "\(group.name) · \(rawFrames.count) tiles"
                 }
@@ -439,7 +483,7 @@ struct AssetDetailView: View {
         let frameH = height * tileH
         var frames: [RawFrame] = []
         for state in 0 ..< (tileIDs.count / perState) {
-            var indices = [UInt8](repeating: 0, count: frameW * frameH)
+            var indices = [ UInt8 ](repeating: 0, count: frameW * frameH)
             for i in 0 ..< perState {
                 let pixels = tiles.tile(tileIDs[state * perState + i])
                 guard !pixels.isEmpty else { continue }
@@ -463,7 +507,7 @@ struct AssetDetailView: View {
         let rows = max((tiles.tileCount + perRow - 1) / perRow, 1)
         let width = tiles.tileWidth * perRow
         let height = tiles.tileHeight * rows
-        var indices = [UInt8](repeating: 0, count: width * height)
+        var indices = [ UInt8 ](repeating: 0, count: width * height)
         for tile in 0 ..< tiles.tileCount {
             let pixels = tiles.tile(tile)
             let originX = (tile % perRow) * tiles.tileWidth
@@ -485,7 +529,7 @@ struct AssetDetailView: View {
         let rows = max((font.glyphs.count + perRow - 1) / perRow, 1)
         let width = cellWidth * perRow
         let height = cellHeight * rows
-        var indices = [UInt8](repeating: 0, count: width * height)
+        var indices = [ UInt8 ](repeating: 0, count: width * height)
         for (glyphIndex, glyph) in font.glyphs.enumerated() {
             let originX = (glyphIndex % perRow) * cellWidth
             let originY = (glyphIndex / perRow) * cellHeight + glyph.topRows
@@ -496,7 +540,7 @@ struct AssetDetailView: View {
 
                     let px = originX + x
                     let py = originY + y
-                    if px < width, py < height { indices[py * width + px] = 1 }   // set -> white
+                    if px < width, py < height { indices[py * width + px] = 1 }  // set -> white
                 }
             }
         }
@@ -524,7 +568,7 @@ struct AssetDetailView: View {
 
     /// A 2-entry palette (index 1 = white) for rendering font glyphs as white-on-transparent.
     static let monochrome: Palette = {
-        var bytes = [UInt8](repeating: 0, count: 768)
+        var bytes = [ UInt8 ](repeating: 0, count: 768)
         bytes[3] = 63
         bytes[4] = 63
         bytes[5] = 63

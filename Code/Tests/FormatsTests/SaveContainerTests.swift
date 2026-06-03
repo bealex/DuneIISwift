@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import DuneIIFormats
 
 /// The savegame container is the same IFF/FORM shape the `Iff.Reader` already handles: a `FORM`
@@ -9,10 +10,13 @@ import Testing
 struct SaveContainerTests {
     @Test("reads a SCEN form with NAME and \"MAP \" chunks")
     func scen() throws {
-        let save = IffBuilder.form("SCEN", [
-            IffBuilder.chunk("NAME", Array("My Save".utf8)),
-            IffBuilder.chunk("MAP ", [ 0x01, 0x02, 0x03, 0x04 ]),
-        ])
+        let save = IffBuilder.form(
+            "SCEN",
+            [
+                IffBuilder.chunk("NAME", Array("My Save".utf8)),
+                IffBuilder.chunk("MAP ", [ 0x01, 0x02, 0x03, 0x04 ]),
+            ]
+        )
         let reader = try Iff.Reader(save)
         #expect(reader.formType == "SCEN")
         #expect(reader.chunk("NAME") == Data("My Save".utf8))

@@ -34,7 +34,9 @@ final class AssetStore {
     }
 
     private func load() {
-        guard let entries = try? FileManager.default.contentsOfDirectory(at: installURL, includingPropertiesForKeys: nil) else {
+        guard
+            let entries = try? FileManager.default.contentsOfDirectory(at: installURL, includingPropertiesForKeys: nil)
+        else {
             error = "Cannot read install directory: \(installURL.path)"
             return
         }
@@ -49,7 +51,8 @@ final class AssetStore {
 
         var names = Set<String>()
         for archive in archives {
-            for entry in archive.entries where entry.name.uppercased().hasPrefix("SCEN") && entry.name.uppercased().hasSuffix(".INI") {
+            for entry in archive.entries
+            where entry.name.uppercased().hasPrefix("SCEN") && entry.name.uppercased().hasSuffix(".INI") {
                 names.insert(entry.name.uppercased())
             }
         }

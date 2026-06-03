@@ -9,11 +9,11 @@ public struct ScenarioWorld {
     public var state: GameState
     public let runner: UnitScriptRunner
     public let actions: UnitActions
-    public let unitSlots: [Int]      // [unit1] for moving / moveAroundBuilding, else [unit1, unit2]
-    public let structureSlots: [Int] // the scenario's placed structure pool slots (the completion target, if any)
-    public let kind: ScenarioKind    // so the lab can decide when the scenario is "done" (see `outcome()`)
+    public let unitSlots: [Int]  // [unit1] for moving / moveAroundBuilding, else [unit1, unit2]
+    public let structureSlots: [Int]  // the scenario's placed structure pool slots (the completion target, if any)
+    public let kind: ScenarioKind  // so the lab can decide when the scenario is "done" (see `outcome()`)
     public let terrain: ScenarioTerrain
-    public let structureScript: ScriptInfo   // BUILD.EMC — so structures run their scripts in the runner
+    public let structureScript: ScriptInfo  // BUILD.EMC — so structures run their scripts in the runner
     /// Advance the explosion animations each tick (impacts/deaths/destruction). Off by default so the
     /// golden runner matches the oracle (which doesn't tick explosions); `scenariolab` turns it on.
     public var tickExplosions = false
@@ -32,8 +32,13 @@ public struct ScenarioBuilder {
     public let player: HouseID
     public let enemy: HouseID
 
-    public init(iconMap: IconMap, unitScript: ScriptInfo, structureScript: ScriptInfo,
-                player: HouseID = .harkonnen, enemy: HouseID = .ordos) {
+    public init(
+        iconMap: IconMap,
+        unitScript: ScriptInfo,
+        structureScript: ScriptInfo,
+        player: HouseID = .harkonnen,
+        enemy: HouseID = .ordos
+    ) {
         self.iconMap = iconMap
         self.unitScript = unitScript
         self.structureScript = structureScript
@@ -71,32 +76,37 @@ public struct ScenarioBuilder {
             case .moving:
                 let u1 = place(&state, scenario.unit1, player, terrain, lx: 0, ly: 0)
                 move(&state, u1, toLocal: (7, 7), terrain, actions)
-                slots = [u1]
+                slots = [ u1 ]
 
             case .closeAttack:
                 let u1 = place(&state, scenario.unit1, player, terrain, lx: 3, ly: 3)
                 let u2 = place(&state, scenario.unit2, enemy, terrain, lx: 4, ly: 3)
                 attack(&state, attacker: u2, target: u1, actions)
-                slots = [u1, u2]
+                slots = [ u1, u2 ]
 
             case .farAttack:
                 let u1 = place(&state, scenario.unit1, player, terrain, lx: 1, ly: 1)
                 let u2 = place(&state, scenario.unit2, enemy, terrain, lx: 6, ly: 6)
                 attack(&state, attacker: u2, target: u1, actions)
-                slots = [u1, u2]
+                slots = [ u1, u2 ]
 
             case .guarding:
                 let u1 = place(&state, scenario.unit1, player, terrain, lx: 2, ly: 2)
-                actions.setAction(slot: u1, action: UInt8(ActionType.guard_.rawValue), scriptInfo: unitScript, in: &state)
+                actions.setAction(
+                    slot: u1,
+                    action: UInt8(ActionType.guard_.rawValue),
+                    scriptInfo: unitScript,
+                    in: &state
+                )
                 let u2 = place(&state, scenario.unit2, enemy, terrain, lx: 7, ly: 7)
                 move(&state, u2, toLocal: (2, 2), terrain, actions)
-                slots = [u1, u2]
+                slots = [ u1, u2 ]
 
             case .moveAroundBuilding:
-                structSlots = [placeStructure(&state, .windtrap, player, terrain, lx: 3, ly: 3)]
+                structSlots = [ placeStructure(&state, .windtrap, player, terrain, lx: 3, ly: 3) ]
                 let u1 = place(&state, scenario.unit1, player, terrain, lx: 0, ly: 0)
                 move(&state, u1, toLocal: (7, 7), terrain, actions)
-                slots = [u1]
+                slots = [ u1 ]
 
             case .deviate:
                 // Demonstrate Unit_Deviate: an enemy deviator mind-controls the player's unit, which
@@ -106,55 +116,63 @@ public struct ScenarioBuilder {
                 let u2 = place(&state, scenario.unit2, enemy, terrain, lx: 4, ly: 3)
                 UnitCombat(movement: UnitMovement(scriptInfo: unitScript))
                     .deviate(slot: u1, probability: 256, houseID: UInt8(enemy.rawValue), in: &state)
-                slots = [u1, u2]
+                slots = [ u1, u2 ]
 
             case .attackStructure:
                 // A player tank attacks the enemy's windtrap. It's pre-weakened so a single tank shot drops
                 // it to 0 HP (a tank only fires once at a structure), so the demo actually shows the BUILD.EMC
                 // death branch (Explode → Delay → Destroy → Structure_Remove) run in GameLoop_Structure.
                 let s = placeStructure(&state, .windtrap, enemy, terrain, lx: 4, ly: 3)
-                structSlots = [s]
+                structSlots = [ s ]
                 state.structures[s].o.hitpoints = 20
                 let u1 = place(&state, scenario.unit1, player, terrain, lx: 2, ly: 3)
-                actions.setAction(slot: u1, action: UInt8(ActionType.attack.rawValue), scriptInfo: unitScript, in: &state)
+                actions.setAction(
+                    slot: u1,
+                    action: UInt8(ActionType.attack.rawValue),
+                    scriptInfo: unitScript,
+                    in: &state
+                )
                 state.units[u1].targetAttack = state.indexEncode(UInt16(state.structures[s].o.index), type: .structure)
-                slots = [u1]
+                slots = [ u1 ]
 
             case .turretDefense:
                 // A player gun-turret defends on its own: its BUILD.EMC script runs FindTargetUnit → aim →
                 // Fire at the approaching (seen) enemy unit, which it damages.
-                structSlots = [placeStructure(&state, .turret, player, terrain, lx: 3, ly: 3)]
+                structSlots = [ placeStructure(&state, .turret, player, terrain, lx: 3, ly: 3) ]
                 let u2 = place(&state, scenario.unit2, enemy, terrain, lx: 7, ly: 3)
-                state.units[u2].o.seenByHouses |= UInt8(1 << player.rawValue)   // the turret can see it
-                move(&state, u2, toLocal: (4, 3), terrain, actions)             // it advances toward the base
-                slots = [u2]
+                state.units[u2].o.seenByHouses |= UInt8(1 << player.rawValue)  // the turret can see it
+                move(&state, u2, toLocal: (4, 3), terrain, actions)  // it advances toward the base
+                slots = [ u2 ]
 
             case .factoryProduce:
                 // A Light Factory builds a Trike: `tickStructure`'s factory branch drains credits + advances
                 // the build countdown each structure-tick, completing to READY. A queued (hidden) trike is
                 // linked so the build is faithful.
                 let f = placeStructure(&state, .lightVehicle, player, terrain, lx: 3, ly: 3)
-                structSlots = [f]
+                structSlots = [ f ]
                 settle(&state, f)
                 state.houses[Int(player.rawValue)].credits = 4000
-                let built = state.unitAllocate(index: 0, type: UInt8(UnitType.trike.rawValue),
-                                               houseID: UInt8(player.rawValue))!
+                let built = state.unitAllocate(
+                    index: 0,
+                    type: UInt8(UnitType.trike.rawValue),
+                    houseID: UInt8(player.rawValue)
+                )!
                 state.units[built].o.hitpoints = UnitInfo[.trike].o.hitpoints
-                state.units[built].o.flags.insert(.isNotOnMap)                  // in the factory
+                state.units[built].o.flags.insert(.isNotOnMap)  // in the factory
                 state.structures[f].o.linkedID = UInt8(built)
                 state.structures[f].objectType = UInt16(UnitType.trike.rawValue)
                 state.structures[f].state = .busy
-                state.structures[f].countDown = 1536                            // ~6 structure-ticks of build
+                state.structures[f].countDown = 1536  // ~6 structure-ticks of build
                 slots = []
 
             case .repairBuilding:
                 // A damaged windtrap self-repairs: `tickStructure`'s repair branch heals +5 HP each
                 // structure-tick (billing the 1.07 repair cost) until it reaches full HP.
                 let w = placeStructure(&state, .windtrap, player, terrain, lx: 3, ly: 3)
-                structSlots = [w]
+                structSlots = [ w ]
                 settle(&state, w)
                 state.structures[w].o.hitpoints = StructureInfo[.windtrap].o.hitpoints / 2
-                state.structureSetRepairingState(w, state: 1)   // Structure_SetRepairingState (damaged → repairs)
+                state.structureSetRepairingState(w, state: 1)  // Structure_SetRepairingState (damaged → repairs)
                 state.houses[Int(player.rawValue)].credits = 4000
                 slots = []
 
@@ -162,10 +180,10 @@ public struct ScenarioBuilder {
                 // A barracks upgrades: `tickStructure`'s upgrade branch pays `buildCredits/40` per
                 // structure-tick and steps `upgradeTimeLeft` to 0, then bumps `upgradeLevel`.
                 let b = placeStructure(&state, .barracks, player, terrain, lx: 3, ly: 3)
-                structSlots = [b]
+                structSlots = [ b ]
                 settle(&state, b)
-                state.structures[b].upgradeTimeLeft = 30                        // ~6 structure-ticks → level up
-                state.structureSetUpgradingState(b, state: 1)                  // Structure_SetUpgradingState
+                state.structures[b].upgradeTimeLeft = 30  // ~6 structure-ticks → level up
+                state.structureSetUpgradingState(b, state: 1)  // Structure_SetUpgradingState
                 state.houses[Int(player.rawValue)].credits = 4000
                 slots = []
 
@@ -178,18 +196,31 @@ public struct ScenarioBuilder {
                 state.units[worm].amount = 3
                 let prey = place(&state, scenario.unit2, enemy, terrain, lx: 5, ly: 3)
                 attack(&state, attacker: worm, target: prey, actions)
-                slots = [worm, prey]
+                slots = [ worm, prey ]
         }
 
-        return ScenarioWorld(state: state, runner: runner, actions: actions, unitSlots: slots,
-                             structureSlots: structSlots, kind: scenario.kind,
-                             terrain: terrain, structureScript: structureScript)
+        return ScenarioWorld(
+            state: state,
+            runner: runner,
+            actions: actions,
+            unitSlots: slots,
+            structureSlots: structSlots,
+            kind: scenario.kind,
+            terrain: terrain,
+            structureScript: structureScript
+        )
     }
 
     // MARK: - Placement helpers
 
-    private func place(_ state: inout GameState, _ type: UnitType, _ house: HouseID,
-                       _ terrain: ScenarioTerrain, lx: Int, ly: Int) -> Int {
+    private func place(
+        _ state: inout GameState,
+        _ type: UnitType,
+        _ house: HouseID,
+        _ terrain: ScenarioTerrain,
+        lx: Int,
+        ly: Int
+    ) -> Int {
         let slot = state.unitAllocate(index: 0, type: UInt8(type.rawValue), houseID: UInt8(house.rawValue))!
         let p = terrain.mapPacked(lx: lx, ly: ly)
         state.units[slot].o.position = Tile32.unpack(p)
@@ -200,8 +231,13 @@ public struct ScenarioBuilder {
         return slot
     }
 
-    private func move(_ state: inout GameState, _ slot: Int, toLocal: (Int, Int),
-                      _ terrain: ScenarioTerrain, _ actions: UnitActions) {
+    private func move(
+        _ state: inout GameState,
+        _ slot: Int,
+        toLocal: (Int, Int),
+        _ terrain: ScenarioTerrain,
+        _ actions: UnitActions
+    ) {
         // The real move order (`Unit_SetDestination`): SetAction(Move) loads the move script (and clears
         // `currentDestination`), then set `targetMove` to the destination tile + reset the route. The
         // move script reads `targetMove` and routes to it via `Script_Unit_CalculateRoute`.
@@ -217,8 +253,14 @@ public struct ScenarioBuilder {
     }
 
     @discardableResult
-    private func placeStructure(_ state: inout GameState, _ type: StructureType, _ house: HouseID,
-                                _ terrain: ScenarioTerrain, lx: Int, ly: Int) -> Int {
+    private func placeStructure(
+        _ state: inout GameState,
+        _ type: StructureType,
+        _ house: HouseID,
+        _ terrain: ScenarioTerrain,
+        lx: Int,
+        ly: Int
+    ) -> Int {
         let slot = state.structureAllocate(index: Pool.structureIndexInvalid, type: UInt8(type.rawValue))!
         state.structures[slot].o.houseID = UInt8(house.rawValue)
         // A structure stores its tile *corner*, not the centred sub-tile (`Structure_Place: &= 0xFF00`) —

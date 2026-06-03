@@ -27,8 +27,11 @@ public protocol ScriptInterpreter: Sendable {
     func loadAsSubroutine(_ engine: inout ScriptEngine, info: ScriptInfo, typeID: Int)
 
     /// `Script_Run`: execute one opcode. Returns `false` on a scripting error or when not loaded.
-    func run(_ engine: inout ScriptEngine, info: ScriptInfo,
-             callFunction: (Int, inout ScriptEngine) -> UInt16?) -> Bool
+    func run(
+        _ engine: inout ScriptEngine,
+        info: ScriptInfo,
+        callFunction: (Int, inout ScriptEngine) -> UInt16?
+    ) -> Bool
 }
 
 public struct DefaultScriptInterpreter: ScriptInterpreter {
@@ -47,7 +50,7 @@ public struct DefaultScriptInterpreter: ScriptInterpreter {
         if !isLoaded(engine) { return }
         if engine.isSubroutine != 0 { return }
         engine.isSubroutine = 1
-        push(&engine, engine.scriptPC)        // the return location (current PC, an offset from start)
+        push(&engine, engine.scriptPC)  // the return location (current PC, an offset from start)
         push(&engine, engine.returnValue)
         engine.scriptPC = info.offsets[typeID]
     }
@@ -75,8 +78,11 @@ public struct DefaultScriptInterpreter: ScriptInterpreter {
 
     // MARK: - One opcode
 
-    public func run(_ s: inout ScriptEngine, info: ScriptInfo,
-                    callFunction: (Int, inout ScriptEngine) -> UInt16?) -> Bool {
+    public func run(
+        _ s: inout ScriptEngine,
+        info: ScriptInfo,
+        callFunction: (Int, inout ScriptEngine) -> UInt16?
+    ) -> Bool {
         if !isLoaded(s) { return false }
         let program = info.program
 
@@ -89,7 +95,7 @@ public struct DefaultScriptInterpreter: ScriptInterpreter {
         var parameter: UInt16 = 0
 
         if current & 0x8000 != 0 {
-            opcode = 0                              // 13-bit GOTO
+            opcode = 0  // 13-bit GOTO
             parameter = current & 0x7FFF
         } else if current & 0x4000 != 0 {
             parameter = UInt16(bitPattern: Int16(Int8(bitPattern: UInt8(current & 0xFF))))  // sign-extend
@@ -112,7 +118,7 @@ public struct DefaultScriptInterpreter: ScriptInterpreter {
                 if parameter == 0 {
                     push(&s, s.returnValue)
                 } else if parameter == 1 {
-                    push(&s, s.scriptPC &+ 1)         // next location
+                    push(&s, s.scriptPC &+ 1)  // next location
                     push(&s, UInt16(s.framePointer))
                     s.framePointer = s.stackPointer &+ 2
                 } else {
@@ -177,26 +183,31 @@ public struct DefaultScriptInterpreter: ScriptInterpreter {
                 s.scriptPC = parameter & 0x7FFF
 
             case 16:  // UNARY
-                if parameter == 0 { push(&s, pop(&s) == 0 ? 1 : 0) }
-                else if parameter == 1 { push(&s, 0 &- pop(&s)) }
-                else if parameter == 2 { push(&s, ~pop(&s)) }
-                else { s.scriptPC = ScriptEngine.scriptNull; return false }
+                if parameter == 0 {
+                    push(&s, pop(&s) == 0 ? 1 : 0)
+                } else if parameter == 1 {
+                    push(&s, 0 &- pop(&s))
+                } else if parameter == 2 {
+                    push(&s, ~pop(&s))
+                } else {
+                    s.scriptPC = ScriptEngine.scriptNull; return false
+                }
 
             case 17:  // BINARY (signed 16-bit, wrapping)
                 let right = Int16(bitPattern: pop(&s))
                 let left = Int16(bitPattern: pop(&s))
                 let result: Int16
                 switch parameter {
-                    case 0:  result = (left != 0 && right != 0) ? 1 : 0
-                    case 1:  result = (left != 0 || right != 0) ? 1 : 0
-                    case 2:  result = left == right ? 1 : 0
-                    case 3:  result = left != right ? 1 : 0
-                    case 4:  result = left <  right ? 1 : 0
-                    case 5:  result = left <= right ? 1 : 0
-                    case 6:  result = left >  right ? 1 : 0
-                    case 7:  result = left >= right ? 1 : 0
-                    case 8:  result = left &+ right
-                    case 9:  result = left &- right
+                    case 0: result = (left != 0 && right != 0) ? 1 : 0
+                    case 1: result = (left != 0 || right != 0) ? 1 : 0
+                    case 2: result = left == right ? 1 : 0
+                    case 3: result = left != right ? 1 : 0
+                    case 4: result = left < right ? 1 : 0
+                    case 5: result = left <= right ? 1 : 0
+                    case 6: result = left > right ? 1 : 0
+                    case 7: result = left >= right ? 1 : 0
+                    case 8: result = left &+ right
+                    case 9: result = left &- right
                     case 10: result = left &* right
                     case 11:
                         if right == 0 { s.scriptPC = ScriptEngine.scriptNull; return false }

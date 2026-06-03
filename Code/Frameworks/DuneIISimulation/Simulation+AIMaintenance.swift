@@ -16,14 +16,17 @@ public extension Simulation {
     ///    auto-placed and `countDown` zeroed in the same pass, an AI rebuilds the next queued structure on the
     ///    very next tick the construction cursor fires — exactly as OpenDUNE chains them.
     mutating func aiStructureMaintenance(_ slot: Int) {
-        guard let st = StructureType(rawValue: Int(state.structures[slot].o.type)),
-              let combat = unitScript?.combat else { return }
+        guard
+            let st = StructureType(rawValue: Int(state.structures[slot].o.type)),
+            let combat = unitScript?.combat
+        else { return }
         let hID = Int(state.structures[slot].o.houseID)
         let si = StructureInfo[st]
 
         // 1. AI construction-yard auto-place of a finished structure.
         if state.structures[slot].o.houseID != state.playerHouseID, st == .constructionYard,
-           state.structures[slot].state == .ready, state.structures[slot].o.linkedID != 0xFF {
+            state.structures[slot].state == .ready, state.structures[slot].o.linkedID != 0xFF
+        {
             let ns = Int(state.structures[slot].o.linkedID)
             state.structures[slot].o.linkedID = 0xFF
             state.structureSetState(slot, .idle)
@@ -33,7 +36,7 @@ public extension Simulation {
                 if !combat.structurePlace(ns, position: state.houses[hID].aiStructureRebuild[i][1], in: &state) {
                     continue
                 }
-                state.houses[hID].aiStructureRebuild[i] = [0, 0]
+                state.houses[hID].aiStructureRebuild[i] = [ 0, 0 ]
                 placed = true
                 break
             }
@@ -44,15 +47,20 @@ public extension Simulation {
         }
 
         // 2. AI maintenance: auto-repair + auto-build when idle.
-        guard state.houses[hID].flags.contains(.isAIActive), state.structures[slot].o.flags.contains(.allocated),
-              state.structures[slot].o.houseID != state.playerHouseID, state.houses[hID].credits != 0 else { return }
+        guard
+            state.houses[hID].flags.contains(.isAIActive),
+            state.structures[slot].o.flags.contains(.allocated),
+            state.structures[slot].o.houseID != state.playerHouseID,
+            state.houses[hID].credits != 0
+        else { return }
 
         if state.structures[slot].o.hitpoints < si.o.hitpoints / 2 {
             _ = state.structureSetRepairingState(slot, state: 1)
         }
 
         if si.o.flags.contains(.factory), state.structures[slot].countDown == 0,
-           state.structures[slot].o.linkedID == 0xFF, let type = structureAIPickNextToBuild(slot) {
+            state.structures[slot].o.linkedID == 0xFF, let type = structureAIPickNextToBuild(slot)
+        {
             combat.structureBuildObject(slot: slot, objectType: type, in: &state)
         }
     }
@@ -88,12 +96,15 @@ public extension Simulation {
         }
 
         var pick: UInt16? = nil
-        for i in 0 ..< 27 {   // UNIT_MAX
+        for i in 0 ..< 27 {  // UNIT_MAX
             let raw = UInt16(i)
             if !set.contains(raw) { continue }
             if state.random256.next() % 4 == 0 { pick = raw }
             if let cur = pick, let curType = UnitType(rawValue: Int(cur)), let candidate = UnitType(rawValue: i),
-               UnitInfo[candidate].o.priorityBuild <= UnitInfo[curType].o.priorityBuild { continue }
+                UnitInfo[candidate].o.priorityBuild <= UnitInfo[curType].o.priorityBuild
+            {
+                continue
+            }
             pick = raw
         }
         return pick

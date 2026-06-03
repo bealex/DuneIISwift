@@ -27,23 +27,32 @@ enum RenderCap {
         note("NSApplication ok")
 
         let args = Args(CommandLine.arguments)
-        guard let installDir = args.positional.first else {
+        guard
+            let installDir = args.positional.first
+        else {
             fail("usage: rendercap <installDir> [--scenario NAME] [--tick N] [--rect x,y,w,h] [--fog] [--out FILE]")
         }
         let installURL = URL(fileURLWithPath: installDir)
 
-        guard let assets = Assets(installURL: installURL) else {
-            fail("could not load PAK assets from \(installDir) (need IBM.PAL, ICON.MAP, ICON.ICN, UNIT/BUILD.EMC, a SCEN*.INI)")
+        guard
+            let assets = Assets(installURL: installURL)
+        else {
+            fail(
+                "could not load PAK assets from \(installDir) (need IBM.PAL, ICON.MAP, ICON.ICN, UNIT/BUILD.EMC, a SCEN*.INI)"
+            )
         }
 
         let scenarioName = args.value("--scenario") ?? assets.scenarioNames.first
-        guard let scenarioName, let ini = assets.ini(scenarioName) else {
+        guard
+            let scenarioName,
+            let ini = assets.ini(scenarioName)
+        else {
             fail("no scenario (available: \(assets.scenarioNames.prefix(5).joined(separator: ", "))…)")
         }
 
         let tick = args.value("--tick").flatMap { Int($0) } ?? 0
         let out = URL(fileURLWithPath: args.value("--out") ?? "snapshot.png")
-        let crop = args.value("--rect").flatMap(parseRect)   // in tiles
+        let crop = args.value("--rect").flatMap(parseRect)  // in tiles
 
         // Build + run the simulation to `tick` (mirrors mapview's setup).
         var state = GameState()
@@ -60,43 +69,58 @@ enum RenderCap {
 
         // Debug: drop a stationary sandworm at a tile to exercise the shimmer (`--worm tx,ty`). Injected
         // after unit setup + with no script, so it sits still (use with `--tick 0`).
-        if let w = args.value("--worm").flatMap(parsePair), let slot = state.units.firstIndex(where: { !$0.o.flags.contains(.used) }) {
+        if let w = args.value("--worm").flatMap(parsePair),
+            let slot = state.units.firstIndex(where: { !$0.o.flags.contains(.used) })
+        {
             var worm = Unit()
             worm.o.index = UInt16(slot)
             worm.o.type = UInt8(UnitType.sandworm.rawValue)
-            worm.o.flags = [.used, .allocated, .isUnit]
+            worm.o.flags = [ .used, .allocated, .isUnit ]
             worm.o.houseID = 6
             worm.o.position = Tile32(x: UInt16(w.x) * 256 + 0x80, y: UInt16(w.y) * 256 + 0x80)
             worm.o.hitpoints = 1000
             state.units[slot] = worm
         }
 
-        var sim = Simulation(state: state, scriptInfo: unitScript,
-                             structureScriptInfo: ScriptInfo(assets.buildProgram),
-                             tickExplosions: true, tickAnimations: true)
+        var sim = Simulation(
+            state: state,
+            scriptInfo: unitScript,
+            structureScriptInfo: ScriptInfo(assets.buildProgram),
+            tickExplosions: true,
+            tickAnimations: true
+        )
         for _ in 0 ..< max(0, tick) { sim.tick() }
         note("ticked to \(tick)")
 
         // Swap in the real renderer just for the capture.
-        let renderer = SpriteKitRenderer(source: assets.spriteSource, basePalette: assets.palette,
-                                         showFog: args.flag("--fog"))
+        let renderer = SpriteKitRenderer(
+            source: assets.spriteSource,
+            basePalette: assets.palette,
+            showFog: args.flag("--fog")
+        )
         note("renderer built; capturing")
         let ts = assets.spriteSource.terrainTileSize
         let cropRect = crop.map { CGRect(x: $0.x * ts, y: $0.y * ts, width: $0.w * ts, height: $0.h * ts) }
 
         let frameInfo = sim.makeFrameInfo()
         for b in frameInfo.blurs {
-            note("blur at world (\(b.positionX),\(b.positionY)) sprite #\(b.sprite.spriteIndex) "
-                 + "resolves=\(assets.spriteSource.unitFrame(globalIndex: b.sprite.spriteIndex) != nil)")
+            note(
+                "blur at world (\(b.positionX),\(b.positionY)) sprite #\(b.sprite.spriteIndex) "
+                    + "resolves=\(assets.spriteSource.unitFrame(globalIndex: b.sprite.spriteIndex) != nil)"
+            )
         }
-        guard let image = renderer.snapshot(frameInfo, crop: cropRect) else {
+        guard
+            let image = renderer.snapshot(frameInfo, crop: cropRect)
+        else {
             fail("snapshot returned nil — no off-screen GPU/graphics context available here")
         }
 
         do {
             try PngWriter.write(image: image, to: out)
-            print("rendercap: wrote \(image.width)×\(image.height) → \(out.path) "
-                  + "(scenario \(scenarioName), tick \(tick)\(crop.map { _ in ", cropped" } ?? "")\(args.flag("--fog") ? ", fog" : ""))")
+            print(
+                "rendercap: wrote \(image.width)×\(image.height) → \(out.path) "
+                    + "(scenario \(scenarioName), tick \(tick)\(crop.map { _ in ", cropped" } ?? "")\(args.flag("--fog") ? ", fog" : ""))"
+            )
         } catch {
             fail("write failed: \(error)")
         }
@@ -136,12 +160,16 @@ private struct Args {
         var values: [String: String] = [:]
         var flags: Set<String> = []
         var i = 1
-        let known = Set(["--scenario", "--tick", "--rect", "--out", "--worm"])
+        let known = Set([ "--scenario", "--tick", "--rect", "--out", "--worm" ])
         while i < argv.count {
             let a = argv[i]
-            if known.contains(a), i + 1 < argv.count { values[a] = argv[i + 1]; i += 2 }
-            else if a.hasPrefix("--") { flags.insert(a); i += 1 }
-            else { positional.append(a); i += 1 }
+            if known.contains(a), i + 1 < argv.count {
+                values[a] = argv[i + 1]; i += 2
+            } else if a.hasPrefix("--") {
+                flags.insert(a); i += 1
+            } else {
+                positional.append(a); i += 1
+            }
         }
         self.positional = positional
         self.values = values
@@ -163,7 +191,8 @@ private struct Assets {
     private let archives: [Pak.Archive]
 
     init?(installURL: URL) {
-        guard let entries = try? FileManager.default.contentsOfDirectory(at: installURL, includingPropertiesForKeys: nil)
+        guard
+            let entries = try? FileManager.default.contentsOfDirectory(at: installURL, includingPropertiesForKeys: nil)
         else { return nil }
         var archives: [Pak.Archive] = []
         for url in entries where url.pathExtension.uppercased() == "PAK" {
@@ -173,15 +202,18 @@ private struct Assets {
 
         func data(_ name: String) -> Data? {
             for a in archives {
-                if let e = a.entries.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { return a.data(e) }
+                if let e = a.entries.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+                    return a.data(e)
+                }
             }
             return nil
         }
-        guard let pal = data("IBM.PAL").flatMap({ try? Palette($0) }),
-              let map = data("ICON.MAP").flatMap({ try? IconMap($0) }),
-              let icn = data("ICON.ICN").flatMap({ try? Icn.TileSet($0) }),
-              let unit = data("UNIT.EMC").flatMap({ try? Emc.Program($0) }),
-              let build = data("BUILD.EMC").flatMap({ try? Emc.Program($0) })
+        guard
+            let pal = data("IBM.PAL").flatMap({ try? Palette($0) }),
+            let map = data("ICON.MAP").flatMap({ try? IconMap($0) }),
+            let icn = data("ICON.ICN").flatMap({ try? Icn.TileSet($0) }),
+            let unit = data("UNIT.EMC").flatMap({ try? Emc.Program($0) }),
+            let build = data("BUILD.EMC").flatMap({ try? Emc.Program($0) })
         else { return nil }
 
         var sheets: [String: Shp.FrameSet] = [:]

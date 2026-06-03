@@ -1,5 +1,6 @@
-import Testing
 import DuneIIContracts
+import Testing
+
 @testable import DuneIIWorld
 
 /// `Structure_SetRepairingState` / `Structure_SetUpgradingState` (`structure.c:1735` / `:1691`) — the
@@ -28,7 +29,7 @@ struct StructureStateTests {
 
     @Test("starting repair on a full-HP structure is a no-op")
     func repairFullHP() {
-        var (s, slot) = structure()   // full HP
+        var (s, slot) = structure()  // full HP
         let acted = s.structureSetRepairingState(slot, state: 1)
         #expect(!acted)
         #expect(!s.structures[slot].o.flags.contains(.repairing))
@@ -67,13 +68,13 @@ struct StructureStateTests {
     @Test("start upgrading (with time left) sets .upgrading + .onHold and clears .repairing")
     func startUpgrade() {
         var (s, slot) = structure(hp: 50)
-        s.structures[slot].o.flags.insert(.repairing)   // a repairing structure...
+        s.structures[slot].o.flags.insert(.repairing)  // a repairing structure...
         s.structures[slot].upgradeTimeLeft = 30
         let acted = s.structureSetUpgradingState(slot, state: 1)
         #expect(acted)
         #expect(s.structures[slot].o.flags.contains(.upgrading))
         #expect(s.structures[slot].o.flags.contains(.onHold))
-        #expect(!s.structures[slot].o.flags.contains(.repairing))   // ...upgrading supersedes repairing
+        #expect(!s.structures[slot].o.flags.contains(.repairing))  // ...upgrading supersedes repairing
     }
 
     @Test("starting upgrade with no time left is a no-op")

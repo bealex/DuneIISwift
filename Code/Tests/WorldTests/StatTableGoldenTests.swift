@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import DuneIIWorld
 
 /// Field-for-field parity of the static stat tables against OpenDUNE's `g_table_*`, from the per-table
