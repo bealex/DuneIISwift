@@ -164,6 +164,7 @@ struct ActionIcon: View {
     var active = false
     var help = ""
     var disabled = false
+    var size: CGFloat = 30
     let action: () -> Void
 
     var body: some View {
@@ -171,7 +172,7 @@ struct ActionIcon: View {
             // A fixed square content box + a circular border shape → every command icon is an identical
             // circle, regardless of its symbol's intrinsic width.
             Image(systemName: systemImage)
-                .frame(width: 30, height: 30)
+                .frame(width: size, height: size)
                 .overlay(alignment: .bottomTrailing) {
                     if let badge {
                         Text(badge).font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
@@ -350,7 +351,6 @@ public struct GameSidebar: View {
     @ViewBuilder private var buildSection: some View {
         if model.isFactorySelected {
             Divider()
-            Text("Build").font(.headline)
             if let bs = model.buildProgress {
                 buildProgress(bs)
             } else if model.buildOptions.isEmpty {
@@ -407,32 +407,25 @@ public struct GameSidebar: View {
     }
 
     @ViewBuilder private func buildProgress(_ bs: BuildState) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
+            // Big icon (2× the list thumbnails) + the product name; no status text.
+            HStack(spacing: 10) {
                 SpriteThumbnail(objectType: bs.objectType, isStructure: bs.isStructure, house: model.playerHouse,
-                                height: 22, provider: sprites, assets: model.assets)
-                    .frame(width: 30, alignment: .center)
-                Text(bs.displayName).font(.callout.bold()).lineLimit(1)
+                                height: 44, provider: sprites, assets: model.assets)
+                Text(bs.displayName).font(.headline).lineLimit(2)
                 Spacer(minLength: 0)
-                if bs.isReady { Text("Ready").font(.caption).foregroundStyle(.green) }
-                else if bs.onHold { Text("Hold").font(.caption).foregroundStyle(.orange) }
             }
             ProgressView(value: bs.progress).tint(bs.onHold ? .orange : .accentColor)
-            HStack(spacing: 6) {
+            // Bigger circular buttons — only the action that applies right now (place / resume / pause) + stop.
+            HStack(spacing: 12) {
                 if bs.isReady && bs.isStructure {
-                    Button { model.beginPlacement() } label: { Label("Place", systemImage: "mappin.and.ellipse") }
-                        .buttonStyle(.borderedProminent).controlSize(.small)
-                } else if bs.isReady {
-                    Label("Deploying…", systemImage: "arrow.down.circle").font(.caption).foregroundStyle(.green)
+                    ActionIcon(systemImage: "mappin.and.ellipse", active: true, help: "Place", size: 40) { model.beginPlacement() }
                 } else if bs.onHold {
-                    Button { model.resumeBuild() } label: { Image(systemName: "play.fill") }
-                        .buttonStyle(.borderedProminent).controlSize(.small)
-                } else {
-                    Button { model.pauseBuild() } label: { Image(systemName: "pause.fill") }
-                        .buttonStyle(.bordered).controlSize(.small)
+                    ActionIcon(systemImage: "play.fill", active: true, help: "Resume", size: 40) { model.resumeBuild() }
+                } else if !bs.isReady {
+                    ActionIcon(systemImage: "pause.fill", help: "Pause", size: 40) { model.pauseBuild() }
                 }
-                Button(role: .destructive) { model.cancelBuild() } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.bordered).controlSize(.small)
+                ActionIcon(systemImage: "xmark", help: "Stop", size: 40) { model.cancelBuild() }
             }
             if model.placement != nil {
                 Text("Click a spot to place · Esc / right-click cancels")
