@@ -18,11 +18,15 @@ Config: `Code/.swift-format` (also auto-discovered by editors). It lists only th
 
 `respectsExistingLineBreaks` (default) is what lets swift-format preserve the project's multi-line `guard` layout (guard alone on its line, expression indented below) instead of reflowing it.
 
-### The collection-literal post-pass: `Code/Tools/StyleRespace`
+### The SwiftSyntax post-pass: `Code/Tools/StyleRespace`
 
-swift-format normalises collection literals to **tight** brackets (`[ .foo ]` → `[.foo]`) and has no option to keep the interior spaces the code style wants. A regex rewrite can't safely add them back — it can't tell an array literal from an array **type** (`[Int]`) or a **subscript** (`arr[0]`), and would corrupt brackets inside strings/comments.
+A few style points are things swift-format actively gets *wrong* for this style and can't be configured out of. `format.sh` runs a second pass — `style-respace`, a small SwiftSyntax tool in its own package (kept separate so the swift-syntax dependency stays out of the engine graph) — that fixes them on the parsed tree. It is idempotent and runs as a stdin→stdout filter (`style-respace -`) so `--check` can pipe `swift-format … | style-respace - | diff`. Three rewriters, applied in order:
 
-So `format.sh` runs a second pass: `style-respace`, a small SwiftSyntax tool in its own package (kept separate so the swift-syntax dependency stays out of the engine graph). It parses the file and re-inserts one interior space on **single-line `ArrayExpr` / `DictionaryExpr` literals only** — array types, subscripts, multi-line literals, strings, and comments are different syntax nodes and are left untouched. It is idempotent (never doubles an existing space) and can run as a stdin→stdout filter (`style-respace -`) so `--check` can pipe `swift-format … | style-respace - | diff`.
+1. **Collection-literal spacing** — swift-format normalises literals to tight brackets (`[ .foo ]` → `[.foo]`) with no option to keep the interior spaces the style wants, and a regex can't tell a literal from an array **type** (`[Int]`) or a **subscript** (`arr[0]`). The rewriter re-inserts one interior space on **single-line `ArrayExpr` / `DictionaryExpr` literals only** — types, subscripts, multi-line literals, strings, and comments are different syntax nodes and are left untouched. Never doubles an existing space.
+
+2. **Guard layout** — the codestyle wants a guard on one line when it fits in 120, else `guard` alone with one condition per indented line and `else` on its own line (Options 1–3). swift-format breaks by *length*, not per-condition, and the SwiftLint regex rule can only flag, not fix. The rewriter collapses guards that fit and explodes those that don't, reusing swift-format's already-correct `else`/body. Bails on guards with comments in the condition region or a single multi-line condition.
+
+3. **Ternary layout** — swift-format breaks after the `=` / `return` and drops the condition onto its own line (`let x =` ⏎ `cond` ⏎ `? …` ⏎ `: …`). The codestyle keeps the condition on the line it starts (`let x = cond` ⏎ `? …` ⏎ `: …`), with `?` / `:` indented under it (swift-format already indents those). The rewriter pulls the condition up — but only the ternary's actual condition element, and only in a true right-hand-side position (`let`/`return` value, or after an assignment `=`), so it never swallows a statement separator. Inline ternaries that fit are left alone.
 
 ## Linter: SwiftLint
 

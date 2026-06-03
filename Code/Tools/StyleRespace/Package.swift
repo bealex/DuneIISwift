@@ -12,7 +12,7 @@ let package = Package(
     name: "StyleRespace",
     platforms: [ .macOS(.v13) ],
     dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0"),
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0")
     ],
     targets: [
         .executableTarget(
@@ -21,6 +21,6 @@ let package = Package(
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),
             ]
-        ),
+        )
     ]
 )
