@@ -14,6 +14,7 @@ let package = Package(
     name: "DuneII",
     platforms: [
         .macOS("26.0"),
+        .iOS("26.0"),
     ],
     products: [
         .library(name: "DuneIIContracts", targets: [ "DuneIIContracts" ]),
