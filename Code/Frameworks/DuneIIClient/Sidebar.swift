@@ -436,23 +436,28 @@ public struct GameSidebar: View {
     // MARK: Bottom button row
 
     private var bottomBar: some View {
-        HStack(spacing: 4) {
+        // Four equal circular buttons, spread evenly across the column width.
+        HStack(spacing: 0) {
             sidebarButton("brain.head.profile", help: "Mentat — info on the selected unit/building",
                           disabled: model.selection == nil) { showMentat = true }
+            Spacer()
             sidebarButton("gearshape.fill", help: "Options") { showOptions = true }
                 .popover(isPresented: $showOptions, arrowEdge: .top) { OptionsPopover(model: model) }
+            Spacer()
             sidebarButton("square.and.arrow.down", help: "Save game…") { onSave() }
+            Spacer()
             sidebarButton("folder", help: "Load game…") { onLoad() }
         }
+        .frame(maxWidth: .infinity)
         .padding(6)
     }
 
     private func sidebarButton(_ systemImage: String, help: String, disabled: Bool = false,
                                action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: systemImage).frame(maxWidth: .infinity, minHeight: 26)
+            Image(systemName: systemImage).frame(width: 30, height: 30)
         }
-        .buttonStyle(.bordered).disabled(disabled).help(help)
+        .buttonStyle(.bordered).buttonBorderShape(.circle).disabled(disabled).help(help)
     }
 
     private func hpTint(_ hp: Int, _ maxHP: Int) -> Color {
