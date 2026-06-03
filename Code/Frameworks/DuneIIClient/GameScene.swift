@@ -1,4 +1,3 @@
-import AppKit
 import DuneIIContracts
 import DuneIIFormats
 import DuneIIInput
@@ -6,12 +5,20 @@ import DuneIIRenderer
 import DuneIISimulation
 import DuneIIWorld
 import SpriteKit
+#if canImport(AppKit)
+import AppKit
+#endif
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// The map view: renders the live `Simulation` through `SpriteKitRenderer`, drives the camera from the
-/// model's `Viewport` (scroll/zoom, pixel-perfect), forwards mouse/keyboard to the model (select/order,
-/// +/- zoom, arrow scroll), and overlays the selection outline + (debug) per-unit health bars.
+/// model's `Viewport` (scroll/zoom, pixel-perfect), forwards input to the model (select/order, +/- zoom,
+/// scroll), and overlays the selection outline + (debug) per-unit health bars. Rendering is cross-platform
+/// (`SKColor`); the raw input handlers are conditionally compiled per platform (`#if os`), both converting
+/// to a tile/world point via the shared `tile(atScenePoint:)` / `tile(fromView:)` helpers below.
 @MainActor
-final class GameScene: SKScene {
+public final class GameScene: SKScene {
     static let worldSidePx = Int(Viewport.worldSize)   // 1024
     private static let tileSize = 16
     private static let barWidth = 7.0     // half the old 14 (user: "width 2x smaller")
@@ -41,7 +48,9 @@ final class GameScene: SKScene {
     private var leftDragStartTile: (Int, Int)?
     private var leftDragging = false
     private let placementNode = SKShapeNode()      // structure-placement footprint preview
+    #if os(macOS)
     private var trackingArea: NSTrackingArea?
+    #endif
     // Middle-button pan/recentre state: the last cursor point (window coords, camera-independent), whether
     // this gesture moved, and the down point (scene coords) for a click-recentre.
     private var middleDragLastWindow: CGPoint?
@@ -64,7 +73,7 @@ final class GameScene: SKScene {
         addChild(selectionLayer)
         dragBoxNode.strokeColor = .green
         dragBoxNode.lineWidth = 1
-        dragBoxNode.fillColor = NSColor.green.withAlphaComponent(0.12)
+        dragBoxNode.fillColor = SKColor.green.withAlphaComponent(0.12)
         dragBoxNode.zPosition = 40
         dragBoxNode.isHidden = true
         addChild(dragBoxNode)
@@ -80,7 +89,8 @@ final class GameScene: SKScene {
 
     /// Track mouse-moved events so the placement preview can follow the cursor (the click-to-place path
     /// works without this; the preview just won't follow until the next click).
-    override func didMove(to view: SKView) {
+    override public func didMove(to view: SKView) {
+        #if os(macOS)
         view.window?.acceptsMouseMovedEvents = true
         if trackingArea == nil {
             // `.activeAlways` (not `.activeInKeyWindow`): hover/cursor updates over the map keep working while
@@ -91,6 +101,7 @@ final class GameScene: SKScene {
             view.addTrackingArea(area)
             trackingArea = area
         }
+        #endif
     }
 
     func load(simulation: Simulation, assets: AssetStore) {
@@ -114,7 +125,7 @@ final class GameScene: SKScene {
         renderer.rebuildTerrain(frame)
     }
 
-    override func update(_ currentTime: TimeInterval) {
+    override public func update(_ currentTime: TimeInterval) {
         guard let model, let renderer else { return }
         // Pace sim ticks against real elapsed time × the speed multiplier, so 0.5× runs half as fast and
         // 4× four times. The accumulator carries fractional ticks across frames; the per-frame step count
@@ -148,7 +159,7 @@ final class GameScene: SKScene {
         let bottomY = Double(Self.worldSidePx - (ty + p.height) * tile)
         let rect = CGRect(x: originX, y: bottomY, width: Double(p.width * tile), height: Double(p.height * tile))
         placementNode.path = CGPath(rect: rect, transform: nil)
-        let colour: NSColor = valid ? .systemGreen : .systemRed
+        let colour: SKColor = valid ? .systemGreen : .systemRed
         placementNode.strokeColor = colour
         placementNode.fillColor = colour.withAlphaComponent(0.25)
         placementNode.isHidden = false
@@ -328,7 +339,7 @@ final class GameScene: SKScene {
 
     /// idle → no chip; otherwise a distinct **shape + colour** per state (centred on the node origin):
     /// move = green ▶ triangle, attack = red ◆ diamond, guard = blue ■ square, harvest = orange ● circle.
-    private static func chipStyle(_ activity: FrameInfo.UnitActivity) -> (CGPath, NSColor)? {
+    private static func chipStyle(_ activity: FrameInfo.UnitActivity) -> (CGPath, SKColor)? {
         let r = 1.25   // half the old 2.5 — the state icons are 2× smaller
         switch activity {
             case .idle: return nil
@@ -373,16 +384,55 @@ final class GameScene: SKScene {
 
     // MARK: - Input
 
+    /// Convert a point in scene coordinates (already camera-adjusted) to a `(tileX, tileY)`, or nil if it
+    /// falls outside the 64×64 map. Every platform's input layer funnels through this.
+    public func tile(atScenePoint p: CGPoint) -> (Int, Int)? {
+        let x = Int(p.x) / Self.tileSize
+        let y = (Self.worldSidePx - Int(p.y)) / Self.tileSize
+        guard (0 ..< 64).contains(x), (0 ..< 64).contains(y) else { return nil }
+        return (x, y)
+    }
+
+    /// Convert a point in the presenting `SKView`'s coordinate space to a map tile (iOS gestures use this).
+    public func tile(fromView viewPoint: CGPoint) -> (Int, Int)? {
+        guard view != nil else { return nil }
+        return tile(atScenePoint: convertPoint(fromView: viewPoint))
+    }
+
+    /// Convert a view point to a world point (image space, y-down) — e.g. to recentre the camera on a tap.
+    public func worldPoint(fromView viewPoint: CGPoint) -> CGPoint? {
+        guard view != nil else { return nil }
+        let p = convertPoint(fromView: viewPoint)
+        return CGPoint(x: p.x, y: Double(Self.worldSidePx) - p.y)
+    }
+
+    /// True while the next primary tap supplies a target: an armed unit order, structure placement, or the
+    /// palace death-hand target-select.
+    private var targetingActive: Bool { (model?.pendingOrder != nil) || (model?.placement != nil) || (model?.missileTargeting != nil) }
+
+    /// Set the crosshair while targeting, the arrow otherwise — only when the state changes. macOS only:
+    /// iOS has no hardware cursor, so the body is a no-op there.
+    private func refreshCursor() {
+        guard targetingActive != lastTargetingActive else { return }
+        lastTargetingActive = targetingActive
+        #if os(macOS)
+        (targetingActive ? NSCursor.crosshair : NSCursor.arrow).set()
+        #endif
+    }
+
+    #if os(macOS)
+    private func tile(at event: NSEvent) -> (Int, Int)? { tile(atScenePoint: event.location(in: self)) }
+
     // Left-click is resolved on mouse-UP so a press-drag-release can be a drag-select box instead. The
     // special modes (missile target-select, structure placement, an armed order) act on a plain click and
     // suppress drag-select.
-    override func mouseDown(with event: NSEvent) {
+    override public func mouseDown(with event: NSEvent) {
         leftDragStartWindow = event.locationInWindow
         leftDragStartTile = tile(at: event)
         leftDragging = false
     }
 
-    override func mouseDragged(with event: NSEvent) {
+    override public func mouseDragged(with event: NSEvent) {
         guard let start = leftDragStartWindow,
               model?.missileTargeting == nil, model?.placement == nil, model?.pendingOrder == nil else { return }
         let cur = event.locationInWindow
@@ -390,7 +440,7 @@ final class GameScene: SKScene {
         if leftDragging, let from = leftDragStartTile, let to = tile(at: event) { setDragBox(from: from, to: to) }
     }
 
-    override func mouseUp(with event: NSEvent) {
+    override public func mouseUp(with event: NSEvent) {
         defer { leftDragStartWindow = nil; leftDragStartTile = nil; leftDragging = false; dragBoxNode.isHidden = true }
         if leftDragging, let from = leftDragStartTile, let to = tile(at: event) {
             model?.dragSelect(fromTileX: from.0, fromTileY: from.1, toTileX: to.0, toTileY: to.1)
@@ -402,7 +452,7 @@ final class GameScene: SKScene {
         else { model?.leftClickTile(x, y) }
     }
 
-    override func rightMouseDown(with event: NSEvent) {
+    override public func rightMouseDown(with event: NSEvent) {
         if model?.missileTargeting != nil { model?.cancelMissileTargeting(); return }
         if model?.placement != nil { model?.cancelPlacement(); return }
         if let (x, y) = tile(at: event) { model?.rightClickTile(x, y) }
@@ -411,14 +461,14 @@ final class GameScene: SKScene {
     /// Middle mouse button: drag to pan the map (a hand-tool — the content follows the cursor), or a plain
     /// click (no drag) recentres on the clicked point. Tracked in window coords so the camera's own motion
     /// during the drag doesn't feed back into the delta.
-    override func otherMouseDown(with event: NSEvent) {
+    override public func otherMouseDown(with event: NSEvent) {
         guard event.buttonNumber == 2 else { return }
         middleDragLastWindow = event.locationInWindow
         middleDidDrag = false
         middleDownScene = event.location(in: self)
     }
 
-    override func otherMouseDragged(with event: NSEvent) {
+    override public func otherMouseDragged(with event: NSEvent) {
         guard event.buttonNumber == 2, let last = middleDragLastWindow else { return }
         let cur = event.locationInWindow
         let dx = Double(cur.x - last.x), dy = Double(cur.y - last.y)
@@ -429,7 +479,7 @@ final class GameScene: SKScene {
         model?.scroll(dx: -dx, dy: dy)
     }
 
-    override func otherMouseUp(with event: NSEvent) {
+    override public func otherMouseUp(with event: NSEvent) {
         guard event.buttonNumber == 2 else { return }
         defer { middleDragLastWindow = nil; middleDownScene = nil }
         if !middleDidDrag, let p = middleDownScene {
@@ -437,12 +487,12 @@ final class GameScene: SKScene {
         }
     }
 
-    override func mouseMoved(with event: NSEvent) {
+    override public func mouseMoved(with event: NSEvent) {
         guard model?.placement != nil, let (x, y) = tile(at: event) else { return }
         model?.placementHover(tileX: x, tileY: y)
     }
 
-    override func keyDown(with event: NSEvent) {
+    override public func keyDown(with event: NSEvent) {
         switch event.keyCode {
             case 24, 69: model?.zoomIn()    // '=' / '+' / keypad +
             case 27, 78: model?.zoomOut()   // '-' / keypad -
@@ -478,29 +528,9 @@ final class GameScene: SKScene {
         }
     }
 
-    // MARK: - Targeting cursor
-
-    /// True while the next left-click supplies a target: an armed unit order, structure placement, or the
-    /// palace death-hand target-select.
-    private var targetingActive: Bool { (model?.pendingOrder != nil) || (model?.placement != nil) || (model?.missileTargeting != nil) }
-
-    /// Set the crosshair while targeting, the arrow otherwise — only when the state changes (cheap each frame).
-    private func refreshCursor() {
-        guard targetingActive != lastTargetingActive else { return }
-        lastTargetingActive = targetingActive
-        (targetingActive ? NSCursor.crosshair : NSCursor.arrow).set()
-    }
-
     /// AppKit's authoritative cursor hook (fires as the mouse moves over the view), so the crosshair sticks.
-    override func cursorUpdate(with event: NSEvent) {
+    override public func cursorUpdate(with event: NSEvent) {
         (targetingActive ? NSCursor.crosshair : NSCursor.arrow).set()
     }
-
-    private func tile(at event: NSEvent) -> (Int, Int)? {
-        let p = event.location(in: self)     // scene = world coords (camera-adjusted)
-        let x = Int(p.x) / Self.tileSize
-        let y = (Self.worldSidePx - Int(p.y)) / Self.tileSize
-        guard (0 ..< 64).contains(x), (0 ..< 64).contains(y) else { return nil }
-        return (x, y)
-    }
+    #endif
 }

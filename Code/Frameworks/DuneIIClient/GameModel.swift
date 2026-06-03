@@ -14,8 +14,8 @@ import Foundation
 /// `@Observable`, so the SwiftUI windows update reactively.
 @MainActor
 @Observable
-final class GameModel {
-    let assets: AssetStore
+public final class GameModel {
+    public let assets: AssetStore
     @ObservationIgnored let audio = EngineAudioSink()
     /// In-game music (host-side presentation — never touches the sim). Maps OpenDUNE's `g_table_musics`
     /// selection to the music assets in `Resources/Audio/Music/` — either the Westwood `.ADL` files
@@ -35,10 +35,10 @@ final class GameModel {
     }
     /// Master sound-effects toggle (Settings). Off ⇒ no SFX play; the sim is untouched (presentation only).
     var soundEnabled = true { didSet { audio.enabled = soundEnabled } }
-    @ObservationIgnored var scene: GameScene!
+    @ObservationIgnored public var scene: GameScene!
 
-    private(set) var currentScenario: String?
-    private(set) var simulation: Simulation?
+    public private(set) var currentScenario: String?
+    public private(set) var simulation: Simulation?
     @ObservationIgnored private var unitScript: ScriptInfo?
     @ObservationIgnored private var structureScript: ScriptInfo?
     @ObservationIgnored private var controller = InputController(mapWidth: 64)
@@ -91,7 +91,7 @@ final class GameModel {
     }
 
     /// A friendly label for the current scenario (house + mission), for the toolbar button.
-    var scenarioTitle: String {
+    public var scenarioTitle: String {
         guard let name = currentScenario, let s = ScenarioID(fileName: name) else { return "Scenario" }
         return "\(s.house.displayName) · Mission \(s.mission)"
     }
@@ -108,15 +108,15 @@ final class GameModel {
 
     /// Wall-clock speed multiplier (0.5×…4×). The scene paces sim ticks against real time × this — see
     /// `GameScene.update`. 1× ≈ the base 60-ticks/second cadence (one tick per drawn frame at 60 fps).
-    var gameSpeed: Double = 1
+    public var gameSpeed: Double = 1
     /// Freeze the simulation (the two-clock pause — `Simulation.tick` no-ops while `state.paused`). The
     /// camera, selection, and orders still work; only game time stops.
-    var paused = false { didSet { simulation?.state.paused = paused; paused ? music.pause() : music.resume() } }
+    public var paused = false { didSet { simulation?.state.paused = paused; paused ? music.pause() : music.resume() } }
     /// The latched level outcome (`GameLoop_IsLevelFinished`). `playing` until a Win/Lose condition is met,
     /// then `won`/`lost`; the client shows a banner + pauses. Reset to `playing` on each scenario/save load.
     private(set) var gameEnd: GameEndState = .playing
     /// The end-of-game banner text, or `nil` while playing.
-    var outcomeText: String? { switch gameEnd { case .won: "Victory"; case .lost: "Defeat"; case .playing: nil } }
+    public var outcomeText: String? { switch gameEnd { case .won: "Victory"; case .lost: "Defeat"; case .playing: nil } }
 
     // Derived per-frame info for the tool windows.
     private(set) var selection: SelectionInfo?
@@ -128,7 +128,7 @@ final class GameModel {
     private(set) var tileInfo: TileInfo?
     /// A transient player hint banner (construction complete / low power / no funds), auto-cleared after a
     /// few seconds. Derived each frame from the player's economy + factories — no new sim events needed.
-    private(set) var notice: String?
+    public private(set) var notice: String?
     @ObservationIgnored private var noticeFrames = 0
     @ObservationIgnored private var wasLowPower = false
     @ObservationIgnored private var readyFactories: Set<Int> = []
@@ -174,10 +174,7 @@ final class GameModel {
     /// the map actually changes (structures baking into the ground, walls, craters, spice) — not every tick.
     @ObservationIgnored private var minimapTilesHash = 0
 
-    /// Which tool windows are open (mirrored by the window manager; the toolbar toggles read this).
-    var openTools: Set<ToolKind> = Set(ToolKind.allCases)
-
-    init(assets: AssetStore) {
+    public init(assets: AssetStore) {
         self.assets = assets
         scene = GameScene(model: self)
         setupAudio()
@@ -288,7 +285,7 @@ final class GameModel {
     /// Save the current game to `url` — our versioned `SaveGame` (the whole `GameState`, a bit-identical
     /// deterministic resume point). Returns false on failure.
     @discardableResult
-    func saveGame(to url: URL) -> Bool {
+    public func saveGame(to url: URL) -> Bool {
         guard let sim = simulation, let data = try? SaveGame.save(sim.state) else { return false }
         do { try data.write(to: url); return true } catch { return false }
     }
@@ -296,7 +293,7 @@ final class GameModel {
     /// Restore a saved game from `url` (`SaveGame.load`) and resume it. Reloads the EMC scripts (the same
     /// programs) so the sim can run; the rest of the state comes from the save.
     @discardableResult
-    func loadGame(from url: URL) -> Bool {
+    public func loadGame(from url: URL) -> Bool {
         guard let data = try? Data(contentsOf: url), let state = try? SaveGame.load(data) else { return false }
         unitScript = assets.data("UNIT.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
         structureScript = assets.data("BUILD.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
@@ -536,7 +533,7 @@ final class GameModel {
     }
 
     /// Toggle the pause (the toolbar button + spacebar).
-    func togglePause() { paused.toggle() }
+    public func togglePause() { paused.toggle() }
 
     /// Player hints (`GUI_DisplayHint` family): a transient banner on construction-complete, low power, or
     /// out of funds. All derived from the player's economy + factory state each frame — no new sim events.

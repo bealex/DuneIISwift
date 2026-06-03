@@ -1,4 +1,5 @@
 import AppKit
+import DuneIIClient
 import SpriteKit
 import SwiftUI
 
@@ -20,7 +21,7 @@ struct ContentView: View {
         HStack(spacing: 0) {
             mapArea
             Divider()
-            GameSidebar(model: model)
+            GameSidebar(model: model, onSave: { presentSaveGame(model) }, onLoad: { presentLoadGame(model) })
         }
         // Note: no `.ignoresSafeArea()` — that drew the map up *under* the toolbar (it sits in the
         // title-bar safe area), so the map now fills the area below the toolbar.

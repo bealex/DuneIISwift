@@ -26,6 +26,7 @@ let package = Package(
         .library(name: "DuneIIAudio", targets: [ "DuneIIAudio" ]),
         .library(name: "DuneIIExport", targets: [ "DuneIIExport" ]),
         .library(name: "DuneIIScenarios", targets: [ "DuneIIScenarios" ]),
+        .library(name: "DuneIIClient", targets: [ "DuneIIClient" ]),
         .executable(name: "assetgen", targets: [ "assetgen" ]),
         .executable(name: "duneii-headless", targets: [ "duneii-headless" ]),
         .executable(name: "rendertest", targets: [ "rendertest" ]),
@@ -99,6 +100,18 @@ let package = Package(
             exclude: [ "CLAUDE.md" ]
         ),
 
+        // Shared app layer for the platform game clients (macOS `duneii`, iOS `duneii-ios`): the
+        // `@Observable` GameModel, asset store, SpriteKit scene (cross-platform input via `#if os`), the
+        // SwiftUI verification UI (sidebar, panels, minimap, scenario picker, settings). Cross-platform
+        // (macOS + iOS); the per-platform app shells (App/ContentView/window chrome) sit above it.
+        .target(
+            name: "DuneIIClient",
+            dependencies: [ "DuneIIContracts", "DuneIIFormats", "DuneIIWorld", "DuneIISimulation",
+                            "DuneIIRenderer", "DuneIIInput", "DuneIIAudio" ],
+            path: "Frameworks/DuneIIClient",
+            exclude: [ "CLAUDE.md" ]
+        ),
+
         // Tools (command-line).
         .executableTarget(
             name: "assetgen",
@@ -123,7 +136,7 @@ let package = Package(
         // windows (minimap, inspector, economy, debug). Non-Catalyst (pivoted from Catalyst).
         .executableTarget(
             name: "duneii",
-            dependencies: [ "DuneIISimulation", "DuneIIWorld", "DuneIIFormats", "DuneIIRenderer", "DuneIIContracts", "DuneIIInput", "DuneIIAudio" ],
+            dependencies: [ "DuneIIClient" ],
             path: "Apps/duneii"
         ),
         .executableTarget(

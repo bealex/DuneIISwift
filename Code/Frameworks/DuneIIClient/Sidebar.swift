@@ -1,4 +1,3 @@
-import AppKit
 import CoreGraphics
 import DuneIIContracts
 import DuneIIFormats
@@ -125,15 +124,25 @@ struct ActionIcon: View {
 /// The in-game sidebar: a fixed 200pt right column — radar, house + economy, the current selection (sprite,
 /// HP, command icons), a build/order list for a selected factory/starport, and a bottom button row
 /// (Mentat / Options / Save / Load). Replaces the old floating Inspector + Economy + Minimap tool windows.
-struct GameSidebar: View {
+public struct GameSidebar: View {
     @State var model: GameModel
+    /// Save/Load are platform-specific (macOS `NSSavePanel` ↔ iOS `UIDocumentPicker`), so the app shell
+    /// injects them. Everything else is shared.
+    let onSave: () -> Void
+    let onLoad: () -> Void
     @State private var sprites = SpriteImageProvider()
     @State private var showOptions = false
     @State private var showMentat = false
 
     private let columns = [GridItem(.adaptive(minimum: 44), spacing: 6, alignment: .leading)]
 
-    var body: some View {
+    public init(model: GameModel, onSave: @escaping () -> Void, onLoad: @escaping () -> Void) {
+        _model = State(initialValue: model)
+        self.onSave = onSave
+        self.onLoad = onLoad
+    }
+
+    public var body: some View {
         VStack(spacing: 0) {
             MinimapView(model: model).frame(height: 184)
             Divider()
@@ -341,8 +350,8 @@ struct GameSidebar: View {
                           disabled: model.selection == nil) { showMentat = true }
             sidebarButton("gearshape.fill", help: "Options") { showOptions = true }
                 .popover(isPresented: $showOptions, arrowEdge: .top) { OptionsPopover(model: model) }
-            sidebarButton("square.and.arrow.down", help: "Save game…") { presentSaveGame(model) }
-            sidebarButton("folder", help: "Load game…") { presentLoadGame(model) }
+            sidebarButton("square.and.arrow.down", help: "Save game…") { onSave() }
+            sidebarButton("folder", help: "Load game…") { onLoad() }
         }
         .padding(6)
     }

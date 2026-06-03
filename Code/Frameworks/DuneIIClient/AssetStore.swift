@@ -6,9 +6,9 @@ import Foundation
 /// `ICON.MAP`), the palette (`IBM.PAL`), the unit sprite SHPs, sounds (VOC), and the scenario list.
 @MainActor
 @Observable
-final class AssetStore {
-    let installURL: URL
-    private(set) var error: String?
+public final class AssetStore {
+    public let installURL: URL
+    public private(set) var error: String?
 
     private var archives: [Pak.Archive] = []
     private(set) var palette = AssetStore.grayscale
@@ -16,7 +16,7 @@ final class AssetStore {
     private(set) var tileSet: Icn.TileSet?
     private var shpCache: [String: Shp.FrameSet] = [:]
 
-    private(set) var scenarioNames: [String] = []
+    public private(set) var scenarioNames: [String] = []
 
     static let grayscale: Palette = {
         var colors: [Palette.Color] = []
@@ -24,7 +24,7 @@ final class AssetStore {
         return Palette(colors: colors)
     }()
 
-    init(installURL: URL) {
+    public init(installURL: URL) {
         self.installURL = installURL
         load()
     }

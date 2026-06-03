@@ -1,8 +1,9 @@
 import AppKit
+import DuneIIClient
 import SwiftUI
 
-/// Dune II — the native macOS game client (non-Catalyst). A SwiftUI main map window + floating AppKit tool
-/// windows (minimap, selection, economy, debug). Run from `Code/`:
+/// Dune II — the native macOS game client (non-Catalyst). A SwiftUI main map window + an in-window
+/// `GameSidebar` (radar, selection, build, economy). Run from `Code/`:
 ///   `swift run duneii [installDir]`  (installDir defaults to the bundled install).
 @main
 struct DuneIIApp: App {

@@ -5,12 +5,12 @@ import SwiftUI
 /// The scenario chooser popover: house tabs across the top, the chosen house's scenarios grouped by campaign
 /// level below. Picking one loads it — which also sets the campaign level that gates its tech tree (derived
 /// from the mission number). Replaces the old two-control "scenario menu + campaign picker" toolbar.
-struct ScenarioPicker: View {
+public struct ScenarioPicker: View {
     @State var model: GameModel
     @Binding var isPresented: Bool
     @State private var house: HouseID
 
-    init(model: GameModel, isPresented: Binding<Bool>) {
+    public init(model: GameModel, isPresented: Binding<Bool>) {
         _model = State(initialValue: model)
         _isPresented = isPresented
         // Open on the current scenario's house (or Atreides if none/unparseable).
@@ -18,7 +18,7 @@ struct ScenarioPicker: View {
         _house = State(initialValue: current?.house ?? .atreides)
     }
 
-    var body: some View {
+    public var body: some View {
         let catalog = model.scenarioCatalog
         let houses = HouseID.allCases.filter { h in catalog.contains { $0.house == h } }
         let forHouse = catalog.filter { $0.house == house }
