@@ -168,18 +168,20 @@ struct ActionIcon: View {
 
     var body: some View {
         Button(action: action) {
+            // A fixed square content box + a circular border shape → every command icon is an identical
+            // circle, regardless of its symbol's intrinsic width.
             Image(systemName: systemImage)
-                .frame(width: 38, height: 28)
+                .frame(width: 30, height: 30)
                 .overlay(alignment: .bottomTrailing) {
                     if let badge {
                         Text(badge).font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
                             .padding(.horizontal, 2)
                             .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 2))
-                            .padding(1)
                     }
                 }
         }
-        .buttonStyle(.bordered).tint(active ? .accentColor : nil).disabled(disabled).help(help)
+        .buttonStyle(.bordered).buttonBorderShape(.circle)
+        .tint(active ? .accentColor : nil).disabled(disabled).help(help)
     }
 }
 
