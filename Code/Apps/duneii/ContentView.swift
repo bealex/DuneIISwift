@@ -9,7 +9,6 @@ import SwiftUI
 struct ContentView: View {
     @State var model: GameModel
     @State private var tools: ToolWindowManager
-    @State private var openedDefaults = false
     @State private var showScenarioPicker = false
 
     init(model: GameModel) {
@@ -18,12 +17,14 @@ struct ContentView: View {
     }
 
     var body: some View {
-        MapSpriteView(scene: model.scene)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.black)
-            // Note: no `.ignoresSafeArea()` — that drew the map up *under* the toolbar (it sits in the
-            // title-bar safe area), so the map now fills the area below the toolbar.
-            .toolbar {
+        HStack(spacing: 0) {
+            mapArea
+            Divider()
+            GameSidebar(model: model)
+        }
+        // Note: no `.ignoresSafeArea()` — that drew the map up *under* the toolbar (it sits in the
+        // title-bar safe area), so the map now fills the area below the toolbar.
+        .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Button { showScenarioPicker.toggle() } label: {
                         Label(model.scenarioTitle, systemImage: "map")
@@ -58,15 +59,16 @@ struct ContentView: View {
                     .help("Game speed")
                     .disabled(model.paused)
                 }
-                ToolbarItemGroup(placement: .automatic) {
-                    ForEach(ToolKind.allCases) { kind in
-                        Button { tools.toggle(kind) } label: { Image(systemName: kind.symbol) }
-                            .help("Toggle the \(kind.title) window")
-                            .foregroundStyle(model.openTools.contains(kind) ? Color.accentColor : Color.primary)
-                    }
-                }
             }
             .background(WindowAccessor { window in tools.attachToMain(window) })
+    }
+
+    /// The map fills the window to the left of the sidebar (black where the world doesn't reach); the
+    /// transient banners (asset error, victory/defeat, notices) are overlaid on it, not the sidebar.
+    private var mapArea: some View {
+        MapSpriteView(scene: model.scene)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black)
             .overlay(alignment: .top) {
                 if let error = model.assets.error, !error.isEmpty {
                     Text(error).font(.callout).padding(8).background(.red.opacity(0.85)).foregroundStyle(.white)
@@ -100,7 +102,6 @@ struct ContentView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: model.notice)
-            .onAppear { if !openedDefaults { tools.openDefaults(); openedDefaults = true } }
     }
 
     private func saveGame() { presentSaveGame(model) }

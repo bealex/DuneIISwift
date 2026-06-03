@@ -1015,6 +1015,7 @@ final class GameModel {
                     }
                 }
                 return SelectionInfo(kind: .unit, name: type.displayName, house: house.displayName,
+                                     typeRaw: UInt16(type.rawValue), houseID: house,
                                      isPlayer: house == playerHouse, state: stateText, hitpoints: Int(u.o.hitpoints),
                                      hitpointsMax: Int(UnitInfo[type].o.hitpoints), tileX: p % 64, tileY: p / 64,
                                      unitActions: actions)
@@ -1025,6 +1026,7 @@ final class GameModel {
                 let house = HouseID(rawValue: Int(s.o.houseID)) ?? .harkonnen
                 let p = Int(s.o.position.packed)
                 return SelectionInfo(kind: .structure, name: type.displayName, house: house.displayName,
+                                     typeRaw: UInt16(type.rawValue), houseID: house,
                                      isPlayer: house == playerHouse, state: Self.structureState(s),
                                      hitpoints: Int(s.o.hitpoints),
                                      // Base HP as the max (matching OpenDUNE's health bar), not the
@@ -1137,6 +1139,10 @@ struct SelectionInfo: Equatable {
     enum Kind: Equatable { case unit, structure }
     var kind: Kind
     var name: String, house: String
+    /// The selected entity's `UnitType.rawValue` / `StructureType.rawValue` (per `kind`) and owning house —
+    /// so the sidebar can render its sprite (house-recoloured). `name` is the display string for that type.
+    var typeRaw: UInt16 = 0
+    var houseID: HouseID = .harkonnen
     var isPlayer: Bool
     /// What the entity is currently doing — a unit's action ("Move", "Attack", "Guard", "Harvest", …) or a
     /// structure's activity ("Building", "Working", "Idle", …).

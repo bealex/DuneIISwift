@@ -12,7 +12,7 @@ struct DuneIIApp: App {
     var body: some Scene {
         WindowGroup("Dune II") {
             ContentView(model: model)
-                .frame(minWidth: 800, minHeight: 600)
+                .frame(minWidth: 1000, minHeight: 600)
         }
         .commands {
             // Save / Load in the File menu (⌘S / ⌘O), alongside the toolbar buttons.
