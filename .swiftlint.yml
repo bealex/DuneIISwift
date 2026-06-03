@@ -13,6 +13,7 @@ included:
   - Code/Tests
 
 excluded:
+  - "**/.build"           # any SwiftPM build dir (incl. checked-out deps like swift-syntax under tools)
   - Code/.build
   - Repositories          # OpenDUNE / dunepak references — not our code
   - SwiftOPL3             # separate vendored package with its own conventions
@@ -44,6 +45,13 @@ switch_case_alignment:
 
 trailing_comma:
   mandatory_comma: true         # require trailing commas on multiline collections (matches swift-format)
+
+opening_brace:
+  # swift-format owns brace placement and puts `{` on its own line after a wrapped multi-line condition /
+  # signature / type header. Don't fight that; still enforce the brace for the normal single-line case.
+  ignore_multiline_statement_conditions: true
+  ignore_multiline_function_signatures: true
+  ignore_multiline_type_headers: true
 
 # ── Metrics ───────────────────────────────────────────────────────────────────
 line_length:
