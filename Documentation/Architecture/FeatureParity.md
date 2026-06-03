@@ -274,6 +274,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | Feature | Status | Evidence / note |
 |---|---|---|
 | `GameLoop_Team` + `isAIActive` gate | ✅ | `Simulation` |
+| **`isAIActive` set on first enemy contact** (not at load) | ✅ | `unitHouseUnitCountAdd` (`Unit_HouseUnitCount_Add`, unit.c:2657) wakes both houses on a non-winger sighting, driven by the fog/visibility path (`unitUpdateMap`/`mapUnveilTile`). The live game passes `loadScenario(activateTeamHousesAI: false)` so AI economy/rebuild/house-missile stay dormant until the player meets the enemy — matching OpenDUNE's real game. The parity harness/goldens keep the load-time pin (default `true`), mirroring the `parity.c` oracle's `Scen_LoadTeam` (it doesn't tick fog). `TeamCreateTests` |
 | `Team_Create`, `[TEAMS]` loading | ✅ | `GameState+Pools` / `ScenarioLoader` |
 | Full team script table (recruit/target/order/load) | ✅ | `TeamScriptRunner` (§E) |
 | Team order natives reach units (move/guard/attack) | ✅ | exercised end-to-end (`TeamLoopTests`) |

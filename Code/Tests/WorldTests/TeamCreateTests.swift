@@ -77,5 +77,34 @@ struct TeamCreateTests {
         #expect(guardTeam.houseID == UInt8(HouseID.ordos.rawValue))
         #expect(guardTeam.movementType == UInt16(MovementType.foot.rawValue))
         #expect(guardTeam.script.scriptPC == 50)           // offsets[Guard=4]
+        // The default (parity harness) pins each team's house `isAIActive` at load — mirroring `parity.c`.
+        #expect(state.houses[Int(HouseID.harkonnen.rawValue)].flags.contains(.isAIActive))
+        #expect(state.houses[Int(HouseID.ordos.rawValue)].flags.contains(.isAIActive))
+    }
+
+    /// The live game passes `activateTeamHousesAI: false`: a `[TEAMS]` house is **not** woken at load. Like
+    /// OpenDUNE's real game, it stays dormant (no production / rebuild / house-missile) until it makes contact
+    /// with an enemy — which the fog/visibility path (`unitHouseUnitCountAdd`) sets later. This is the fix for
+    /// the AI assaulting the player base far too early.
+    @Test("activateTeamHousesAI:false leaves [TEAMS] houses dormant until contact")
+    func gameModeLeavesTeamHousesDormant() throws {
+        var root = URL(fileURLWithPath: #filePath)
+        for _ in 0 ..< 4 { root.deleteLastPathComponent() }
+        let iconMap = try IconMap(Data(contentsOf: root.appendingPathComponent("Resources/Tiles/Maps/ICON.MAP")))
+        let ini = Ini(text: """
+        [BASIC]
+        MapScale=1
+        [MAP]
+        Seed=1
+        [TEAMS]
+        Team1=Harkonnen,Kamikaze,Wheeled,2,5
+        """)
+        var state = GameState()
+        state.loadScenario(ini: ini, iconMap: iconMap, teamScriptOffsets: [10, 20, 30, 40, 50],
+                           activateTeamHousesAI: false)
+        // The team was still created…
+        #expect(state.teams.contains { $0.flags.contains(.used) && $0.houseID == UInt8(HouseID.harkonnen.rawValue) })
+        // …but its house is NOT pinned AI-active.
+        #expect(!state.houses[Int(HouseID.harkonnen.rawValue)].flags.contains(.isAIActive))
     }
 }

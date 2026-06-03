@@ -191,8 +191,8 @@ struct MinimapView: View {
             .frame(width: side, height: side)
             .background(.black)
         }
+        .frame(maxWidth: .infinity)
         .aspectRatio(1, contentMode: .fit)
-        .padding(8)
     }
 }
 

@@ -107,6 +107,31 @@ struct StructureBuildTests {
         #expect(unlocked?.isAvailable == true)
     }
 
+    /// `isCampaignGated` tags the items the GUI hides (any `.campaign` blocker present); a purely
+    /// prerequisite-locked item is not gated, so it stays visible (greyed). This is the filter the client
+    /// applies to `buildOptions`.
+    @Test("isCampaignGated flags campaign-locked items but not prerequisite-locked ones")
+    func isCampaignGatedTagsCampaignLocks() {
+        var s = GameState(); s.playerHouseID = 0
+        _ = s.houseAllocate(index: 0)
+        // Heavy Factory's prerequisites are all built, so its only block is the low campaign level → gated.
+        s.houses[0].structuresBuilt =
+            (1 << StructureType.windtrap.rawValue) | (1 << StructureType.outpost.rawValue) | (1 << StructureType.lightVehicle.rawValue)
+        s.campaignID = 1
+        let cy = addFactory(&s, .constructionYard)
+        let sm = Simulation(state: s, scriptInfo: info)
+        let options = sm.buildOptions(forStructure: cy)
+        let heavy = options.first { $0.item.objectType == UInt16(StructureType.heavyVehicle.rawValue) }
+        #expect(heavy?.isCampaignGated == true)
+        // The windtrap is available from campaign 1 with no prerequisites → not gated.
+        let windtrap = options.first { $0.item.objectType == UInt16(StructureType.windtrap.rawValue) }
+        #expect(windtrap?.isCampaignGated == false)
+        // The client filter (drop campaign-gated rows) removes Heavy Factory but keeps available items.
+        let shown = options.filter { !$0.isCampaignGated }
+        #expect(!shown.contains { $0.item.objectType == UInt16(StructureType.heavyVehicle.rawValue) })
+        #expect(shown.contains { $0.isAvailable })
+    }
+
     /// A locked item enumerates its missing prerequisite structures (in bit order), with no campaign blocker
     /// when the campaign is high enough.
     @Test("a locked construction-yard item lists its missing prerequisite structures")
@@ -120,6 +145,28 @@ struct StructureBuildTests {
         let heavy = sm.buildOptions(forStructure: cy).first { $0.item.objectType == UInt16(StructureType.heavyVehicle.rawValue) }
         #expect(heavy?.isAvailable == false)
         #expect(heavy?.blockers == [.structure(.lightVehicle), .structure(.windtrap), .structure(.outpost)])
+    }
+
+    /// `armPlacedFactoryUpgrades` (the client's post-load fixup that the hand-rolled scenario loader skips):
+    /// a **player** factory gets `upgradeTimeLeft = 100` so the GUI offers Upgrade; an **AI** factory is taken
+    /// straight to its max upgrade level with `upgradeTimeLeft = 0`. (A CY's first upgrade unlocks at
+    /// `campaignID >= 3`, so campaign 5 here.)
+    @Test("armPlacedFactoryUpgrades arms a player CY and maxes an AI CY")
+    func armsPlacedFactoryUpgrades() {
+        var s = GameState(); s.playerHouseID = 0
+        _ = s.houseAllocate(index: 0); _ = s.houseAllocate(index: 1)
+        s.campaignID = 5
+        let playerCY = addFactory(&s, .constructionYard, house: 0)
+        let aiCY = addFactory(&s, .constructionYard, house: 1)
+        // Loader-style init leaves the upgrade unarmed (no Upgrade option) — the bug this fixes.
+        #expect(s.structures[playerCY].upgradeTimeLeft == 0)
+        s.armPlacedFactoryUpgrades()
+        // Player CY: armed for the GUI, level unchanged (the player upgrades manually).
+        #expect(s.structures[playerCY].upgradeTimeLeft == 100)
+        #expect(s.structures[playerCY].upgradeLevel == 0)
+        // AI CY: jumped straight to its max reachable level (≥1), no GUI arm.
+        #expect(s.structures[aiCY].upgradeLevel >= 1)
+        #expect(s.structures[aiCY].upgradeTimeLeft == 0)
     }
 
     @Test("buildState reports progress and readiness across a build")

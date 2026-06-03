@@ -24,6 +24,11 @@ struct RenderGoldenTests {
         // A sandworm straddling the rock/sand boundary — the shimmer displaces the high-contrast terrain
         // under its silhouette (CoreGraphics blur). A still capture is subtle (the in-game shimmer animates).
         .init("scena001-worm-t0", scenario: "SCENA001.INI", tick: 0, rect: (32, 19, 7, 7), worm: (35, 22)),
+        // The same worm with fog of war on: the shimmer must sample the **fog-free** terrain, so the worm
+        // silhouette shows a clean heat-haze — never the dithered fog-edge checkerboard (which the fogged
+        // terrain buffer bakes into still-`isUnveiled` edge tiles). Guards the fog-edge shimmer fix.
+        .init("scena001-worm-fog-t60", scenario: "SCENA001.INI", tick: 60, rect: (30, 20, 7, 7),
+              fog: true, worm: (33, 23)),
     ]
 
     static var recording: Bool { ProcessInfo.processInfo.environment["DUNEII_RENDER_RECORD"] != nil }

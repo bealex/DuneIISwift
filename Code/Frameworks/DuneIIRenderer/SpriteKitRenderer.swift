@@ -198,7 +198,13 @@ public final class SpriteKitRenderer {
             terrainNode.size = CGSize(width: side, height: side)
             terrainNode.position = CGPoint(x: side / 2, y: side / 2)
         }
-        terrainIndices = buffer                 // kept for the worm-shimmer terrain displacement
+        // The worm shimmer samples this terrain to displace it (heat-haze). It must sample the **fog-free**
+        // landscape: the fogged buffer bakes the dithered fog-edge sprite into edge tiles (which are still
+        // `isUnveiled`, so the shimmer's `veiled` predicate doesn't skip them) — sampling those paints the
+        // worm silhouette with the fog checkerboard. The worm's actual fog visibility is enforced separately
+        // (`isHiddenByFog` for the whole worm + the per-pixel `veiled` predicate for fully-veiled tiles), so a
+        // fog-free sample shows a clean shimmer over revealed/edge sand and nothing over hidden tiles.
+        terrainIndices = showFog ? FrameComposer.terrainBuffer(frame, source: source, showFog: false) : buffer
         baseline = frame.tiles.map(appearance)
         displayed = baseline
         windCells = []

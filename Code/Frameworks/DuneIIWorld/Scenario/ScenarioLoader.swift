@@ -44,7 +44,15 @@ public extension GameState {
     /// `BASIC/Seed`, set the map scale, activate the `[HOUSES]`, and place the `[UNITS]` and `[STRUCTURES]`.
     /// A pragmatic port of `Scenario_Load*` (`src/scenario.c`) — enough to populate a
     /// drawable/simulatable `GameState`.
-    mutating func loadScenario(ini: Ini, iconMap: IconMap, teamScriptOffsets: [UInt16] = []) {
+    ///
+    /// `activateTeamHousesAI` pins `isAIActive` on every house that owns a `[TEAMS]` entry, at load. In a real
+    /// game OpenDUNE does **not** do this — `isAIActive` is set when the AI first makes contact with an enemy
+    /// (`Unit_HouseUnitCount_Add`, which our fog/visibility path drives via `unitUpdateMap`/`mapUnveilTile`).
+    /// The parity harness (and the OpenDUNE `parity.c` oracle) pins it on because the harness doesn't tick fog,
+    /// so the golden default is `true`; the live game passes `false` so the AI stays dormant (no production /
+    /// rebuild / house-missile) until the player actually meets it — otherwise it attacks far too early.
+    mutating func loadScenario(ini: Ini, iconMap: IconMap, teamScriptOffsets: [UInt16] = [],
+                               activateTeamHousesAI: Bool = true) {
         tileIDs = TileIDs(iconMap: iconMap) ?? TileIDs()
         mapScale = UInt8(clamping: ini.integer(section: "BASIC", key: "MapScale"))
         scenario.winFlags = UInt16(clamping: ini.integer(section: "BASIC", key: "WinFlags"))
@@ -68,7 +76,7 @@ public extension GameState {
         }
         // `[TEAMS]` = "<House>,<TeamAction>,<MovementType>,<minMembers>,<maxMembers>" → `Team_Create`.
         for key in ini.keys(section: "TEAMS") {
-            loadTeam(ini.string(section: "TEAMS", key: key), offsets: teamScriptOffsets)
+            loadTeam(ini.string(section: "TEAMS", key: key), offsets: teamScriptOffsets, activateAI: activateTeamHousesAI)
         }
         // `[REINFORCEMENTS]` = "<index>=<House>,<UnitType>,<Location>,<timeBetween>[+]" → the timed-spawn table.
         for key in ini.keys(section: "REINFORCEMENTS") {
@@ -226,7 +234,7 @@ public extension GameState {
     /// `<House>,<TeamAction>,<MovementType>,<minMembers>,<maxMembers>` → `Team_Create` (`Scenario_Load_Team`).
     /// `offsets` is the team `ScriptInfo`'s per-action entry table; the team's action script is loaded to
     /// `offsets[teamAction]` (or left unloaded — `scriptNull` — when no team script is supplied).
-    private mutating func loadTeam(_ value: String?, offsets: [UInt16]) {
+    private mutating func loadTeam(_ value: String?, offsets: [UInt16], activateAI: Bool) {
         let parts = fields(value)
         guard parts.count >= 5,
               let house = HouseID.named(parts[0]),
@@ -238,9 +246,10 @@ public extension GameState {
         teamCreate(houseID: UInt8(house.rawValue), teamActionType: UInt8(action.rawValue),
                    movementType: UInt8(movement.rawValue), minMembers: minMembers, maxMembers: maxMembers,
                    scriptPC: scriptPC)
-        // Flag the team's house AI-active so `GameLoop_Team` runs it. In a real game the bit is set when the
-        // AI first sees an enemy; scenario load pins it on (mirroring the parity harness's Scen_LoadTeam).
-        houses[Int(house.rawValue)].flags.insert(.isAIActive)
+        // In a real game `isAIActive` is set when the AI first sees an enemy (`Unit_HouseUnitCount_Add`), not at
+        // load — so the live game passes `activateAI: false` and relies on the fog/contact path. The parity
+        // harness pins it on (it doesn't tick fog), mirroring the OpenDUNE `parity.c` oracle's `Scen_LoadTeam`.
+        if activateAI { houses[Int(house.rawValue)].flags.insert(.isAIActive) }
     }
 
     /// `Scenario_Load_Reinforcement` (`scenario.c:280`): `<index>=<House>,<UnitType>,<Location>,<timeBetween>[+]`.

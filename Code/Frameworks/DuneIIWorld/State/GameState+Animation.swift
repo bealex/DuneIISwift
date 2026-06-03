@@ -24,6 +24,14 @@ public extension GameState {
             map[pos].hasStructure = true
             map[pos].index = UInt8(truncatingIfNeeded: index + 1)
             map[pos].groundTileID = tile &+ s.rotationSpriteDiff
+            // A structure covers any *real* overlay (a missile crater / wall) sitting on its tiles, so clear it
+            // — otherwise the crater renders on top of the building (`Structure_UpdateMap`, `structure.c`:
+            // `if (Tile_IsUnveiled(t->overlayTileID)) t->overlayTileID = 0`). The fog-veil overlay run is left
+            // intact (`Tile_IsUnveiled` is false inside it).
+            let overlay = UInt16(map[pos].overlayTileID)
+            if overlay != 0, overlay > tileIDs.veiled || overlay < tileIDs.veiled &- 15 {
+                map[pos].overlayTileID = 0
+            }
         }
         mapDirty = true
 

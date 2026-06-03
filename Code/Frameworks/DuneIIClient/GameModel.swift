@@ -110,8 +110,22 @@ public final class GameModel {
     /// `GameScene.update`. 1× ≈ the base 60-ticks/second cadence (one tick per drawn frame at 60 fps).
     public var gameSpeed: Double = 1
     /// Freeze the simulation (the two-clock pause — `Simulation.tick` no-ops while `state.paused`). The
-    /// camera, selection, and orders still work; only game time stops.
-    public var paused = false { didSet { simulation?.state.paused = paused; paused ? music.pause() : music.resume() } }
+    /// camera, selection, and orders still work; only game time stops. The **effective** pause: the player's
+    /// own pause (`userPaused`) OR any open UI surface (`uiPauseCount` — a save/load dialog, the options or
+    /// mentat popover). Read-only outside; drive it via `togglePause`/`beginUIPause`/`endUIPause`.
+    public private(set) var paused = false { didSet {
+        guard paused != oldValue else { return }
+        simulation?.state.paused = paused
+        paused ? music.pause() : music.resume()
+    } }
+    /// The player's manual pause (space bar / game over) — what the game returns to when every transient UI
+    /// surface closes.
+    @ObservationIgnored private var userPaused = false
+    /// How many UI surfaces currently want the game frozen (balanced `beginUIPause`/`endUIPause`); the game is
+    /// paused while any are open, then resumes to `userPaused`.
+    @ObservationIgnored private var uiPauseCount = 0
+    /// Recompute the effective pause from the player's pause + open UI surfaces.
+    private func applyPause() { paused = userPaused || uiPauseCount > 0 }
     /// The latched level outcome (`GameLoop_IsLevelFinished`). `playing` until a Win/Lose condition is met,
     /// then `won`/`lost`; the client shows a banner + pauses. Reset to `playing` on each scenario/save load.
     private(set) var gameEnd: GameEndState = .playing
@@ -146,8 +160,15 @@ public final class GameModel {
     private(set) var playerCredits = 0
     /// Repair/upgrade availability for the selected player structure (nil = not a player structure).
     private(set) var structureActions: StructureActions?
-    /// In-stock orderable units for a selected player starport (CHOAM buy), priced via `starportPrice`.
-    private(set) var starportStock: [Buildable] = []
+    /// Whether the current selection is a player-owned starport (so the sidebar shows the CHOAM order panel).
+    private(set) var isStarportSelected = false
+    /// Orderable units for a selected player starport (CHOAM buy): each carries its rolled price + live stock.
+    private(set) var starportStock: [StarportItem] = []
+    /// The staged CHOAM order ("cart"): unit type → quantity. Built up with `cartAdd`/`cartRemove`, then
+    /// dispatched as a batch by `sendStarportOrder` (or discarded by `clearStarportCart`). Charged on send.
+    private(set) var starportCart: [UInt16: Int] = [:]
+    /// The player house's in-flight starport delivery (frigate-arrival countdown), or nil if none is pending.
+    private(set) var starportDelivery: StarportDelivery?
     /// The starport slot whose CHOAM prices are currently rolled (so the per-tick refresh re-uses them
     /// instead of re-rolling), and the prices by unit type.
     @ObservationIgnored private var pricedStarport: Int?
@@ -183,6 +204,13 @@ public final class GameModel {
 
     // MARK: - Loading
 
+    /// The canonical late-game CHOAM stock (the standard install's `SCEN?020` `[CHOAM]` list), seeded on a
+    /// scenario that carries no `[CHOAM]` section of its own so a built starport is always orderable.
+    private static let defaultChoamStock: [(UnitType, Int16)] = [
+        (.trike, 5), (.quad, 5), (.tank, 5), (.siegeTank, 4), (.launcher, 4),
+        (.harvester, 2), (.mcv, 2), (.carryall, 2), (.ornithopter, 3),
+    ]
+
     func load(_ scenarioName: String) {
         guard let ini = assets.scenarioINI(scenarioName), let iconMap = assets.iconMap else { return }
         unitScript = assets.data("UNIT.EMC").flatMap { try? Emc.Program($0) }.map { ScriptInfo($0) }
@@ -191,7 +219,11 @@ public final class GameModel {
         var state = GameState()
         state.aiFogOfWar = aiFogOfWar   // before unit placement, so the player units honour the AI-fog mask
         state.enforceUnitLimit = enforceUnitLimit
-        state.loadScenario(ini: ini, iconMap: iconMap)
+        // Don't pin the AI houses active at load (that's a parity-harness shortcut). Like OpenDUNE's real game,
+        // each AI house wakes (`isAIActive`) only when it first makes contact with an enemy — driven by our
+        // fog/visibility path (`unitUpdateMap`/`mapUnveilTile` → `unitHouseUnitCountAdd`). Pinning it on made the
+        // AI ramp its economy + launch house missiles from tick 0, so it assaulted the player base far too early.
+        state.loadScenario(ini: ini, iconMap: iconMap, activateTeamHousesAI: false)
         // The mission level (gates build availability + the upgrade chain) — derived from the scenario's file
         // number, since the `.INI` itself doesn't carry it. SCENA001 ⇒ campaign 1, SCENx020+ ⇒ campaign 8, etc.
         campaignLevel = ScenarioID(fileName: scenarioName)?.campaign ?? 1
@@ -212,6 +244,19 @@ public final class GameModel {
         // player's own house missile on the palace's first tick. Set on the *chosen* player house, since it can
         // differ from any Brain=Human the loader saw (the fallbacks above).
         state.houses[Int(playerHouse.rawValue)].flags.insert(.human)
+        // Arm placed factories' upgrade state (the loader hand-rolls structure init and skips it) — now that
+        // campaignID + playerHouseID are set, both of which gate `structureIsUpgradable`. Without this a loaded
+        // construction yard never offers the Upgrade option. Mirrors `Structure_Create` at scenario load.
+        state.armPlacedFactoryUpgrades()
+        // Verification affordance: a real late-game scenario seeds the starport's CHOAM stock from its `[CHOAM]`
+        // section, but early maps carry none — so a starport built there (the campaign-level picker can unlock
+        // one early) has an empty order list. Seed the canonical CHOAM set when the scenario provided nothing,
+        // so CHOAM ordering is always exercisable. Client-only; the parity `loadScenario` path is untouched.
+        if state.starportAvailable.allSatisfy({ $0 == 0 }) {
+            for (type, stock) in Self.defaultChoamStock where type.rawValue < state.starportAvailable.count {
+                state.starportAvailable[type.rawValue] = stock
+            }
+        }
         state.viewportPosition = Tile32.packXY(x: 32, y: 32)
 
         if let unitScript {
@@ -236,7 +281,8 @@ public final class GameModel {
         currentScenario = scenarioName
         playerHouse = HouseID(rawValue: Int(state.playerHouseID)) ?? .atreides
         registerHouseVoices()      // the player-house announcement voices (the prefix can change per scenario)
-        paused = state.paused      // fresh scenario ⇒ false; a restored save ⇒ its saved pause
+        userPaused = state.paused  // fresh scenario ⇒ false; a restored save ⇒ its saved pause
+        applyPause()               // keep any open UI surface's pause (e.g. the load dialog) in effect
         gameEnd = state.gameEndState
         // Reset the transient hint state so the new base doesn't false-fire build-complete / under-attack.
         wasLowPower = false; readyFactories = []
@@ -478,7 +524,7 @@ public final class GameModel {
         if end != gameEnd {
             gameEnd = end
             if end != .playing {
-                paused = true
+                userPaused = true; applyPause()
                 end == .won ? music.win(house: playerHouse) : music.lose(house: playerHouse)
             }
         }
@@ -533,7 +579,12 @@ public final class GameModel {
     }
 
     /// Toggle the pause (the toolbar button + spacebar).
-    public func togglePause() { paused.toggle() }
+    /// The player's manual pause toggle (space bar).
+    public func togglePause() { userPaused.toggle(); applyPause() }
+    /// Freeze the game while a transient UI surface is open (a save/load dialog, the options or mentat popover).
+    /// Balanced with `endUIPause`; nestable. The game resumes to the player's own pause once all close.
+    public func beginUIPause() { uiPauseCount += 1; applyPause() }
+    public func endUIPause() { if uiPauseCount > 0 { uiPauseCount -= 1 }; applyPause() }
 
     /// Player hints (`GUI_DisplayHint` family): a transient banner on construction-complete, low power, or
     /// out of funds. All derived from the player's economy + factory state each frame — no new sim events.
@@ -589,7 +640,10 @@ public final class GameModel {
         guard let slot = selectedStructureSlot, let sim = simulation,
               let type = StructureType(rawValue: Int(sim.state.structures[slot].o.type)) else {
             if structureActions != nil { structureActions = nil }
+            if isStarportSelected { isStarportSelected = false }
             if !starportStock.isEmpty { starportStock = [] }
+            if !starportCart.isEmpty { starportCart = [:] }
+            if starportDelivery != nil { starportDelivery = nil }
             if superWeapon != nil { superWeapon = nil }
             if missileTargeting != nil { missileTargeting = nil }   // selection gone ⇒ abandon a pending target-select
             return
@@ -615,27 +669,47 @@ public final class GameModel {
             isUpgrading: s.o.flags.contains(.upgrading))
         if actions != structureActions { structureActions = actions }
 
-        var stock: [Buildable] = []
+        if isStarportSelected != (type == .starport) { isStarportSelected = type == .starport }
+        var stock: [StarportItem] = []
         if type == .starport {
             // Roll fresh CHOAM prices once per starport selection (drawing the sim LCG, as opening the window
             // does in the original); re-use them on the per-tick refreshes so the list doesn't re-roll/flicker.
+            // A different starport selected ⇒ a fresh window: re-roll and drop any half-built order.
             if pricedStarport != slot {
                 pricedStarport = slot
                 starportPriceByType = [:]
+                starportCart = [:]
                 for t in sim.state.starportAvailable.indices where sim.state.starportAvailable[t] > 0 {
                     guard let ut = UnitType(rawValue: t) else { continue }
                     let base = UInt16(clamping: Int(UnitInfo[ut].o.buildCredits))
                     starportPriceByType[t] = simulation?.state.starportPrice(buildCredits: base) ?? base
                 }
             }
-            for t in sim.state.starportAvailable.indices where sim.state.starportAvailable[t] > 0 {
+            // Every type the starport ever stocked: `> 0` = in stock (orderable), `-1` = sold out (shown,
+            // greyed). `0` = never offered here (hidden), as in OpenDUNE (`g_starportAvailable` semantics).
+            for t in sim.state.starportAvailable.indices where sim.state.starportAvailable[t] != 0 {
                 guard let ut = UnitType(rawValue: t) else { continue }
                 let price = starportPriceByType[t] ?? UInt16(clamping: Int(UnitInfo[ut].o.buildCredits))
-                stock.append(Buildable(objectType: UInt16(t), isStructure: false,
-                                       cost: Int(price), buildTime: Int(UnitInfo[ut].o.buildTime)))
+                stock.append(StarportItem(objectType: UInt16(t), displayName: ut.displayName,
+                                          cost: Int(price), available: max(0, Int(sim.state.starportAvailable[t]))))
             }
-        } else if pricedStarport != nil {
-            pricedStarport = nil; starportPriceByType = [:]
+            // Drop any cart line whose type sold out from under it (e.g. the AI bought the last one). Guarded
+            // so the per-tick refresh doesn't churn observation when nothing changed.
+            let pruned = starportCart.filter { key, _ in stock.contains { $0.objectType == key && !$0.soldOut } }
+            if pruned != starportCart { starportCart = pruned }
+            // The player house's frigate-delivery countdown (a pending order ⇒ `starportLinkedID != 0xFFFF`).
+            let ph = Int(playerHouse.rawValue)
+            if ph < sim.state.houses.count, sim.state.houses[ph].starportLinkedID != 0xFFFF {
+                let total = Double(HouseInfo[playerHouse].starportDeliveryTime)
+                let left = Double(sim.state.houses[ph].starportTimeLeft)
+                let f = total > 0 ? max(0, min(1, (total - left) / total)) : 0
+                let d = StarportDelivery(fraction: f)
+                if starportDelivery != d { starportDelivery = d }
+            } else if starportDelivery != nil { starportDelivery = nil }
+        } else {
+            if pricedStarport != nil { pricedStarport = nil; starportPriceByType = [:] }
+            if !starportCart.isEmpty { starportCart = [:] }
+            if starportDelivery != nil { starportDelivery = nil }
         }
         if stock != starportStock { starportStock = stock }
     }
@@ -666,13 +740,65 @@ public final class GameModel {
         if s.o.flags.contains(.upgrading) { enqueue(.upgrade(structure: UInt16(slot))); acted = true }
         if acted { audio.play(.acknowledge) }
     }
-    /// Order one `objectType` from the selected starport (CHOAM buy).
+    /// Order one `objectType` from the selected starport (CHOAM buy). Immediate single order — used by the
+    /// legacy inspector panel; the sidebar uses the `cart*` batch API below.
     func orderFromStarport(_ objectType: UInt16) {
         guard let slot = selectedStructureSlot else { return }
         let price = starportPriceByType[Int(objectType)] ?? 0
         guard playerCredits >= Int(price) else { noticeInsufficientFunds(); return }
         enqueue(.starportOrder(structure: UInt16(slot), objectType: objectType, price: price))
         audio.play(.select)
+    }
+
+    // MARK: Starport order cart
+
+    /// The unit price for a starport item (the rolled CHOAM price), or its base cost if not yet rolled.
+    private func starportPrice(_ objectType: UInt16) -> Int {
+        Int(starportPriceByType[Int(objectType)] ?? UInt16(clamping: (UnitType(rawValue: Int(objectType)).map { Int(UnitInfo[$0].o.buildCredits) }) ?? 0))
+    }
+    /// Total units staged in the CHOAM cart.
+    var cartUnitCount: Int { starportCart.values.reduce(0, +) }
+    /// Total credits the staged cart would cost (charged on `sendStarportOrder`).
+    var cartTotalCost: Int { starportCart.reduce(0) { $0 + $1.value * starportPrice($1.key) } }
+    /// How many of `objectType` are staged in the cart.
+    func cartCount(_ objectType: UInt16) -> Int { starportCart[objectType] ?? 0 }
+    /// Whether one more of `item` can be staged: in stock (cart count below available) and the running total
+    /// stays within the player's credits (the order is charged on send, as a batch).
+    func canAddToCart(_ item: StarportItem) -> Bool {
+        !item.soldOut && cartCount(item.objectType) < item.available
+            && cartTotalCost + item.cost <= playerCredits
+    }
+    /// Stage one more `objectType` in the cart (no charge yet), if `canAddToCart`.
+    func cartAdd(_ objectType: UInt16) {
+        guard let item = starportStock.first(where: { $0.objectType == objectType }), canAddToCart(item) else {
+            if (starportStock.first { $0.objectType == objectType }).map({ cartCount(objectType) >= $0.available }) == true {
+                postNotice("Out of stock")
+            } else { noticeInsufficientFunds() }
+            return
+        }
+        starportCart[objectType, default: 0] += 1
+        audio.play(.select)
+    }
+    /// Remove one staged `objectType` from the cart.
+    func cartRemove(_ objectType: UInt16) {
+        guard let n = starportCart[objectType], n > 0 else { return }
+        if n == 1 { starportCart[objectType] = nil } else { starportCart[objectType] = n - 1 }
+        audio.play(.select)
+    }
+    /// Discard the whole staged order without ordering (nothing was charged).
+    func clearStarportCart() { if !starportCart.isEmpty { starportCart = [:]; audio.play(.select) } }
+    /// Dispatch the staged cart: one `.starportOrder` per unit (the sim charges + decrements stock + arms the
+    /// frigate-delivery countdown per unit, batching them into one delivery). Clears the cart.
+    func sendStarportOrder() {
+        guard let slot = selectedStructureSlot, cartUnitCount > 0 else { return }
+        for (objectType, count) in starportCart {
+            let price = UInt16(clamping: starportPrice(objectType))
+            for _ in 0 ..< count {
+                enqueue(.starportOrder(structure: UInt16(slot), objectType: objectType, price: price))
+            }
+        }
+        starportCart = [:]
+        audio.play(.acknowledge)
     }
 
     /// Fire the selected ready player palace's super-weapon. The death-hand arms a target click (resolved by
@@ -708,7 +834,10 @@ public final class GameModel {
             return
         }
         if !isFactorySelected { isFactorySelected = true }
-        let b = sim.buildOptions(forStructure: slot)
+        // Hide items the current campaign level hasn't unlocked yet (as the original does — they appear only
+        // once the mission reaches their tier). Prerequisite/upgrade-locked items stay, greyed, since they're
+        // reachable this mission.
+        let b = sim.buildOptions(forStructure: slot).filter { !$0.isCampaignGated }
         if b != buildOptions { buildOptions = b }
         let st = sim.buildState(structureSlot: slot)
         if st != buildProgress { buildProgress = st }
@@ -1072,6 +1201,23 @@ extension LandscapeType {
             case .bloomField:       "Spice bloom"
         }
     }
+}
+
+/// One orderable line in a selected starport's CHOAM list: the unit, its rolled CHOAM price, and the current
+/// stock (`available`; 0 = sold out). The per-order "cart" count is held separately in `GameModel.starportCart`
+/// so the list can refresh each tick without losing the staged order.
+struct StarportItem: Equatable {
+    var objectType: UInt16
+    var displayName: String
+    var cost: Int
+    var available: Int          // current stock (`g_starportAvailable`); 0 here = sold out (−1 in the sim)
+    var soldOut: Bool { available <= 0 }
+}
+
+/// A pending starport delivery for the player house: how far the frigate-arrival countdown
+/// (`House.starportTimeLeft` → `starportDeliveryTime`) has progressed. `fraction` 0 = just ordered, 1 = due.
+struct StarportDelivery: Equatable {
+    var fraction: Double
 }
 
 /// Repair/upgrade availability for the selected player structure (the inspector's structure-command buttons).

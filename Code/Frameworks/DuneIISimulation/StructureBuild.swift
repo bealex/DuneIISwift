@@ -82,6 +82,14 @@ public struct BuildOption: Sendable, Equatable {
 
     /// Buildable right now (ignoring credits)?
     public var isAvailable: Bool { blockers.isEmpty }
+
+    /// Locked because the active campaign (mission) level is below the item's threshold. The original game
+    /// doesn't list such items at all — they only appear once the campaign reaches their tier — so the GUI
+    /// hides these rather than greying them out (a prerequisite/upgrade lock is achievable this mission and
+    /// stays visible). True iff any blocker is a `.campaign` gate.
+    public var isCampaignGated: Bool {
+        blockers.contains { if case .campaign = $0 { true } else { false } }
+    }
 }
 
 /// The build-GUI queries the simulation needs (read-only, no mutation): what a factory can build, how a

@@ -200,6 +200,8 @@ public struct GameSidebar: View {
     @State private var sprites = SpriteImageProvider()
     @State private var showOptions = false
     @State private var showMentat = false
+    /// The locked build row whose "what's needed" popover is open (by object type), or nil.
+    @State private var requirementsFor: UInt16?
 
     /// True when the host window is full-screen (macOS) or there is no window chrome (iOS): the sidebar then
     /// goes black-on-white to blend with the black map. Windowed (macOS), it uses the system window
@@ -226,30 +228,36 @@ public struct GameSidebar: View {
     }
 
     public var body: some View {
+        let width: Double = 250
         VStack(spacing: 0) {
-            MinimapView(model: model).frame(height: 184)
-            Divider()
             header
-            Divider()
+            MinimapView(model: model)
+            selectionSection
+                .padding(6)
+
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    selectionSection
-                    buildSection
-                    Spacer(minLength: 0)
-                }
-                .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                buildSection
+                    .padding(.horizontal, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxHeight: .infinity)
+            .padding(.vertical, 6)
+
             Divider()
             bottomBar
         }
-        .frame(width: 200)
+        .frame(width: width)
         .background(sidebarBackground)
         // Full-screen: force a dark scheme so labels are white on the black sidebar. Windowed: keep the
         // inherited scheme so adaptive text stays readable on the system background.
         .environment(\.colorScheme, fullScreen ? .dark : systemScheme)
-        .sheet(isPresented: $showMentat) {
-            if let s = model.selection { MentatSheet(info: s, provider: sprites, assets: model.assets) }
+        .popover(isPresented: $showMentat, arrowEdge: .leading) {
+            MentatView(model: model, provider: sprites)
         }
+        // Freeze the game while the options popover or the mentat help is open, then resume to the player's
+        // own pause state (balanced begin/end so opening one while the other is up still resumes correctly).
+        .onChange(of: showOptions) { _, open in open ? model.beginUIPause() : model.endUIPause() }
+        .onChange(of: showMentat) { _, open in open ? model.beginUIPause() : model.endUIPause() }
     }
 
     // MARK: House + economy
@@ -261,11 +269,11 @@ public struct GameSidebar: View {
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
                 Text(model.playerHouse.displayName).font(.title3.bold())
-                Spacer()
                 if let mission {
                     Text("Mission \(mission)").font(.caption).foregroundStyle(.secondary)
                 }
             }
+
             // Credits and power each take half the width, centred within their half.
             HStack(spacing: 8) {
                 Label("\(model.playerCredits)", systemImage: "dollarsign.circle.fill")
@@ -276,7 +284,7 @@ public struct GameSidebar: View {
                     .help("Power produced / consumed")
                     .frame(maxWidth: .infinity)
             }
-            .font(.callout)
+            .font(.body.bold())
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).padding(.vertical, 8)
     }
@@ -285,9 +293,17 @@ public struct GameSidebar: View {
 
     @ViewBuilder private var selectionSection: some View {
         if let s = model.selection {
-            HStack(alignment: .top, spacing: 8) {
-                SpriteThumbnail(objectType: s.typeRaw, isStructure: s.kind == .structure, house: s.houseID,
-                                height: 44, provider: sprites, assets: model.assets)
+            HStack(alignment: .top, spacing: 12) {
+                SpriteThumbnail(
+                    objectType: s.typeRaw,
+                    isStructure: s.kind == .structure,
+                    house: s.houseID,
+                    height: 44,
+                    provider: sprites,
+                    assets: model.assets
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
                         Text(s.name).font(.headline).lineLimit(2).lineHeight(.tight)
@@ -304,8 +320,7 @@ public struct GameSidebar: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text("HP").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(s.hitpoints) / \(s.hitpointsMax)").font(.caption.monospacedDigit())
+                    Text("\(s.hitpoints) / \(s.hitpointsMax)").font(.caption.monospacedDigit()).frame(maxWidth: .infinity)
                 }
                 ProgressView(value: Double(s.hitpoints), total: Double(max(s.hitpointsMax, 1)))
                     .tint(hpTint(s.hitpoints, s.hitpointsMax))
@@ -355,60 +370,169 @@ public struct GameSidebar: View {
 
     @ViewBuilder private var buildSection: some View {
         if model.isFactorySelected {
-            Divider()
             if let bs = model.buildProgress {
                 buildProgress(bs)
             } else if model.buildOptions.isEmpty {
                 Text("Nothing available to build.").font(.caption).foregroundStyle(.secondary)
             } else {
-                // Every item this factory could build; locked ones greyed-out with a "what's missing" tooltip.
-                VStack(spacing: 4) {
+                // Every item this factory could build; locked ones stay greyed but clickable — a tap opens a
+                // "what's needed" popover (the hover tooltip says the same for mouse users).
+                VStack(spacing: 3) {
                     ForEach(model.buildOptions, id: \.item.objectType) { option in
                         let item = option.item
                         let underfunded = option.isAvailable && item.cost > model.playerCredits
-                        Button { model.startBuild(item.objectType) } label: {
-                            optionRow(objectType: item.objectType, isStructure: item.isStructure,
-                                      name: item.displayName, cost: item.cost, locked: !option.isAvailable,
-                                      underfunded: underfunded)
+
+                        Button {
+                            if option.isAvailable {
+                                model.startBuild(item.objectType)
+                            } else {
+                                requirementsFor = item.objectType
+                            }
+                        } label: {
+                            optionRow(
+                                objectType: item.objectType,
+                                isStructure: item.isStructure,
+                                name: item.displayName,
+                                cost: item.cost,
+                                locked: !option.isAvailable,
+                                underfunded: underfunded
+                            )
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.gray.opacity(option.isAvailable ? 0.2 : 0), in: RoundedRectangle(cornerRadius: 6))
                         }
-                        .buttonStyle(.bordered).frame(maxWidth: .infinity)
-                        .disabled(!option.isAvailable).help(buildHelp(option))
+                        .buttonStyle(.borderless)
+                        .frame(maxWidth: .infinity)
+                        .help(buildHelp(option))
+                        .popover(
+                            isPresented: Binding(get: { requirementsFor == item.objectType }, set: { if !$0 { requirementsFor = nil } }),
+                            arrowEdge: .leading
+                        ) {
+                            RequirementsPopover(name: item.displayName, blockers: option.blockers)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        if !model.starportStock.isEmpty {
+        if model.isStarportSelected {
             Divider()
             Text("Order (Starport)").font(.headline)
-            VStack(spacing: 4) {
-                ForEach(model.starportStock, id: \.objectType) { item in
-                    Button { model.orderFromStarport(item.objectType) } label: {
-                        optionRow(objectType: item.objectType, isStructure: item.isStructure,
-                                  name: item.displayName, cost: item.cost, locked: false,
-                                  underfunded: item.cost > model.playerCredits)
-                    }
-                    .buttonStyle(.bordered).frame(maxWidth: .infinity)
-                    .disabled(item.cost > model.playerCredits)
+            // A pending delivery: the frigate-arrival countdown (the original shows this only as the frigate
+            // flying in; we add a progress bar so the wait is legible).
+            if let d = model.starportDelivery {
+                VStack(alignment: .leading, spacing: 2) {
+                    Label("Frigate inbound…", systemImage: "airplane.arrival")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    ProgressView(value: d.fraction).tint(.yellow)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            if model.starportStock.isEmpty {
+                Text("No CHOAM stock.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 3) {
+                    ForEach(model.starportStock, id: \.objectType) { item in starportRow(item) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // The staged order: total + Order / Cancel (charged only on Order).
+                if model.cartUnitCount > 0 {
+                    HStack(spacing: 4) {
+                        Text("\(model.cartUnitCount)×").font(.caption.bold().monospacedDigit())
+                        Spacer(minLength: 0)
+                        Text("\(model.cartTotalCost) cr").font(.caption.monospacedDigit())
+                            .foregroundStyle(model.cartTotalCost > model.playerCredits ? Color.red : .secondary)
+                    }
+                    .padding(.top, 2)
+                    HStack(spacing: 6) {
+                        Button { model.sendStarportOrder() } label: {
+                            Label("Order", systemImage: "paperplane.fill").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.cartTotalCost > model.playerCredits)
+                        Button(role: .destructive) { model.clearStarportCart() } label: {
+                            Label("Clear", systemImage: "xmark").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
         }
     }
 
-    private func optionRow(objectType: UInt16, isStructure: Bool, name: String, cost: Int,
-                           locked: Bool, underfunded: Bool) -> some View {
+    /// One CHOAM order line: the unit thumbnail + name, its stock and price, and a −/＋ stepper that stages
+    /// the unit in the order cart. Greyed when sold out; the ＋ disables at the stock limit or when the running
+    /// cart total would exceed the player's credits.
+    @ViewBuilder private func starportRow(_ item: StarportItem) -> some View {
+        let count = model.cartCount(item.objectType)
         HStack(spacing: 6) {
-            SpriteThumbnail(objectType: objectType, isStructure: isStructure, house: model.playerHouse,
-                            height: 22, provider: sprites, assets: model.assets)
-                .frame(width: 30, alignment: .center)
-            // The title absorbs the slack (maxWidth .infinity) so the lock + cost pin to the trailing edge —
-            // every row is aligned on both the left (title) and right (cost) sides.
-            Text(name).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-            if locked { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary) }
-            Text("\(cost)").font(.caption.monospacedDigit()).foregroundStyle(underfunded ? Color.red : Color.secondary)
+            SpriteThumbnail(objectType: item.objectType, isStructure: false, house: model.playerHouse,
+                            height: 24, provider: sprites, assets: model.assets)
+                .frame(width: 24, height: 24)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+                .opacity(item.soldOut ? 0.4 : 1)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(item.displayName).font(.caption).lineLimit(1)
+                    .foregroundStyle(item.soldOut ? .secondary : .primary)
+                HStack(spacing: 3) {
+                    Text(item.soldOut ? "Sold out" : "\(item.available) left")
+                        .foregroundStyle(item.soldOut ? Color.red : .secondary)
+                    if !item.soldOut {
+                        Text("· \(item.cost)")
+                            .foregroundStyle(item.cost > model.playerCredits ? Color.red : .secondary)
+                    }
+                }
+                .font(.system(size: 9)).monospacedDigit()
+            }
+            Spacer(minLength: 0)
+            if count > 0 {
+                stepButton("minus") { model.cartRemove(item.objectType) }
+                Text("\(count)").font(.caption.monospacedDigit().bold()).frame(minWidth: 12)
+            }
+            stepButton("plus", disabled: !model.canAddToCart(item)) { model.cartAdd(item.objectType) }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func stepButton(_ systemImage: String, disabled: Bool = false,
+                            _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage).font(.system(size: 10, weight: .bold)).frame(width: 18, height: 18)
+        }
+        .buttonStyle(.bordered).buttonBorderShape(.circle).disabled(disabled)
+    }
+
+    private func optionRow(
+        objectType: UInt16, isStructure: Bool, name: String, cost: Int,
+        locked: Bool, underfunded: Bool
+    ) -> some View {
+        HStack(spacing: 6) {
+            // A fixed, leading-pinned square so every row's thumbnail occupies identical space and the title
+            // starts at the same x — the icon is left-aligned to the row, never centred in a wider column.
+            SpriteThumbnail(
+                objectType: objectType, isStructure: isStructure, house: model.playerHouse,
+                height: 39, provider: sprites, assets: model.assets
+            )
+            .frame(width: 39, height: 39)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .opacity(locked ? 0.45 : 1)
+
+            // The title absorbs the slack (maxWidth .infinity) so the lock + cost pin to the trailing edge —
+            // every row is aligned on both the left (title) and right (cost) sides. Locked rows are greyed
+            // (we no longer `.disabled` them, so they stay tappable for the requirements popover).
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 3) {
+                    Text(name)
+                        .font(.title3)
+                        .lineLimit(1)
+                        .foregroundStyle(locked ? .secondary : .primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if locked {
+                        Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+
+                Text("\(cost)").font(.caption.monospacedDigit()).foregroundStyle(underfunded ? Color.red : Color.secondary)
+            }
+        }
     }
 
     @ViewBuilder private func buildProgress(_ bs: BuildState) -> some View {
@@ -449,8 +573,7 @@ public struct GameSidebar: View {
     private var bottomBar: some View {
         // Four equal circular buttons, spread evenly across the column width.
         HStack(spacing: 0) {
-            sidebarButton("brain.head.profile", help: "Mentat — info on the selected unit/building",
-                          disabled: model.selection == nil) { showMentat = true }
+            sidebarButton("brain.head.profile", help: "Mentat — buildings, units, and house info") { showMentat = true }
             Spacer()
             sidebarButton("gearshape.fill", help: "Options") { showOptions = true }
                 .popover(isPresented: $showOptions, arrowEdge: .top) { OptionsPopover(model: model) }
@@ -488,13 +611,34 @@ public struct GameSidebar: View {
 
 // MARK: - Options popover
 
-/// The Options button's content: the game toggles (fog, health bars, AI fog, force-minimap, unit limit, …)
-/// — the same `DebugPanel` controls — plus a link to the macOS Settings window (audio).
+/// The Options button's content: the scenario chooser, the game speed, the game toggles (fog, health bars,
+/// AI fog, force-minimap, unit limit, …) — the same `DebugPanel` controls — plus a link to the macOS Settings
+/// window (audio). This is the only place the scenario is chosen now (there's no window toolbar).
 struct OptionsPopover: View {
     @State var model: GameModel
+    @State private var showScenario = false
 
     var body: some View {
         VStack(spacing: 0) {
+            Form {
+                LabeledContent("Scenario") {
+                    Button { showScenario = true } label: { Label(model.scenarioTitle, systemImage: "map") }
+                        .disabled(model.assets.scenarioNames.isEmpty)
+                        .popover(isPresented: $showScenario, arrowEdge: .leading) {
+                            ScenarioPicker(model: model, isPresented: $showScenario)
+                        }
+                }
+                Picker("Game speed", selection: Binding(get: { model.gameSpeed }, set: { model.gameSpeed = $0 })) {
+                    Text("0.5×").tag(0.5)
+                    Text("1×").tag(1.0)
+                    Text("2×").tag(2.0)
+                    Text("4×").tag(4.0)
+                }
+                .pickerStyle(.segmented)
+            }
+            .formStyle(.grouped)
+            .frame(height: 120)
+            Divider()
             DebugPanel(model: model)
             Divider()
             HStack {
@@ -503,53 +647,36 @@ struct OptionsPopover: View {
             }
             .padding(10)
         }
-        .frame(width: 310, height: 440)
+        .frame(width: 320, height: 540)
     }
 }
 
-// MARK: - Mentat info sheet
+// MARK: - Build requirements popover
 
-/// A lightweight "Mentat" info sheet for the selected unit/building: its sprite + key stats. (A stand-in for
-/// the original animated Mentat advisor screen.)
-struct MentatSheet: View {
-    let info: SelectionInfo
-    let provider: SpriteImageProvider
-    let assets: AssetStore
-    @Environment(\.dismiss) private var dismiss
+/// What a locked build item still needs, shown when the player taps its greyed row: one line per blocker
+/// (a missing prerequisite structure, or a required factory upgrade). Campaign-gated items are hidden from
+/// the list entirely, so they never reach this popover.
+struct RequirementsPopover: View {
+    let name: String
+    let blockers: [BuildBlocker]
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text(info.name).font(.title.bold())
-            SpriteThumbnail(objectType: info.typeRaw, isStructure: info.kind == .structure, house: info.houseID,
-                            height: 96, provider: provider, assets: assets)
-                .frame(height: 100)
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-                ForEach(stats, id: \.0) { row in
-                    GridRow {
-                        Text(row.0).foregroundStyle(.secondary)
-                        Text(row.1).monospacedDigit()
-                    }
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            Text(name).font(.headline)
+            Text(blockers.isEmpty ? "Available to build." : "Needs:").font(.caption).foregroundStyle(.secondary)
+            ForEach(Array(blockers.enumerated()), id: \.offset) { _, blocker in
+                Label(blocker.summary, systemImage: icon(for: blocker)).font(.callout)
             }
-            .font(.callout)
-            Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
         }
-        .padding(24).frame(width: 320)
+        .padding(14).frame(minWidth: 160, alignment: .leading)
     }
 
-    /// Key stats for the selected type, pulled from the stat tables.
-    private var stats: [(String, String)] {
-        var rows: [(String, String)] = [("House", info.house), ("Health", "\(info.hitpoints) / \(info.hitpointsMax)")]
-        if info.kind == .unit, let type = UnitType(rawValue: Int(info.typeRaw)) {
-            let u = UnitInfo[type]
-            if u.damage > 0 { rows.append(("Damage", "\(u.damage)")) }
-            if u.fireDistance > 0 { rows.append(("Range", "\(u.fireDistance)")) }
-        } else if info.kind == .structure, let type = StructureType(rawValue: Int(info.typeRaw)) {
-            let s = StructureInfo[type]
-            let power = Int(s.powerUsage)   // positive = consumed, negative = produced
-            if power != 0 { rows.append((power < 0 ? "Power produced" : "Power used", "\(abs(power))")) }
-            if s.creditsStorage > 0 { rows.append(("Spice storage", "\(s.creditsStorage)")) }
+    private func icon(for blocker: BuildBlocker) -> String {
+        switch blocker {
+            case .campaign:     "calendar"
+            case .structure:    "building.2.fill"
+            case .upgradeLevel: "arrow.up.circle"
         }
-        return rows
     }
 }
+

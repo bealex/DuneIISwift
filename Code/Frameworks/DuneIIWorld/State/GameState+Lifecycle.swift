@@ -592,6 +592,28 @@ public extension GameState {
         return false
     }
 
+    /// Arm the upgrade state of every **placed** factory the way `Structure_Create` (`structure.c:373`) does
+    /// when the original loads a scenario (`Scenario_Load_Structure` calls `Structure_Create`): a factory that
+    /// can still be upgraded gets `upgradeTimeLeft = 100` (so the GUI offers Upgrade), and an **AI**-owned
+    /// factory is taken straight to its maximum upgrade level (`while IsUpgradable { upgradeLevel++ }`, then
+    /// `upgradeTimeLeft = 0`). Our `ScenarioLoader.loadStructure` hand-rolls structure init and skips this, so
+    /// without this pass a loaded construction yard never shows the upgrade option. Must run **after**
+    /// `campaignID` + `playerHouseID` are set (both gate `structureIsUpgradable`), so the client calls it once
+    /// post-load rather than inside the parity-golden `loadScenario` path (which leaves those globals unset).
+    mutating func armPlacedFactoryUpgrades() {
+        for slot in structures.indices where structures[slot].o.flags.contains(.used) {
+            guard let st = StructureType(rawValue: Int(structures[slot].o.type)),
+                  StructureInfo[st].o.flags.contains(.factory) else { continue }
+            let houseID = structures[slot].o.houseID
+            if houseID == UInt8(HouseID.harkonnen.rawValue), st == .lightVehicle { structures[slot].upgradeLevel = 1 }
+            structures[slot].upgradeTimeLeft = structureIsUpgradable(slot) ? 100 : 0
+            if houseID != playerHouseID {
+                while structureIsUpgradable(slot) { structures[slot].upgradeLevel &+= 1 }
+                structures[slot].upgradeTimeLeft = 0
+            }
+        }
+    }
+
     /// The `tickStructure` body of `GameLoop_Structure` (`structure.c:53`, the `if (tickStructure)` block):
     /// one structure's per-tick build/repair economy, run every `AdjustToGameSpeed(30,15,60)` ticks. Three
     /// mutually-exclusive branches on the structure's flags:
