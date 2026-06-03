@@ -3,6 +3,7 @@ import CoreGraphics
 import DuneIIContracts
 import DuneIIFormats
 import DuneIIRenderer
+import DuneIIWorld
 import Foundation
 import SwiftUI
 
@@ -31,14 +32,18 @@ enum Minimap {
                 if showFog && !tile.isUnveiled { continue }
                 let index = source.terrainTile(tile.groundSpriteIndex).map { $0[min(centre, $0.count - 1)] } ?? 0
                 let c = palette.rgba8(Int(index))
-                rgba[o] = c.red; rgba[o + 1] = c.green; rgba[o + 2] = c.blue
+                rgba[o] = c.red
+                rgba[o + 1] = c.green
+                rgba[o + 2] = c.blue
             }
         }
         guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
-        return CGImage(width: n, height: n, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: n * 4,
-                       space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
-                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        return CGImage(
+            width: n, height: n, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: n * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+        )
     }
 
     /// The radar "tuning" animation (`STATIC.WSA`): the static-noise frames Dune II plays when radar comes
@@ -50,6 +55,13 @@ enum Minimap {
         return anim.frames.compactMap { rgbaImage(indices: $0, width: anim.width, height: anim.height, palette: palette) }
     }
 
+    /// A structure's tile footprint `(width, height)` — its minimap blip spans the whole footprint, not
+    /// just the top-left corner tile (`positionX/Y` is the corner). Mirrors `GameScene.structureFootprint`.
+    static func footprint(_ type: StructureType) -> (Int, Int) {
+        let layout = StructureLayoutInfo[StructureInfo[type].layout]
+        return (Int(layout.size.width), Int(layout.size.height))
+    }
+
     /// Build a `CGImage` from `width×height` row-major palette indices.
     static func rgbaImage(indices: [UInt8], width: Int, height: Int, palette: Palette) -> CGImage? {
         guard width > 0, height > 0, indices.count >= width * height else { return nil }
@@ -57,13 +69,17 @@ enum Minimap {
         for i in 0 ..< width * height {
             let c = palette.rgba8(Int(indices[i]))
             let o = i * 4
-            rgba[o] = c.red; rgba[o + 1] = c.green; rgba[o + 2] = c.blue; rgba[o + 3] = 255
+            rgba[o] = c.red
+            rgba[o + 1] = c.green
+            rgba[o + 2] = c.blue
+            rgba[o + 3] = 255
         }
         guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
-        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
-                       space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
-                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        return CGImage(
+            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
 }
 
@@ -83,20 +99,22 @@ struct MinimapView: View {
         let staticFrames = model.radarStaticFrames
         let staticIndex = model.radarStaticFrameIndex
         let radarOn = model.forceMinimap || model.radarActive
-        let showFog = model.showFog   // read here so the Canvas redraws when the fog toggle flips
+        let showFog = model.showFog  // read here so the Canvas redraws when the fog toggle flips
         GeometryReader { geo in
             let side = min(geo.size.width, geo.size.height)
-            let scale = side / Viewport.worldSize    // world points → minimap points
+            let scale = side / Viewport.worldSize  // world points → minimap points
             ZStack(alignment: .topLeading) {
                 Canvas { context, _ in
                     let rect = CGRect(x: 0, y: 0, width: side, height: side)
                     // Radar tuning in/out: the STATIC.WSA noise frame, stretched to fill.
                     if let staticIndex, staticIndex < staticFrames.count {
-                        context.draw(Image(decorative: staticFrames[staticIndex], scale: 1, orientation: .up), in: rect)
-                        return
+                        return context.draw(Image(decorative: staticFrames[staticIndex], scale: 1, orientation: .up), in: rect)
                     }
                     // Radar offline (no outpost / no power) and not force-enabled — a dark, empty screen.
-                    guard radarOn else { context.fill(Path(rect), with: .color(.black)); return }
+                    guard
+                        radarOn
+                    else { return context.fill(Path(rect), with: .color(.black)) }
+
                     if let base = model.minimapBase {
                         context.draw(Image(decorative: base, scale: 1, orientation: .up), in: rect)
                     } else {
@@ -108,24 +126,40 @@ struct MinimapView: View {
                         // unplayable corner, faithfully to OpenDUNE), which otherwise shows as a stray corner
                         // blip. `mapArea` is the same clip the base terrain uses.
                         let area = frame.mapArea
+                        // Blip placement + sizing both scale with the canvas: the 64-pixel-wide base image
+                        // (one pixel per tile) fills `side`, so one tile is `side / 64` points. World positions
+                        // are sub-tile units (256 per tile, `FrameComposer.imageX`), so a blip's point is
+                        // `positionX / 256 * tile`. A structure spans its full tile footprint; a unit dot is
+                        // ~0.7 tile — equal to the old fixed 2.5 points at the default panel size, now resizing.
+                        // (Note: `scale` = `side / worldSize` is points-per-*world-pixel*, used only for the
+                        // viewport rect below — it's 16× too small for tile-space blips, hence `tile` here.)
+                        let tile = side / 64
+                        let unitBlip = tile * (2.5 / 3.5)
                         // Buildings first (footprint-ish squares), then unit dots on top. Mine = bright, foes dim.
                         // Under fog (when shown), a blip on a still-veiled tile is hidden — the radar doesn't
                         // reveal what the player can't see (`isHiddenByFog`, same masking as the main map).
-                        for s in frame.structures where area.contains(tileX: s.positionX / 256, tileY: s.positionY / 256)
-                            && !FrameComposer.isHiddenByFog(frame, worldX: s.positionX, worldY: s.positionY, showFog: showFog) {
-                            let x = Double(s.positionX) * scale / 256
-                            let y = Double(s.positionY) * scale / 256
+                        for s in frame.structures
+                        where area.contains(tileX: s.positionX / 256, tileY: s.positionY / 256)
+                            && !FrameComposer.isHiddenByFog(frame, worldX: s.positionX, worldY: s.positionY, showFog: showFog)
+                        {
+                            let x = Double(s.positionX) * tile / 256
+                            let y = Double(s.positionY) * tile / 256
                             let mine = s.house == playerHouse
-                            context.fill(Path(CGRect(x: x, y: y, width: 3.5, height: 3.5)),
-                                         with: .color(mine ? .cyan : .orange))
+                            // Span the building's full tile footprint, not just its top-left corner tile.
+                            let (fw, fh) = Minimap.footprint(s.type)
+                            context.fill(
+                                Path(CGRect(x: x, y: y, width: Double(fw) * tile, height: Double(fh) * tile)),
+                                with: .color(mine ? .cyan : .orange)
+                            )
                         }
-                        for unit in frame.units where area.contains(tileX: unit.positionX / 256, tileY: unit.positionY / 256)
-                            && !FrameComposer.isHiddenByFog(frame, worldX: unit.positionX, worldY: unit.positionY, showFog: showFog) {
-                            let x = Double(unit.positionX) * scale / 256
-                            let y = Double(unit.positionY) * scale / 256
+                        for unit in frame.units
+                        where area.contains(tileX: unit.positionX / 256, tileY: unit.positionY / 256)
+                            && !FrameComposer.isHiddenByFog(frame, worldX: unit.positionX, worldY: unit.positionY, showFog: showFog)
+                        {
+                            let x = Double(unit.positionX) * tile / 256
+                            let y = Double(unit.positionY) * tile / 256
                             let mine = unit.house == playerHouse
-                            context.fill(Path(ellipseIn: CGRect(x: x - 1, y: y - 1, width: 2.5, height: 2.5)),
-                                         with: .color(mine ? .green : .red))
+                            context.fill(Path(ellipseIn: CGRect(x: x - unitBlip / 2, y: y - unitBlip / 2, width: unitBlip, height: unitBlip)), with: .color(mine ? .green : .red))
                         }
                     }
                     // The viewport rectangle.
@@ -187,7 +221,7 @@ final class MinimapMouseView: NSView {
     var onPoint: ((CGPoint) -> Void)?
     var onRightPoint: ((CGPoint) -> Void)?
 
-    override var isFlipped: Bool { true }   // top-left origin, matching the SwiftUI Canvas
+    override var isFlipped: Bool { true }  // top-left origin, matching the SwiftUI Canvas
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseDown(with event: NSEvent) { report(event) }
     override func mouseDragged(with event: NSEvent) { report(event) }
