@@ -207,7 +207,6 @@ public struct GameSidebar: View {
     let fullScreen: Bool
     @Environment(\.colorScheme) private var systemScheme
 
-    private let columns = [GridItem(.adaptive(minimum: 44), spacing: 6, alignment: .leading)]
 
     public init(model: GameModel, fullScreen: Bool = false,
                 onSave: @escaping () -> Void, onLoad: @escaping () -> Void) {
@@ -287,11 +286,10 @@ public struct GameSidebar: View {
         if let s = model.selection {
             HStack(alignment: .top, spacing: 8) {
                 SpriteThumbnail(objectType: s.typeRaw, isStructure: s.kind == .structure, house: s.houseID,
-                                height: 40, provider: sprites, assets: model.assets)
-                    .frame(width: 48, alignment: .center)
+                                height: 44, provider: sprites, assets: model.assets)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
-                        Text(s.name).font(.headline).lineLimit(1)
+                        Text(s.name).font(.headline).lineLimit(2).lineSpacing(0)
                         if model.selectedUnitCount > 1 {
                             Text("×\(model.selectedUnitCount)").font(.caption.bold())
                                 .padding(.horizontal, 5).padding(.vertical, 1)
@@ -318,29 +316,35 @@ public struct GameSidebar: View {
         }
     }
 
+    /// Command icons in a single row, distributed evenly across the width (each takes an equal share and
+    /// centres its circle) — works for any number of buttons.
     @ViewBuilder private func actionIcons(_ s: SelectionInfo) -> some View {
         if !s.unitActions.isEmpty {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+            HStack(spacing: 0) {
                 ForEach(s.unitActions, id: \.self) { a in
                     ActionIcon(systemImage: a.type.systemImage, badge: a.type.shortcut,
                                active: a.targeted && model.pendingOrder == a.type.orderKind,
                                help: a.label) { model.issue(a) }
+                        .frame(maxWidth: .infinity)
                 }
             }
         }
         if model.structureActions != nil || model.superWeapon != nil {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+            HStack(spacing: 0) {
                 if let sa = model.structureActions {
                     ActionIcon(systemImage: "wrench.and.screwdriver", badge: "R", active: sa.isRepairing,
                                help: sa.isRepairing ? "Stop repairing (R)" : "Repair (R)",
                                disabled: !sa.canRepair && !sa.isRepairing) { model.repairSelected() }
+                        .frame(maxWidth: .infinity)
                     ActionIcon(systemImage: "arrow.up.circle", badge: "U", active: sa.isUpgrading,
                                help: sa.isUpgrading ? "Stop upgrading (U)" : "Upgrade (U)",
                                disabled: !sa.canUpgrade && !sa.isUpgrading) { model.upgradeSelected() }
+                        .frame(maxWidth: .infinity)
                 }
                 if let sw = model.superWeapon {
                     ActionIcon(systemImage: sw.systemImage, active: model.missileTargeting != nil,
                                help: sw.ready ? sw.title : "Recharging…", disabled: !sw.ready) { model.launchSuperWeapon() }
+                        .frame(maxWidth: .infinity)
                 }
             }
         }
