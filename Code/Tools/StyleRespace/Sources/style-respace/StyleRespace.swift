@@ -496,34 +496,110 @@ private final class MemberAttributeNormalizer: SyntaxRewriter {
 // line-starting `if` statements with already-wrapped conditions are touched (not `else if`, not the
 // `return if` expression form, not single-line ifs).
 private final class IfConditionNormalizer: SyntaxRewriter {
+    // `if` (including `else if`, reached by recursion, and the `return if` / `let x = if` expression forms):
+    // when the condition wrapped — the tell is swift-format putting the body's `{` on its own line — push
+    // the continuation lines one indent deeper and bring the `{` up onto the last condition line.
     override func visit(_ node: IfExprSyntax) -> ExprSyntax {
         let rewritten = super.visit(node)
         guard let node = rewritten.as(IfExprSyntax.self) else { return rewritten }
-        // A line-starting `if` (not `else if` / `return if`) whose condition wrapped across lines — the tell
-        // is swift-format putting the body's `{` on its own line. Covers both several comma-separated
-        // conditions and a single condition broken at `&&` / `||`.
+        guard let (conditions, body) = relaid(node.conditions, node.body) else { return ExprSyntax(node) }
+
+        return ExprSyntax(node.with(\.conditions, conditions).with(\.body, body))
+    }
+
+    override func visit(_ node: WhileStmtSyntax) -> StmtSyntax {
+        let rewritten = super.visit(node)
+        guard let node = rewritten.as(WhileStmtSyntax.self) else { return rewritten }
+        guard let (conditions, body) = relaid(node.conditions, node.body) else { return StmtSyntax(node) }
+
+        return StmtSyntax(node.with(\.conditions, conditions).with(\.body, body))
+    }
+
+    // `repeat { … } while <condition>` has no brace after the condition, so only the continuation indent
+    // applies when the trailing condition wraps. `repeat` is always line-starting, so we can bump the
+    // single-indented continuation to an absolute double indent (idempotent — there is no brace move to gate
+    // re-application as there is for if / while).
+    override func visit(_ node: RepeatStmtSyntax) -> StmtSyntax {
+        let rewritten = super.visit(node)
+        guard let node = rewritten.as(RepeatStmtSyntax.self) else { return rewritten }
+
+        let base = indentWidth(node.leadingTrivia)
         guard
-            node.ifKeyword.leadingTrivia.contains(where: \.isNewline),
-            node.body.leftBrace.leadingTrivia.contains(where: \.isNewline)
-        else { return ExprSyntax(node) }
-        // Add one indent level to every continuation line inside the conditions (swift-format's single
-        // indent → the project's double indent), then bring the `{` up onto the last condition line.
+            node.condition.description.contains("\n"),
+            let indented = LineReindenter(from: base + 4, to: base + 8)
+                .rewrite(node.condition).as(ExprSyntax.self)
+        else { return StmtSyntax(node) }
+
+        return StmtSyntax(node.with(\.condition, indented))
+    }
+
+    private func indentWidth(_ trivia: Trivia) -> Int {
+        var width = 0
+        for piece in trivia.reversed() {
+            switch piece {
+                case .spaces(let count): width += count
+                case .tabs(let count): width += count
+                default: return width
+            }
+        }
+        return width
+    }
+
+    // Double-indents the wrapped condition lines and moves `{` onto the last one. Returns nil (no change)
+    // when the conditions are single-line — swift-format keeps `{` inline then.
+    private func relaid(
+        _ conditions: ConditionElementListSyntax,
+        _ body: CodeBlockSyntax
+    ) -> (ConditionElementListSyntax, CodeBlockSyntax)? {
         guard
+            body.leftBrace.leadingTrivia.contains(where: \.isNewline),
             let indented = ContinuationIndenter(extraSpaces: 4)
-                .rewrite(node.conditions).as(ConditionElementListSyntax.self)
-        else { return ExprSyntax(node) }
+                .rewrite(conditions).as(ConditionElementListSyntax.self)
+        else { return nil }
 
         var elements = Array(indented)
         if !elements.isEmpty {
-            // Clear the last condition's trailing trivia so the single space comes only from the brace
-            // below (keeps the tool idempotent across re-parses).
+            // Clear the last condition's trailing trivia so the single space comes only from the brace below
+            // (keeps the tool idempotent across re-parses).
             elements[elements.count - 1] = elements[elements.count - 1].with(\.trailingTrivia, [])
         }
 
-        var result = node
-        result.conditions = ConditionElementListSyntax(elements)
-        result.body.leftBrace.leadingTrivia = .space
-        return ExprSyntax(result)
+        var body = body
+        body.leftBrace.leadingTrivia = .space
+        return (ConditionElementListSyntax(elements), body)
+    }
+}
+
+// Re-indents every continuation line that sits at exactly `from` spaces to `to` spaces (lines a token starts,
+// after a newline in its leading trivia). Idempotent — a line already at `to` is left alone.
+private final class LineReindenter: SyntaxRewriter {
+    private let from: Int
+    private let to: Int
+
+    init(from: Int, to: Int) {
+        self.from = from
+        self.to = to
+    }
+
+    override func visit(_ token: TokenSyntax) -> TokenSyntax {
+        guard token.leadingTrivia.contains(where: \.isNewline) else { return token }
+
+        var pieces: [TriviaPiece] = []
+        var afterNewline = false
+        for piece in token.leadingTrivia {
+            switch piece {
+                case .newlines, .carriageReturns, .carriageReturnLineFeeds:
+                    pieces.append(piece)
+                    afterNewline = true
+                case .spaces(let count) where afterNewline && count == from:
+                    pieces.append(.spaces(to))
+                    afterNewline = false
+                default:
+                    pieces.append(piece)
+                    afterNewline = false
+            }
+        }
+        return token.with(\.leadingTrivia, Trivia(pieces: pieces))
     }
 }
 

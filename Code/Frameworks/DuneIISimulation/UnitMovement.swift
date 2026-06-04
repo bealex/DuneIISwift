@@ -183,8 +183,7 @@ public struct UnitMovement: Sendable {
             } else if let s2 = state.structureGetByPackedTile(packed) {
                 _ = state.structureDamage(s2, damage: blastDamage, range: 0)
             } else if map.landscapeType(state.map[Int(packed)], tileIDs: state.tileIDs) == .wall
-                && StructureInfo[.wall].o.hitpoints > blastDamage
-            {
+                    && StructureInfo[.wall].o.hitpoints > blastDamage {
                 _ = state.random256.next()
             }
             if state.units[slot].o.hitpoints < (ui.damage / 2) {

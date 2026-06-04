@@ -123,8 +123,7 @@ public struct UnitCombat: Sendable {
                 if state.units[u2].targetLast.x != 0 || state.units[u2].targetLast.y != 0 {
                     state.units[slot].targetMove = state.indexEncode(state.units[u2].targetLast.packed, type: .tile)
                 } else if state.units[u2].o.type == UInt8(UnitType.harvester.rawValue)
-                    && state.unitHouseID(state.units[u2]) != state.playerHouseID
-                {
+                        && state.unitHouseID(state.units[u2]) != state.playerHouseID {
                     let spice = movement.map.searchSpice(state.units[slot].o.position.packed, radius: 20, in: state)
                     state.units[slot].targetMove = state.indexEncode(spice, type: .tile)
                 }
