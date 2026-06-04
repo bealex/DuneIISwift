@@ -158,19 +158,22 @@ private final class GuardNormalizer: SyntaxRewriter {
         let rewritten = super.visit(node)
         guard let node = rewritten.as(GuardStmtSyntax.self) else { return rewritten }
 
-        // Bail on anything we can't restructure without risk: comments in the condition region (trimming
-        // would drop them) or a single condition that is itself multi-line.
+        // Bail only on things we can't restructure safely: a comment in a position that would be destroyed
+        // (a condition's own leading line, or before `else`), or a single condition that is itself
+        // multi-line. Trailing line comments on a condition are preserved (see `relaid`).
         let conditionTexts = node.conditions.map { $0.condition.trimmedDescription }
         guard
             !node.conditions.isEmpty,
-            !hasComment(node),
+            !hasLeadingComment(node),
             conditionTexts.allSatisfy({ !$0.contains("\n") })
         else { return StmtSyntax(node) }
 
         let indent = leadingIndentation(node)
         let bodyText = node.body.trimmedDescription
 
-        if !bodyText.contains("\n") {
+        // A trailing line comment can't share a one-line guard (it would swallow the rest), so only collapse
+        // when there are no condition comments at all.
+        if !bodyText.contains("\n"), !hasTrailingComment(node) {
             let oneLine = indent + "guard " + conditionTexts.joined(separator: ", ") + " else " + bodyText
             if oneLine.count <= lineLength { return StmtSyntax(relaid(node, indent: indent, multiline: false)) }
         }
@@ -188,10 +191,18 @@ private final class GuardNormalizer: SyntaxRewriter {
         var elements: [ConditionElementSyntax] = []
         for element in node.conditions {
             var element = element
+            // Preserve a trailing line/block comment (it lives on the condition or its comma) — trimming
+            // would otherwise drop it.
+            let comment =
+                commentPieces(element.condition.trailingTrivia)
+                + commentPieces(element.trailingComma?.trailingTrivia ?? [])
             element.condition = element.condition.trimmed
             element.leadingTrivia = elementLeading
             if element.trailingComma != nil {
-                element.trailingComma = .commaToken(trailingTrivia: commaTrailing)
+                let trailing: Trivia = comment.isEmpty ? commaTrailing : Trivia(pieces: [ .spaces(2) ] + comment)
+                element.trailingComma = .commaToken(trailingTrivia: trailing)
+            } else if !comment.isEmpty {
+                element.condition = element.condition.with(\.trailingTrivia, Trivia(pieces: [ .spaces(2) ] + comment))
             }
             elements.append(element)
         }
@@ -215,9 +226,29 @@ private final class GuardNormalizer: SyntaxRewriter {
         return indent
     }
 
-    private func hasComment(_ node: GuardStmtSyntax) -> Bool {
-        let region = node.conditions.description + node.elseKeyword.leadingTrivia.description
-        return region.contains("//") || region.contains("/*")
+    // A comment we would destroy by re-laying the conditions: on a condition's own leading line, or in the
+    // gap before `else`. (Trailing comments are preserved, so they don't count here.)
+    private func hasLeadingComment(_ node: GuardStmtSyntax) -> Bool {
+        node.conditions.contains { $0.leadingTrivia.contains(where: { isComment($0) }) }
+            || node.elseKeyword.leadingTrivia.contains(where: { isComment($0) })
+    }
+
+    private func hasTrailingComment(_ node: GuardStmtSyntax) -> Bool {
+        node.conditions.contains { element in
+            !commentPieces(element.condition.trailingTrivia).isEmpty
+                || !commentPieces(element.trailingComma?.trailingTrivia ?? []).isEmpty
+        }
+    }
+
+    private func commentPieces(_ trivia: Trivia) -> [TriviaPiece] {
+        trivia.filter { isComment($0) }
+    }
+
+    private func isComment(_ piece: TriviaPiece) -> Bool {
+        return switch piece {
+            case .lineComment, .blockComment, .docLineComment, .docBlockComment: true
+            default: false
+        }
     }
 }
 
