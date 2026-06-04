@@ -59,6 +59,7 @@ final class AssetLibrary {
         }
 
         static func == (lhs: Asset, rhs: Asset) -> Bool { lhs.id == rhs.id }
+
         func hash(into hasher: inout Hasher) { hasher.combine(id) }
     }
 
@@ -100,7 +101,9 @@ final class AssetLibrary {
     }
 
     func stopMusic() { musicPlayer?.stop() }
+
     func pauseMusic() { musicPlayer?.pause() }
+
     func resumeMusic() { musicPlayer?.resume() }
 
     /// Find the `Audio/Music` directory holding `DUNE<file>.ADL` — bundled next to the executable, or the

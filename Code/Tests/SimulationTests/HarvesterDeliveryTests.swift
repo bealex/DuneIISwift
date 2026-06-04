@@ -42,6 +42,7 @@ struct HarvesterDeliveryTests {
             s.units[$0].o.flags.contains(.used) && s.units[$0].o.type == UInt8(UnitType.carryall.rawValue)
         }
     }
+
     private func harvesterType() -> UInt8 { UInt8(UnitType.harvester.rawValue) }
 
     @Test("a refinery with no harvester summons a carryall carrying a new harvester toward it")

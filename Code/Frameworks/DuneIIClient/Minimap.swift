@@ -290,17 +290,25 @@ struct MinimapView: View {
         var onRightPoint: ((CGPoint) -> Void)?
 
         override var isFlipped: Bool { true }  // top-left origin, matching the SwiftUI Canvas
+
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
         override func mouseDown(with event: NSEvent) { report(event) }
+
         override func mouseDragged(with event: NSEvent) { report(event) }
+
         // Middle button click / drag recentres + follows the cursor too (like the big map's middle-button pan).
         override func otherMouseDown(with event: NSEvent) { if event.buttonNumber == 2 { report(event) } }
+
         override func otherMouseDragged(with event: NSEvent) { if event.buttonNumber == 2 { report(event) } }
+
         // Right click / drag issues a unit order at that point (same as the big map's right-click).
         override func rightMouseDown(with event: NSEvent) { reportRight(event) }
+
         override func rightMouseDragged(with event: NSEvent) { reportRight(event) }
 
         private func report(_ event: NSEvent) { onPoint?(convert(event.locationInWindow, from: nil)) }
+
         private func reportRight(_ event: NSEvent) { onRightPoint?(convert(event.locationInWindow, from: nil)) }
     }
 #endif

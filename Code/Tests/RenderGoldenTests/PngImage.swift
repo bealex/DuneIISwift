@@ -66,6 +66,7 @@ struct PngImage: Equatable {
     /// size (a size mismatch reports every pixel as different).
     struct Diff: Equatable {
         var mismatches: Int; var first: (x: Int, y: Int)?; var maxDelta: Int
+
         static func == (a: Diff, b: Diff) -> Bool {
             a.mismatches == b.mismatches && a.maxDelta == b.maxDelta && a.first?.x == b.first?.x
                 && a.first?.y == b.first?.y

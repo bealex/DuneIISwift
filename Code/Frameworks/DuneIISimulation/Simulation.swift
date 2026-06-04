@@ -225,6 +225,7 @@ public struct Simulation: Sendable {
 /// Which `GameLoop_Unit` sub-activities fire on a given tick.
 public struct UnitTickFlags: OptionSet, Sendable, Equatable {
     public let rawValue: UInt8
+
     public init(rawValue: UInt8) { self.rawValue = rawValue }
 
     public static let movement = UnitTickFlags(rawValue: 1 << 0)

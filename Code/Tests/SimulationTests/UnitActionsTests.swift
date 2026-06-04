@@ -12,6 +12,7 @@ struct UnitActionsTests {
     let actions = UnitActions()
     // offsets[typeID] = typeID, so loading a script for type T parks the PC at T.
     let info = ScriptInfo(program: [UInt16](repeating: 0, count: 64), offsets: (0 ..< 30).map { UInt16($0) })
+
     private func u(_ t: UnitType) -> UInt8 { UInt8(t.rawValue) }
 
     private func stateWithUnit(_ type: UnitType) -> (GameState, Int) {

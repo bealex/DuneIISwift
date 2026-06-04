@@ -25,6 +25,7 @@ public struct Tile32: Equatable, Sendable, Codable {
 
     /// `Tile_GetPackedX` / `Tile_GetPackedY` on a packed tile.
     public static func packedX(_ packed: UInt16) -> UInt8 { UInt8(packed & 0x3F) }
+
     public static func packedY(_ packed: UInt16) -> UInt8 { UInt8((packed >> 6) & 0x3F) }
 
     /// `Tile_PackXY`: pack 0...63 tile coordinates into the 12-bit `(y << 6) | x` form.

@@ -179,7 +179,9 @@ final class MapScene: SKScene {
     // MARK: - Inspector actions (forwarded from the model)
 
     func beginOrder(_ kind: OrderKind) { controller.beginOrder(kind); onSound?(.select); publishState() }
+
     func stopSelected() { controller.stopSelected(); onSound?(.acknowledge); publishState() }
+
     func deselect() { controller.deselect(); publishState() }
 
     // MARK: - Selection highlight + publishing

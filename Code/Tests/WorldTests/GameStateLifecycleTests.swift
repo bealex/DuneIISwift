@@ -9,6 +9,7 @@ import Testing
 @Suite("GameState object lifecycle")
 struct GameStateLifecycleTests {
     private func u(_ t: UnitType) -> UInt8 { UInt8(t.rawValue) }
+
     private func st(_ t: StructureType) -> UInt8 { UInt8(t.rawValue) }
 
     @Test("unitRemoveFromTeam drops membership and returns the free-slot count")

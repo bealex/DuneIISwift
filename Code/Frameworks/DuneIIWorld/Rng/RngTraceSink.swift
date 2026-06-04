@@ -15,6 +15,7 @@ public final class RngTraceSink: Sendable {
     public struct Draw: Sendable, Equatable {
         public var tick: UInt32
         public var value: UInt16  // a Random256 byte (0…255) or a RandomLCG_Range result
+
         public init(tick: UInt32, value: UInt16) { self.tick = tick; self.value = value }
     }
 
@@ -46,6 +47,7 @@ public final class RngTraceSink: Sendable {
     /// One entry of an oracle trace file line (`tick=… idx=… byte=0x… ctx=…` or `… value=… ctx=…`).
     public struct OracleDraw: Sendable, Equatable {
         public var tick: UInt32, idx: UInt32, value: UInt16, ctx: String
+
         public init(tick: UInt32, idx: UInt32, value: UInt16, ctx: String) {
             self.tick = tick; self.idx = idx; self.value = value; self.ctx = ctx
         }

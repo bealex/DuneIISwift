@@ -55,7 +55,9 @@ final class MapModel {
 
     // Inspector actions → the scene's input controller.
     func arm(_ kind: OrderKind) { scene.beginOrder(kind) }
+
     func stopSelected() { scene.stopSelected() }
+
     func deselect() { scene.deselect() }
 
     func load(_ scenarioName: String) {

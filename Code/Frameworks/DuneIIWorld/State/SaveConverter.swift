@@ -229,26 +229,37 @@ public enum SaveConverter {
         let bytes: [UInt8]
         var pos: Int
         let end: Int
+
         init(_ data: Data) { bytes = [UInt8](data); pos = 0; end = bytes.count }
+
         init(_ data: Data, _ start: Int, _ len: Int? = nil) {
             bytes = [UInt8](data); pos = start; end = len.map { start + $0 } ?? bytes.count
         }
+
         var remaining: Int { end - pos }
+
         mutating func u8() -> UInt8 { defer { pos += 1 }; return bytes[pos] }
+
         mutating func i8() -> Int8 { Int8(bitPattern: u8()) }
+
         mutating func u16() -> UInt16 { let lo = UInt16(u8()); return lo | (UInt16(u8()) << 8) }
+
         mutating func i16() -> Int16 { Int16(bitPattern: u16()) }
+
         mutating func u32() -> UInt32 {
             let a = UInt32(u8()), b = UInt32(u8()), c = UInt32(u8()), d = UInt32(u8())
             return a | (b << 8) | (c << 16) | (d << 24)
         }
+
         mutating func u32be() -> UInt32 {
             let a = UInt32(u8()), b = UInt32(u8()), c = UInt32(u8()), d = UInt32(u8())
             return (a << 24) | (b << 16) | (c << 8) | d
         }
+
         mutating func tag() -> String {
             defer { pos += 4 }; return String(bytes: bytes[pos ..< pos + 4], encoding: .ascii) ?? ""
         }
+
         mutating func skip(_ n: Int) { pos += n }
     }
 }

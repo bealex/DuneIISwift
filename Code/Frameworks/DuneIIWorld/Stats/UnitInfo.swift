@@ -22,6 +22,7 @@ public struct UnitInfo: Sendable, Equatable {
     /// The 13-bit `UnitInfo.flags` bitfield (`src/unit.h`), bit positions in C declaration order.
     public struct Flags: OptionSet, Sendable, Equatable {
         public let rawValue: UInt16
+
         public init(rawValue: UInt16) { self.rawValue = rawValue }
 
         public static let isBullet = Flags(rawValue: 1 << 0)  // a bullet / missile

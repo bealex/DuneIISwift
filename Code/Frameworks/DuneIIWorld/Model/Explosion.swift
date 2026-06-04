@@ -17,6 +17,7 @@ public enum ExplosionCommand: UInt8, Sendable, Equatable, Codable {
 public struct ExplosionCommandStruct: Sendable, Equatable, Codable {
     public let command: ExplosionCommand
     public let parameter: Int16
+
     public init(_ command: ExplosionCommand, _ parameter: Int16) { self.command = command; self.parameter = parameter }
 }
 
@@ -58,6 +59,7 @@ public struct Explosion: Sendable, Equatable, Codable {
     public var tableIndex: Int = -1  // ExplosionType.rawValue, or -1 for a free slot
     public var position: Tile32 = Tile32(x: 0, y: 0)
     public var active = false
+
     public init() {}
 }
 

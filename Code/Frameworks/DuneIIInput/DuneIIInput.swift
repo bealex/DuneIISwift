@@ -31,8 +31,11 @@ public protocol InputSource: Sendable {
 /// A fixed command list (headless test scenarios / scripted playback).
 public struct ScriptedInput: InputSource {
     private var queue: [Command]
+
     public init(_ commands: [Command] = []) { queue = commands }
+
     public mutating func enqueue(_ command: Command) { queue.append(command) }
+
     public mutating func drainCommands() -> [Command] { defer { queue.removeAll() }; return queue }
 }
 

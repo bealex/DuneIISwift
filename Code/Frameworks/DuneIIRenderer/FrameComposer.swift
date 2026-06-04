@@ -20,8 +20,10 @@ public protocol WorldSpriteSource {
     /// The square pixel size of one terrain tile (16 for `ICON.ICN`). Also the world→image scale: one
     /// tile is 256 sub-tile units wide, so `imagePx = worldPos * terrainTileSize / 256`.
     var terrainTileSize: Int { get }
+
     /// The `terrainTileSize`² indexed pixels of ground tile `id` (an `ICON.ICN` tile), or `nil`.
     func terrainTile(_ id: Int) -> [UInt8]?
+
     /// The indexed frame for a global unit/effect sprite index (a UNITS-sheet frame), or `nil`.
     func unitFrame(globalIndex: Int) -> SpriteFrame?
 }

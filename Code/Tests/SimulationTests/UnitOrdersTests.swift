@@ -15,6 +15,7 @@ struct UnitOrdersTests {
             offsets: (0 ..< 30).map { UInt16($0) }
         )
     )
+
     private func u(_ t: UnitType) -> UInt8 { UInt8(t.rawValue) }
 
     private func makeState() -> GameState {

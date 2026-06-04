@@ -130,8 +130,11 @@ struct MapSpriteView: NSViewRepresentable {
 /// scene's middle-drag pan / middle-click recentre never fired.
 final class FirstMouseSKView: SKView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func otherMouseDown(with event: NSEvent) { scene?.otherMouseDown(with: event) }
+
     override func otherMouseDragged(with event: NSEvent) { scene?.otherMouseDragged(with: event) }
+
     override func otherMouseUp(with event: NSEvent) { scene?.otherMouseUp(with: event) }
 }
 

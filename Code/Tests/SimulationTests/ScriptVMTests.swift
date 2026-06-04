@@ -14,7 +14,9 @@ struct ScriptVMTests {
     // Bytecode word builders. opcode occupies bits 8–12; flags 0x8000 (GOTO), 0x4000 (inline signed
     // byte), 0x2000 (parameter in the next word).
     func inlineOp(_ op: Int, _ byte: Int) -> UInt16 { UInt16(0x4000 | (op << 8) | (byte & 0xFF)) }
+
     func bareOp(_ op: Int) -> UInt16 { UInt16(op << 8) }  // parameter = 0
+
     func goto(_ addr: Int) -> UInt16 { UInt16(0x8000 | addr) }
 
     // Opcode numbers used below.

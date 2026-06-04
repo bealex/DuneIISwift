@@ -6,17 +6,21 @@
 /// `contains`/`all` cover every former call site. See `Documentation/Architecture/Parallelization.md` §8.
 public struct PlayerActions: Sendable, Equatable {
     public let a, b, c, d: ActionType
+
     public init(_ arr: [ActionType]) {
         a = arr.count > 0 ? arr[0] : .stop
         b = arr.count > 1 ? arr[1] : .stop
         c = arr.count > 2 ? arr[2] : .stop
         d = arr.count > 3 ? arr[3] : .stop
     }
+
     public subscript(_ i: Int) -> ActionType {
         switch i { case 0: a;  case 1: b;  case 2: c;  default: d
         }
     }
+
     public func contains(_ x: ActionType) -> Bool { a == x || b == x || c == x || d == x }
+
     /// The four actions as an array — for *cold* consumers (UI menus, tests) only; allocates.
     public var all: [ActionType] { [ a, b, c, d ] }
 }
@@ -29,6 +33,7 @@ public struct ObjectInfo: Sendable, Equatable {
     /// The 13-bit `ObjectInfo.flags` bitfield (`src/object.h`), bit positions in C declaration order.
     public struct Flags: OptionSet, Sendable, Equatable {
         public let rawValue: UInt16
+
         public init(rawValue: UInt16) { self.rawValue = rawValue }
 
         public static let hasShadow = Flags(rawValue: 1 << 0)  // has a shadow below it

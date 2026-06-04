@@ -69,10 +69,13 @@ struct ContentView: View {
     private var documentsURL: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
+
     private func date(_ url: URL) -> Date {
         (try? url.resourceValues(forKeys: [ .contentModificationDateKey ]).contentModificationDate) ?? .distantPast
     }
+
     private func stripExtension(_ name: String) -> String { (name as NSString).deletingPathExtension }
+
     private func flash(_ message: String) {
         notice = message
         Task {

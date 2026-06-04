@@ -51,6 +51,7 @@ public struct Reinforcement: Sendable, Equatable, Codable {
     public var repeats: Bool = false
 
     public init() {}
+
     public var isEmpty: Bool { unitType == 0xFF }
 }
 

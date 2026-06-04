@@ -11,6 +11,7 @@ import Testing
 @Suite("Script_Unit_* natives")
 struct UnitScriptFunctionsTests {
     let fns = UnitScriptFunctions()
+
     private func ut(_ t: UnitType) -> UInt8 { UInt8(t.rawValue) }
 
     /// A GameState (house 0, player 0) with one unit of `type` at `packed`. Returns the state + slot.

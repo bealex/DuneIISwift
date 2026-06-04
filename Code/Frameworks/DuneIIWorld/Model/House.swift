@@ -4,6 +4,7 @@ import DuneIIContracts
 /// `OptionSet<UInt8>` (5 bits used). Bit positions in C declaration order.
 public struct HouseFlags: OptionSet, Sendable, Equatable, Codable {
     public let rawValue: UInt8
+
     public init(rawValue: UInt8) { self.rawValue = rawValue }
 
     public static let used = HouseFlags(rawValue: 1 << 0)

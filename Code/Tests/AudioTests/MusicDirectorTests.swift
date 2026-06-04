@@ -14,7 +14,9 @@ struct MusicDirectorTests {
     /// Deterministic RNG (SplitMix64) so the random-pool tests are repeatable.
     struct SeededRNG: RandomNumberGenerator {
         var state: UInt64
+
         init(seed: UInt64) { state = seed }
+
         mutating func next() -> UInt64 {
             state &+= 0x9E37_79B9_7F4A_7C15
             var z = state

@@ -15,6 +15,7 @@ public enum AnimationCommand: UInt8, Sendable, Equatable, Codable {
 public struct AnimationCommandStruct: Sendable, Equatable, Codable {
     public let command: AnimationCommand
     public let parameter: Int16
+
     public init(_ command: AnimationCommand, _ parameter: Int16) { self.command = command; self.parameter = parameter }
 }
 
@@ -41,6 +42,7 @@ public struct Animation: Sendable, Equatable, Codable {
     public var kind: AnimationKind = .structure
     public var tile: Tile32 = Tile32(x: 0, y: 0)
     public var active = false
+
     public init() {}
 }
 

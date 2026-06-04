@@ -11,6 +11,8 @@ public protocol Renderer {
 /// it was handed so a headless test can assert the simulation drove a frame through the seam.
 public struct NullRenderer: Renderer {
     public private(set) var lastFrame: FrameInfo?
+
     public init() {}
+
     public mutating func render(_ frame: FrameInfo) { lastFrame = frame }
 }

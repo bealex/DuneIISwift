@@ -12,6 +12,7 @@ struct FrameComposerTests {
     /// constant = the tile id; a unit frame is a 2×2 filled with `100 + globalIndex`.
     private struct FakeSource: WorldSpriteSource {
         var terrainTileSize: Int { 4 }
+
         func terrainTile(_ id: Int) -> [UInt8]? {
             if id == 0 { return nil }
             // Tile 7 is a "wall": its top half is opaque (id 7), its bottom half transparent (index 0),
@@ -21,6 +22,7 @@ struct FrameComposerTests {
             if id == 8 { return [UInt8](repeating: 12, count: 8) + [UInt8](repeating: 0, count: 8) }
             return [UInt8](repeating: UInt8(truncatingIfNeeded: id), count: 16)
         }
+
         func unitFrame(globalIndex: Int) -> SpriteFrame? {
             globalIndex < 111
                 ? nil

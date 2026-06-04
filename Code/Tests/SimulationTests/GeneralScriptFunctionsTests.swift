@@ -10,7 +10,9 @@ import Testing
 @Suite("Script_General_* natives")
 struct GeneralScriptFunctionsTests {
     let gen = GeneralScriptFunctions()
+
     private func u(_ t: UnitType) -> UInt8 { UInt8(t.rawValue) }
+
     private func st(_ t: StructureType) -> UInt8 { UInt8(t.rawValue) }
 
     /// A GameState with houses 0 (Harkonnen) and 2 (Ordos) allocated and a high unit cap.

@@ -10,6 +10,7 @@ import Testing
 @Suite("GameState pools + index helpers")
 struct GameStateTests {
     private func u(_ t: UnitType) -> UInt8 { UInt8(t.rawValue) }
+
     private func st(_ t: StructureType) -> UInt8 { UInt8(t.rawValue) }
 
     @Test("unit allocate uses the type's index band and bumps the house count")

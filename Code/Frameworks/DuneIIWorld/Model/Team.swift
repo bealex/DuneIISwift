@@ -10,6 +10,7 @@ public enum TeamActionType: Int, Sendable, Equatable, Codable, CaseIterable {
 /// General flags of a team. A port of OpenDUNE's `TeamFlags` (`src/team.h`); only `used` is defined.
 public struct TeamFlags: OptionSet, Sendable, Equatable, Codable {
     public let rawValue: UInt8
+
     public init(rawValue: UInt8) { self.rawValue = rawValue }
 
     public static let used = TeamFlags(rawValue: 1 << 0)

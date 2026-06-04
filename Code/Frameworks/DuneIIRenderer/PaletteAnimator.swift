@@ -23,6 +23,7 @@ public enum PaletteAnimator {
         var windTarget = 12
         var selectionTarget = 15
         var repairToggle = false
+
         public init() {}
     }
 

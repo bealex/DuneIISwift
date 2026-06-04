@@ -92,6 +92,7 @@ public extension GameState {
         let g = map[pos].groundTileID
         return g > tileIDs.wall && g < tileIDs.wall &+ 75
     }
+
     /// `LST_DESTROYED_WALL`: a rubble overlay left where a wall was destroyed.
     private func wallTileIsDestroyed(_ pos: Int) -> Bool {
         UInt16(map[pos].overlayTileID) == tileIDs.wall

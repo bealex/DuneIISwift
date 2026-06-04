@@ -21,6 +21,8 @@ public struct SoundEvent: Sendable, Equatable, Codable {
 /// extensions (`static let cantBuild = SoundID(12)`), the audio layer maps it to a loaded PCM buffer.
 public struct SoundID: Hashable, Sendable, RawRepresentable, Codable {
     public let rawValue: Int
+
     public init(rawValue: Int) { self.rawValue = rawValue }
+
     public init(_ rawValue: Int) { self.rawValue = rawValue }
 }

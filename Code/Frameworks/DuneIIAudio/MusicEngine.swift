@@ -29,8 +29,11 @@ public protocol MusicEngine: AnyObject {
 
     /// Start the song for `(file, song)`. `loop` restarts/sustains it; otherwise `onFinished` fires at the end.
     func play(file: Int, song: Int, loop: Bool)
+
     func stop()
+
     /// Freeze playback, remembering the position so `resume()` continues seamlessly.
     func pause()
+
     func resume()
 }

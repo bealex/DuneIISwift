@@ -110,6 +110,7 @@ public final class MusicDirector {
     /// Mission start / return-to-ambient: a random map theme (musicID 8–15), played once so it rolls into a
     /// fresh pick at its end.
     public func startInGame() { playRandom(in: Self.mapTracks) }
+
     public func advanceAmbient() { playRandom(in: Self.mapTracks) }
 
     /// Enemy attacking the player: switch to a random attack theme (17–22). Returns to ambient when it ends.
@@ -117,10 +118,13 @@ public final class MusicDirector {
 
     /// End-of-mission stingers (held, i.e. looped) — per the player's house.
     public func win(house: HouseID) { play(musicID: Self.winMusic[house.rawValue], loop: true) }
+
     public func lose(house: HouseID) { play(musicID: Self.loseMusic[house.rawValue], loop: true) }
 
     public func pause() { player.pause() }
+
     public func resume() { player.resume() }
+
     public func stop() { currentMusicID = 0; player.stop() }
 
     private func playRandom(in range: ClosedRange<Int>) {

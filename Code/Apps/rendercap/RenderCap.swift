@@ -179,6 +179,7 @@ private struct Args {
     }
 
     func value(_ key: String) -> String? { values[key] }
+
     func flag(_ key: String) -> Bool { flags.contains(key) }
 }
 

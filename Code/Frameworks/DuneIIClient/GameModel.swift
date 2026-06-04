@@ -146,8 +146,10 @@ public final class GameModel {
     /// paused while any are open, then resumes to `userPaused`.
     @ObservationIgnored
     private var uiPauseCount = 0
+
     /// Recompute the effective pause from the player's pause + open UI surfaces.
     private func applyPause() { paused = userPaused || uiPauseCount > 0 }
+
     /// The latched level outcome (`GameLoop_IsLevelFinished`). `playing` until a Win/Lose condition is met,
     /// then `won`/`lost`; the client shows a banner + pauses. Reset to `playing` on each scenario/save load.
     private(set) var gameEnd: GameEndState = .playing
@@ -657,9 +659,11 @@ public final class GameModel {
     /// Toggle the pause (the toolbar button + spacebar).
     /// The player's manual pause toggle (space bar).
     public func togglePause() { userPaused.toggle(); applyPause() }
+
     /// Freeze the game while a transient UI surface is open (a save/load dialog, the options or mentat popover).
     /// Balanced with `endUIPause`; nestable. The game resumes to the player's own pause once all close.
     public func beginUIPause() { uiPauseCount += 1; applyPause() }
+
     public func endUIPause() { if uiPauseCount > 0 { uiPauseCount -= 1 }; applyPause() }
 
     /// Player hints (`GUI_DisplayHint` family): a transient banner on construction-complete, low power, or
@@ -834,10 +838,12 @@ public final class GameModel {
     func repairSelected() {
         if let slot = selectedStructureSlot { enqueue(.repair(structure: UInt16(slot))); audio.play(.select) }
     }
+
     /// Toggle the selected structure's upgrade.
     func upgradeSelected() {
         if let slot = selectedStructureSlot { enqueue(.upgrade(structure: UInt16(slot))); audio.play(.select) }
     }
+
     /// The `s` key for a selected building: stop an in-progress repair or upgrade (a no-op otherwise). Sends
     /// the repair/upgrade *toggle* command only when the matching flag is set, so it can only ever stop —
     /// never start — the activity.
@@ -849,6 +855,7 @@ public final class GameModel {
         if s.o.flags.contains(.upgrading) { enqueue(.upgrade(structure: UInt16(slot))); acted = true }
         if acted { audio.play(.acknowledge) }
     }
+
     /// Order one `objectType` from the selected starport (CHOAM buy). Immediate single order — used by the
     /// legacy inspector panel; the sidebar uses the `cart*` batch API below.
     func orderFromStarport(_ objectType: UInt16) {
@@ -870,18 +877,22 @@ public final class GameModel {
                 ?? UInt16(clamping: (UnitType(rawValue: Int(objectType)).map { Int(UnitInfo[$0].o.buildCredits) }) ?? 0)
         )
     }
+
     /// Total units staged in the CHOAM cart.
     var cartUnitCount: Int { starportCart.values.reduce(0, +) }
     /// Total credits the staged cart would cost (charged on `sendStarportOrder`).
     var cartTotalCost: Int { starportCart.reduce(0) { $0 + $1.value * starportPrice($1.key) } }
+
     /// How many of `objectType` are staged in the cart.
     func cartCount(_ objectType: UInt16) -> Int { starportCart[objectType] ?? 0 }
+
     /// Whether one more of `item` can be staged: in stock (cart count below available) and the running total
     /// stays within the player's credits (the order is charged on send, as a batch).
     func canAddToCart(_ item: StarportItem) -> Bool {
         !item.soldOut && cartCount(item.objectType) < item.available
             && cartTotalCost + item.cost <= playerCredits
     }
+
     /// Stage one more `objectType` in the cart (no charge yet), if `canAddToCart`.
     func cartAdd(_ objectType: UInt16) {
         guard
@@ -900,6 +911,7 @@ public final class GameModel {
         starportCart[objectType, default: 0] += 1
         audio.play(.select)
     }
+
     /// Remove one staged `objectType` from the cart.
     func cartRemove(_ objectType: UInt16) {
         guard let n = starportCart[objectType], n > 0 else { return }
@@ -907,8 +919,10 @@ public final class GameModel {
         if n == 1 { starportCart[objectType] = nil } else { starportCart[objectType] = n - 1 }
         audio.play(.select)
     }
+
     /// Discard the whole staged order without ordering (nothing was charged).
     func clearStarportCart() { if !starportCart.isEmpty { starportCart = [:]; audio.play(.select) } }
+
     /// Dispatch the staged cart: one `.starportOrder` per unit (the sim charges + decrements stock + arms the
     /// frigate-delivery countdown per unit, batching them into one delivery). Clears the cart.
     func sendStarportOrder() {
@@ -1071,6 +1085,7 @@ public final class GameModel {
     func arm(_ kind: OrderKind) {
         controller.beginOrder(kind); audio.play(.select); pendingOrder = controller.pendingOrder
     }
+
     func stopSelected() { controller.stopSelected(); audio.play(.acknowledge) }
 
     /// Issue a `PanelAction` (inspector button or keyboard shortcut). A targeted action (Attack/Move/Harvest)
@@ -1101,6 +1116,7 @@ public final class GameModel {
 
         issue(PanelAction(type: type, targeted: ActionInfo[type].selectionType == .target))
     }
+
     func deselect() { controller.deselect(); selection = nil; pendingOrder = nil; inspectedTile = nil; tileInfo = nil }
 
     /// Derive the inspected bare tile's parameters from the live map (nil unless a tile is being inspected and
@@ -1138,6 +1154,7 @@ public final class GameModel {
     // MARK: - Building
 
     private func enqueue(_ command: Command) { pendingCommands.append(command) }
+
     private func drainPending() -> [Command] { defer { pendingCommands.removeAll() }; return pendingCommands }
 
     /// Start the selected factory building `objectType` (a `Buildable.objectType`).
@@ -1267,8 +1284,11 @@ public final class GameModel {
     // MARK: - Viewport (scroll/zoom + minimap)
 
     func zoomIn() { viewport.zoomIn() }
+
     func zoomOut() { viewport.zoomOut() }
+
     func scroll(dx: Double, dy: Double) { viewport.scroll(dx: dx, dy: dy, viewSize: viewSize) }
+
     /// Centre the map on a world point (a minimap click), in world points.
     func centerOn(worldX: Double, worldY: Double) {
         viewport.center(onWorldX: worldX, worldY: worldY, viewSize: viewSize)

@@ -4,6 +4,7 @@
 /// oracle — see `Documentation/Architecture/DataModel.md`.
 public struct ObjectFlags: OptionSet, Sendable, Equatable, Codable {
     public let rawValue: UInt32
+
     public init(rawValue: UInt32) { self.rawValue = rawValue }
 
     public static let used = ObjectFlags(rawValue: 1 << 0)  // in use (not free in the pool)

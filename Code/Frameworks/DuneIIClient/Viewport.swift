@@ -25,7 +25,9 @@ struct Viewport: Equatable {
     static let maxZoom = 16.0
 
     mutating func setZoom(_ z: Double) { zoom = min(Self.maxZoom, max(Self.minZoom, z)) }
+
     mutating func zoomIn() { setZoom(zoom * 2) }
+
     mutating func zoomOut() { setZoom(zoom / 2) }
 
     /// Scroll by `dx`/`dy` **screen points** (so the felt speed is constant across zoom levels).

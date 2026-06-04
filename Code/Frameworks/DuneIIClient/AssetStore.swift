@@ -77,6 +77,7 @@ public final class AssetStore {
     func voc(_ name: String) -> Voc.Sound? { data(name).flatMap { try? Voc.decode($0) } }
 
     private var mentatCache: [Character: [MentatHelp.Topic]] = [:]
+
     /// The Mentat help topics for a house, parsed from `MENTAT<letter>.ENG` (`H`/`A`/`O`). Cached per house.
     func mentatTopics(houseLetter: Character) -> [MentatHelp.Topic] {
         if let cached = mentatCache[houseLetter] { return cached }

@@ -689,7 +689,9 @@ public final class GameScene: SKScene {
 
             return hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
         }
+
         private func cancelLongPress() { longPressWork?.cancel(); longPressWork = nil }
+
         private func resetTouchState() {
             touchStartScene = nil; touchLastScene = nil; touchDidPan = false; pinchStartDistance = nil
         }

@@ -11,6 +11,7 @@ public struct UnitTickCursors: Sendable, Equatable, Codable {
     public var script: UInt32 = 0
     public var unknown5: UInt32 = 0
     public var deviation: UInt32 = 0
+
     public init() {}
 }
 
@@ -23,6 +24,7 @@ public struct StructureTickCursors: Sendable, Equatable, Codable {
     public var structure: UInt32 = 0
     public var script: UInt32 = 0
     public var palace: UInt32 = 0
+
     public init() {}
 }
 
@@ -37,6 +39,7 @@ public struct HouseTickCursors: Sendable, Equatable, Codable {
     public var reinforcement: UInt32 = 0
     public var missileCountdown: UInt32 = 0
     public var starportAvailability: UInt32 = 0
+
     public init() {}
 }
 

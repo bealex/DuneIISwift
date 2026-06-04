@@ -10,6 +10,7 @@ import Testing
 @Suite("Unit primitives (rotation / speed)")
 struct UnitLogicTests {
     private let p: any UnitPrimitives = DefaultUnitPrimitives()
+
     private func unit(_ t: UnitType) -> Unit { var u = Unit(); u.o.type = UInt8(t.rawValue); return u }
 
     @Test("Unit_SetOrientation picks the shorter turn and the type's rotation speed")

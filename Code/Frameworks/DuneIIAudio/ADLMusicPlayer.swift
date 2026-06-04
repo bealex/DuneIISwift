@@ -119,6 +119,7 @@ public final class ADLMusicPlayer: MusicEngine {
     }
 
     public func pause() { shared.command.withLock { $0.paused = true } }
+
     public func resume() { shared.command.withLock { $0.paused = false } }
 
     /// Start the audio engine on first use; degrade to silent on a box with no output device (like

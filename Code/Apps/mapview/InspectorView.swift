@@ -91,7 +91,9 @@ struct InspectorView: View {
     }
 
     private func title(_ k: OrderKind) -> String { k == .move ? "Move" : "Attack" }
+
     private func icon(_ k: OrderKind) -> String { k == .move ? "arrow.up.right" : "target" }
+
     private func healthTint(_ s: SelectionInfo) -> Color {
         let f = s.hitpointsMax > 0 ? Double(s.hitpoints) / Double(s.hitpointsMax) : 1
         return f > 0.66 ? .green : (f > 0.33 ? .yellow : .red)

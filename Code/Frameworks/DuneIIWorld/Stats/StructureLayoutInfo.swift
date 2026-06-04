@@ -2,6 +2,7 @@
 public struct XYSize: Sendable, Equatable {
     public let width: UInt16
     public let height: UInt16
+
     public init(width: UInt16, height: UInt16) { self.width = width; self.height = height }
 }
 
