@@ -13,7 +13,13 @@
 # Usage:
 #   Scripts/format.sh              # rewrite Code/ sources in place
 #   Scripts/format.sh --check      # report files that are NOT formatted; modify nothing (exit 1 if any)
+#   Scripts/format.sh --allow-dirty  # rewrite even when target files have uncommitted changes
 #   Scripts/format.sh PATH ...     # restrict to the given files/dirs (instead of the whole Code/ tree)
+#
+# Safety: the style-respace pass does structural rewrites (guard / expression-form surgery) that could, in a
+# rare unhandled edge case, lose content. So an in-place run refuses to touch any target file that has
+# uncommitted git changes — commit or stash first, so a bad transform is a `git diff` / `git checkout` away
+# (override with --allow-dirty). `--check` never modifies and skips this guard.
 #
 # Config: Code/.swift-format (also auto-discovered by editors/IDEs).
 # Override the binary with SWIFT_FORMAT=/path/to/swift-format if needed.
@@ -30,12 +36,14 @@ if ! command -v "$FORMAT_BIN" >/dev/null 2>&1; then
 fi
 
 CHECK=0
+ALLOW_DIRTY=0
 PATHS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --check)   CHECK=1 ;;
-    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
-    *)         PATHS+=("$1") ;;
+    --check)       CHECK=1 ;;
+    --allow-dirty) ALLOW_DIRTY=1 ;;
+    -h|--help)     sed -n '2,30p' "$0"; exit 0 ;;
+    *)             PATHS+=("$1") ;;
   esac
   shift
 done
@@ -73,6 +81,18 @@ if [ "$CHECK" = 1 ]; then
   exit 1
 fi
 
+# Safety guard: don't rewrite files that have uncommitted changes, so any destructive transform stays
+# recoverable. Checks only the files about to be modified; untracked non-target files don't block.
+if [ "$ALLOW_DIRTY" = 0 ] && git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  DIRTY="$(git -C "$REPO" status --porcelain -- "${FILES[@]}" 2>/dev/null)"
+  if [ -n "$DIRTY" ]; then
+    echo "format.sh: refusing to rewrite — these target files have uncommitted changes:"
+    printf '%s\n' "$DIRTY" | sed 's/^/  /'
+    echo "Commit or stash them first (so a bad structural transform is recoverable), or pass --allow-dirty."
+    exit 3
+  fi
+fi
+
 "$FORMAT_BIN" format --in-place --parallel --configuration "$CONFIG" "${FILES[@]}"
 "$RESPACE" "${FILES[@]}" >/dev/null
-echo "format ✅ reformatted ${#FILES[@]} files in place (swift-format + collection-literal respace)"
+echo "format ✅ reformatted ${#FILES[@]} files in place (swift-format + style-respace)"

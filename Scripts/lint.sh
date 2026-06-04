@@ -6,7 +6,12 @@
 #   Scripts/lint.sh              # lint Code/ (warnings + errors), concise summary
 #   Scripts/lint.sh --strict     # treat every finding as an error (exit 1 on any warning)
 #   Scripts/lint.sh --fix        # auto-correct the correctable violations in place
+#   Scripts/lint.sh --fix --allow-dirty   # auto-correct even with uncommitted target changes
 #   Scripts/lint.sh PATH ...     # restrict to the given files/dirs
+#
+# The custom rules here are checkers only (they never modify code). `--fix` applies SwiftLint's built-in
+# correctors, which DO rewrite files — so, like format.sh, it refuses to touch a tree with uncommitted target
+# changes unless --allow-dirty is given.
 #
 # Config: .swiftlint.yml (repo root) — indented switch cases, 120-col lines, mandatory trailing commas,
 # sorted imports, one-arg-per-line on wrapped calls, no blank lines hugging braces. Pure layout
@@ -25,14 +30,16 @@ if ! command -v "$LINT_BIN" >/dev/null 2>&1; then
 fi
 
 MODE="lint"
+ALLOW_DIRTY=0
 STRICT=()
 PATHS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --fix)     MODE="fix" ;;
-    --strict)  STRICT=(--strict) ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
-    *)         PATHS+=("$1") ;;
+    --fix)         MODE="fix" ;;
+    --allow-dirty) ALLOW_DIRTY=1 ;;
+    --strict)      STRICT=(--strict) ;;
+    -h|--help)     sed -n '2,20p' "$0"; exit 0 ;;
+    *)             PATHS+=("$1") ;;
   esac
   shift
 done
@@ -41,6 +48,19 @@ done
 cd "$REPO"
 
 if [ "$MODE" = "fix" ]; then
+  # Safety guard: --fix rewrites files, so don't touch a tree with uncommitted target changes (recoverable).
+  if [ "$ALLOW_DIRTY" = 0 ] && git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    TARGETS=(Code/Frameworks Code/Apps Code/Tools Code/Tests)
+    [ ${#PATHS[@]} -gt 0 ] && TARGETS=("${PATHS[@]}")
+    DIRTY="$(git -C "$REPO" status --porcelain -- "${TARGETS[@]}" 2>/dev/null)"
+    if [ -n "$DIRTY" ]; then
+      echo "lint.sh: refusing to --fix — these target paths have uncommitted changes:"
+      printf '%s\n' "$DIRTY" | sed 's/^/  /'
+      echo "Commit or stash them first, or pass --allow-dirty."
+      exit 3
+    fi
+  fi
+
   "$LINT_BIN" --fix --config "$CONFIG" ${PATHS[@]+"${PATHS[@]}"}
   echo "lint ✅ applied auto-corrections (re-run Scripts/lint.sh to see what remains)"
   exit 0

@@ -5,6 +5,8 @@ Two tools keep the Swift sources on the project code style (`~/Programming/_Scri
 - `Scripts/format.sh` — rewrites layout. `--check` reports without modifying; takes path args to scope down.
 - `Scripts/lint.sh` — reports style violations. `--strict` fails on any finding, `--fix` auto-corrects the correctable ones, takes path args.
 
+**Safety guard.** The style-respace pass does a couple of structural rewrites (guard explosion, `switch`/`if` → expression form) that could, in a rare unhandled edge case, lose content. So any in-place run — `format.sh` and `lint.sh --fix` — **refuses to modify a target file that has uncommitted git changes**, so a bad transform is always a `git diff` / `git checkout` away. Commit or stash first, or pass `--allow-dirty` to override. `--check` and plain `lint.sh` never modify and skip the guard.
+
 ## Formatter: swift-format
 
 Config: `Code/.swift-format` (also auto-discovered by editors). It lists only the deviations from swift-format's defaults that the code style requires:
