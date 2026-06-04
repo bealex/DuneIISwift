@@ -46,7 +46,8 @@ struct StyleRespace {
         let guards = GuardNormalizer().rewrite(expressions)
         let ternaries = TernaryNormalizer().rewrite(guards)
         let blanks = BlankLineNormalizer().rewrite(ternaries)
-        return MemberAttributeNormalizer().rewrite(blanks).description
+        let ifs = IfConditionNormalizer().rewrite(blanks)
+        return MemberAttributeNormalizer().rewrite(ifs).description
     }
 }
 
@@ -131,8 +132,7 @@ private final class CollectionLiteralSpacer: SyntaxRewriter {
     private func isTypeConstructor(_ node: Syntax) -> Bool {
         var expression = node
         while true {
-            if let call = expression.parent?.as(FunctionCallExprSyntax.self), call.calledExpression.id == expression.id
-            {
+            if let call = expression.parent?.as(FunctionCallExprSyntax.self), call.calledExpression.id == expression.id {
                 return true
             }
             guard
@@ -456,6 +456,75 @@ private final class MemberAttributeNormalizer: SyntaxRewriter {
             }
         }
         return indent
+    }
+}
+
+// Lays out a multi-line `if` statement's wrapped conditions the project way: continuation conditions are
+// double-indented (two levels below the `if` line) and the opening `{` stays at the end of the last
+// condition line — instead of swift-format's single-indent + brace on its own line. Only standalone,
+// line-starting `if` statements with already-wrapped conditions are touched (not `else if`, not the
+// `return if` expression form, not single-line ifs).
+private final class IfConditionNormalizer: SyntaxRewriter {
+    override func visit(_ node: IfExprSyntax) -> ExprSyntax {
+        let rewritten = super.visit(node)
+        guard let node = rewritten.as(IfExprSyntax.self) else { return rewritten }
+        // A line-starting `if` (not `else if` / `return if`) whose condition wrapped across lines — the tell
+        // is swift-format putting the body's `{` on its own line. Covers both several comma-separated
+        // conditions and a single condition broken at `&&` / `||`.
+        guard
+            node.ifKeyword.leadingTrivia.contains(where: \.isNewline),
+            node.body.leftBrace.leadingTrivia.contains(where: \.isNewline)
+        else { return ExprSyntax(node) }
+        // Add one indent level to every continuation line inside the conditions (swift-format's single
+        // indent → the project's double indent), then bring the `{` up onto the last condition line.
+        guard
+            let indented = ContinuationIndenter(extraSpaces: 4)
+                .rewrite(node.conditions).as(ConditionElementListSyntax.self)
+        else { return ExprSyntax(node) }
+
+        var elements = Array(indented)
+        if !elements.isEmpty {
+            // Clear the last condition's trailing trivia so the single space comes only from the brace
+            // below (keeps the tool idempotent across re-parses).
+            elements[elements.count - 1] = elements[elements.count - 1].with(\.trailingTrivia, [])
+        }
+
+        var result = node
+        result.conditions = ConditionElementListSyntax(elements)
+        result.body.leftBrace.leadingTrivia = .space
+        return ExprSyntax(result)
+    }
+}
+
+// Adds `extraSpaces` to the indentation of every line a token starts (the spaces in its leading trivia right
+// after a newline), shifting a wrapped construct one indent level deeper without touching single-line trivia.
+private final class ContinuationIndenter: SyntaxRewriter {
+    private let extraSpaces: Int
+
+    init(extraSpaces: Int) {
+        self.extraSpaces = extraSpaces
+    }
+
+    override func visit(_ token: TokenSyntax) -> TokenSyntax {
+        guard token.leadingTrivia.contains(where: \.isNewline) else { return token }
+
+        var pieces: [TriviaPiece] = []
+        var afterNewline = false
+        for piece in token.leadingTrivia {
+            switch piece {
+                case .newlines, .carriageReturns, .carriageReturnLineFeeds:
+                    pieces.append(piece)
+                    afterNewline = true
+                case .spaces(let count) where afterNewline:
+                    pieces.append(.spaces(count + extraSpaces))
+                    afterNewline = false
+                default:
+                    if afterNewline { pieces.append(.spaces(extraSpaces)) }
+                    pieces.append(piece)
+                    afterNewline = false
+            }
+        }
+        return token.with(\.leadingTrivia, Trivia(pieces: pieces))
     }
 }
 

@@ -34,6 +34,8 @@ A few style points are things swift-format actively gets *wrong* for this style 
 
 6. **Member attribute placement** — puts the attributes / property wrappers of a *member* property on their own line above the declaration (`@ObservationIgnored let x` → `@ObservationIgnored` ⏎ `let x`), keeping access modifiers on the `let`/`var` line. Multiple attributes stay as swift-format laid them out (one line, or wrapped if long); only the break before the declaration is inserted. Local variables inside function/closure bodies keep their attributes inline.
 
+7. **Wrapped `if` conditions** — when a line-starting `if`'s condition wraps (several comma conditions, or a single condition broken at `&&`/`||`), the continuation lines are pushed one indent level deeper (swift-format's single → the project's double indent) and the opening `{` is brought up onto the last condition line. swift-format does the opposite (single indent + brace on its own line). `else if` and the `return if` expression form are left as-is.
+
 ## Linter: SwiftLint
 
 Config: `.swiftlint.yml` (repo root). It owns the lint-only concerns and the few rules that must **agree** with the formatter:
