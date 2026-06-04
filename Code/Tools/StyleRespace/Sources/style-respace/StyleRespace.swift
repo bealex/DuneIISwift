@@ -339,16 +339,34 @@ private final class BlankLineNormalizer: SyntaxRewriter {
         return CodeBlockItemListSyntax(items)
     }
 
-    private func withLeadingBlanks(_ item: CodeBlockItemSyntax, _ blanks: Int) -> CodeBlockItemSyntax {
+    // A type's members: surround each function-like member (method / init / deinit / subscript) with a blank
+    // line — swift-format never adds blank lines between members. Adjacent properties stay grouped.
+    override func visit(_ node: MemberBlockItemListSyntax) -> MemberBlockItemListSyntax {
+        let node = super.visit(node)
+
+        var items = Array(node)
+        guard items.count > 1 else { return node }
+
+        for index in 1 ..< items.count where isMethodLike(items[index - 1].decl) || isMethodLike(items[index].decl) {
+            items[index] = withLeadingBlanks(items[index], 1)
+        }
+
+        return MemberBlockItemListSyntax(items)
+    }
+
+    private func isMethodLike(_ decl: DeclSyntax) -> Bool {
+        decl.is(FunctionDeclSyntax.self) || decl.is(InitializerDeclSyntax.self)
+            || decl.is(DeinitializerDeclSyntax.self) || decl.is(SubscriptDeclSyntax.self)
+    }
+
+    private func withLeadingBlanks<Item: SyntaxProtocol>(_ item: Item, _ blanks: Int) -> Item {
         let pieces = Array(item.leadingTrivia)
         var newlineRun = 0
         while newlineRun < pieces.count, isNewline(pieces[newlineRun]) { newlineRun += 1 }
 
         guard newlineRun > 0 else { return item }
 
-        var result = item
-        result.leadingTrivia = Trivia(pieces: [ .newlines(blanks + 1) ] + pieces[newlineRun...])
-        return result
+        return item.with(\.leadingTrivia, Trivia(pieces: [ .newlines(blanks + 1) ] + pieces[newlineRun...]))
     }
 
     private func isNewline(_ piece: TriviaPiece) -> Bool {
