@@ -57,3 +57,9 @@ SwiftLint user rules are regex-only (no AST). Three encode style points the buil
 ## How the two stay consistent
 
 swift-format strips collection-literal spaces; `style-respace` puts them back; SwiftLint enforces they're present. Running `format.sh` then `lint.sh` on the same file is fixpoint-stable: the formatter's output passes the linter, including the guard and collection-literal rules.
+
+## Manual guidelines (not auto-enforced)
+
+A few code-style rules can't be mechanically enforced and are left to review:
+
+- **Trailing closure vs labeled argument** — a trailing closure is for when the closure is a call's only substantial argument; when the call also has other (especially multi-line) arguments, the closure should be a labeled argument inside the parentheses (`Picker(…, content: { … })`, not `Picker(…) { … }`). This can't be auto-formatted: moving a trailing closure into the argument list needs the parameter's label (`content:`), which isn't recoverable from syntax without type information. A regex lint check isn't viable either — the `) {` line it would key on is far more often a void multi-line `func`/`init` declaration than a trailing-closure call.
