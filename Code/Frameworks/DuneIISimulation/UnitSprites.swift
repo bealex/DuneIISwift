@@ -134,8 +134,7 @@ public enum UnitSprites {
         // body's horizontal flip. `spriteOffset % 3` animates the gather; the caller advances `spriteOffset`.
         var overlay: UnitSpriteLayer?
         if onSpice && type == .harvester && unit.spriteOffset >= 0
-            && unit.actionID == UInt8(ActionType.harvest.rawValue)
-        {
+                && unit.actionID == UInt8(ActionType.harvest.rawValue) {
             let (dirOffset, dirFlip) = directional[bodyO8]
             let (ox, oy) = harvestOverlayOffset[bodyO8]
             overlay = UnitSpriteLayer(

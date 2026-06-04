@@ -71,8 +71,7 @@ enum RenderCap {
         // Debug: drop a stationary sandworm at a tile to exercise the shimmer (`--worm tx,ty`). Injected
         // after unit setup + with no script, so it sits still (use with `--tick 0`).
         if let w = args.value("--worm").flatMap(parsePair),
-            let slot = state.units.firstIndex(where: { !$0.o.flags.contains(.used) })
-        {
+                let slot = state.units.firstIndex(where: { !$0.o.flags.contains(.used) }) {
             var worm = Unit()
             worm.o.index = UInt16(slot)
             worm.o.type = UInt8(UnitType.sandworm.rawValue)

@@ -30,9 +30,8 @@ extension Simulation {
                 let tile = mapPrimitives.findLocationTile(UInt16(r.locationID), houseID: r.houseID, in: &state)
                 let destination = state.indexEncode(tile, type: .tile)
                 if let type = UnitType(rawValue: Int(r.unitType)),
-                    combat.unitCreateWrapper(houseID: r.houseID, type: type, destination: destination, in: &state)
-                        != nil
-                {
+                        combat.unitCreateWrapper(houseID: r.houseID, type: type, destination: destination, in: &state)
+                            != nil {
                     deployed = true
                 }
             } else {

@@ -460,9 +460,8 @@ struct AssetDetailView: View {
                 remapKind = .tile
                 // A multi-tile structure: assemble each build/animation state into a whole building.
                 if let layout = StructureCatalog.layout(iconGroup: index),
-                    layout.width * layout.height > 1,
-                    group.tileIDs.count % (layout.width * layout.height) == 0
-                {
+                        layout.width * layout.height > 1,
+                        group.tileIDs.count % (layout.width * layout.height) == 0 {
                     rawFrames = assembleStructure(
                         tiles,
                         tileIDs: group.tileIDs,

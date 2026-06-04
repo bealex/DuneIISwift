@@ -30,9 +30,8 @@ public struct UnitActions: Sendable {
     ) {
         let current = state.units[slot].actionID
         if current == UInt8(ActionType.destruct.rawValue)
-            || current == UInt8(ActionType.die.rawValue)
-            || action == 0xFF
-        {
+                || current == UInt8(ActionType.die.rawValue)
+                || action == 0xFF {
             return
         }
         guard let actionType = ActionType(rawValue: Int(action)) else { return }

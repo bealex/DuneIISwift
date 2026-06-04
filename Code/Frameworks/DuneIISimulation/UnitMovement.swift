@@ -106,9 +106,8 @@ public struct UnitMovement: Sendable {
                 return true
             }
             if state.units[slot].o.flags.contains(.byScenario)
-                && state.units[slot].o.linkedID == 0xFF
-                && state.units[slot].o.script.variables[4] == 0
-            {
+                    && state.units[slot].o.linkedID == 0xFF
+                    && state.units[slot].o.script.variables[4] == 0 {
                 state.unitRemove(slot)
                 return true
             }
@@ -129,10 +128,9 @@ public struct UnitMovement: Sendable {
 
         if ui.flags.contains(.isTracked) && d < 48 {
             if let u2 = state.unitGetByPackedTile(packed),
-                let ut2 = UnitType(rawValue: Int(state.units[u2].o.type)),
-                UnitInfo[ut2].movementType == .foot,
-                state.units[u2].o.flags.contains(.allocated)
-            {
+                    let ut2 = UnitType(rawValue: Int(state.units[u2].o.type)),
+                    UnitInfo[ut2].movementType == .foot,
+                    state.units[u2].o.flags.contains(.allocated) {
                 // Driving over a foot unit — it dies. (SEAM: Unit_Select(NULL) if it was selected.)
                 state.unitUntargetMe(u2)
                 state.units[u2].o.script.variables[1] = 1
@@ -179,8 +177,7 @@ public struct UnitMovement: Sendable {
             let blastDamage = (state.units[slot].o.hitpoints / 4) &+ 1
             if let u2 = state.unitGetByPackedTile(packed) {
                 if let ut2 = UnitType(rawValue: Int(state.units[u2].o.type)),
-                    !UnitInfo[ut2].flags.contains(.sonicProtection)
-                {
+                        !UnitInfo[ut2].flags.contains(.sonicProtection) {
                     damage(slot: u2, damage: blastDamage, range: 0, in: &state)
                 }
             } else if let s2 = state.structureGetByPackedTile(packed) {
@@ -203,9 +200,8 @@ public struct UnitMovement: Sendable {
                 // (A bullet fired *from* a structure passes over its owner's own walls/buildings.)
                 var ltype = map.landscapeType(state.map[Int(newPosition.packed)], tileIDs: state.tileIDs)
                 if (ltype == .wall || ltype == .structure)
-                    && Tools.indexType(state.units[slot].originEncoded) == .structure
-                    && state.map[Int(newPosition.packed)].houseID == state.units[slot].o.houseID
-                {
+                        && Tools.indexType(state.units[slot].originEncoded) == .structure
+                        && state.map[Int(newPosition.packed)].houseID == state.units[slot].o.houseID {
                     ltype = .normalSand
                 }
                 if ltype == .wall || ltype == .structure || ltype == .entirelyMountain {
@@ -249,12 +245,11 @@ public struct UnitMovement: Sendable {
                             }
                         } else if ui.explosionType != 0xFFFF {
                             if ui.flags.contains(.impactOnSand)
-                                && state.map[Int(state.units[slot].o.position.packed)].index == 0
-                                && map.landscapeType(
-                                    state.map[Int(state.units[slot].o.position.packed)],
-                                    tileIDs: state.tileIDs
-                                ) == .normalSand
-                            {
+                                    && state.map[Int(state.units[slot].o.position.packed)].index == 0
+                                    && map.landscapeType(
+                                        state.map[Int(state.units[slot].o.position.packed)],
+                                        tileIDs: state.tileIDs
+                                    ) == .normalSand {
                                 mapMakeExplosion(
                                     type: UInt16(ExplosionType.sandBurst.rawValue),
                                     position: newPosition,
@@ -492,8 +487,7 @@ public struct UnitMovement: Sendable {
         -> UInt16
     {
         if state.units[slot].currentDestination.x != 0 || state.units[slot].currentDestination.y != 0
-            || !state.indexIsValid(encoded)
-        {
+                || !state.indexIsValid(encoded) {
             return 1
         }
 

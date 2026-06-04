@@ -360,8 +360,7 @@ public final class GameModel {
     /// `Resources/` relative to `Code/` (how `swift run duneii` is launched), mirroring `App.installURL()`.
     private static func musicURL() -> URL {
         if let bundled = Bundle.main.resourceURL?.appendingPathComponent("Audio/Music"),
-            FileManager.default.fileExists(atPath: bundled.path)
-        {
+                FileManager.default.fileExists(atPath: bundled.path) {
             return bundled
         }
         return URL(fileURLWithPath: "../Resources/Audio/Music")
@@ -739,8 +738,7 @@ public final class GameModel {
 
         // A selected player palace: surface its house super-weapon + readiness (countdown at 0 = ready).
         if type == .palace, let house = HouseID(rawValue: Int(s.o.houseID)),
-            let weapon = SuperWeaponState.Weapon(rawValue: Int(HouseInfo[house].specialWeapon))
-        {
+                let weapon = SuperWeaponState.Weapon(rawValue: Int(HouseInfo[house].specialWeapon)) {
             let sw = SuperWeaponState(slot: slot, weapon: weapon, ready: s.countDown == 0)
             if sw != superWeapon { superWeapon = sw }
         } else if superWeapon != nil {
@@ -891,8 +889,7 @@ public final class GameModel {
             canAddToCart(item)
         else {
             if (starportStock.first { $0.objectType == objectType }).map({ cartCount(objectType) >= $0.available })
-                == true
-            {
+                    == true {
                 postNotice("Out of stock")
             } else {
                 noticeInsufficientFunds()
@@ -1295,8 +1292,7 @@ public final class GameModel {
 
         let tile = 16.0
         if case let .structure(slot) = controller.selection,
-            slot < state.structures.count, state.structures[slot].o.flags.contains(.used)
-        {
+                slot < state.structures.count, state.structures[slot].o.flags.contains(.used) {
             let (w, h) = selectionFootprint()
             let cornerX = Double(state.structures[slot].o.position.x) * tile / 256
             let cornerY = Double(state.structures[slot].o.position.y) * tile / 256

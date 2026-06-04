@@ -78,9 +78,8 @@ extension UnitMovement {
         }
 
         if houseID != state.playerHouseID
-            && state.units[slot].actionID == UInt8(ActionType.ambush.rawValue)
-            && ut != .harvester
-        {
+                && state.units[slot].actionID == UInt8(ActionType.ambush.rawValue)
+                && ut != .harvester {
             actions.setAction(slot: slot, action: UInt8(ActionType.attack.rawValue), scriptInfo: scriptInfo, in: &state)
         }
 
@@ -268,8 +267,7 @@ extension UnitMovement {
 
                 if uType == .harvester {
                     if let usType = UnitType(rawValue: Int(state.units[us].o.type)),
-                        UnitInfo[usType].movementType == .foot, state.units[u].targetMove == 0
-                    {
+                            UnitInfo[usType].movementType == .foot, state.units[u].targetMove == 0 {
                         if state.units[u].actionID != UInt8(ActionType.move.rawValue) {
                             actions.setAction(
                                 slot: u,
@@ -286,8 +284,7 @@ extension UnitMovement {
                 if ui.bulletType == 0xFF { continue }
 
                 if state.units[u].actionID == UInt8(ActionType.guard_.rawValue)
-                    && state.units[u].o.flags.contains(.byScenario)
-                {
+                        && state.units[u].o.flags.contains(.byScenario) {
                     actions.setAction(
                         slot: u,
                         action: UInt8(ActionType.hunt.rawValue),
@@ -303,8 +300,7 @@ extension UnitMovement {
                 if state.units[u].targetAttack != 0, state.indexGetUnit(state.units[u].targetAttack) != nil {
                     let packed = state.units[u].o.position.packed
                     if Tile32.distancePacked(state.indexGetTile(state.units[u].targetAttack).packed, packed)
-                        <= ui.fireDistance
-                    {
+                            <= ui.fireDistance {
                         continue
                     }
                 }

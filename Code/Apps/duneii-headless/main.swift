@@ -57,10 +57,9 @@ func runDemo(_ builder: ScenarioBuilder, _ kind: ScenarioKind, ticks: Int) {
         let before = world.state.structures.filter { $0.o.flags.contains(.used) }.count
         world.tick()
         if firstBullet < 0,
-            world.state.units.contains(where: {
-                $0.o.flags.contains(.used) && $0.o.type == UInt8(UnitType.bullet.rawValue)
-            })
-        {
+                world.state.units.contains(where: {
+                    $0.o.flags.contains(.used) && $0.o.type == UInt8(UnitType.bullet.rawValue)
+                }) {
             firstBullet = t
         }
         if destroyed < 0, world.state.structures.filter({ $0.o.flags.contains(.used) }).count < before { destroyed = t }

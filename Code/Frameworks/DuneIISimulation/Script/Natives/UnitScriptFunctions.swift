@@ -190,9 +190,8 @@ public struct UnitScriptFunctions: Sendable {
         }
 
         if let sSlot = state.indexGetStructure(destination),
-            state.structures[sSlot].o.houseID == state.unitHouseID(state.units[slot]),
-            let ut = UnitType(rawValue: Int(state.units[slot].o.type))
-        {
+                state.structures[sSlot].o.houseID == state.unitHouseID(state.units[slot]),
+                let ut = UnitType(rawValue: Int(state.units[slot].o.type)) {
             let valid = unitPrimitives.isValidMovementIntoStructure(
                 state.units[slot],
                 state.structures[sSlot],
@@ -457,17 +456,15 @@ public struct UnitScriptFunctions: Sendable {
             case .unit:
                 if let u2 = state.indexGetUnit(var4) {
                     if selfEnc == state.units[u2].o.script.variables[4]
-                        && state.units[u2].o.houseID == state.units[slot].o.houseID
-                    {
+                            && state.units[u2].o.houseID == state.units[slot].o.houseID {
                         return 1
                     }
                     state.units[u2].targetMove = 0
                 }
             case .structure:
                 if let s = state.indexGetStructure(var4),
-                    selfEnc == state.structures[s].o.script.variables[4]
-                        && state.structures[s].o.houseID == state.units[slot].o.houseID
-                {
+                        selfEnc == state.structures[s].o.script.variables[4]
+                            && state.structures[s].o.houseID == state.units[slot].o.houseID {
                     return 1
                 }
             default:

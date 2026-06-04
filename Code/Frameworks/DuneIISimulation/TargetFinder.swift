@@ -67,8 +67,7 @@ public struct TargetFinder: Sendable {
         while let target = state.unitFind(&find) {
             if mode != 0 && mode != 4 {
                 if mode == 1,
-                    Tile32.distance(from: state.units[slot].o.position, to: state.units[target].o.position) > distance
-                {
+                        Tile32.distance(from: state.units[slot].o.position, to: state.units[target].o.position) > distance {
                     continue
                 }
                 if mode == 2, Tile32.distance(from: position, to: state.units[target].o.position) > distance {
@@ -160,8 +159,7 @@ public struct TargetFinder: Sendable {
         if targetInfo.movementType == .winger {
             if !unitInfo.o.flags.contains(.targetAir) { return 0 }
             if target.o.houseID == state.playerHouseID
-                && !map.isPositionUnveiled(state.map[Int(target.o.position.packed)], tileIDs: state.tileIDs)
-            {
+                    && !map.isPositionUnveiled(state.map[Int(target.o.position.packed)], tileIDs: state.tileIDs) {
                 return 0
             }
         }

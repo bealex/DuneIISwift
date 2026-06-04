@@ -26,8 +26,7 @@ public extension Simulation {
 
         // 1. AI construction-yard auto-place of a finished structure.
         if state.structures[slot].o.houseID != state.playerHouseID, st == .constructionYard,
-            state.structures[slot].state == .ready, state.structures[slot].o.linkedID != 0xFF
-        {
+                state.structures[slot].state == .ready, state.structures[slot].o.linkedID != 0xFF {
             let ns = Int(state.structures[slot].o.linkedID)
             state.structures[slot].o.linkedID = 0xFF
             state.structureSetState(slot, .idle)
@@ -60,8 +59,7 @@ public extension Simulation {
         }
 
         if si.o.flags.contains(.factory), state.structures[slot].countDown == 0,
-            state.structures[slot].o.linkedID == 0xFF, let type = structureAIPickNextToBuild(slot)
-        {
+                state.structures[slot].o.linkedID == 0xFF, let type = structureAIPickNextToBuild(slot) {
             combat.structureBuildObject(slot: slot, objectType: type, in: &state)
         }
     }
@@ -103,8 +101,7 @@ public extension Simulation {
             if !set.contains(raw) { continue }
             if state.random256.next() % 4 == 0 { pick = raw }
             if let cur = pick, let curType = UnitType(rawValue: Int(cur)), let candidate = UnitType(rawValue: i),
-                UnitInfo[candidate].o.priorityBuild <= UnitInfo[curType].o.priorityBuild
-            {
+                    UnitInfo[candidate].o.priorityBuild <= UnitInfo[curType].o.priorityBuild {
                 continue
             }
             pick = raw

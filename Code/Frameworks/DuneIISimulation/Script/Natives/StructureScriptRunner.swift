@@ -77,8 +77,7 @@ public struct StructureScriptRunner: Sendable {
             // release builds (the decision-trace goldens run under `swift test`, i.e. debug).
             #if DEBUG
                 if let tracer, state.structures[slot].o.index == tracer.structureIndex,
-                    let line = ScriptTraceLine.decode(engine, info: scriptInfo)
-                {
+                        let line = ScriptTraceLine.decode(engine, info: scriptInfo) {
                     tracer.record(line.oracleFormat)
                 }
             #endif

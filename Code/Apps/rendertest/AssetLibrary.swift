@@ -196,9 +196,8 @@ final class AssetLibrary {
 
         // Buildings & terrain: ICON.ICN tiles grouped by ICON.MAP icon groups.
         if let iconAsset = fileAssets[.tiles]?.first(where: { $0.name.uppercased() == "ICON.ICN" }),
-            let mapData = archives[iconAsset.pak]?.data(named: "ICON.MAP"),
-            let iconMap = try? IconMap(mapData)
-        {
+                let mapData = archives[iconAsset.pak]?.data(named: "ICON.MAP"),
+                let iconMap = try? IconMap(mapData) {
             func groupAsset(_ group: IconMap.Group) -> Asset {
                 Asset(
                     pak: iconAsset.pak,

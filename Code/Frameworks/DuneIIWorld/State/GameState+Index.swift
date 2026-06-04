@@ -22,8 +22,7 @@ public extension GameState {
                 return ret | 0xC000
             case .unit:
                 if index >= UInt16(Pool.unitIndexMax)
-                    || !units[Int(index)].o.flags.contains(.allocated)
-                {
+                        || !units[Int(index)].o.flags.contains(.allocated) {
                     return 0
                 }
                 return index | 0x4000

@@ -21,9 +21,8 @@ public extension GameState {
             let u = units[Int(slot)]
             let skip = u.o.flags.contains(.isNotOnMap) && validateStrictIfZero == 0
             if !skip
-                && (find.houseID == Pool.houseInvalid || find.houseID == unitHouseID(u))
-                && (find.type == 0xFFFF || find.type == UInt16(u.o.type))
-            {
+                    && (find.houseID == Pool.houseInvalid || find.houseID == unitHouseID(u))
+                    && (find.type == 0xFFFF || find.type == UInt16(u.o.type)) {
                 return Int(slot)
             }
             find.index = find.index &+ 1
@@ -54,9 +53,8 @@ public extension GameState {
                 let s = structures[idx]
                 let skip = s.o.flags.contains(.isNotOnMap) && validateStrictIfZero == 0
                 if !skip
-                    && (find.houseID == Pool.houseInvalid || find.houseID == s.o.houseID)
-                    && (find.type == 0xFFFF || find.type == UInt16(s.o.type))
-                {
+                        && (find.houseID == Pool.houseInvalid || find.houseID == s.o.houseID)
+                        && (find.type == 0xFFFF || find.type == UInt16(s.o.type)) {
                     return idx
                 }
             }
@@ -296,9 +294,8 @@ public extension GameState {
         structures[slot].o.script.reset()
         let type = Int(structures[slot].o.type)
         if type == StructureType.slab1x1.rawValue
-            || type == StructureType.slab2x2.rawValue
-            || type == StructureType.wall.rawValue
-        {
+                || type == StructureType.slab2x2.rawValue
+                || type == StructureType.wall.rawValue {
             return
         }
         if let i = structureFindArray.firstIndex(of: UInt16(slot)) { structureFindArray.remove(at: i) }

@@ -141,8 +141,7 @@ struct StructureScriptFunctions: Sendable {
 
         let type: UInt8, damage: UInt16, fireDelayBase: UInt16
         if st == .rocketTurret,
-            Tile32.distance(from: state.indexGetTile(target), to: state.structures[slot].o.position) >= 0x300
-        {
+                Tile32.distance(from: state.indexGetTile(target), to: state.structures[slot].o.position) >= 0x300 {
             type = UInt8(UnitType.missileTurret.rawValue); damage = 30; fireDelayBase = UnitInfo[.launcher].fireDelay
         } else {
             type = UInt8(UnitType.bullet.rawValue); damage = 20; fireDelayBase = UnitInfo[.tank].fireDelay
@@ -217,8 +216,7 @@ struct StructureScriptFunctions: Sendable {
 
         // Carryall pickup: a winger lifts off from the structure's tile.
         if UnitInfo[ut].movementType == .winger,
-            combat.unitSetPosition(slot: u, position: state.structures[slot].o.position, in: &state)
-        {
+                combat.unitSetPosition(slot: u, position: state.structures[slot].o.position, in: &state) {
             state.structures[slot].o.linkedID = state.units[u].o.linkedID
             state.units[u].o.linkedID = 0xFF
             if state.structures[slot].o.linkedID == 0xFF { state.structureSetState(slot, .idle) }
@@ -251,8 +249,7 @@ struct StructureScriptFunctions: Sendable {
         // "<house> unit/harvester deployed" (`script/structure.c:289`): the player's own non-repair factory
         // only. Harvester → house+68, any other unit → house+30. Routed through the global feedback queue.
         if state.structures[slot].o.houseID == state.playerHouseID,
-            StructureType(rawValue: Int(state.structures[slot].o.type)) != .repair
-        {
+                StructureType(rawValue: Int(state.structures[slot].o.type)) != .repair {
             state.pendingFeedback.append(UInt16(state.playerHouseID) &+ (ut == .harvester ? 68 : 30))
         }
         return 1
@@ -271,10 +268,9 @@ struct StructureScriptFunctions: Sendable {
         let u = Int(state.structures[slot].o.linkedID)
 
         if state.playerHouseID == state.structures[slot].o.houseID,
-            state.units[u].o.type == UInt8(UnitType.harvester.rawValue),
-            state.units[u].targetLast.x == 0, state.units[u].targetLast.y == 0,
-            position != 0
-        {
+                state.units[u].o.type == UInt8(UnitType.harvester.rawValue),
+                state.units[u].targetLast.x == 0, state.units[u].targetLast.y == 0,
+                position != 0 {
             return 0
         }
 

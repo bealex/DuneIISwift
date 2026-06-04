@@ -272,10 +272,9 @@ extension Simulation {
                         // chasing an *aircraft* (a winger target) re-aims at the moving target each tick.
                         var tile = state.units[slot].currentDestination
                         if Tools.indexType(state.units[slot].targetAttack) == .unit,
-                            let tslot = state.indexGetUnit(state.units[slot].targetAttack),
-                            let tut = UnitType(rawValue: Int(state.units[tslot].o.type)),
-                            UnitInfo[tut].movementType == .winger
-                        {
+                                let tslot = state.indexGetUnit(state.units[slot].targetAttack),
+                                let tut = UnitType(rawValue: Int(state.units[tslot].o.type)),
+                                UnitInfo[tut].movementType == .winger {
                             tile = state.indexGetTile(state.units[slot].targetAttack)
                         }
                         var u = state.units[slot]
@@ -333,8 +332,7 @@ extension Simulation {
                         }
                     }
                     if ut == .ornithopter && state.units[slot].o.flags.contains(.allocated)
-                        && state.units[slot].spriteOffset >= 0
-                    {
+                            && state.units[slot].spriteOffset >= 0 {
                         state.units[slot].spriteOffset = (state.units[slot].spriteOffset & 0x3F) &+ 1
                         state.units[slot].timer = 1
                     }
@@ -479,8 +477,7 @@ extension Simulation {
         while let slot = state.structureFind(&find) {
             let t = state.structures[slot].o.type
             if t == UInt8(StructureType.slab1x1.rawValue) || t == UInt8(StructureType.slab2x2.rawValue)
-                || t == UInt8(StructureType.wall.rawValue)
-            {
+                    || t == UInt8(StructureType.wall.rawValue) {
                 continue
             }
 
@@ -492,8 +489,7 @@ extension Simulation {
                 if state.structures[slot].countDown != 0 { state.structures[slot].countDown &-= 1 }
                 let house = Int(state.structures[slot].o.houseID)
                 if state.structures[slot].countDown == 0, !state.houses[house].flags.contains(.human),
-                    state.houses[house].flags.contains(.isAIActive)
-                {
+                        state.houses[house].flags.contains(.isAIActive) {
                     structureActivateSpecial(slot)
                 }
             }
@@ -501,9 +497,8 @@ extension Simulation {
             // Campaign degrade (`structure.c:121`): a `degrades` structure above half its *base* hitpoints
             // takes its house's `degradingAmount` each degrade tick.
             if tickDegrade, state.structures[slot].o.flags.contains(.degrades),
-                let si = StructureType(rawValue: Int(t)).map({ StructureInfo[$0] }),
-                state.structures[slot].o.hitpoints > si.o.hitpoints / 2
-            {
+                    let si = StructureType(rawValue: Int(t)).map({ StructureInfo[$0] }),
+                    state.structures[slot].o.hitpoints > si.o.hitpoints / 2 {
                 let house = HouseID(rawValue: Int(state.structures[slot].o.houseID)) ?? .harkonnen
                 _ = state.structureDamage(slot, damage: HouseInfo[house].degradingAmount, range: 0)
             }
@@ -635,8 +630,7 @@ extension Simulation {
                 if state.houses[h].timerSandwormAttack != 0 { state.houses[h].timerSandwormAttack &-= 1 }
                 if state.houses[h].timerStructureAttack != 0 { state.houses[h].timerStructureAttack &-= 1 }
                 if state.houses[h].harvestersIncoming > 0, let combat,
-                    combat.unitCreateWrapper(houseID: houseIndex, type: .harvester, destination: 0, in: &state) != nil
-                {
+                        combat.unitCreateWrapper(houseID: houseIndex, type: .harvester, destination: 0, in: &state) != nil {
                     state.houses[h].harvestersIncoming &-= 1
                 }
             }

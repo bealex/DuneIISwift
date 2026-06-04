@@ -81,8 +81,7 @@ public extension Simulation {
                 while let sf = state.structureFind(&find) {
                     let tt = state.structures[sf].o.type
                     if tt == UInt8(StructureType.slab1x1.rawValue) || tt == UInt8(StructureType.slab2x2.rawValue)
-                        || tt == UInt8(StructureType.wall.rawValue)
-                    {
+                            || tt == UInt8(StructureType.wall.rawValue) {
                         continue
                     }
                     if housePrim.areAllied(

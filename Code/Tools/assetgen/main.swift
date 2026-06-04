@@ -87,10 +87,9 @@ func makeDirectory(_ url: URL) {
 
 func defaultPalette(_ installDir: URL) -> Palette {
     if let data = try? Data(contentsOf: installDir.appendingPathComponent("DUNE.PAK")),
-        let archive = try? Pak.Archive(data),
-        let paletteData = archive.data(named: "IBM.PAL"),
-        let palette = try? Palette(paletteData)
-    {
+            let archive = try? Pak.Archive(data),
+            let paletteData = archive.data(named: "IBM.PAL"),
+            let palette = try? Palette(paletteData) {
         return palette
     }
 

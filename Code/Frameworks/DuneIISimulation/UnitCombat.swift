@@ -75,8 +75,7 @@ public struct UnitCombat: Sendable {
         if linked != 0xFF {
             let origin = state.units[Int(linked)].originEncoded
             if let s = state.indexGetStructure(origin),
-                state.structures[s].state == .idle, state.structures[s].o.script.variables[4] == 0
-            {
+                    state.structures[s].state == .idle, state.structures[s].o.script.variables[4] == 0 {
                 let encoded = state.indexEncode(state.structures[s].o.index, type: .structure)
                 state.objectScriptVariable4Link(unitEnc, encoded)
                 state.units[slot].targetMove = state.units[slot].o.script.variables[4]
@@ -151,9 +150,8 @@ public struct UnitCombat: Sendable {
                     )
                     let wanted = isHarvester ? StructureType.refinery : .repair
                     if state.structures[s2].o.type != UInt8(wanted.rawValue)
-                        || state.structures[s2].state != .idle
-                        || state.structures[s2].o.script.variables[4] != 0
-                    {
+                            || state.structures[s2].state != .idle
+                            || state.structures[s2].o.script.variables[4] != 0 {
                         continue
                     }
                     if minDistance != 0 && distance >= minDistance { if isHarvester { break loop } else { continue } }
@@ -217,9 +215,8 @@ public struct UnitCombat: Sendable {
             }
 
             if (state.structures[s].state == .idle
-                || (StructureInfo[stype].o.flags.contains(.busyStateIsIncoming) && state.structures[s].state == .busy))
-                && state.structures[s].o.linkedID == 0xFF
-            {
+                    || (StructureInfo[stype].o.flags.contains(.busyStateIsIncoming) && state.structures[s].state == .busy))
+                    && state.structures[s].o.linkedID == 0xFF {
                 state.unitEnterStructure(Int(state.units[slot].o.linkedID), s)
                 state.objectScriptVariable4Clear(.unit(slot))
                 state.units[slot].targetMove = 0
@@ -596,8 +593,7 @@ public struct UnitCombat: Sendable {
         for off in [ 0, -1, -64, -65 ] {
             let pos = UInt16(truncatingIfNeeded: base + off)
             if structureCreate(type: .constructionYard, houseID: state.units[slot].o.houseID, position: pos, in: &state)
-                != nil
-            {
+                    != nil {
                 state.unitRemove(slot)
                 return 1
             }
@@ -935,8 +931,7 @@ public struct UnitCombat: Sendable {
         }
 
         if movement.house.areAllied(houseID, state.playerHouseID, playerHouseID: state.playerHouseID)
-            || state.unitIsTypeOnMap(houseID: houseID, typeID: UInt8(UnitType.carryall.rawValue))
-        {
+                || state.unitIsTypeOnMap(houseID: houseID, typeID: UInt8(UnitType.carryall.rawValue)) {
             state.units[carryall].o.flags.insert(.byScenario)
         }
 
@@ -1051,8 +1046,7 @@ public struct UnitCombat: Sendable {
 
                 state.units[bullet].fireDelay = ui.fireDistance & 0xFF
                 if let u = state.indexGetUnit(target), let ut2 = UnitType(rawValue: Int(state.units[u].o.type)),
-                    UnitInfo[ut2].movementType == .winger
-                {
+                        UnitInfo[ut2].movementType == .winger {
                     state.units[bullet].fireDelay <<= 1
                 }
 

@@ -638,8 +638,7 @@ public final class GameScene: SKScene {
 
         override public func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
             if (event?.allTouches?.count ?? touches.count) >= 2, let start = pinchStartDistance,
-                let now = pinchDistance(event)
-            {
+                    let now = pinchDistance(event) {
                 cancelLongPress()
                 if now / start > 1.30 {
                     model?.zoomIn(); pinchStartDistance = now

@@ -373,8 +373,7 @@ struct ScenarioGoldenTests {
                 firstMismatch = t; what = "houses"; break
             }
             if (ours[t].tiles ?? []).sorted(by: { $0.packed < $1.packed })
-                != (oracle[t].tiles ?? []).sorted(by: { $0.packed < $1.packed })
-            {
+                    != (oracle[t].tiles ?? []).sorted(by: { $0.packed < $1.packed }) {
                 firstMismatch = t; what = "tiles"; break
             }
         }

@@ -180,8 +180,7 @@ public struct DefaultMapPrimitives: MapPrimitives {
             while let s = state.structureFind(&find) {
                 let st = state.structures[s].o.type
                 if st == UInt8(StructureType.slab1x1.rawValue) || st == UInt8(StructureType.slab2x2.rawValue)
-                    || st == UInt8(StructureType.wall.rawValue)
-                {
+                        || st == UInt8(StructureType.wall.rawValue) {
                     continue
                 }
                 if state.structures[s].o.houseID == houseID { continue }

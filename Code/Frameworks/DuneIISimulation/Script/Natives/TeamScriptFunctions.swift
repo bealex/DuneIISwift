@@ -130,8 +130,7 @@ struct TeamScriptFunctions: Sendable {
             }
 
             if (distanceUnitDest < distanceTeamDest && (distance &+ 2) < distanceUnitTeam)
-                || (distanceUnitDest >= distanceTeamDest && distanceUnitTeam > distance)
-            {
+                    || (distanceUnitDest >= distanceTeamDest && distanceUnitTeam > distance) {
                 actions.setAction(slot: u, action: UInt8(ActionType.move.rawValue), scriptInfo: unitScript, in: &state)
                 let tile = Tile32.moveByRandom(teamPos, distance: distance << 4, center: true, rng: &state.random256)
                 unitFuncs.unitSetDestination(slot: u, state.indexEncode(tile.packed, type: .tile), in: &state)

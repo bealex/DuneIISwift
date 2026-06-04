@@ -51,9 +51,8 @@ public struct UnitScriptRunner: Sendable {
             case 0x01:  // Script_Unit_SetAction (+ the player-harvest guard)
                 let action = engine.peek(1)
                 if u.o.houseID == state.playerHouseID
-                    && action == UInt16(ActionType.harvest.rawValue)
-                    && u.nextActionID != 0xFF
-                {
+                        && action == UInt16(ActionType.harvest.rawValue)
+                        && u.nextActionID != 0xFF {
                     return 0
                 }
                 actions.setAction(

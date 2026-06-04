@@ -119,15 +119,13 @@ public enum FrameComposer {
         // colour-0 transparency, so only its non-zero pixels overwrite the ground (the rest shows through).
         let overlayId = tile.overlaySpriteIndex
         if overlayId != 0, overlayId != veiledTileIndex,
-            let overlay = source.terrainTile(overlayId), overlay.count >= ts * ts
-        {
+                let overlay = source.terrainTile(overlayId), overlay.count >= ts * ts {
             for i in 0 ..< (ts * ts) where overlay[i] != 0 { out[i] = recolour(overlay[i]) }
         }
         // A partial fog edge (a revealed tile bordering the unknown) — only with fog on. House-neutral
         // (fog colours aren't in the house-remap block); same colour-0 transparency as any overlay.
         if showFog, tile.fogEdgeSpriteIndex != 0,
-            let fog = source.terrainTile(tile.fogEdgeSpriteIndex), fog.count >= ts * ts
-        {
+                let fog = source.terrainTile(tile.fogEdgeSpriteIndex), fog.count >= ts * ts {
             for i in 0 ..< (ts * ts) where fog[i] != 0 { out[i] = fog[i] }
         }
         return out

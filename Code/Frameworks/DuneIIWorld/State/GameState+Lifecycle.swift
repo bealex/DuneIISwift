@@ -385,8 +385,7 @@ public extension GameState {
             if structures[s].o.flags.contains(.isNotOnMap) { continue }
             let t = structures[s].o.type
             if t == UInt8(StructureType.slab1x1.rawValue) || t == UInt8(StructureType.slab2x2.rawValue)
-                || t == UInt8(StructureType.wall.rawValue)
-            {
+                    || t == UInt8(StructureType.wall.rawValue) {
                 continue
             }
             result |= UInt32(1) << UInt32(t)
@@ -451,8 +450,7 @@ public extension GameState {
         while let s = structureFind(&find) {
             let t = structures[s].o.type
             if t == UInt8(StructureType.slab1x1.rawValue) || t == UInt8(StructureType.slab2x2.rawValue)
-                || t == UInt8(StructureType.wall.rawValue)
-            {
+                    || t == UInt8(StructureType.wall.rawValue) {
                 continue
             }
             guard let st = StructureType(rawValue: Int(t)) else { continue }
@@ -511,8 +509,7 @@ public extension GameState {
             ret = true
         }
         if state == 0 || structures[slot].o.flags.contains(.repairing)
-            || structures[slot].o.hitpoints == StructureInfo[st].o.hitpoints
-        {
+                || structures[slot].o.hitpoints == StructureInfo[st].o.hitpoints {
             return ret
         }
 
@@ -597,8 +594,7 @@ public extension GameState {
             ret = true
         }
         if state == 0 || structures[slot].o.flags.contains(.upgrading)
-            || structures[slot].upgradeTimeLeft == 0
-        {
+                || structures[slot].upgradeTimeLeft == 0 {
             return ret
         }
 
@@ -617,14 +613,12 @@ public extension GameState {
 
         if houseID == UInt8(HouseID.harkonnen.rawValue), st == .highTech { return false }
         if houseID == UInt8(HouseID.ordos.rawValue), st == .heavyVehicle, level == 1,
-            si.upgradeCampaign[2] > UInt16(campaignID)
-        {
+                si.upgradeCampaign[2] > UInt16(campaignID) {
             return false
         }
 
         if level < si.upgradeCampaign.count, si.upgradeCampaign[level] != 0,
-            si.upgradeCampaign[level] <= UInt16(campaignID) + 1
-        {
+                si.upgradeCampaign[level] <= UInt16(campaignID) + 1 {
             if st != .constructionYard { return true }
             if level != 1 { return true }
             let required = StructureInfo[.rocketTurret].o.structuresRequired
@@ -696,8 +690,7 @@ public extension GameState {
                     structures[slot].upgradeLevel &+= 1
                     structures[slot].o.flags.remove(.upgrading)
                     if structures[slot].o.houseID == UInt8(HouseID.ordos.rawValue), st == .heavyVehicle,
-                        structures[slot].upgradeLevel == 2
-                    {
+                            structures[slot].upgradeLevel == 2 {
                         structures[slot].upgradeLevel = 3
                     }
                     structures[slot].upgradeTimeLeft = structureIsUpgradable(slot) ? 100 : 0
@@ -723,8 +716,7 @@ public extension GameState {
         } else {
             // Factory production: advance a queued build.
             if !structures[slot].o.flags.contains(.onHold), structures[slot].countDown != 0,
-                structures[slot].o.linkedID != 0xFF, structures[slot].state == .busy, si.o.flags.contains(.factory)
-            {
+                    structures[slot].o.linkedID != 0xFF, structures[slot].state == .busy, si.o.flags.contains(.factory) {
                 let buildCredits: UInt16, buildTime: UInt16
                 if st == .constructionYard {
                     let oi = StructureInfo[StructureType(rawValue: Int(structures[slot].objectType))!].o
@@ -772,8 +764,7 @@ public extension GameState {
             // The repair pad also drives a linked unit's repair countdown.
             if st == .repair {
                 if !structures[slot].o.flags.contains(.onHold), structures[slot].countDown != 0,
-                    structures[slot].o.linkedID != 0xFF
-                {
+                        structures[slot].o.linkedID != 0xFF {
                     let ut = UnitType(rawValue: Int(units[Int(structures[slot].o.linkedID)].o.type))!
                     var repairSpeed: UInt32 = 256
                     if structures[slot].o.hitpoints < si.o.hitpoints {
@@ -1000,8 +991,7 @@ public extension GameState {
         // with `aiFogOfWar` on, only to the player + AI houses that have already found the player. `|= mask`
         // equals `= 0xFF` with the flag off, so the stock path is byte-identical. (unit.c)
         if unitHouse == UInt8(HouseID.fremen.rawValue) && playerHouseID == UInt8(HouseID.atreides.rawValue)
-            || units[slot].o.houseID == playerHouseID
-        {
+                || units[slot].o.houseID == playerHouseID {
             units[slot].o.seenByHouses |= playerObjectVisibilityMask()
         } else {
             units[slot].o.seenByHouses |= houseIDBit
@@ -1038,8 +1028,7 @@ public extension GameState {
             // time the unit steps onto a new tile (each move step re-stamps via `unitUpdateMap(1)`), not
             // only when the unit's script happens to call `Script_Unit_RemoveFog`.
             if House.areAllied(unitHouseID(u), playerHouseID, playerHouseID: playerHouseID),
-                u.o.type != UInt8(UnitType.sandworm.rawValue), !map[Int(packed)].isUnveiled
-            {
+                    u.o.type != UInt8(UnitType.sandworm.rawValue), !map[Int(packed)].isUnveiled {
                 tileRemoveFogInRadius(u.o.position, radius: 1)
             }
             let occupied = map[Int(packed)].hasUnit || map[Int(packed)].hasStructure
