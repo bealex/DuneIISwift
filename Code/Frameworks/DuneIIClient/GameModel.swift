@@ -974,10 +974,14 @@ public final class GameModel {
 
     /// The selected structure's pool slot, iff it's a **player-owned factory** (else `nil`).
     private var selectedFactorySlot: Int? {
-        guard case let .structure(slot) = controller.selection, let state = simulation?.state,
-            slot < state.structures.count, state.structures[slot].o.flags.contains(.used),
+        guard
+            case let .structure(slot) = controller.selection,
+            let state = simulation?.state,
+            slot < state.structures.count,
+            state.structures[slot].o.flags.contains(.used),
             let type = StructureType(rawValue: Int(state.structures[slot].o.type)),
-            StructureInfo[type].o.flags.contains(.factory), type != .starport,  // the starport orders, not builds
+            StructureInfo[type].o.flags.contains(.factory),
+            type != .starport,  // the starport orders, not builds
             state.structures[slot].o.houseID == UInt8(playerHouse.rawValue)
         else { return nil }
 
