@@ -101,7 +101,11 @@ Scripts/build-oracle.sh             # rebuild + re-sign the OpenDUNE parity orac
 Scripts/gen-scenario-goldens.sh [--only <name>]   # regenerate the scenario goldens (one, with --only)
 Scripts/check-ios.sh                # cross-compile DuneIIClient + the iOS app sources for the iOS SDK (iOS-compat regression check; the macOS build never sees the `#if os(iOS)` code)
 Scripts/build-ios.sh [sim|device|archive]   # stage PAKs → xcodegen → xcodebuild: run the iOS app on the simulator / a connected device / export a signed .ipa (see Apps/duneii-ios/README.md)
+Scripts/format.sh [--check] [paths…]        # swift-format + the StyleRespace SwiftSyntax post-pass: rewrite Code/ to the code style (--check reports without modifying). See Architecture/Linting.md.
+Scripts/lint.sh [--strict] [--fix] [paths…] # SwiftLint: report style violations (--strict fails on any finding; --fix auto-corrects the correctable ones).
 ```
+
+**Style toolchain.** New/edited Swift in `Code/` is held to the code style by `Scripts/format.sh` (layout: swift-format + the `Code/Tools/StyleRespace` post-pass for the points swift-format gets wrong — collection-literal spacing, guard/ternary/expression-`if` layout, blank lines, wrapped conditions) and `Scripts/lint.sh` (SwiftLint). **Safety guard:** in-place runs (`format.sh`, `lint.sh --fix`) refuse a target with uncommitted git changes — commit/stash first or pass `--allow-dirty`. A few rules are manual-only (e.g. trailing-closure-vs-labeled-argument). Full reference: `Documentation/Architecture/Linting.md`.
 
 **Investigation helpers** (the source-reading / disasm probes that recur every porting slice):
 

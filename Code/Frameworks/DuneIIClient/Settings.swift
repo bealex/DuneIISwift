@@ -16,10 +16,11 @@ public struct SettingsView: View {
                 Toggle("Music", isOn: Binding(get: { model.musicEnabled }, set: { model.musicEnabled = $0 }))
                 Picker(
                     "Music engine",
-                    selection: Binding(get: { model.musicBackend }, set: { model.musicBackend = $0 })
-                ) {
-                    ForEach(MusicBackend.allCases, id: \.self) { Text($0.displayName).tag($0) }
-                }
+                    selection: Binding(get: { model.musicBackend }, set: { model.musicBackend = $0 }),
+                    content: {
+                        ForEach(MusicBackend.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                    }
+                )
                 .disabled(!model.musicEnabled)
             }
             .formStyle(.grouped)
