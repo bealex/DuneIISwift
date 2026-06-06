@@ -94,12 +94,20 @@ public enum MentatHelp {
         return result
     }
 
-    /// Split a decompressed description `"<wsa>*<title>\r<attr>…\u{0C}<body>"` into its parts.
+    /// Split a decompressed description `"<wsa>*<title>\r<attr>…\u{0C}<body>"` into its parts. The leading
+    /// animation name is terminated by `*` (a structured description) or `?` (`GUI_Mentat_ShowHelp`'s
+    /// "no description" topics, e.g. the section headers — the remainder is a string-table index, not literal
+    /// text, so there is nothing to display).
     static func parseDescription(_ text: String) -> (wsa: String, title: String, attrs: [String], body: String) {
-        guard let star = text.firstIndex(of: "*") else { return ("", text.trimmed, [], "") }
+        guard
+            let sep = text.firstIndex(where: { $0 == "*" || $0 == "?" })
+        else {
+            return ("", text.trimmed, [], "")
+        }
 
-        let wsa = String(text[..<star])
-        let rest = String(text[text.index(after: star)...])
+        let wsa = String(text[..<sep])
+        if text[sep] == "?" { return (wsa, "", [], "") }
+        let rest = String(text[text.index(after: sep)...])
         let header: String, body: String
         if let ff = rest.firstIndex(of: "\u{0C}") {
             header = String(rest[..<ff]); body = String(rest[rest.index(after: ff)...]).trimmed

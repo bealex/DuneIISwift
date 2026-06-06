@@ -13,5 +13,6 @@
 .swiftpm
 /Code/Apps/duneii-ios/duneii-ios.xcodeproj
 /Code/Apps/duneii-ios/GameData
+/Code/Apps/duneii-ios/Audio
 /build
 /Code/.build-ios

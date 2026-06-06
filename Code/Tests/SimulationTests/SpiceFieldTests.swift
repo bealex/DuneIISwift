@@ -17,7 +17,7 @@ struct SpiceFieldTests {
         return s
     }
 
-    @Test("the first tick detonates each field tile (bloom center reverts) and drains the list")
+    @Test("the first tick fills each field with spice (no load-time blast/revert) and drains the list")
     func firstTickFills() {
         var s = base()
         let packed = Tile32.packXY(x: 30, y: 30)
@@ -28,7 +28,12 @@ struct SpiceFieldTests {
         var sm = Simulation(state: s, scriptInfo: info)
         sm.tick()
         #expect(sm.state.scenario.spiceFields.isEmpty)  // consumed
-        #expect(sm.state.map[Int(packed)].groundTileID == 0x42)  // Map_Bloom_ExplodeSpice reverted the tile
+        // OpenDUNE fills these with `g_validateStrictIfZero` raised (`Game_Prepare`), so `Map_Bloom_ExplodeSpice`
+        // does ONLY `Map_FillCircleWithSpice` — it does NOT revert the tile to 0x42 or detonate the bloom (whose
+        // EXPLOSION_SPICE_BLOOM_TREMOR would play the sand-burst voice — the "noise on load"). So the centre is
+        // left as the spice-fill result, not the base tile it used to (incorrectly) revert to.
+        #expect(sm.state.map[Int(packed)].groundTileID != 0x42)  // no load-time revert
+        #expect(sm.state.map[Int(packed)].groundTileID == 153)  // the spice-fill value at the field centre
     }
 
     @Test("applyScenarioSpiceFields draws RNG (the radius-5 circle fill) and is idempotent")

@@ -348,7 +348,14 @@ public final class GameModel {
             width: Double(a.width) * Viewport.tilePx,
             height: Double(a.height) * Viewport.tilePx
         )
-        viewport.center(onWorldX: viewport.area.midX, worldY: viewport.area.midY, viewSize: viewSize)
+        // Start centred on the player's base — the Construction Yard (else the centroid of the player's
+        // structures, else their units), falling back to the playable-area centre. Applies on a fresh scenario
+        // and on a save load alike.
+        if let base = playerBaseCenter(frame) {
+            viewport.center(onWorldX: base.x, worldY: base.y, viewSize: viewSize)
+        } else {
+            viewport.center(onWorldX: viewport.area.midX, worldY: viewport.area.midY, viewSize: viewSize)
+        }
         minimapSource = nil; minimapTilesHash = 0  // fresh scenario → rebuild the base from its tiles
         refreshMinimapBase(frame)
         if radarStaticFrames.isEmpty { radarStaticFrames = Minimap.radarStaticFrames(assets: assets) }  // STATIC.WSA, once
@@ -356,6 +363,21 @@ public final class GameModel {
         radarStaticFrameIndex = nil
         refreshDerived(frame)
         music.startInGame()  // a random in-mission map theme (musicID 8–15), rolling into the next at its end
+    }
+
+    /// Where the player's base sits, in **world points** — for the initial camera. Prefers the Construction
+    /// Yard, then the centroid of the player's structures, then their units. `nil` if the player owns nothing
+    /// (the caller falls back to the map centre). Object positions are 256-per-tile; world points are 16-per-tile.
+    private func playerBaseCenter(_ frame: FrameInfo) -> (x: Double, y: Double)? {
+        let mine = frame.structures.filter { $0.house == playerHouse }
+        if let cy = mine.first(where: { $0.type == .constructionYard }) ?? mine.first {
+            return (Double(cy.positionX) / 16, Double(cy.positionY) / 16)
+        }
+        let units = frame.units.filter { $0.house == playerHouse }
+        guard !units.isEmpty else { return nil }
+
+        let sx = units.reduce(0) { $0 + $1.positionX }, sy = units.reduce(0) { $0 + $1.positionY }
+        return (Double(sx) / Double(units.count) / 16, Double(sy) / Double(units.count) / 16)
     }
 
     /// Where the extracted MIDI songs live — the app bundle's `Audio/Music/` when packaged, else the repo's
@@ -1287,6 +1309,13 @@ public final class GameModel {
 
     func zoomOut() { viewport.zoomOut() }
 
+    /// Set the magnification directly (the continuous pinch gesture + the Options zoom slider); clamped to
+    /// `[Viewport.minZoom, Viewport.maxZoom]` and re-clamps the centre so the playable area stays on screen.
+    func setZoom(_ z: Double) {
+        viewport.setZoom(z)
+        viewport.clamp(viewSize: viewSize)
+    }
+
     func scroll(dx: Double, dy: Double) { viewport.scroll(dx: dx, dy: dy, viewSize: viewSize) }
 
     /// Centre the map on a world point (a minimap click), in world points.
@@ -1524,6 +1553,13 @@ struct PlacementState: Equatable {
     var height: Int
     var hoverTileX: Int?
     var hoverTileY: Int?
+
+    /// Whether a tile falls within the footprint as currently positioned (origin `hoverTile` → `width`×`height`).
+    func contains(tileX: Int, tileY: Int) -> Bool {
+        guard let hx = hoverTileX, let hy = hoverTileY else { return false }
+
+        return (hx ..< hx + width).contains(tileX) && (hy ..< hy + height).contains(tileY)
+    }
 }
 
 /// A house's economy for the Economy window.

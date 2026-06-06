@@ -48,6 +48,10 @@ struct ContentView: View {
         MapSpriteView(scene: model.scene)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.black)
+            .overlay(alignment: .topLeading) {
+                MapStatsOverlay(model: model)
+                    .padding(.top, 12).padding(.leading, 16)
+            }
             .overlay(alignment: .top) {
                 if let error = model.assets.error, !error.isEmpty {
                     Text(error).font(.callout).padding(8).background(.red.opacity(0.85)).foregroundStyle(.white)

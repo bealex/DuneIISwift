@@ -11,21 +11,32 @@ public struct SettingsView: View {
 
     public var body: some View {
         TabView {
-            Form {
-                Toggle("Sound effects", isOn: Binding(get: { model.soundEnabled }, set: { model.soundEnabled = $0 }))
-                Toggle("Music", isOn: Binding(get: { model.musicEnabled }, set: { model.musicEnabled = $0 }))
-                Picker(
-                    "Music engine",
-                    selection: Binding(get: { model.musicBackend }, set: { model.musicBackend = $0 }),
-                    content: {
-                        ForEach(MusicBackend.allCases, id: \.self) { Text($0.displayName).tag($0) }
-                    }
-                )
-                .disabled(!model.musicEnabled)
-            }
-            .formStyle(.grouped)
-            .tabItem { Label("Audio", systemImage: "speaker.wave.2") }
+            Form { AudioSettingsRows(model: model) }
+                .formStyle(.grouped)
+                .tabItem { Label("Audio", systemImage: "speaker.wave.2") }
         }
         .frame(width: 360, height: 200)
+    }
+}
+
+/// The audio preference rows (sound / music / music engine) **without** a `Form`/`TabView` wrapper, so they
+/// can sit in the macOS Settings window *and* be embedded as a section of the in-game Options form (iOS has
+/// no ⌘, Settings scene, so this is the only place those toggles live there).
+struct AudioSettingsRows: View {
+    var model: GameModel
+
+    var body: some View {
+        Group {
+            Toggle("Sound effects", isOn: Binding(get: { model.soundEnabled }, set: { model.soundEnabled = $0 }))
+            Toggle("Music", isOn: Binding(get: { model.musicEnabled }, set: { model.musicEnabled = $0 }))
+            Picker(
+                "Music engine",
+                selection: Binding(get: { model.musicBackend }, set: { model.musicBackend = $0 }),
+                content: {
+                    ForEach(MusicBackend.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+            )
+            .disabled(!model.musicEnabled)
+        }
     }
 }

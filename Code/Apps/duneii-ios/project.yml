@@ -30,10 +30,14 @@ targets:
     platform: iOS
     sources:
       - path: .
-        excludes: [project.yml, GameData, "*.md"]
+        excludes: [project.yml, GameData, Audio, "*.md"]
       # The original install's PAKs, staged here by build-ios.sh — a folder reference so they land in
       # the app bundle under GameData/ (where AssetStore reads them).
       - path: GameData
+        type: folder
+      # The music (Audio/Music/*.ADL), staged here by build-ios.sh — a folder reference so it lands in the
+      # app bundle under Audio/ (where GameModel.musicURL reads it: Bundle.main/Audio/Music).
+      - path: Audio
         type: folder
     dependencies:
       - package: DuneII

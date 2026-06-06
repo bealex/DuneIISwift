@@ -6,6 +6,8 @@ Do not rewrite a past entry; if one is wrong, add a dated correction. The period
 
 ## Days
 
+- [2026-06-06](2026-06-06.md) — 
+- [2026-06-05](2026-06-05.md) — 
 - [2026-06-03](2026-06-03.md) — 
 - [2026-06-02](2026-06-02.md) — faithful Pause/Resume buttons for a factory build in `duneii` (mirrors OpenDUNE's `STR_D_DONE`/`STR_ON_HOLD` GUI clicks): a held build resumes only once the house can afford it, never auto-resumes.
 - [2026-06-01](2026-06-01.md) — `duneii` presentation perf from a CPU-trace read: a shared `FrameThrottle` rate-limits the sandworm-shimmer texture rebuild and the steady-state HUD derivations (~10 Hz), both golden-neutral at the default.

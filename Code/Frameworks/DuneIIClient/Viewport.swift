@@ -22,7 +22,7 @@ struct Viewport: Equatable {
     var area = CGRect(x: 0, y: 0, width: worldSize, height: worldSize)
 
     static let minZoom = 1.0
-    static let maxZoom = 16.0
+    static let maxZoom = 8.0
 
     mutating func setZoom(_ z: Double) { zoom = min(Self.maxZoom, max(Self.minZoom, z)) }
 

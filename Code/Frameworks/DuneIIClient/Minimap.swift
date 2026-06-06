@@ -126,6 +126,15 @@ struct MinimapView: View {
         let staticIndex = model.radarStaticFrameIndex
         let radarOn = model.forceMinimap || model.radarActive
         let showFog = model.showFog  // read here so the Canvas redraws when the fog toggle flips
+        // The radar-OFF background is palette colour 12 (OpenDUNE `GUI_Widget_Viewport_DrawTile`'s default), not
+        // black — used in the offline branch below.
+        let c12 = model.assets.palette.rgba8(12)
+        let colour12 = Color(
+            .sRGB,
+            red: Double(c12.red) / 255,
+            green: Double(c12.green) / 255,
+            blue: Double(c12.blue) / 255
+        )
         GeometryReader { geo in
             let side = min(geo.size.width, geo.size.height)
             let scale = side / Viewport.worldSize  // world points → minimap points
@@ -139,8 +148,56 @@ struct MinimapView: View {
                             in: rect
                         )
                     }
-                    // Radar offline (no outpost / no power) and not force-enabled — a dark, empty screen.
-                    guard radarOn else { return context.fill(Path(rect), with: .color(.black)) }
+                    // Radar offline (no outpost / no power) and not force-enabled. Not a black screen: OpenDUNE
+                    // fills the playable area with palette colour 12 and still plots the player's *own*
+                    // structures (`GUI_Widget_Viewport_DrawTile`'s radar-off branch — no terrain, no enemies, no
+                    // fog test). The unplayable border stays black; the viewport rectangle is still drawn.
+                    guard
+                        radarOn
+                    else {
+                        context.fill(Path(rect), with: .color(.black))
+                        let tile = side / 64
+                        if let frame {
+                            let area = frame.mapArea
+                            context.fill(
+                                Path(
+                                    CGRect(
+                                        x: Double(area.minX) * tile,
+                                        y: Double(area.minY) * tile,
+                                        width: Double(area.width) * tile,
+                                        height: Double(area.height) * tile
+                                    )
+                                ),
+                                with: .color(colour12)
+                            )
+                            for s in frame.structures
+                            where s.house == playerHouse
+                                && area.contains(tileX: s.positionX / 256, tileY: s.positionY / 256)
+                            {
+                                let (fw, fh) = Minimap.footprint(s.type)
+                                context.fill(
+                                    Path(
+                                        CGRect(
+                                            x: Double(s.positionX) * tile / 256,
+                                            y: Double(s.positionY) * tile / 256,
+                                            width: Double(fw) * tile,
+                                            height: Double(fh) * tile
+                                        )
+                                    ),
+                                    with: .color(.cyan)
+                                )
+                            }
+                        }
+                        let v = viewport.visibleWorldRect(viewSize: model.viewSize)
+                        let vr = CGRect(
+                            x: v.minX * scale,
+                            y: v.minY * scale,
+                            width: v.width * scale,
+                            height: v.height * scale
+                        )
+                        context.stroke(Path(vr.intersection(rect)), with: .color(.white), lineWidth: 1)
+                        return
+                    }
 
                     if let base = model.minimapBase {
                         context.draw(Image(decorative: base, scale: 1, orientation: .up), in: rect)
@@ -240,10 +297,13 @@ struct MinimapView: View {
                         }
                         .frame(width: side, height: side)
                     #else
-                        // iOS: tap/drag the radar to recentre the main map.
+                        // iOS: tap/drag the radar to recentre the main map. `highPriorityGesture` so it wins over
+                        // the enclosing sidebar ScrollView's pan — otherwise the scroll swallows the touch and a
+                        // tap never recentres. `minimumDistance: 0` ⇒ `onChanged` fires on touch-down, so a plain
+                        // tap centres immediately (and a drag scrubs).
                         Color.clear.contentShape(Rectangle())
                             .frame(width: side, height: side)
-                            .gesture(
+                            .highPriorityGesture(
                                 DragGesture(minimumDistance: 0).onChanged { g in
                                     let world = Viewport.worldSize / side
                                     model.centerOn(

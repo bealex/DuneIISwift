@@ -8,14 +8,13 @@ import SwiftUI
 public struct ScenarioPicker: View {
     @State
     var model: GameModel
-    @Binding
-    var isPresented: Bool
+    @Environment(\.dismiss)
+    private var dismiss
     @State
     private var house: HouseID
 
-    public init(model: GameModel, isPresented: Binding<Bool>) {
+    public init(model: GameModel) {
         _model = State(initialValue: model)
-        _isPresented = isPresented
         // Open on the current scenario's house (or Atreides if none/unparseable).
         let current = model.currentScenario.flatMap { ScenarioID(fileName: $0) }
         _house = State(initialValue: current?.house ?? .atreides)
@@ -26,43 +25,41 @@ public struct ScenarioPicker: View {
         let houses = HouseID.allCases.filter { h in catalog.contains { $0.house == h } }
         let forHouse = catalog.filter { $0.house == house }
         let levels = Array(Set(forHouse.map(\.campaign))).sorted()
-        VStack(spacing: 8) {
-            Picker("House", selection: $house) {
-                ForEach(houses, id: \.self) { Text($0.displayName).tag($0) }
+        List {
+            Section {
+                Picker("House", selection: $house) {
+                    ForEach(houses, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(levels, id: \.self) { level in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Campaign \(level)")
-                                .font(.caption.weight(.bold)).foregroundStyle(.secondary)
-                            ForEach(forHouse.filter { $0.campaign == level }, id: \.self) { entry in
-                                Button {
-                                    model.load(entry.fileName); isPresented = false
-                                } label: {
-                                    HStack {
-                                        Text("Mission \(entry.mission)")
-                                        Spacer()
-                                        if entry.fileName == model.currentScenario {
-                                            Image(systemName: "checkmark").foregroundStyle(.tint)
-                                        }
-                                    }
-                                    .contentShape(Rectangle())
+            ForEach(levels, id: \.self) { level in
+                Section("Campaign \(level)") {
+                    ForEach(forHouse.filter { $0.campaign == level }, id: \.self) { entry in
+                        Button {
+                            model.load(entry.fileName); dismiss()
+                        } label: {
+                            HStack {
+                                Text("Mission \(entry.mission)")
+                                Spacer()
+                                if entry.fileName == model.currentScenario {
+                                    Image(systemName: "checkmark").foregroundStyle(.tint)
                                 }
-                                .buttonStyle(.plain)
                             }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 4)
             }
-            .frame(height: 360)
         }
-        .padding(10)
-        .frame(width: 230)
+        #if os(iOS)
+            // Pushed full-screen inside the Options NavigationStack — fill the width (a fixed-width popover hid
+            // most of the content on a phone).
+            .navigationTitle("Scenario")
+            .navigationBarTitleDisplayMode(.inline)
+        #else
+            .gamePopover(width: 300, maxHeight: 460)
+        #endif
     }
 }

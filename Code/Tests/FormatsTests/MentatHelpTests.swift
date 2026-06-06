@@ -46,5 +46,20 @@ struct MentatHelpTests {
 
         // Section headers are flagged (e.g. the "Structures" divider).
         #expect(topics.contains { $0.name == "Structures" && $0.isHeader })
+
+        // A "no description" topic (the `?` separator, per GUI_Mentat_ShowHelp) yields no title/body — the
+        // remainder is a string-table index, not literal text. The "Houses" header is one such entry.
+        let housesHeader = try #require(topics.first { $0.name == "Houses" && $0.isHeader })
+        #expect(housesHeader.title.isEmpty)
+        #expect(housesHeader.body.isEmpty)
+    }
+
+    @Test("the `?` separator marks a no-description topic (empty title/attrs/body)")
+    func noDescriptionSeparator() {
+        let parsed = MentatHelp.parseDescription("No file?NO Desc")
+        #expect(parsed.wsa == "No file")
+        #expect(parsed.title.isEmpty)
+        #expect(parsed.attrs.isEmpty)
+        #expect(parsed.body.isEmpty)
     }
 }

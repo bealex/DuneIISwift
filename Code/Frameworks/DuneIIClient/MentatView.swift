@@ -31,7 +31,11 @@ struct MentatView: View {
             Divider()
             detail
         }
-        .frame(width: 580, height: 460)
+        #if os(iOS)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #else
+            .gamePopover(width: 760, maxHeight: 520)
+        #endif
         .onAppear { if selected == nil { selected = initialSelection } }
     }
 
@@ -55,7 +59,7 @@ struct MentatView: View {
             }
         }
         .listStyle(.sidebar)
-        .frame(width: 210)
+        .frame(width: 252)  // 20% wider than the old 210
     }
 
     // MARK: Detail
@@ -65,17 +69,23 @@ struct MentatView: View {
         if let name = selected, let topic = topics.first(where: { $0.name == name }) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top, spacing: 12) {
-                        thumbnail(topic, size: 64)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(topic.title.isEmpty ? topic.name : topic.title).font(.title2.bold())
-                            ForEach(topic.attributes, id: \.self) { attr in
-                                Text(attr).font(.caption).foregroundStyle(.secondary)
+                    HStack(alignment: .top, spacing: 16) {
+                        // The original Mentat picture (large, unchanged).
+                        thumbnail(topic, size: 256)
+                        // Title + stats to the right of the image.
+                        VStack(alignment: .leading, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(heading(topic)).font(.title2.bold())
+                                ForEach(subheadings(topic), id: \.self) { line in
+                                    Text(line).font(.caption).foregroundStyle(.secondary)
+                                }
                             }
+                            statsGrid(topic)
+                            Spacer(minLength: 0)
                         }
                         Spacer(minLength: 0)
                     }
-                    statsGrid(topic)
+                    // Description under the image and stats, full width.
                     if !topic.body.isEmpty {
                         Divider()
                         Text(topic.body).font(.callout).fixedSize(horizontal: false, vertical: true)
@@ -92,6 +102,24 @@ struct MentatView: View {
             )
             .frame(maxWidth: .infinity)
         }
+    }
+
+    /// The detail heading. For **houses** the parsed description `title` is a lead-in line that varies by the
+    /// player's own mentat file — e.g. for Atreides it's the planet ("Caladan:", "Name: Unknown"), not the
+    /// house — so it reads as a "strange title". Use the canonical topic name there instead; for buildings/units
+    /// the `title` matches the name and is kept.
+    private func heading(_ topic: MentatHelp.Topic) -> String {
+        if topic.section == .houses { return topic.name }
+        return topic.title.isEmpty ? topic.name : topic.title
+    }
+
+    /// The grey sub-lines under the heading: a house's lead-in line (when it isn't just the house name again),
+    /// otherwise the topic's attribute lines (unit/structure stat blurbs).
+    private func subheadings(_ topic: MentatHelp.Topic) -> [String] {
+        if topic.section == .houses {
+            return (!topic.title.isEmpty && topic.title != topic.name) ? [ topic.title ] : []
+        }
+        return topic.attributes
     }
 
     /// Cost / HP / power (structures) or cost / HP / damage / range (units), from our stat tables.
@@ -125,9 +153,22 @@ struct MentatView: View {
         }
     }
 
-    // MARK: Sprite
+    // MARK: Picture
 
+    /// Each topic's icon is the original Mentat picture — the `*.WSA` named in its description (`MENTAT.PAK`),
+    /// the same image `GUI_Mentat_Loop` shows — not our composed game sprite. Whole-picture scaled to fit the
+    /// box (buildings are wider than tall). Falls back to a sprite/symbol only if the WSA is missing.
     @ViewBuilder private func thumbnail(_ topic: MentatHelp.Topic, size: CGFloat) -> some View {
+        if !topic.wsa.isEmpty, let picture = provider.wsaImage(name: topic.wsa, assets: model.assets) {
+            Image(decorative: picture, scale: 1).interpolation(.none).resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+        } else {
+            spriteFallback(topic, size: size)
+        }
+    }
+
+    @ViewBuilder private func spriteFallback(_ topic: MentatHelp.Topic, size: CGFloat) -> some View {
         switch subject(topic.name) {
             case let .structure(t):
                 SpriteThumbnail(

@@ -62,10 +62,21 @@ public final class GameScene: SKScene {
         // zoom; a stationary long-press issues the default order (the macOS right-click). Scene coords are y-up.
         private var touchStartScene: CGPoint?
         private var touchLastScene: CGPoint?
+        private var touchLastView: CGPoint?  // last finger point in view coords, for a 1:1 (finger-following) pan
         private var touchDidPan = false
         private var pinchStartDistance: CGFloat?
+        private var pinchStartZoom: Double?  // the magnification when the two-finger pinch began
         private var longPressWork: DispatchWorkItem?
         private var longPressFired = false
+        // Single-finger panning is held back for a short settle window after touch-down: the two fingers of a
+        // pinch never land at the same instant, so without this the first finger would pan (lurching the map)
+        // before the pinch is recognised. A second finger arriving in the window cancels the pan entirely.
+        private var panEnabled = false
+        private var panEnableWork: DispatchWorkItem?
+        private static let panSettleDelay = 0.18
+        // Touches that start within this many points of a view edge are ignored — they're usually system
+        // edge-swipes (Control Center / app switcher / back) or an accidental palm/grip, not gameplay.
+        private static let edgeMargin = 15.0
     #endif
     private var lastTargetingActive = false  // last cursor state, so we only `.set()` the cursor on change
     private let healthLayer = SKNode()
@@ -101,6 +112,11 @@ public final class GameScene: SKScene {
     /// Track mouse-moved events so the placement preview can follow the cursor (the click-to-place path
     /// works without this; the preview just won't follow until the next click).
     override public func didMove(to view: SKView) {
+        #if os(iOS)
+            // Without this the view tracks only the first finger, so a second finger landing *after* the first
+            // (e.g. when you deliberately place one finger on a unit, then pinch) is dropped — and pinch fails.
+            view.isMultipleTouchEnabled = true
+        #endif
         #if os(macOS)
             view.window?.acceptsMouseMovedEvents = true
             if trackingArea == nil {
@@ -595,6 +611,7 @@ public final class GameScene: SKScene {
                         case "b": model?.issueAction(.sabotage)
                         case "x": model?.issueAction(.destruct)
                         case "s": if building { model?.stopBuildingActivity() } else { model?.stopSelected() }
+                        case "l": model?.launchSuperWeapon()  // Palace super-weapon (no-op unless ready)
                         default: super.keyDown(with: event)
                     }
             }
@@ -610,24 +627,43 @@ public final class GameScene: SKScene {
         // MARK: - Touch input
 
         override public func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+            // Ignore touches that originate in the screen-edge margin (system edge-swipes / accidental grips).
+            if let t = touches.first, let v = view,
+                    !v.bounds.insetBy(dx: Self.edgeMargin, dy: Self.edgeMargin).contains(t.location(in: v)) {
+                return
+            }
             let count = event?.allTouches?.count ?? touches.count
             if count >= 2 {
                 cancelLongPress()
+                cancelPanEnable(); panEnabled = false  // a pinch began — the first finger must not also pan
                 pinchStartDistance = pinchDistance(event)
+                pinchStartZoom = model?.viewport.zoom
                 return
             }
-            guard let p = touches.first?.location(in: self) else { return }
+            guard let t = touches.first else { return }
 
-            touchStartScene = p; touchLastScene = p; touchDidPan = false; longPressFired = false
-            // A stationary long-press = the macOS right-click (default order / cancel a mode).
+            let p = t.location(in: self)
+            touchStartScene = p; touchLastScene = p; touchLastView = t.location(in: view)
+            touchDidPan = false; longPressFired = false
+            // Hold panning back briefly so the onset of a pinch (second finger landing a moment later) doesn't
+            // first register as a one-finger pan.
+            panEnabled = false
+            let enable = DispatchWorkItem { [weak self] in self?.panEnabled = true }
+            panEnableWork = enable
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.panSettleDelay, execute: enable)
+            // A stationary long-press = the macOS right-click (default order / cancel a mode). Disabled during
+            // structure placement, which has its own tap-to-place / tap-outside-to-cancel scheme.
             let work = DispatchWorkItem { [weak self] in
-                guard let self, !self.touchDidPan, let start = self.touchStartScene else { return }
+                guard
+                    let self,
+                    !self.touchDidPan,
+                    self.model?.placement == nil,
+                    let start = self.touchStartScene
+                else { return }
 
                 self.longPressFired = true
                 if self.model?.missileTargeting != nil {
                     self.model?.cancelMissileTargeting()
-                } else if self.model?.placement != nil {
-                    self.model?.cancelPlacement()
                 } else if let (x, y) = self.tile(atScenePoint: start) {
                     self.model?.rightClickTile(x, y)
                 }
@@ -637,43 +673,56 @@ public final class GameScene: SKScene {
         }
 
         override public func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+            // Two fingers: continuous pinch-to-zoom (1×…8×), magnification tracking the finger spread.
             if (event?.allTouches?.count ?? touches.count) >= 2, let start = pinchStartDistance,
-                    let now = pinchDistance(event) {
+                    let startZoom = pinchStartZoom, let now = pinchDistance(event) {
                 cancelLongPress()
-                if now / start > 1.30 {
-                    model?.zoomIn(); pinchStartDistance = now
-                } else if now / start < 0.77 {
-                    model?.zoomOut(); pinchStartDistance = now
-                }
+                model?.setZoom(startZoom * Double(now / start))
                 return
             }
-            guard
-                let cur = touches.first?.location(in: self),
-                let last = touchLastScene,
-                let start = touchStartScene
-            else { return }
+            guard let t = touches.first else { return }
 
-            touchLastScene = cur
-            if hypot(cur.x - start.x, cur.y - start.y) > 10 { touchDidPan = true; cancelLongPress() }
-            // Hand-tool pan: drag content with the finger (only when not in a target-select / placement mode).
-            if touchDidPan, model?.placement == nil, model?.missileTargeting == nil, model?.pendingOrder == nil {
-                model?.scroll(dx: -Double(cur.x - last.x), dy: Double(cur.y - last.y))
-            } else if model?.placement != nil, let (x, y) = tile(atScenePoint: cur) {
-                model?.placementHover(tileX: x, tileY: y)
+            let cur = t.location(in: self)
+            let curView = t.location(in: view)
+            defer { touchLastScene = cur; touchLastView = curView }
+            if let start = touchStartScene, hypot(cur.x - start.x, cur.y - start.y) > 10 {
+                touchDidPan = true; cancelLongPress()
+            }
+            // Placement: only a real *drag* (past the 10pt threshold) moves the footprint to follow the finger;
+            // a tap's tiny jitter must not nudge it, so the tap places at the placeholder's current position.
+            if model?.placement != nil {
+                if touchDidPan, let (x, y) = tile(atScenePoint: cur) { model?.placementHover(tileX: x, tileY: y) }
+                return
+            }
+            // Hand-tool pan: drag content with the finger 1:1 (view-space delta → `scroll`'s screen-point space),
+            // once past the settle window and not while a target-select / armed-order mode is active.
+            if touchDidPan, panEnabled, let last = touchLastView,
+                    model?.missileTargeting == nil, model?.pendingOrder == nil {
+                model?.scroll(dx: -Double(curView.x - last.x), dy: -Double(curView.y - last.y))
             }
         }
 
         override public func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
             defer { resetTouchState() }
             cancelLongPress()
-            if pinchStartDistance != nil || touchDidPan || longPressFired { return }
-            // A plain tap = the macOS left-click: place / launch in a mode, else select / apply an armed order.
+            if pinchStartDistance != nil || longPressFired { return }
             guard let p = touchStartScene, let (x, y) = tile(atScenePoint: p) else { return }
 
+            // Structure placement: a drag only repositioned the footprint (no commit on release). A *tap* on the
+            // footprint commits the build there; a tap *outside* it cancels placement.
+            if let pl = model?.placement {
+                if touchDidPan { return }
+                if pl.contains(tileX: x, tileY: y), let hx = pl.hoverTileX, let hy = pl.hoverTileY {
+                    model?.placeAt(tileX: hx, tileY: hy)
+                } else {
+                    model?.cancelPlacement()
+                }
+                return
+            }
+            if touchDidPan { return }
+            // A plain tap = the macOS left-click: launch in missile mode, else select / apply an armed order.
             if model?.missileTargeting != nil {
                 model?.launchMissileAt(tileX: x, tileY: y)
-            } else if model?.placement != nil {
-                model?.placeAt(tileX: x, tileY: y)
             } else {
                 model?.leftClickTile(x, y)
             }
@@ -683,8 +732,12 @@ public final class GameScene: SKScene {
             cancelLongPress(); resetTouchState()
         }
 
+        /// The two-finger separation in **view (screen) points**. Must be view-space, not scene-space: scene
+        /// coordinates scale with the camera, so measuring there feeds the changing zoom back into the distance
+        /// and the magnification oscillates ("jiggles"). View points are zoom-independent, so the ratio tracks
+        /// only the fingers' physical movement.
         private func pinchDistance(_ event: UIEvent?) -> CGFloat? {
-            let pts = (event?.allTouches.map { Array($0) } ?? []).prefix(2).map { $0.location(in: self) }
+            let pts = (event?.allTouches.map { Array($0) } ?? []).prefix(2).map { $0.location(in: view) }
             guard pts.count == 2 else { return nil }
 
             return hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
@@ -692,8 +745,12 @@ public final class GameScene: SKScene {
 
         private func cancelLongPress() { longPressWork?.cancel(); longPressWork = nil }
 
+        private func cancelPanEnable() { panEnableWork?.cancel(); panEnableWork = nil }
+
         private func resetTouchState() {
-            touchStartScene = nil; touchLastScene = nil; touchDidPan = false; pinchStartDistance = nil
+            touchStartScene = nil; touchLastScene = nil; touchLastView = nil; touchDidPan = false
+            pinchStartDistance = nil; pinchStartZoom = nil
+            cancelPanEnable(); panEnabled = false
         }
     #endif
 }

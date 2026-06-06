@@ -26,6 +26,7 @@ TEAM="REDACTED_TEAM"
 INSTALL="${DUNEII_INSTALL:-$ROOT/Repositories/patched_107_unofficial}"
 DD="$ROOT/build/ios/dd"          # DerivedData
 GAMEDATA="$IOS_DIR/GameData"
+AUDIODIR="$IOS_DIR/Audio"        # bundled music (Audio/Music/*.ADL) — staged from Resources/, git-ignored
 
 say() { printf '\033[1;36m▸ %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
@@ -52,6 +53,19 @@ stage_assets() {
   say "Bundling $paks PAK files into the app…"
   rm -rf "$GAMEDATA"; mkdir -p "$GAMEDATA"
   cp "$INSTALL"/*.PAK "$GAMEDATA"/
+
+  # Music: the macOS app reads Resources/Audio/Music from disk; the sandboxed iOS app needs it bundled under
+  # Audio/Music/ (where GameModel.musicURL looks: Bundle.main/Audio/Music). Without it there's no in-game music.
+  local music="$ROOT/Resources/Audio/Music"
+  rm -rf "$AUDIODIR"
+  if [ -d "$music" ]; then
+    local n; n=$(ls "$music" 2>/dev/null | wc -l | tr -d ' ')
+    say "Bundling $n music files into the app…"
+    mkdir -p "$AUDIODIR/Music"
+    cp "$music"/* "$AUDIODIR/Music"/
+  else
+    say "No music at $music — the app will build without in-game music."
+  fi
 }
 
 # ------------------------------------------------------------- generate ----

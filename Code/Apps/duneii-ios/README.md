@@ -16,7 +16,10 @@ recentres the map on tap/drag.
 There is **no committed `.xcodeproj`** — it's generated from [`project.yml`](project.yml) by
 [XcodeGen](https://github.com/yonaskolb/XcodeGen). The original game `*.PAK` files are **not** committed
 (copyrighted); the build script copies them from the install into `GameData/` and bundles them — on device the
-app reads them from `Bundle.main/GameData`, where macOS reads the install dir.
+app reads them from `Bundle.main/GameData`, where macOS reads the install dir. The **music** (`Resources/Audio/Music/*.ADL`)
+is likewise staged into `Audio/Music/` and bundled (the sandboxed app can't read the repo path the macOS app
+uses); both `GameData/` and `Audio/` are git-ignored. iOS audio also needs an active `AVAudioSession`
+(`.playback`), configured in `App.swift` — without it `AVAudioEngine` produces no sound.
 
 ## Build & deploy
 
@@ -49,3 +52,12 @@ macOS-only SwiftUI API would otherwise only surface in the real app build).
 
 The map + 250 pt sidebar suits iPad and landscape iPhone, so the app is **landscape-only**. On a small iPhone
 the sidebar is proportionally large; an iPhone-tuned layout (collapsible sidebar) is a future refinement.
+
+The sidebar's popovers (Mentat, Options, Scenario, Requirements) are sized via `gamePopover(width:maxHeight:)`
+(`DuneIIClient/PopoverLayout.swift`): a landscape-appropriate width plus a `maxHeight` that lets the popover
+clamp to a short screen while its inner `List`/`Form`/`ScrollView` scrolls the overflow. This is presentation
+only (no OpenDUNE oracle, not captured by a render golden), so verify by hand on a small landscape iPhone:
+
+- Open each of the four popovers on the **shortest** target (e.g. iPhone XR landscape) — none should clip; the
+  long ones (Mentat detail, Options/DebugPanel, Scenario list) must scroll to reveal the rest.
+- Each popover stays an **anchored popover** (with the arrow) rather than adapting into a bottom sheet.

@@ -17,6 +17,10 @@ struct ContentView: View {
             SpriteView(scene: model.scene, options: [ .ignoresSiblingOrder ])
                 .background(.black)
                 .ignoresSafeArea()
+                .overlay(alignment: .topLeading) {
+                    MapStatsOverlay(model: model)
+                        .padding(.top, 12).padding(.leading, 16)
+                }
                 .overlay(alignment: .top) {
                     if let error = model.assets.error, !error.isEmpty {
                         Text(error).font(.callout).padding(8)

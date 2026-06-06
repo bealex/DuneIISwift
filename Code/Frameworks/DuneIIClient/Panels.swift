@@ -351,7 +351,18 @@ public struct DebugPanel: View {
     public init(model: GameModel) { _model = State(initialValue: model) }
 
     public var body: some View {
-        Form {
+        Form { DebugToggleRows(model: model) }
+            .formStyle(.grouped)
+    }
+}
+
+/// The debug toggle/label rows **without** a `Form`/`List` wrapper, so a caller can drop them into its own
+/// container (e.g. the Options screen embeds them in its single Form instead of nesting a second one).
+struct DebugToggleRows: View {
+    var model: GameModel
+
+    var body: some View {
+        Group {
             Toggle("Fog of war", isOn: Binding(get: { model.showFog }, set: { model.showFog = $0 }))
             Toggle("AI fog of war", isOn: Binding(get: { model.aiFogOfWar }, set: { model.aiFogOfWar = $0 }))
             if model.aiFogOfWar {
@@ -393,7 +404,6 @@ public struct DebugPanel: View {
             LabeledContent("Scenario", value: model.scenarioTitle)
             LabeledContent("Campaign level", value: "\(model.campaignLevel)")
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -406,9 +416,10 @@ extension PanelAction {
 }
 
 extension ActionType {
-    /// The keyboard shortcut letter for this action (matches `GameScene.keyDown`), or `nil` for non-player
-    /// actions. `r` = Return (per the harvester); Retreat is `e`, Guard `g`, Deploy `d`, Sabotage `b`,
-    /// Destruct `x` (Stop is the universal `s`, handled separately).
+    /// The keyboard shortcut letter for this action (matches `GameScene.keyDown`), or `nil` for the non-player
+    /// actions that never appear in a unit's `actionsPlayer` menu (Ambush/Hunt/Die — AI-only). `r` = Return
+    /// (per the harvester); Retreat is `e`, Guard `g`, Deploy `d`, Sabotage `b`, Destruct `x`, Stop `s`. Every
+    /// action surfaced for a selected unit therefore carries a shortcut.
     var shortcut: String? {
         switch self {
             case .attack: "A";
@@ -419,7 +430,8 @@ extension ActionType {
             case .guard_, .areaGuard: "G";
             case .deploy: "D"
             case .sabotage: "B";
-            case .destruct: "X"
+            case .destruct: "X";
+            case .stop: "S"
             default: nil
         }
     }

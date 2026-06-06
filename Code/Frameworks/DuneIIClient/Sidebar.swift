@@ -26,6 +26,33 @@ import SwiftUI
         return image
     }
 
+    private var wsaCache: [String: CGImage?] = [:]
+
+    /// The Mentat picture for a help topic: the first frame of its `*.WSA` (from `MENTAT.PAK`), decoded once
+    /// and cached (misses cached too). This is the image the original Mentat shows for each topic
+    /// (`GUI_Mentat_Loop`'s `WSA_LoadFile`) — used instead of our composed unit/structure sprite. nil ⇒ the
+    /// caller falls back to a sprite.
+    func wsaImage(name: String, assets: AssetStore) -> CGImage? {
+        if let cached = wsaCache[name] { return cached }
+
+        let image: CGImage? = {
+            guard
+                let data = assets.data(name),
+                let anim = try? Wsa.Animation(data),
+                let frame = anim.frames.first
+            else { return nil }
+
+            return Minimap.rgbaImage(
+                indices: frame,
+                width: anim.width,
+                height: anim.height,
+                palette: anim.palette ?? assets.palette
+            )
+        }()
+        wsaCache[name] = image
+        return image
+    }
+
     private struct DecodedFrame { let pixels: [UInt8]; let w: Int; let h: Int; let hasLookup: Bool }
 
     private static func unitFrame(_ globalIndex: Int, assets: AssetStore) -> DecodedFrame? {
@@ -277,66 +304,80 @@ public struct GameSidebar: View {
         #endif
     }
 
-    public var body: some View {
-        let width: Double = 250
-        VStack(spacing: 0) {
-            header
-            MinimapView(model: model)
-            selectionSection
-                .padding(6)
-
-            ScrollView {
-                buildSection
-                    .padding(.horizontal, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+    /// The sidebar's stacked contents. macOS keeps a fixed header/minimap/selection with **only the build list
+    /// scrolling** (and the bottom button bar pinned). iPhone wraps the **whole** stack in one ScrollView, since
+    /// in landscape the sidebar can be taller than the screen — so header, minimap, selection, build, and the
+    /// buttons all scroll together.
+    @ViewBuilder
+    private var sidebarBody: some View {
+        #if os(iOS)
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        MinimapView(model: model)
+                        selectionSection
+                            .padding(6)
+                        buildSection
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                // The button row stays pinned below the scroll (so Options/Mentat/Save/Load are always reachable).
+                Divider()
+                bottomBar
             }
-            .frame(maxHeight: .infinity)
-            .padding(.vertical, 6)
+        #else
+            VStack(spacing: 0) {
+                MinimapView(model: model)
+                selectionSection
+                    .padding(6)
 
-            Divider()
-            bottomBar
-        }
-        .frame(width: width)
-        .background(sidebarBackground)
-        // Full-screen: force a dark scheme so labels are white on the black sidebar. Windowed: keep the
-        // inherited scheme so adaptive text stays readable on the system background.
-        .environment(\.colorScheme, fullScreen ? .dark : systemScheme)
-        .popover(isPresented: $showMentat, arrowEdge: .leading) {
-            MentatView(model: model, provider: sprites)
-        }
-        // Freeze the game while the options popover or the mentat help is open, then resume to the player's
-        // own pause state (balanced begin/end so opening one while the other is up still resumes correctly).
-        .onChange(of: showOptions) { _, open in open ? model.beginUIPause() : model.endUIPause() }
-        .onChange(of: showMentat) { _, open in open ? model.beginUIPause() : model.endUIPause() }
+                ScrollView {
+                    buildSection
+                        .padding(.horizontal, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: .infinity)
+                .padding(.vertical, 6)
+
+                Divider()
+                bottomBar
+            }
+        #endif
     }
 
-    // MARK: House + economy
-
-    private var header: some View {
-        let e = model.economy.first { $0.isPlayer }
-        let mission = model.currentScenario.flatMap { ScenarioID(fileName: $0)?.mission }
-        let powerOK = e.map { $0.power >= $0.powerUsed } ?? true
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(model.playerHouse.displayName).font(.title3.bold())
-                if let mission {
-                    Text("Mission \(mission)").font(.caption).foregroundStyle(.secondary)
+    public var body: some View {
+        let width: Double = 250
+        sidebarBody
+            .frame(width: width)
+            .background(sidebarBackground)
+            // Full-screen: force a dark scheme so labels are white on the black sidebar. Windowed: keep the
+            // inherited scheme so adaptive text stays readable on the system background.
+            .environment(\.colorScheme, fullScreen ? .dark : systemScheme)
+            #if os(iOS)
+                // iOS: full-screen Mentat (same as Options), with a Done button to dismiss.
+                .fullScreenCover(isPresented: $showMentat) {
+                    NavigationStack {
+                        MentatView(model: model, provider: sprites)
+                        .navigationTitle("Mentat")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { showMentat = false }
+                            }
+                        }
+                    }
                 }
-            }
-
-            // Credits and power each take half the width, centred within their half.
-            HStack(spacing: 8) {
-                Label("\(model.playerCredits)", systemImage: "dollarsign.circle.fill")
-                    .monospacedDigit().foregroundStyle(.yellow)
-                    .frame(maxWidth: .infinity)
-                Label("\(e?.power ?? 0)/\(e?.powerUsed ?? 0)", systemImage: "bolt.fill")
-                    .monospacedDigit().foregroundStyle(powerOK ? Color.secondary : Color.red)
-                    .help("Power produced / consumed")
-                    .frame(maxWidth: .infinity)
-            }
-            .font(.body.bold())
-        }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).padding(.vertical, 8)
+            #else
+                .popover(isPresented: $showMentat, arrowEdge: .leading) {
+                    MentatView(model: model, provider: sprites)
+                }
+            #endif
+            // Freeze the game while the options/mentat surface is open, then resume to the player's own pause state
+            // (balanced begin/end so opening one while the other is up still resumes correctly).
+            .onChange(of: showOptions) { _, open in open ? model.beginUIPause() : model.endUIPause() }
+            .onChange(of: showMentat) { _, open in open ? model.beginUIPause() : model.endUIPause() }
     }
 
     // MARK: Selection
@@ -424,8 +465,9 @@ public struct GameSidebar: View {
                 if let sw = model.superWeapon {
                     ActionIcon(
                         systemImage: sw.systemImage,
+                        badge: "L",
                         active: model.missileTargeting != nil,
-                        help: sw.ready ? sw.title : "Recharging…",
+                        help: sw.ready ? "\(sw.title) (L)" : "Recharging…",
                         disabled: !sw.ready
                     ) { model.launchSuperWeapon() }
                     .frame(maxWidth: .infinity)
@@ -682,7 +724,18 @@ public struct GameSidebar: View {
             sidebarButton("brain.head.profile", help: "Mentat — buildings, units, and house info") { showMentat = true }
             Spacer()
             sidebarButton("gearshape.fill", help: "Options") { showOptions = true }
-                .popover(isPresented: $showOptions, arrowEdge: .top) { OptionsPopover(model: model) }
+                // iOS: full-screen (a popover is too cramped for the scenario picker + speed + debug toggles).
+                // macOS: a popover into the map area (`.leading`, not `.top` — the button is at the sidebar's
+                // bottom edge, so a top-arrow popover would land off-screen). Matches the Mentat button beside it.
+                #if os(iOS)
+                    .fullScreenCover(isPresented: $showOptions) {
+                        OptionsPopover(model: model, isPresented: $showOptions)
+                    }
+                #else
+                    .popover(isPresented: $showOptions, arrowEdge: .leading) {
+                        OptionsPopover(model: model, isPresented: $showOptions)
+                    }
+                #endif
             Spacer()
             sidebarButton("square.and.arrow.down", help: "Save game…") { onSave() }
             Spacer()
@@ -728,23 +781,71 @@ public struct GameSidebar: View {
 struct OptionsPopover: View {
     @State
     var model: GameModel
-    @State
-    private var showScenario = false
+    @Binding
+    var isPresented: Bool
+    #if os(macOS)
+        // macOS presents the scenario picker as a nested popover off this row; iOS pushes it onto the Options
+        // NavigationStack via a NavigationLink, so it needs no presentation flag.
+        @State
+        private var showScenario = false
+    #endif
+
+    init(model: GameModel, isPresented: Binding<Bool>) {
+        _model = State(initialValue: model)
+        _isPresented = isPresented
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                LabeledContent("Scenario") {
-                    Button {
-                        showScenario = true
-                    } label: {
-                        Label(model.scenarioTitle, systemImage: "map")
+        #if os(iOS)
+            // Full-screen on the phone, wrapped in a NavigationStack for a title bar + a Done button to dismiss
+            // (a `fullScreenCover` has no built-in dismiss). The content's own Forms scroll.
+            NavigationStack {
+                content
+                    .navigationTitle("Options")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { isPresented = false }
+                        }
                     }
-                    .disabled(model.assets.scenarioNames.isEmpty)
-                    .popover(isPresented: $showScenario, arrowEdge: .leading) {
-                        ScenarioPicker(model: model, isPresented: $showScenario)
-                    }
+            }
+        #else
+            content.gamePopover(width: 380, maxHeight: 540)
+        #endif
+    }
+
+    /// The "Scenario" row. iOS pushes the picker full-screen (a single tappable row); macOS pops it as a
+    /// nested popover off a labelled button.
+    @ViewBuilder
+    private var scenarioRow: some View {
+        #if os(iOS)
+            NavigationLink {
+                ScenarioPicker(model: model)
+            } label: {
+                LabeledContent("Scenario", value: model.scenarioTitle)
+            }
+            .disabled(model.assets.scenarioNames.isEmpty)
+        #else
+            LabeledContent("Scenario") {
+                Button {
+                    showScenario = true
+                } label: {
+                    Label(model.scenarioTitle, systemImage: "map")
                 }
+                .disabled(model.assets.scenarioNames.isEmpty)
+                .popover(isPresented: $showScenario, arrowEdge: .leading) {
+                    ScenarioPicker(model: model)
+                }
+            }
+        #endif
+    }
+
+    private var content: some View {
+        // One Form — a single scroll region. The scenario/speed controls and the debug toggles used to be two
+        // stacked Forms (each its own scroller); now they're sections of the same Form.
+        Form {
+            Section {
+                scenarioRow
                 Picker("Game speed", selection: Binding(get: { model.gameSpeed }, set: { model.gameSpeed = $0 })) {
                     Text("0.5×").tag(0.5)
                     Text("1×").tag(1.0)
@@ -752,22 +853,22 @@ struct OptionsPopover: View {
                     Text("4×").tag(4.0)
                 }
                 .pickerStyle(.segmented)
-            }
-            .formStyle(.grouped)
-            .frame(height: 120)
-            Divider()
-            DebugPanel(model: model)
-            #if os(macOS)
-                // The audio settings live in the macOS `Settings` scene (⌘,); iOS has no such window.
-                Divider()
-                HStack {
-                    SettingsLink { Label("Settings…", systemImage: "slider.horizontal.3") }
-                    Spacer()
+                LabeledContent("Zoom") {
+                    HStack(spacing: 8) {
+                        Slider(
+                            value: Binding(get: { model.viewport.zoom }, set: { model.setZoom($0) }),
+                            in: Viewport.minZoom ... Viewport.maxZoom
+                        )
+                        Text("\(model.viewport.zoom, specifier: "%.1f")×")
+                            .monospacedDigit().foregroundStyle(.secondary)
+                            .frame(width: 44, alignment: .trailing)
+                    }
                 }
-                .padding(10)
-            #endif
+            }
+            Section("Audio") { AudioSettingsRows(model: model) }
+            Section { DebugToggleRows(model: model) }
         }
-        .frame(width: 320, height: 540)
+        .formStyle(.grouped)
     }
 }
 
@@ -781,14 +882,17 @@ struct RequirementsPopover: View {
     let blockers: [BuildBlocker]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(name).font(.headline)
-            Text(blockers.isEmpty ? "Available to build." : "Needs:").font(.caption).foregroundStyle(.secondary)
-            ForEach(Array(blockers.enumerated()), id: \.offset) { _, blocker in
-                Label(blocker.summary, systemImage: icon(for: blocker)).font(.callout)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(name).font(.headline)
+                Text(blockers.isEmpty ? "Available to build." : "Needs:").font(.caption).foregroundStyle(.secondary)
+                ForEach(Array(blockers.enumerated()), id: \.offset) { _, blocker in
+                    Label(blocker.summary, systemImage: icon(for: blocker)).font(.callout)
+                }
             }
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(14).frame(minWidth: 160, alignment: .leading)
+        .gamePopover(width: 240, maxHeight: 320)
     }
 
     private func icon(for blocker: BuildBlocker) -> String {
