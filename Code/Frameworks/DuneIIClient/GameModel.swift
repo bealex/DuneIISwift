@@ -1078,6 +1078,42 @@ public final class GameModel {
         if !dominant.isEmpty { playSelectVoice(unitSlot: dominant.first) }
     }
 
+    /// Double-click a unit: select **every** player-owned, on-map, normal unit of the *same type*, anywhere on
+    /// the map (a verification-client convenience; the original Dune II selects one unit at a time). A
+    /// double-click on empty ground / a structure / an enemy / a winger / a worm falls back to the plain
+    /// single-select (`leftClickTile`), so it never deselects or misbehaves.
+    func doubleClickSelectSameType(tileX x: Int, tileY y: Int) {
+        guard case let .unit(slot) = pick(x, y), let state = simulation?.state else {
+            leftClickTile(x, y)  // not a unit under the cursor — behave like a normal click
+            return
+        }
+
+        let ph = UInt8(playerHouse.rawValue)
+        var slots: [Int] = []
+        for i in state.units.indices where state.units[i].o.flags.contains(.used) {
+            let u = state.units[i]
+            guard
+                u.o.houseID == ph,
+                !u.o.flags.contains(.isNotOnMap),
+                let ut = UnitType(rawValue: Int(u.o.type)),
+                UnitInfo[ut].flags.contains(.isNormalUnit)
+            else { continue }
+
+            slots.append(i)
+        }
+        let group = InputController.sameTypeGroup(slots, clicked: slot, typeOf: { Int(state.units[$0].o.type) })
+        guard !group.isEmpty else {
+            leftClickTile(x, y)  // an enemy / winger / worm / non-normal unit — just select it singly
+            return
+        }
+
+        controller.selectGroup(group)
+        selection = currentInfo()
+        inspectedTile = nil
+        refreshTileInfo()
+        playSelectVoice(unitSlot: group.first)
+    }
+
     /// How many units are in the current (drag) selection — shown in the inspector header.
     var selectedUnitCount: Int { controller.selectedUnits.count }
 

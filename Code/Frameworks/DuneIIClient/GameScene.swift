@@ -77,6 +77,11 @@ public final class GameScene: SKScene {
         // Touches that start within this many points of a view edge are ignored — they're usually system
         // edge-swipes (Control Center / app switcher / back) or an accidental palm/grip, not gameplay.
         private static let edgeMargin = 15.0
+        // Double-tap: a second tap on the same tile within this window selects every same-type unit (the
+        // macOS double-click). The first tap already single-selects, so we just upgrade the selection.
+        private var lastTapTime: TimeInterval = 0
+        private var lastTapTile: (Int, Int)?
+        private static let doubleTapWindow = 0.35
     #endif
     private var lastTargetingActive = false  // last cursor state, so we only `.set()` the cursor on change
     private let healthLayer = SKNode()
@@ -527,6 +532,9 @@ public final class GameScene: SKScene {
                 model?.launchMissileAt(tileX: x, tileY: y)
             } else if model?.placement != nil {
                 model?.placeAt(tileX: x, tileY: y)
+            } else if event.clickCount >= 2 {
+                // Double-click a unit → select every same-type unit (the first click already single-selected it).
+                model?.doubleClickSelectSameType(tileX: x, tileY: y)
             } else {
                 model?.leftClickTile(x, y)
             }
@@ -724,7 +732,15 @@ public final class GameScene: SKScene {
             if model?.missileTargeting != nil {
                 model?.launchMissileAt(tileX: x, tileY: y)
             } else {
-                model?.leftClickTile(x, y)
+                let now = event?.timestamp ?? 0
+                if now - lastTapTime < Self.doubleTapWindow, let lt = lastTapTile, lt.0 == x, lt.1 == y {
+                    // Second tap on the same tile → select every same-type unit (the first tap selected it).
+                    model?.doubleClickSelectSameType(tileX: x, tileY: y)
+                    lastTapTime = 0; lastTapTile = nil
+                } else {
+                    model?.leftClickTile(x, y)
+                    lastTapTime = now; lastTapTile = (x, y)
+                }
             }
         }
 

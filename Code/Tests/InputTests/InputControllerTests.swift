@@ -116,6 +116,18 @@ struct InputControllerTests {
         #expect(InputController.dominantGroup([], typeOf: { _ in 0 }).isEmpty)
     }
 
+    @Test("sameTypeGroup keeps every slot matching the clicked unit's type (double-click select-all)")
+    func sameTypeGroup() {
+        // slots 0,2,4 are type 5; 1,3 are type 9. Double-clicking slot 2 (type 5) selects 0,2,4 (sorted).
+        let types: [Int: Int] = [ 0: 5, 1: 9, 2: 5, 3: 9, 4: 5 ]
+        #expect(InputController.sameTypeGroup([ 0, 1, 2, 3, 4 ], clicked: 2, typeOf: { types[$0]! }) == [ 0, 2, 4 ])
+        // Double-clicking a type-9 unit selects only the type-9 slots.
+        #expect(InputController.sameTypeGroup([ 0, 1, 2, 3, 4 ], clicked: 3, typeOf: { types[$0]! }) == [ 1, 3 ])
+        // The clicked slot not being among the eligible set ⇒ empty (host falls back to a single select).
+        #expect(InputController.sameTypeGroup([ 0, 1 ], clicked: 9, typeOf: { types[$0]! }).isEmpty)
+        #expect(InputController.sameTypeGroup([], clicked: 0, typeOf: { _ in 0 }).isEmpty)
+    }
+
     @Test("a group order (right-click + armed) is issued to every selected unit")
     func groupOrders() {
         var c = InputController(mapWidth: 64)

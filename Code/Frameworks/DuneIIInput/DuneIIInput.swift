@@ -88,6 +88,17 @@ public struct InputController: InputSource {
         return best.value.sorted()
     }
 
+    /// All slots whose unit-type matches the **clicked** slot's type — the "double-click a unit selects every
+    /// same-type unit" group. The host pre-filters `slots` to the eligible units (player-owned, on-map, normal),
+    /// then passes the clicked slot; `typeOf` maps a slot to its unit-type id. Returns the kept slots (sorted),
+    /// or `[]` if `clicked` isn't among the eligible `slots` (so the host can fall back to a plain single select).
+    public static func sameTypeGroup(_ slots: [Int], clicked: Int, typeOf: (Int) -> Int) -> [Int] {
+        guard slots.contains(clicked) else { return [] }
+
+        let type = typeOf(clicked)
+        return slots.filter { typeOf($0) == type }.sorted()
+    }
+
     /// Replace the selection with a drag-selected group of player unit slots (the host computes which units
     /// fall in the box). `selection` mirrors the first for the inspector; empty ⇒ deselect.
     public mutating func selectGroup(_ units: [Int]) {
