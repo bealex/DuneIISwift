@@ -40,6 +40,8 @@ enum RenderHarness {
         let fog: Bool
         /// Drop a stationary sandworm at this tile before rendering (to exercise the shimmer); `nil` = none.
         let worm: (x: Int, y: Int)?
+        /// Drop a stationary ornithopter at this tile (to exercise the winger drop shadow); `nil` = none.
+        let air: (x: Int, y: Int)?
 
         init(
             _ name: String,
@@ -47,7 +49,8 @@ enum RenderHarness {
             tick: Int,
             rect: (x: Int, y: Int, w: Int, h: Int)? = nil,
             fog: Bool = false,
-            worm: (x: Int, y: Int)? = nil
+            worm: (x: Int, y: Int)? = nil,
+            air: (x: Int, y: Int)? = nil
         ) {
             self.name = name
             self.scenario = scenario
@@ -55,6 +58,7 @@ enum RenderHarness {
             self.rect = rect
             self.fog = fog
             self.worm = worm
+            self.air = air
         }
     }
 
@@ -117,6 +121,19 @@ enum RenderHarness {
             worm.o.position = Tile32(x: UInt16(w.x) * 256 + 0x80, y: UInt16(w.y) * 256 + 0x80)
             worm.o.hitpoints = 1000
             state.units[slot] = worm
+        }
+
+        // Optionally drop a stationary ornithopter (a `hasShadow` winger, no script → it sits) to exercise the
+        // drop-shadow pass. Captured at tick 0 so the sim never moves it off the building beneath it.
+        if let a = c.air, let slot = state.units.firstIndex(where: { !$0.o.flags.contains(.used) }) {
+            var thopter = Unit()
+            thopter.o.index = UInt16(slot)
+            thopter.o.type = UInt8(UnitType.ornithopter.rawValue)
+            thopter.o.flags = [ .used, .allocated, .isUnit ]
+            thopter.o.houseID = 0
+            thopter.o.position = Tile32(x: UInt16(a.x) * 256 + 0x80, y: UInt16(a.y) * 256 + 0x80)
+            thopter.o.hitpoints = 100
+            state.units[slot] = thopter
         }
 
         var sim = Simulation(

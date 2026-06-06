@@ -27,6 +27,7 @@ public final class SpriteKitRenderer {
     private let terrainNode = SKSpriteNode()  // the static landscape, drawn once
     private let overlayLayer = SKNode()  // dynamic terrain cells (animations + wind light)
     private let blurLayer = SKNode()  // sandworm shimmer patches (terrain displacement)
+    private let shadowLayer = SKNode()  // winger drop shadows (darkened terrain, under the air bodies)
     private let spritesLayer = SKNode()  // units + effects (pooled nodes)
 
     // Caches (kept for the renderer's whole life — memory is cheap, recolorizing isn't).
@@ -62,6 +63,11 @@ public final class SpriteKitRenderer {
     private var terrainIndices: [UInt8] = []
     private var blurPool: [SKSpriteNode] = []
     private var blurIndex = 0
+
+    // Winger drop shadows: a pool of patch nodes + the base-palette darkening LUT (`g_paletteMapping1`),
+    // built lazily once (OpenDUNE never rebuilds it on a palette cycle).
+    private var shadowPool: [SKSpriteNode] = []
+    private lazy var shadowTable: [UInt8] = ShadowMapping.table(basePalette)
 
     /// How often the sandworm heat-haze shimmer is rebuilt, in frames. `1` (the default) = every frame —
     /// what the render goldens capture, byte-identical to no throttle. The host raises it (e.g. `2`) so the
@@ -147,8 +153,10 @@ public final class SpriteKitRenderer {
         terrainNode.zPosition = 0
         overlayLayer.zPosition = 1
         blurLayer.zPosition = 2  // worm shimmer sits on the terrain, under the unit sprites
+        shadowLayer.zPosition = 3  // winger shadows: over terrain/buildings, under every unit sprite
         spritesLayer.zPosition = 10
-        for node in [ terrainNode as SKNode, overlayLayer, blurLayer, spritesLayer ] where node.parent == nil {
+        for node in [ terrainNode as SKNode, overlayLayer, blurLayer, shadowLayer, spritesLayer ]
+        where node.parent == nil {
             scene.addChild(node)
         }
     }
@@ -177,6 +185,7 @@ public final class SpriteKitRenderer {
             initialized = true
         }
         updateDynamicTerrain(frame, palette: palette, windColour: windColour)
+        updateShadows(frame, palette: palette)
         updateSprites(frame, palette: palette)
         updateBlurs(frame, palette: palette)
         lastWindColour = windColour
@@ -390,6 +399,76 @@ public final class SpriteKitRenderer {
         let node = SKSpriteNode()
         spritePool.append(node)
         spritesLayer.addChild(node)
+        return node
+    }
+
+    // MARK: - Winger shadows
+
+    /// Lay one shadow patch per `hasShadow` air unit (carryall / ornithopter / frigate): the body silhouette,
+    /// offset `(+1, +3)` from the body, darkening the terrain (buildings are baked into it) underneath
+    /// through the `g_paletteMapping1` LUT — the `viewport.c:736` shadow draw. Placed on the `shadowLayer`,
+    /// above the terrain and worm shimmer but under every unit sprite, so a winger's body draws over its own
+    /// shadow and the shadow falls on the building/landscape it passes over.
+    private func updateShadows(_ frame: FrameInfo, palette: Palette) {
+        let side = tileSize * frame.mapWidth
+        var used = 0
+        // Fog: a winger over veiled terrain is hidden (its air pass is masked by `isUnveiled`), and a shadow
+        // pixel never falls on a veiled tile — same predicate the shimmer uses.
+        let veiled: ((Int, Int) -> Bool)? = showFog
+            ? { [tileSize] px, py in
+                let tx = px / tileSize, ty = py / tileSize
+                guard tx >= 0, tx < frame.mapWidth, ty >= 0, ty < frame.mapHeight else { return false }
+
+                return !frame.tiles[ty * frame.mapWidth + tx].isUnveiled
+            } : nil
+        for u in frame.units where u.hasShadow {
+            if FrameComposer.isOutsideMapArea(frame, worldX: u.positionX, worldY: u.positionY) { continue }
+            if FrameComposer.isHiddenByFog(frame, worldX: u.positionX, worldY: u.positionY, showFog: showFog) {
+                continue
+            }
+            guard let body = source.unitFrame(globalIndex: u.body.spriteIndex) else { continue }
+
+            // The silhouette is the (same-mirrored) body frame; the shadow centre is the body centre + (1, 3).
+            let mask = Self.mirror(
+                body.pixels,
+                width: body.width,
+                height: body.height,
+                horizontal: u.body.flipped,
+                vertical: u.body.flippedV
+            )
+            let cx = u.positionX * tileSize / 256 + u.body.offsetX + 1
+            let cy = u.positionY * tileSize / 256 + u.body.offsetY + 3
+            let left = cx - body.width / 2, top = cy - body.height / 2  // DRAWSPRITE_FLAG_CENTER
+            guard
+                let patch = ShadowEffect.patch(
+                    terrain: terrainIndices,
+                    terrainWidth: side,
+                    terrainHeight: side,
+                    left: left,
+                    top: top,
+                    mask: mask,
+                    spriteWidth: body.width,
+                    spriteHeight: body.height,
+                    shadow: shadowTable,
+                    palette: palette,
+                    veiled: veiled
+                )
+            else { continue }
+
+            let node = pooledShadow(used); used += 1
+            node.texture = nearest(patch)
+            node.size = CGSize(width: body.width, height: body.height)
+            node.position = CGPoint(x: CGFloat(cx), y: CGFloat(side - cy))
+            node.isHidden = false
+        }
+        for i in used ..< shadowPool.count { shadowPool[i].isHidden = true }
+    }
+
+    private func pooledShadow(_ i: Int) -> SKSpriteNode {
+        if i < shadowPool.count { return shadowPool[i] }
+        let node = SKSpriteNode()
+        shadowPool.append(node)
+        shadowLayer.addChild(node)
         return node
     }
 

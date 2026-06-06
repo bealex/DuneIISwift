@@ -74,6 +74,7 @@ public extension Simulation {
                     overlay: sprites.overlay,
                     isSmoking: isSmoking,
                     isAirUnit: UnitInfo[type].movementType == .winger,
+                    hasShadow: UnitInfo[type].o.flags.contains(.hasShadow),
                     hitpoints: Int(u.o.hitpoints),
                     hitpointsMax: Int(UnitInfo[type].o.hitpoints),
                     activity: Self.activity(forActionID: u.actionID)

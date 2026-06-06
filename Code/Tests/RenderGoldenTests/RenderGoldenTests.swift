@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 
@@ -35,6 +36,10 @@ struct RenderGoldenTests {
             fog: true,
             worm: (33, 23)
         ),
+        // A winger (ornithopter) parked over the Harkonnen base: its drop shadow (`ShadowEffect`) darkens
+        // the building/concrete beneath it, offset (+1,+3) — the "crash site over a building looks weird"
+        // fix (the shadow was previously not drawn at all). Tick 0 so the unit stays put over the structure.
+        .init("scena005-air-shadow-t0", scenario: "SCENA005.INI", tick: 0, rect: (40, 41, 12, 12), air: (46, 46)),
     ]
 
     static var recording: Bool { ProcessInfo.processInfo.environment["DUNEII_RENDER_RECORD"] != nil }
@@ -73,5 +78,32 @@ struct RenderGoldenTests {
             "render-golden \(c.name): \(d.mismatches) px differ (max channel Δ \(d.maxDelta), first at "
             + "\(firstPx)); actual \(actual.width)×\(actual.height) vs reference \(expected.width)×\(expected.height)"
         #expect(d.mismatches == 0, Comment(rawValue: msg))
+    }
+
+    /// Proves the winger drop shadow actually paints pixels (so the golden above genuinely guards it, not an
+    /// inert no-op): render the air-shadow frame as captured, then render the same frame with the
+    /// ornithopter's `hasShadow` cleared, and require the two images to differ. The difference is exactly the
+    /// `ShadowEffect` patch under the body's offset silhouette.
+    @Test
+    func airUnitCastsShadow() throws {
+        let c = Self.cases.first { $0.name == "scena005-air-shadow-t0" }!
+        guard let p = RenderHarness.prepare(c) else {
+            print("air-shadow integration: no install / GPU — skipped"); return
+        }
+
+        let crop = c.rect.map {
+            CGRect(x: $0.x * p.tileSize, y: $0.y * p.tileSize, width: $0.w * p.tileSize, height: $0.h * p.tileSize)
+        }
+        guard let withShadow = p.renderer.snapshot(p.frame, crop: crop) else {
+            print("air-shadow integration: no GPU context — skipped"); return
+        }
+
+        // The same frame with the shadow suppressed (clear `hasShadow` on every unit).
+        var bare = p.frame
+        for i in bare.units.indices { bare.units[i].hasShadow = false }
+        let withoutShadow = try #require(p.renderer.snapshot(bare, crop: crop))
+
+        let d = PngImage(withShadow).diff(PngImage(withoutShadow))
+        #expect(d.mismatches > 0, "the drop shadow must change pixels vs the no-shadow render")
     }
 }

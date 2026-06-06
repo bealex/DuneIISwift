@@ -139,6 +139,10 @@ public struct FrameInfo: Sendable, Equatable {
         /// are drawn in a separate pass **on top of** ground units + explosions (`viewport.c`), so the
         /// renderer z-orders them above everything else.
         public var isAirUnit: Bool
+        /// Whether this unit casts a drop **shadow** (`ObjectInfo.hasShadow` — only the carryall, ornithopter
+        /// and frigate; the rockets/sonic-wave wingers do not). The renderer darkens the terrain/building
+        /// under the body silhouette, offset `(+1, +3)` (`viewport.c:736`). See `ShadowEffect`.
+        public var hasShadow: Bool
         public var hitpoints: Int
         public var hitpointsMax: Int
         /// What the unit is doing (its `ActionType`, collapsed to a UI category) — for the debug
@@ -156,6 +160,7 @@ public struct FrameInfo: Sendable, Equatable {
             overlay: SpriteLayer? = nil,
             isSmoking: Bool,
             isAirUnit: Bool = false,
+            hasShadow: Bool = false,
             hitpoints: Int,
             hitpointsMax: Int,
             activity: UnitActivity = .idle
@@ -170,6 +175,7 @@ public struct FrameInfo: Sendable, Equatable {
             self.overlay = overlay
             self.isSmoking = isSmoking
             self.isAirUnit = isAirUnit
+            self.hasShadow = hasShadow
             self.hitpoints = hitpoints
             self.hitpointsMax = hitpointsMax
             self.activity = activity
