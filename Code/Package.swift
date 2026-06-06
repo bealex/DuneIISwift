@@ -184,5 +184,6 @@ let package = Package(
             dependencies: [ "DuneIIRenderer", "DuneIISimulation", "DuneIIWorld", "DuneIIFormats", "DuneIIContracts" ],
             path: "Tests/RenderGoldenTests", exclude: [ "Fixtures" ]
         ),
+        .testTarget(name: "ClientTests", dependencies: [ "DuneIIClient" ], path: "Tests/ClientTests"),
     ]
 )

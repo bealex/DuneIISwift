@@ -262,16 +262,8 @@ struct ActionIcon: View {
 public struct GameSidebar: View {
     @State
     var model: GameModel
-    /// Save/Load are platform-specific (macOS `NSSavePanel` ↔ iOS `UIDocumentPicker`), so the app shell
-    /// injects them. Everything else is shared.
-    let onSave: () -> Void
-    let onLoad: () -> Void
     @State
     private var sprites = SpriteImageProvider()
-    @State
-    private var showOptions = false
-    @State
-    private var showMentat = false
     /// The locked build row whose "what's needed" popover is open (by object type), or nil.
     @State
     private var requirementsFor: UInt16?
@@ -283,16 +275,9 @@ public struct GameSidebar: View {
     @Environment(\.colorScheme)
     private var systemScheme
 
-    public init(
-        model: GameModel,
-        fullScreen: Bool = false,
-        onSave: @escaping () -> Void,
-        onLoad: @escaping () -> Void
-    ) {
+    public init(model: GameModel, fullScreen: Bool = false) {
         _model = State(initialValue: model)
         self.fullScreen = fullScreen
-        self.onSave = onSave
-        self.onLoad = onLoad
     }
 
     /// Black in full-screen (matches the map); the standard window background when windowed.
@@ -323,9 +308,6 @@ public struct GameSidebar: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                // The button row stays pinned below the scroll (so Options/Mentat/Save/Load are always reachable).
-                Divider()
-                bottomBar
             }
         #else
             VStack(spacing: 0) {
@@ -340,9 +322,6 @@ public struct GameSidebar: View {
                 }
                 .frame(maxHeight: .infinity)
                 .padding(.vertical, 6)
-
-                Divider()
-                bottomBar
             }
         #endif
     }
@@ -355,29 +334,6 @@ public struct GameSidebar: View {
             // Full-screen: force a dark scheme so labels are white on the black sidebar. Windowed: keep the
             // inherited scheme so adaptive text stays readable on the system background.
             .environment(\.colorScheme, fullScreen ? .dark : systemScheme)
-            #if os(iOS)
-                // iOS: full-screen Mentat (same as Options), with a Done button to dismiss.
-                .fullScreenCover(isPresented: $showMentat) {
-                    NavigationStack {
-                        MentatView(model: model, provider: sprites)
-                        .navigationTitle("Mentat")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("Done") { showMentat = false }
-                            }
-                        }
-                    }
-                }
-            #else
-                .popover(isPresented: $showMentat, arrowEdge: .leading) {
-                    MentatView(model: model, provider: sprites)
-                }
-            #endif
-            // Freeze the game while the options/mentat surface is open, then resume to the player's own pause state
-            // (balanced begin/end so opening one while the other is up still resumes correctly).
-            .onChange(of: showOptions) { _, open in open ? model.beginUIPause() : model.endUIPause() }
-            .onChange(of: showMentat) { _, open in open ? model.beginUIPause() : model.endUIPause() }
     }
 
     // MARK: Selection
@@ -714,47 +670,6 @@ public struct GameSidebar: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
-    }
-
-    // MARK: Bottom button row
-
-    private var bottomBar: some View {
-        // Four equal circular buttons, spread evenly across the column width.
-        HStack(spacing: 0) {
-            sidebarButton("brain.head.profile", help: "Mentat — buildings, units, and house info") { showMentat = true }
-            Spacer()
-            sidebarButton("gearshape.fill", help: "Options") { showOptions = true }
-                // iOS: full-screen (a popover is too cramped for the scenario picker + speed + debug toggles).
-                // macOS: a popover into the map area (`.leading`, not `.top` — the button is at the sidebar's
-                // bottom edge, so a top-arrow popover would land off-screen). Matches the Mentat button beside it.
-                #if os(iOS)
-                    .fullScreenCover(isPresented: $showOptions) {
-                        OptionsPopover(model: model, isPresented: $showOptions)
-                    }
-                #else
-                    .popover(isPresented: $showOptions, arrowEdge: .leading) {
-                        OptionsPopover(model: model, isPresented: $showOptions)
-                    }
-                #endif
-            Spacer()
-            sidebarButton("square.and.arrow.down", help: "Save game…") { onSave() }
-            Spacer()
-            sidebarButton("folder", help: "Load game…") { onLoad() }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(6)
-    }
-
-    private func sidebarButton(
-        _ systemImage: String,
-        help: String,
-        disabled: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage).frame(width: 30, height: 30)
-        }
-        .buttonStyle(.bordered).buttonBorderShape(.circle).disabled(disabled).help(help)
     }
 
     private func hpTint(_ hp: Int, _ maxHP: Int) -> Color {

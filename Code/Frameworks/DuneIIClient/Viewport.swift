@@ -23,6 +23,9 @@ struct Viewport: Equatable {
 
     static let minZoom = 1.0
     static let maxZoom = 8.0
+    /// How far (in world points = game pixels) the camera may scroll **past** the playable area's edge in
+    /// every direction — the margin the renderer fills with the decorative Dune border ring. See `GameScene`.
+    static let borderPx = 16.0
 
     mutating func setZoom(_ z: Double) { zoom = min(Self.maxZoom, max(Self.minZoom, z)) }
 
@@ -49,22 +52,24 @@ struct Viewport: Equatable {
         return CGRect(x: centerX - w / 2, y: centerY - h / 2, width: w, height: h)
     }
 
-    /// Keep the **playable area** on screen: when it's wider/taller than the view, clamp so its edge can't
-    /// pull past the view edge; when it's smaller (zoomed out past 1:1), pin the centre on the area so it sits
-    /// centred (the surrounding border is left black). Clamps to `area`, not the full world — so the camera
-    /// follows the scenario's map boundary rather than scrolling onto the unused border.
+    /// Keep the scrollable region on screen: the playable `area` **outset by `borderPx`** in every direction,
+    /// so the camera can pan ~50 game-pixels past the map edge into the decorative Dune border ring (filled by
+    /// `GameScene`). When the region is wider/taller than the view, clamp so its edge can't pull past the view
+    /// edge; when it's smaller (zoomed out past 1:1), pin the centre. Clamps to the outset area, not the full
+    /// world — the camera follows the scenario's map boundary (plus the border margin), not the unused border.
     mutating func clamp(viewSize: CGSize) {
+        let scroll = area.insetBy(dx: -Self.borderPx, dy: -Self.borderPx)
         let half = Double(viewSize.width) / zoom / 2
-        if half * 2 >= area.width {
-            centerX = area.midX
+        if half * 2 >= scroll.width {
+            centerX = scroll.midX
         } else {
-            centerX = min(area.maxX - half, max(area.minX + half, centerX))
+            centerX = min(scroll.maxX - half, max(scroll.minX + half, centerX))
         }
         let halfY = Double(viewSize.height) / zoom / 2
-        if halfY * 2 >= area.height {
-            centerY = area.midY
+        if halfY * 2 >= scroll.height {
+            centerY = scroll.midY
         } else {
-            centerY = min(area.maxY - halfY, max(area.minY + halfY, centerY))
+            centerY = min(scroll.maxY - halfY, max(scroll.minY + halfY, centerY))
         }
     }
 }

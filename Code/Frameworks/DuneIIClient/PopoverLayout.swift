@@ -12,11 +12,14 @@ extension View {
     /// On iOS we also pin the presentation to an anchored popover (`.presentationCompactAdaptation(.popover)`)
     /// — otherwise a compact size class adapts it into a bottom sheet that ignores our `width`.
     func gamePopover(width: CGFloat, maxHeight: CGFloat) -> some View {
-        let sized = frame(width: width).frame(maxHeight: maxHeight)
         #if os(iOS)
-            return sized.presentationCompactAdaptation(.popover)
+            // Small landscape screens: shrink to fit, let the content's own List/Form/ScrollView scroll.
+            return frame(width: width).frame(maxHeight: maxHeight).presentationCompactAdaptation(.popover)
         #else
-            return sized
+            // macOS has room: give the popover a **definite** height. A bare `maxHeight` lets a `List` (no
+            // intrinsic height) collapse to a couple of rows — the "too small vertically" bug — so the popover
+            // must propose a concrete height for the content to fill.
+            return frame(width: width, height: maxHeight)
         #endif
     }
 }

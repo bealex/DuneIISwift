@@ -21,6 +21,12 @@ struct ContentView: View {
                     MapStatsOverlay(model: model)
                         .padding(.top, 12).padding(.leading, 16)
                 }
+                .overlay(alignment: .topTrailing) {
+                    MapControlsOverlay(model: model, onSave: saveGame, onLoad: loadGame)
+                        .padding(.top, 12).padding(.trailing, 16)
+                }
+                // The long-press building context popup anchors to a point in this (map) coordinate space.
+                .overlay(alignment: .topLeading) { BuildingMenuAnchor(model: model) }
                 .overlay(alignment: .top) {
                     if let error = model.assets.error, !error.isEmpty {
                         Text(error).font(.callout).padding(8)
@@ -44,7 +50,7 @@ struct ContentView: View {
                 }
                 .animation(.easeInOut(duration: 0.2), value: notice)
 
-            GameSidebar(model: model, fullScreen: true, onSave: saveGame, onLoad: loadGame)
+            GameSidebar(model: model, fullScreen: true)
         }
     }
 

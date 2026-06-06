@@ -1,5 +1,6 @@
 import DuneIIContracts
 import DuneIIFormats
+import DuneIIWorld
 import Foundation
 
 /// Loads the original install's PAKs and exposes the assets the client needs: the tile set (`ICON.ICN` +
@@ -75,6 +76,25 @@ public final class AssetStore {
     }
 
     func voc(_ name: String) -> Voc.Sound? { data(name).flatMap { try? Voc.decode($0) } }
+
+    private var concreteTileCache: (indices: [UInt8], palette: Palette)??
+
+    /// The 16×16 concrete-slab ground tile (`CONCRETE_SLAB` group via `TileIDs.builtSlab`), used to tile the
+    /// map border ring. Returns the raw indices + the palette. `nil` when the tile assets are unavailable.
+    func concreteTile() -> (indices: [UInt8], palette: Palette)? {
+        if let cached = concreteTileCache { return cached }
+
+        let result: (indices: [UInt8], palette: Palette)? = {
+            guard let iconMap, let tileSet, let ids = TileIDs(iconMap: iconMap) else { return nil }
+
+            let pixels = tileSet.tile(Int(ids.builtSlab))
+            guard pixels.count >= tileSet.tileWidth * tileSet.tileHeight else { return nil }
+
+            return (pixels, palette)
+        }()
+        concreteTileCache = .some(result)
+        return result
+    }
 
     private var mentatCache: [Character: [MentatHelp.Topic]] = [:]
 

@@ -26,12 +26,7 @@ struct ContentView: View {
         // is the space bar).
         HStack(spacing: 0) {
             mapArea
-            GameSidebar(
-                model: model,
-                fullScreen: isFullScreen,
-                onSave: { presentSaveGame(model) },
-                onLoad: { presentLoadGame(model) }
-            )
+            GameSidebar(model: model, fullScreen: isFullScreen)
         }
         .background(WindowAccessor { window in tools.attachToMain(window) })
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
@@ -52,6 +47,16 @@ struct ContentView: View {
                 MapStatsOverlay(model: model)
                     .padding(.top, 12).padding(.leading, 16)
             }
+            .overlay(alignment: .topTrailing) {
+                MapControlsOverlay(
+                    model: model,
+                    onSave: { presentSaveGame(model) },
+                    onLoad: { presentLoadGame(model) }
+                )
+                .padding(.top, 12).padding(.trailing, 16)
+            }
+            // The right-click building context popup anchors to a point in this (map) coordinate space.
+            .overlay(alignment: .topLeading) { BuildingMenuAnchor(model: model) }
             .overlay(alignment: .top) {
                 if let error = model.assets.error, !error.isEmpty {
                     Text(error).font(.callout).padding(8).background(.red.opacity(0.85)).foregroundStyle(.white)

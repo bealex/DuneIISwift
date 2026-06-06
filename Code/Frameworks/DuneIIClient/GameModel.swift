@@ -161,6 +161,9 @@ public final class GameModel {
 
     // Derived per-frame info for the tool windows.
     private(set) var selection: SelectionInfo?
+    /// The player building whose right-click context popup is open, and the map point (SwiftUI top-left coords)
+    /// to anchor it at. `nil` = no popup. Set by `rightClickOpensBuildingMenu`; the host overlays the popover.
+    private(set) var buildingMenu: BuildingMenu?
     private(set) var pendingOrder: OrderKind?
     private(set) var economy: [HouseEconomy] = []
     /// A bare tile the player left-clicked to inspect (no unit/structure there). Shown in the inspector when
@@ -1128,6 +1131,32 @@ public final class GameModel {
         pendingOrder = controller.pendingOrder
     }
 
+    /// Right-clicking a **player-owned building** with no units selected opens its context popup (state +
+    /// actions + build items) instead of ordering units: select the building (so the sidebar + popup read its
+    /// live state — `structureActions`/`buildOptions` refresh on the next frame via the selection change) and
+    /// record the anchor point. Returns `true` when it opened the popup (the caller then does nothing further);
+    /// `false` ⇒ the caller falls back to `rightClickTile` (the units-selected / not-a-player-building cases).
+    /// `point` is in SwiftUI map-overlay coordinates (top-left origin).
+    func rightClickOpensBuildingMenu(tileX x: Int, tileY y: Int, at point: CGPoint) -> Bool {
+        guard controller.selectedUnits.isEmpty, let state = simulation?.state else { return false }
+        guard
+            case let .structure(slot) = pick(x, y),
+            slot < state.structures.count,
+            state.structures[slot].o.houseID == UInt8(playerHouse.rawValue)
+        else { return false }
+
+        controller.leftClick(tileX: x, tileY: y, hit: .structure(slot: slot))
+        pendingOrder = controller.pendingOrder
+        selection = currentInfo()
+        inspectedTile = nil
+        refreshTileInfo()
+        buildingMenu = BuildingMenu(slot: slot, point: point)
+        audio.play(.select)
+        return true
+    }
+
+    func dismissBuildingMenu() { buildingMenu = nil }
+
     /// True only when a **single** harvester is selected — its right-click default action is Harvest (move to
     /// the tile and harvest/seek spice). A multi-unit group gets a plain move/attack instead.
     private func isSelectedHarvester() -> Bool {
@@ -1332,8 +1361,13 @@ public final class GameModel {
             return false
         }
 
-        let mine = state.unitHouseID(state.units[slot])
         let packed = UInt16(y * 64 + x)
+        // A target in the player's fog of war is never an attack target — you can't aim at what you haven't
+        // discovered, so a right-click on a veiled tile always resolves to Move (even if an enemy is hidden
+        // there). Matches the original, where an attack order needs a revealed tile.
+        guard Int(packed) < state.map.count, state.map[Int(packed)].isUnveiled else { return false }
+
+        let mine = state.unitHouseID(state.units[slot])
         if let u = state.unitGetByPackedTile(packed) { return state.unitHouseID(state.units[u]) != mine }
         if let s = state.structureGetByPackedTile(packed) { return state.structures[s].o.houseID != mine }
         return false
@@ -1624,4 +1658,11 @@ struct SelectionInfo: Equatable {
     /// The player order buttons for this entity — the original's per-unit `actionsPlayer` menu (Attack/Move/
     /// Harvest/Return/Deploy/Guard/…), deduped and in order. Empty for structures and non-player units.
     var unitActions: [PanelAction] = []
+}
+
+/// The open building context popup: which structure (pool slot) and the SwiftUI map-overlay point (top-left
+/// origin) to anchor the popover at. Set by `GameModel.rightClickOpensBuildingMenu`.
+struct BuildingMenu: Equatable {
+    var slot: Int
+    var point: CGPoint
 }

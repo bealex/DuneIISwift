@@ -39,6 +39,8 @@ public final class GameScene: SKScene {
     private var renderer: SpriteKitRenderer?
     private var lastUpdateTime: TimeInterval = 0
     private var tickAccumulator = 0.0
+    private let borderLayer = SKNode()  // the decorative Dune border ring filling the scrollable map margin
+    private var lastBorderArea: CGRect?  // the playable area the border was last built for (rebuild on change)
     private let selectionLayer = SKNode()  // outline(s) around the selected unit(s)/structure
     private var selectionNodes: [SKShapeNode] = []  // pulsating square outline(s) for a selected building
     private var unitSelectNodes: [SKSpriteNode] = []  // the MOUSE.SHP[6] selection box around each selected unit
@@ -96,6 +98,8 @@ public final class GameScene: SKScene {
         backgroundColor = .black
         addChild(cam)
         camera = cam
+        borderLayer.zPosition = 0.5  // above the (black) terrain border cells, below overlays/sprites
+        addChild(borderLayer)
         selectionLayer.zPosition = 30
         addChild(selectionLayer)
         dragBoxNode.strokeColor = .green
@@ -141,7 +145,7 @@ public final class GameScene: SKScene {
     func load(simulation: Simulation, assets: AssetStore) {
         // Keep our overlay nodes — only drop the renderer's terrain/sprite nodes. (The placement-preview node
         // was being orphaned here, so its footprint never drew.)
-        let keep: [SKNode] = [ cam, selectionLayer, dragBoxNode, healthLayer, placementNode ]
+        let keep: [SKNode] = [ cam, borderLayer, selectionLayer, dragBoxNode, healthLayer, placementNode ]
         for child in children where !keep.contains(child) { child.removeFromParent() }
         let r = SpriteKitRenderer(
             source: SpriteSource.make(assets: assets),
@@ -179,6 +183,7 @@ public final class GameScene: SKScene {
 
         model.viewSize = size  // keep the model's view size current for clamping
         renderer.render(frame)
+        updateBorder()
         applyViewport()
         updateSelection()
         updateHealth(frame, show: model.showHealthOverlay)
@@ -217,6 +222,66 @@ public final class GameScene: SKScene {
 
         cam.setScale(1 / v.zoom)
         cam.position = CGPoint(x: v.centerX, y: Double(Self.worldSidePx) - v.centerY)
+    }
+
+    // MARK: - Map border frame
+
+    /// Test seam (`ClientTests`): the border frame's nodes.
+    var debugBorderStrips: [SKSpriteNode] { borderLayer.children.compactMap { $0 as? SKSpriteNode } }
+
+    /// Build the map border ring around the playable area (once per area change), filling the `Viewport.borderPx`
+    /// margin the camera can scroll into with the **concrete-slab tile** (16×16) tiled. Top + bottom span the
+    /// corners; left + right fill the height between. Sits above the (black) terrain border cells, below units.
+    private func updateBorder() {
+        guard let area = model?.viewport.area, area != lastBorderArea else { return }
+
+        lastBorderArea = area
+        borderLayer.removeAllChildren()
+        guard let tile = model?.assets.concreteTile() else { return }
+
+        let b = Viewport.borderPx  // 16 = one tile
+        let side = Double(Self.worldSidePx)
+        let ax0 = area.minX, aw = area.width, ah = area.height
+        let topY = side - area.minY  // scene-y (y-up) of the area's top edge
+        let botY = side - area.maxY
+        let midY = (topY + botY) / 2
+
+        func strip(centerX: Double, centerY: Double, width: Double, height: Double) {
+            guard
+                let texture = tiledTileTexture(
+                    tile.indices,
+                    palette: tile.palette,
+                    width: Int(width),
+                    height: Int(height)
+                )
+            else { return }
+
+            let node = SKSpriteNode(texture: texture)
+            node.size = CGSize(width: width, height: height)
+            node.position = CGPoint(x: centerX, y: centerY)
+            borderLayer.addChild(node)
+        }
+        strip(centerX: ax0 + aw / 2, centerY: topY + b / 2, width: aw + 2 * b, height: b)
+        strip(centerX: ax0 + aw / 2, centerY: botY - b / 2, width: aw + 2 * b, height: b)
+        strip(centerX: ax0 - b / 2, centerY: midY, width: b, height: ah)
+        strip(centerX: ax0 + aw + b / 2, centerY: midY, width: b, height: ah)
+    }
+
+    /// Tile a 16×16 indexed terrain tile across a `width × height` strip → a nearest-filtered texture.
+    private func tiledTileTexture(_ tile: [UInt8], palette: Palette, width: Int, height: Int) -> SKTexture? {
+        guard width > 0, height > 0, tile.count >= 256 else { return nil }
+
+        var indices = [UInt8](repeating: 0, count: width * height)
+        for y in 0 ..< height {
+            for x in 0 ..< width { indices[y * width + x] = tile[(y % 16) * 16 + (x % 16)] }
+        }
+        guard let image = IndexedImage.cgImage(indices: indices, width: width, height: height, palette: palette) else {
+            return nil
+        }
+
+        let texture = SKTexture(cgImage: image)
+        texture.filteringMode = .nearest
+        return texture
     }
 
     // MARK: - Selection outline
@@ -543,7 +608,20 @@ public final class GameScene: SKScene {
         override public func rightMouseDown(with event: NSEvent) {
             if model?.missileTargeting != nil { model?.cancelMissileTargeting(); return }
             if model?.placement != nil { model?.cancelPlacement(); return }
-            if let (x, y) = tile(at: event) { model?.rightClickTile(x, y) }
+            if let (x, y) = tile(at: event) {
+                // A player building (with no units selected) opens its context popup; otherwise order units.
+                let p = swiftUIPoint(event.location(in: self))
+                if model?.rightClickOpensBuildingMenu(tileX: x, tileY: y, at: p) == true { return }
+                model?.rightClickTile(x, y)
+            }
+        }
+
+        /// A scene point in the SwiftUI map-overlay coordinate space (top-left origin) for popover anchoring.
+        /// `convertPoint(toView:)` gives AppKit view coords (bottom-left), so flip y.
+        private func swiftUIPoint(_ scenePoint: CGPoint) -> CGPoint {
+            let v = convertPoint(toView: scenePoint)
+            let h = view?.bounds.height ?? size.height
+            return CGPoint(x: v.x, y: h - v.y)
         }
 
         /// Middle mouse button: drag to pan the map (a hand-tool — the content follows the cursor), or a plain
@@ -673,6 +751,10 @@ public final class GameScene: SKScene {
                 if self.model?.missileTargeting != nil {
                     self.model?.cancelMissileTargeting()
                 } else if let (x, y) = self.tile(atScenePoint: start) {
+                    // A player building (with no units selected) opens its context popup; else order units.
+                    // UIKit view coords are top-left already — no flip needed.
+                    let p = self.convertPoint(toView: start)
+                    if self.model?.rightClickOpensBuildingMenu(tileX: x, tileY: y, at: p) == true { return }
                     self.model?.rightClickTile(x, y)
                 }
             }

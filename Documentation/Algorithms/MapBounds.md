@@ -24,6 +24,10 @@ Gameplay already respects the rectangle. The gap was presentation — our free-c
 - **`FrameComposer`** draws nothing outside it: a terrain cell outside `mapArea` is filled with the border-black index (`borderColourIndex`, the same colour-12 black OpenDUNE fills fog with), unconditionally (independent of `showFog`); and a unit / effect sprite whose tile is outside `mapArea` is culled. So no renderer (duneii / mapview / scenariolab) ever paints the border.
 - **The duneii camera** (`Viewport.area`) clamps pan/zoom to the rectangle's world-point bounds and recenters on it when a scenario loads, so navigation "follows the map boundary." When the view is larger than the playable area (zoomed out past 1:1) the area is pinned centred, the surround left black.
 
+### The decorative border margin (2026-06-06)
+
+The camera clamp is **outset by `Viewport.borderPx` (50 game-pixels)** in every direction (`Viewport.clamp` clamps to `area.insetBy(-50)`), so the player can scroll ~50px past the map edge. That margin is filled with a **decorative Dune border ring** instead of black: `GameScene.updateBorder` lays four tiled `SKSpriteNode` strips (top/bottom span the corners, left/right fill the height) just outside `Viewport.area`, on a `borderLayer` at z 0.5 (above the black terrain-border cells, below units; never overlapping the play area). The fill is the **red/gold diagonal hazard stripe from `SCREEN.CPS`** — an 8×8 tileable patch at (241,100), decoded + cropped by `AssetStore.borderTile()` and tiled per strip via `IndexedImage`. Rebuilt only when the playable area changes (per scenario). Client-only (both `duneii` + `duneii-ios`); the headless renderers (mapview/scenariolab/render goldens) don't draw it. Manual-verification owed (GUI; no `ClientTests`).
+
 ### Golden-neutrality
 
 The render-golden crops all sit **inside** their scenario's playable area (SCENA001 is `MapScale=1` → `[16,48)`, crops at x∈[26,40)/y∈[21,33); SCENA005 is `MapScale=0` → `[1,63)`, crop inside), so blacking the border changes no committed reference. The simulation/`Scenario` goldens are unaffected (this is presentation only).
