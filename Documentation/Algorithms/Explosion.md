@@ -35,8 +35,16 @@ stop, plus a few side-effecting commands). They live in `GameState.explosions` (
   tile in `pendingCraters` and `Simulation.drainCraters` does the work (sand/rock crater group from the
   icon-map, grow-or-random, spice deduct, bloom pop). Gated to `tickExplosions` (off for goldens), so the RNG
   draw stays parity-neutral.
-- `PLAY_VOICE` (audio), `SCREEN_SHAKE` (video), `SET_ANIMATION` (only the two crash explosions use it —
-  needs `g_table_animation_map`). No-ops.
+- `PLAY_VOICE` (audio) and `SCREEN_SHAKE` (video) are no-ops/seams.
+- `SET_ANIMATION` (`Explosion_Func_SetAnimation`, `explosion.c:175`) — **wired**: the ornithopter (base 0)
+  and carryall (base 4) crash explosions paint a "Flying-Machine Crash" wreck (`g_table_animation_map`, icon
+  group 3). Faithful to OpenDUNE, three rules govern it: (1) **if a structure sits on the tile, no wreck is
+  painted** (`Structure_Get_ByPackedTile(packed) != NULL` → early return) — so a winger that goes down over a
+  building leaves no wreck on the roof; (2) `+ Tools_Random_256() & 1` picks one of two variants; (3)
+  `+ (isSand ? 0 : 2)` uses a different wreck over rock than over sand. Rules 2–3 need `Map_GetLandscapeType`
+  + `Random_256` (Simulation primitives), so the World VM records `(position, base, houseID)` in
+  `state.pendingCrashAnimations` and `Simulation.drainCrashAnimations` finishes it right after `drainCraters`.
+  Gated to `tickExplosions` (off for goldens), so the RNG draw stays parity-neutral. (`TrackAndCrashTests`.)
 - `BLOOM_EXPLOSION` (`Explosion_Func_BloomExplosion`, `explosion.c:157`) is **wired**: when the explosion's
   tile is still the bloom tile it records the packed tile in `state.pendingBloomDetonations` (the VM is
   World-layer; `Map_Bloom_ExplodeSpice` is a Simulation primitive — spice-fill + tremor), which the loop

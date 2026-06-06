@@ -140,6 +140,7 @@ public struct Simulation: Sendable {
             state.explosionTick()  // explosion sprite animations
             drainBloomDetonations()  // pop any bloom a blast's VM landed on (shoot-the-bloom)
             drainCraters()  // stamp the crater overlay a TILE_DAMAGE blast left
+            drainCrashAnimations()  // place the ornithopter/carryall crash wreck (Explosion_Func_SetAnimation)
         }
     }
 
@@ -207,6 +208,45 @@ public struct Simulation: Sendable {
             }
             state.map[pos].overlayTileID = UInt8(truncatingIfNeeded: overlay + base)
             state.mapDirty = true
+        }
+    }
+
+    /// `Explosion_Func_SetAnimation` (`explosion.c:175`): place the crash wreck for each ornithopter/carryall
+    /// death explosion the World VM queued. Faithful to OpenDUNE:
+    ///   - **a structure on the tile → no wreck** (`Structure_Get_ByPackedTile(packed) != NULL` → return) —
+    ///     this is the "crash site over a building looked weird" fix: a wreck is never painted over a building;
+    ///   - `+ Tools_Random_256() & 1` — a random one of two wreck variants;
+    ///   - `+ (isSand ? 0 : 2)` — a different wreck over rock/non-sand than over sand.
+    /// The final id indexes `g_table_animation_map` (icon group 3, "Flying-Machine Crash"). Gated to
+    /// `tickExplosions` (off for goldens), so the `Random_256` draw never perturbs a parity run.
+    private mutating func drainCrashAnimations() {
+        guard
+            !state.pendingCrashAnimations.isEmpty,
+            let movement = unitScript?.movement
+        else {
+            state.pendingCrashAnimations.removeAll(keepingCapacity: true)
+            return
+        }
+
+        let pending = state.pendingCrashAnimations
+        state.pendingCrashAnimations.removeAll(keepingCapacity: true)
+        for crash in pending {
+            let packed = Int(crash.position.packed)
+            guard packed >= 0, packed < state.map.count else { continue }
+            if state.map[packed].hasStructure { continue }  // Structure_Get_ByPackedTile != NULL → no wreck
+
+            var id = crash.baseID
+            id += Int(state.random256.next()) & 1
+            let type = movement.map.landscapeType(state.map[packed], tileIDs: state.tileIDs)
+            id += LandscapeInfo[type].isSand ? 0 : 2
+            state.animationStart(
+                tableIndex: id,
+                tile: crash.position,
+                tileLayout: 0,
+                houseID: crash.houseID,
+                iconGroup: 3,
+                kind: .map
+            )
         }
     }
 

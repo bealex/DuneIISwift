@@ -70,7 +70,8 @@ public extension GameState {
     }
 
     /// `Animation_Start`. `kind` selects the command table (structure ground-cycle by default; a unit
-    /// corpse-overlay table for `Script_Unit_StartAnimation`).
+    /// corpse-overlay table for `Script_Unit_StartAnimation`). Reachable from `Simulation.drainCrashAnimations`
+    /// (public extension) to place the deferred ornithopter/carryall crash wreck (it needs `Map_GetLandscapeType`).
     mutating func animationStart(
         tableIndex: Int,
         tile: Tile32,

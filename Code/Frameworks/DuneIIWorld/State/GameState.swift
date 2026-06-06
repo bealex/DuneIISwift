@@ -202,6 +202,24 @@ public struct GameState: Sendable, Codable {
     /// `Random_256`) right after the bloom drain. Transient — only populated while explosions tick.
     public var pendingCraters: [UInt16] = []
 
+    /// A queued ornithopter/carryall crash-wreck animation (`Explosion_Func_SetAnimation`, `explosion.c:175`).
+    /// The World-layer explosion VM only records `(position, baseID, houseID)`; `Simulation.drainCrashAnimations`
+    /// finishes it — the structure-under-tile skip + the random 0/1 variant + the `+2` non-sand offset need
+    /// `Map_GetLandscapeType`/`Random_256`. Transient — only populated while explosions tick.
+    public struct PendingCrashAnimation: Sendable, Equatable, Codable {
+        public var position: Tile32
+        public var baseID: Int  // g_table_animation_map base index: 0 = ornithopter, 4 = carryall
+        public var houseID: UInt8
+
+        public init(position: Tile32, baseID: Int, houseID: UInt8) {
+            self.position = position
+            self.baseID = baseID
+            self.houseID = houseID
+        }
+    }
+
+    public var pendingCrashAnimations: [PendingCrashAnimation] = []
+
     /// Queue a sound at a world position (`Voice_PlayAtTile`, `sound.c:134`). Ignores out-of-range ids and
     /// the `0xFFFF` "no sound" sentinel. RNG-free, so it doesn't perturb the golden/parity path.
     public mutating func emitSound(_ voiceID: Int, at position: Tile32) {

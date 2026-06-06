@@ -6,14 +6,13 @@ import Testing
 @testable import DuneIISimulation
 @testable import DuneIIWorld
 
-/// Two visual-effect behaviours driven through the live `Simulation` under the real `UNIT.EMC`:
+/// Visual-effect behaviours driven through the live `Simulation` under the real `UNIT.EMC`:
 ///   1. a **tracked** unit (tank) leaves **sand tracks** as it drives over sand (`Unit_Move` →
 ///      `Animation_Start(g_table_animation_unitMove)`, the "Sand Tracks" icon group);
-///   2. a destroyed **ornithopter** spawns its **death-explosion cluster** — the faithful 1.07 "crash"
-///      (its `ACTION_DIE` script runs `Unit_ExplosionMultiple` → eight `DEATH_HAND` explosions).
-///
-/// (The dedicated `EXPLOSION_ORNITHOPTER_CRASH` wreck — icon group "Flying-Machine Crash" — exists in
-/// OpenDUNE's tables but is **never triggered in 1.07**, so it is intentionally not produced.)
+///   2. a destroyed **ornithopter** spawns its `EXPLOSION_ORNITHOPTER_CRASH` (its `ACTION_DIE` script runs
+///      `Unit_ExplosionSingle(16)`), whose `SET_ANIMATION` paints the "Flying-Machine Crash" wreck — but
+///      faithfully to `Explosion_Func_SetAnimation` (`explosion.c:175`): **no wreck over a structure**, a
+///      random one of two variants, and a different wreck over rock (`+2`) than over sand.
 ///
 /// These are animation/explosion effects, ticked off the cross-engine golden path (they draw RNG, which the
 /// oracle scenario harness doesn't), so they're standalone behavioural tests, not goldens. Short-circuit if
@@ -131,5 +130,58 @@ struct TrackAndCrashTests {
         }
         #expect(sawCrashExplosion, "the ornithopter death never created the EXPLOSION_ORNITHOPTER_CRASH explosion")
         #expect(sawWreck, "the ornithopter crash never painted the Flying-Machine Crash wreck overlay")
+    }
+
+    /// Run an `EXPLOSION_ORNITHOPTER_CRASH` directly at `tile` and return the `g_table_animation_map` index of
+    /// the crash wreck it starts (`Animation.kind == .map`), or `nil` if no wreck animation was started
+    /// (`Explosion_Func_SetAnimation` skipped it). Drives the real explosion + drain path.
+    private func crashWreckTableIndex(in state: GameState, _ a: Assets, at tile: Tile32) -> Int? {
+        var sim = Simulation(
+            state: state,
+            scriptInfo: a.unit,
+            structureScriptInfo: a.build,
+            tickExplosions: true,
+            tickAnimations: true
+        )
+        sim.state.explosionStart(type: ExplosionType.ornithopterCrash.rawValue, position: tile, houseID: 0)
+        for _ in 0 ..< 30 {
+            sim.tick()
+            if let wreck = sim.state.animations.first(where: { $0.active && $0.kind == .map }) {
+                return wreck.tableIndex
+            }
+        }
+        return nil
+    }
+
+    @Test("a crash over a structure paints no wreck (Explosion_Func_SetAnimation structure skip)")
+    func crashOverStructurePaintsNoWreck() throws {
+        guard let a = load() else { return }
+
+        var state = sandWorld(a)
+        let tile = Tile32.unpack(Tile32.packXY(x: 32, y: 32))
+        state.map[Int(tile.packed)].hasStructure = true  // a building sits on the crash tile
+
+        #expect(
+            crashWreckTableIndex(in: state, a, at: tile) == nil,
+            "a wreck was painted over a structure (OpenDUNE returns early when Structure_Get_ByPackedTile != NULL)"
+        )
+    }
+
+    @Test("the crash wreck variant is sand (0/1) over sand and rock (2/3) over rock")
+    func crashWreckVariantFollowsTerrain() throws {
+        guard let a = load() else { return }
+
+        let tile = Tile32.unpack(Tile32.packXY(x: 32, y: 32))
+
+        // Over sand (the whole sandWorld is sand): id = base 0 + rand(0/1) + 0.
+        let sand = try #require(crashWreckTableIndex(in: sandWorld(a), a, at: tile))
+        #expect(sand == 0 || sand == 1, "sand wreck id \(sand) not in {0,1}")
+
+        // Over rock: groundTileID below the landscape base classifies as entirelyRock (isSand == false), so
+        // id = base 0 + rand(0/1) + 2.
+        var rockState = sandWorld(a)
+        rockState.map[Int(tile.packed)].groundTileID = 0
+        let rock = try #require(crashWreckTableIndex(in: rockState, a, at: tile))
+        #expect(rock == 2 || rock == 3, "rock wreck id \(rock) not in {2,3}")
     }
 }

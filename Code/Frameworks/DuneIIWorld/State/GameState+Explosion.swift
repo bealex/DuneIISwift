@@ -78,17 +78,19 @@ public extension GameState {
                     case .screenShake:
                         break  // SEAM: video
                     case .setAnimation:
-                        // `Explosion_Func_SetAnimation` (explosion.c:175): start a map-effect animation — the
-                        // crash wreck for the ornithopter (id 0) / carryall (id 4) crash explosions. Icon
-                        // group 3 = "Flying-Machine Crash". Runs only on the explosion-ticking (visual) path,
-                        // so it never perturbs a parity run.
-                        animationStart(
-                            tableIndex: Int(max(0, parameter)),
-                            tile: explosions[i].position,
-                            tileLayout: 0,
-                            houseID: explosions[i].houseID,
-                            iconGroup: 3,
-                            kind: .map
+                        // `Explosion_Func_SetAnimation` (explosion.c:175): queue the crash wreck for the
+                        // ornithopter (base 0) / carryall (base 4) crash explosions. The full logic — skip the
+                        // wreck if a **structure** sits on the tile (no wreck over a building), a random 0/1
+                        // variant, and `+2` over non-sand terrain — needs `Map_GetLandscapeType`/`Random_256`
+                        // (Simulation primitives), so record it and let `Simulation.drainCrashAnimations`
+                        // finish it (the same deferral as craters). Off the parity path (explosions only tick
+                        // in the visual apps), so the RNG draw never perturbs a golden run.
+                        pendingCrashAnimations.append(
+                            PendingCrashAnimation(
+                                position: explosions[i].position,
+                                baseID: Int(max(0, parameter)),
+                                houseID: explosions[i].houseID
+                            )
                         )
                     case .bloomExplosion:
                         // Explosion_Func_BloomExplosion (explosion.c:157): if the tile under the explosion is
