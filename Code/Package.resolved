@@ -1,5 +1,5 @@
 {
-  "originHash" : "c16e843b9693a3f984a66e53785bff8e2a414965574fb4b7ec4b36f694e59902",
+  "originHash" : "b4aaf4d9b5a0b839f1385ad1ffaa6551138d166e0a5d7a0401efeb8953e12dc2",
   "pins" : [
     {
       "identity" : "memoirs-ios",
@@ -16,7 +16,7 @@
       "location" : "https://github.com/bealex/SwiftOLP3.git",
       "state" : {
         "branch" : "main",
-        "revision" : "956d440d507de25a89b62f6aea917915338712a0"
+        "revision" : "935140c77a454c5dbb4ded609b8003a6fe1237da"
       }
     }
   ],
