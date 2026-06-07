@@ -38,9 +38,10 @@ in version control.
 
 - macOS 26 on Apple Silicon, with Xcode and the Swift 6.3.2 toolchain.
 - A legitimate **Dune II 1.07** install (the `*.PAK` data files), placed where the tools can read it.
-- For cross-engine parity work: a local clone of **OpenDUNE** (the reference/oracle) and, optionally,
-  **dunepak** (a PAK packer). These are external projects, referenced — not vendored here. See
-  `Documentation/Architecture/` for how they are wired into the parity harness.
+- For cross-engine parity work: a local clone of [**OpenDUNE**](https://github.com/OpenDUNE/OpenDUNE) (the
+  reference/oracle) and, optionally, [**dunepak**](https://github.com/Will40/dunepak) (a PAK packer/unpacker).
+  These are external projects, referenced — not vendored here. See `Documentation/Architecture/` for how they
+  are wired into the parity harness.
 - For the iOS client: `xcodegen` (`brew install xcodegen`).
 
 ## Game assets (generated, not committed)
@@ -104,7 +105,25 @@ Every format, codec, and native primitive ships with tests. Gameplay/parity feat
 structure-decision traces (opcode-identical EMC), and **render goldens** (pixel-exact). See
 `Documentation/Architecture/Testing.md` and `ParityHarness.md`.
 
-## Acknowledgements
+## Related projects
 
-- **OpenDUNE** — the open-source C reimplementation that serves as the behavioural oracle and reference.
-- **Westwood Studios** — for the original *Dune II*.
+- **[OpenDUNE](https://github.com/OpenDUNE/OpenDUNE)** (GPL-2.0) — the open-source C reimplementation of
+  Dune II; this project's behavioural **oracle** and the source it ports from.
+- **[dunepak](https://github.com/Will40/dunepak)** — a Dune II PAK file packer/unpacker; the reference for
+  the PAK asset-container format.
+- **[SwiftOPL3](https://github.com/bealex/SwiftOLP3)** (LGPL-2.1) — a pure-Swift OPL3/YMF262 FM synth +
+  Westwood `.ADL` driver; this project's AdLib-music backend (a SwiftPM dependency, not vendored).
+
+## License
+
+This project is a **faithful port of [OpenDUNE](https://github.com/OpenDUNE/OpenDUNE)** — its simulation
+primitives, scripting state machines, stat tables, and codecs are exact transcriptions of OpenDUNE's C
+source. OpenDUNE is licensed under the **GNU General Public License, version 2.0**, so this derivative work
+is likewise licensed under **[GPL-2.0](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html)**.
+
+The FM-music dependency [SwiftOPL3](https://github.com/bealex/SwiftOLP3) is LGPL-2.1, which is
+GPL-compatible.
+
+**No *Dune II* game data is covered by this license.** The original game, its assets, and trademarks remain
+the property of their respective rights holders (Westwood Studios / Electronic Arts) and are **not**
+distributed here — you must supply your own copy of Dune II 1.07.
