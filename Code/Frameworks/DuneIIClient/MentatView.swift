@@ -21,8 +21,11 @@ struct MentatView: View {
 
     private var topics: [MentatHelp.Topic] {
         let letter = Character(model.playerHouse.displayName.prefix(1).uppercased())
+        // The Mentat is a full reference: list *every* unit/building topic, not only those unlocked at the
+        // current campaign level. (The original gates the list by `campaign`; we show all so nothing is left
+        // undescribed.) Section headers and the general Advice/Orders entries are still dropped.
         return model.assets.mentatTopics(houseLetter: letter)
-            .filter { !$0.isHeader && $0.section != .general && $0.campaign <= model.campaignLevel + 1 }
+            .filter { !$0.isHeader && $0.section != .general }
     }
 
     var body: some View {
@@ -217,19 +220,22 @@ struct MentatView: View {
         return .none
     }
 
+    // Topic names vary slightly between the per-house Mentat files (e.g. "Wind Trap" vs "Windtrap",
+    // "Deviator" vs "Ordos Deviator"), so every spelling is mapped to keep the sprite + stats panel populated.
     private static let structures: [String: StructureType] = [
         "Barracks": .barracks, "Concrete Slab": .slab1x1, "Construction Yard": .constructionYard,
         "Heavy Factory": .heavyVehicle, "High-Tech Factory": .highTech, "IX": .houseOfIx,
         "Light Factory": .lightVehicle, "Outpost": .outpost, "Palace": .palace, "Refinery": .refinery,
         "Repair Facility": .repair, "Rocket Turret": .rocketTurret, "Spice Silos": .silo,
-        "Starport": .starport, "Turret": .turret, "Wall": .wall, "Windtrap": .windtrap, "Wor": .worTrooper,
+        "Starport": .starport, "Turret": .turret, "Wall": .wall,
+        "Windtrap": .windtrap, "Wind Trap": .windtrap, "Wor": .worTrooper,
     ]
     private static let units: [String: UnitType] = [
         "Carryall": .carryall, "Combat Tank": .tank, "Harvester": .harvester, "Heavy Troopers": .troopers,
         "Light Infantry": .infantry, "MCV": .mcv, "Ordos Raider": .raiderTrike, "Ornithopter": .ornithopter,
         "Quad": .quad, "Rocket Tank": .launcher, "Siege Tank": .siegeTank, "Trike": .trike,
-        "Devastator": .devastator, "Ordos Deviator": .deviator, "Saboteur": .saboteur,
-        "Sand Worm": .sandworm, "Sonic Tank": .sonicTank,
+        "Devastator": .devastator, "Deviator": .deviator, "Ordos Deviator": .deviator,
+        "Saboteur": .saboteur, "Sand Worm": .sandworm, "Sonic Tank": .sonicTank,
     ]
 
     /// Open on the selected unit/building's topic when there is one, else the first topic.
