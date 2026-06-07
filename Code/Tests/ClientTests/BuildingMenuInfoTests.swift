@@ -51,4 +51,27 @@ struct BuildingMenuInfoTests {
         #expect(model.isFactorySelected, "the CY should be recognised as a factory immediately")
         #expect(!model.buildOptions.isEmpty, "the CY's build list should be populated immediately")
     }
+
+    @Test func upgradeIsNotOfferedForANonUpgradableBuilding() throws {
+        guard let installURL else { print("upgrade-availability: no install — skipped"); return }
+
+        NSApplication.shared.setActivationPolicy(.accessory)
+        let model = GameModel(assets: AssetStore(installURL: installURL))
+        guard let sim = model.simulation else { Issue.record("no simulation after load"); return }
+
+        // A windtrap has no upgrade at any campaign level, so the Upgrade control must be hidden (upgradable
+        // == false) — vs. merely disabled. (Skips if this scenario's player has no windtrap.)
+        let player = UInt8(model.playerHouse.rawValue)
+        guard let slot = sim.state.structures.firstIndex(where: {
+            $0.o.flags.contains(.used)
+                && $0.o.houseID == player
+                && $0.o.type == UInt8(StructureType.windtrap.rawValue)
+        }) else {
+            print("upgrade-availability: no player windtrap in first scenario — skipped")
+            return
+        }
+        let packed = sim.state.structures[slot].o.position.packed
+        _ = model.rightClickOpensBuildingMenu(tileX: Int(packed % 64), tileY: Int(packed / 64), at: .zero)
+        #expect(model.structureActions?.upgradable == false, "a windtrap is never upgradable → hide Upgrade")
+    }
 }

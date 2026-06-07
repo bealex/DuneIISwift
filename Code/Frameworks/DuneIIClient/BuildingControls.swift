@@ -59,13 +59,17 @@ struct StructureActionBar: View {
                         help: sa.isRepairing ? "Stop repairing (R)" : "Repair (R)",
                         disabled: !sa.canRepair && !sa.isRepairing
                     ) { model.repairSelected() }
-                    ActionIcon(
-                        systemImage: "arrow.up.circle",
-                        badge: "U",
-                        active: sa.isUpgrading,
-                        help: sa.isUpgrading ? "Stop upgrading (U)" : "Upgrade (U)",
-                        disabled: !sa.canUpgrade && !sa.isUpgrading
-                    ) { model.upgradeSelected() }
+                    // Hide Upgrade entirely when no upgrade is possible at this campaign level (vs. merely
+                    // disabling it when it's possible but not actionable yet — e.g. the building needs repair).
+                    if sa.upgradable {
+                        ActionIcon(
+                            systemImage: "arrow.up.circle",
+                            badge: "U",
+                            active: sa.isUpgrading,
+                            help: sa.isUpgrading ? "Stop upgrading (U)" : "Upgrade (U)",
+                            disabled: !sa.canUpgrade && !sa.isUpgrading
+                        ) { model.upgradeSelected() }
+                    }
                 }
                 if let sw = model.superWeapon {
                     ActionIcon(

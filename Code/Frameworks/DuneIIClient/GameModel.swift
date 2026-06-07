@@ -707,18 +707,24 @@ public final class GameModel {
     /// 28/29) is emitted by the sim and played by `playFeedback`; this only handles the visual transition.
     private func updateRadar(_ frame: FrameInfo) {
         let nowActive = frame.houses.first { $0.id == playerHouse }?.radarActivated ?? false
-        if nowActive != radarActive {
-            radarActive = nowActive
-            if !radarStaticFrames.isEmpty {
-                // Dune II plays the tuning reel REVERSED coming online (`activate ? frameCount - frame`) and
-                // FORWARD going dark (`House_UpdateRadarState`, house.c): ON ⇒ last frame down to 0;
-                // OFF ⇒ 0 up to the last.
-                radarStaticForward = !nowActive
-                radarStaticFrameIndex = nowActive ? radarStaticFrames.count - 1 : 0
-                radarStaticTick = 0
-            }
+        guard nowActive != radarActive else { return }
+
+        radarActive = nowActive
+        if !radarStaticFrames.isEmpty {
+            // Dune II plays the tuning reel REVERSED coming online (`activate ? frameCount - frame`) and
+            // FORWARD going dark (`House_UpdateRadarState`, house.c): ON ⇒ last frame down to 0;
+            // OFF ⇒ 0 up to the last.
+            radarStaticForward = !nowActive
+            radarStaticFrameIndex = nowActive ? radarStaticFrames.count - 1 : 0
+            radarStaticTick = 0
         }
-        // Advance the tuning animation one WSA frame every couple of render frames (~Dune II's cadence).
+    }
+
+    /// Advance the radar "tuning" transition one step. Driven by the **render loop** (every drawn frame via
+    /// `GameScene.update`), not the sim tick, so the on/off animation runs at a constant wall-clock rate
+    /// regardless of the game-speed multiplier (or pause) — i.e. always the 1× cadence. One WSA frame every
+    /// couple of render frames (~Dune II's tuning speed).
+    func advanceRadarTuning() {
         guard let idx = radarStaticFrameIndex else { return }
 
         radarStaticTick += 1
@@ -830,6 +836,9 @@ public final class GameModel {
             // re-check HP — the requirement lives in the GUI that surfaces the option.)
             canUpgrade: s.upgradeTimeLeft != 0 && !s.o.flags.contains(.upgrading)
                 && s.o.hitpoints == StructureInfo[type].o.hitpoints,
+            // Upgrade is *possible at this campaign level* (further upgrade exists, or one is in progress) —
+            // `Structure_IsUpgradable`. When false the Upgrade button is hidden, not just disabled.
+            upgradable: sim.state.structureIsUpgradable(slot) || s.o.flags.contains(.upgrading),
             isRepairing: s.o.flags.contains(.repairing),
             isUpgrading: s.o.flags.contains(.upgrading)
         )
@@ -1648,6 +1657,10 @@ struct StructureActions: Equatable {
     /// True only when a further upgrade exists *and* the building is at full health (the original only offers
     /// the upgrade option to a fully-repaired structure — see `refreshStructureActions`).
     var canUpgrade: Bool
+    /// Whether an upgrade is *possible at all* for this building at the current campaign level (a further
+    /// upgrade exists, or one is already in progress). When false the Upgrade control is hidden entirely —
+    /// vs. `canUpgrade`, which only gates whether it's actionable *right now* (e.g. needs full HP first).
+    var upgradable: Bool
     var isRepairing: Bool
     var isUpgrading: Bool
 }

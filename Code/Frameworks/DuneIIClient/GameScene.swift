@@ -192,6 +192,7 @@ public final class GameScene: SKScene {
 
         model.viewSize = size  // keep the model's view size current for clamping
         renderer.render(frame)
+        model.advanceRadarTuning()  // wall-clock paced (per render frame), independent of game speed
         updateBorder()
         applyViewport()
         updateSelection()
