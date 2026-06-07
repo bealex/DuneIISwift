@@ -85,7 +85,16 @@ public final class GameScene: SKScene {
         private var lastTapTile: (Int, Int)?
         private static let doubleTapWindow = 0.35
     #endif
-    private var lastTargetingActive = false  // last cursor state, so we only `.set()` the cursor on change
+    #if os(macOS)
+        // Map-cursor state. Cache the cursor's current *meaning* so we only call `NSCursor.set()` on a change,
+        // and remember the last tile the pointer was over so the per-frame refresh can re-derive the cursor
+        // after a selection / world change (not only on mouse-move). `duneCursorCache` holds the authentic
+        // `MOUSE.SHP` cursors, built once.
+        private enum MapCursor: Equatable { case arrow, crosshair, move, attack }
+        private var currentMapCursor: MapCursor = .arrow
+        private var lastMouseTile: (x: Int, y: Int)?
+        private var duneCursorCache: [Int: NSCursor] = [:]
+    #endif
     private let healthLayer = SKNode()
     private var healthBars: [SKSpriteNode] = []
     private var buildBars: [SKSpriteNode] = []  // a white production-progress bar under a building's health bar
@@ -547,14 +556,12 @@ public final class GameScene: SKScene {
         (model?.pendingOrder != nil) || (model?.placement != nil) || (model?.missileTargeting != nil)
     }
 
-    /// Set the crosshair while targeting, the arrow otherwise — only when the state changes. macOS only:
-    /// iOS has no hardware cursor, so the body is a no-op there.
+    /// Re-derive the map cursor from the current targeting / selection / hovered-tile state, applied only when
+    /// its meaning changed (so a selection or world change updates it even without a mouse-move). macOS only:
+    /// iOS has no hardware cursor, so this is a no-op there.
     private func refreshCursor() {
-        guard targetingActive != lastTargetingActive else { return }
-
-        lastTargetingActive = targetingActive
         #if os(macOS)
-            (targetingActive ? NSCursor.crosshair : NSCursor.arrow).set()
+            applyMapCursor()
         #endif
     }
 
@@ -657,9 +664,9 @@ public final class GameScene: SKScene {
         }
 
         override public func mouseMoved(with event: NSEvent) {
-            guard model?.placement != nil, let (x, y) = tile(at: event) else { return }
-
-            model?.placementHover(tileX: x, tileY: y)
+            lastMouseTile = tile(at: event)
+            if model?.placement != nil, let (x, y) = lastMouseTile { model?.placementHover(tileX: x, tileY: y) }
+            applyMapCursor()
         }
 
         override public func keyDown(with event: NSEvent) {
@@ -703,9 +710,71 @@ public final class GameScene: SKScene {
             }
         }
 
-        /// AppKit's authoritative cursor hook (fires as the mouse moves over the view), so the crosshair sticks.
+        /// AppKit's authoritative cursor hook (fires as the mouse moves over the view), so our cursor sticks
+        /// instead of AppKit resetting it to the arrow. Sets unconditionally — this is the per-move authority;
+        /// the cheap change-gated path is `applyMapCursor` (driven by the frame loop for non-move changes).
         override public func cursorUpdate(with event: NSEvent) {
-            (targetingActive ? NSCursor.crosshair : NSCursor.arrow).set()
+            lastMouseTile = tile(at: event)
+            let kind = mapCursorKind()
+            currentMapCursor = kind
+            nsCursor(kind).set()
+        }
+
+        /// The cursor the map should show right now: the targeting crosshair while an order / placement /
+        /// missile is armed; otherwise, with units selected, the attack reticle over an enemy and the move
+        /// pointer over everything else (including fog of war); the plain arrow when nothing actionable is
+        /// selected or the pointer is off the map.
+        private func mapCursorKind() -> MapCursor {
+            if targetingActive { return .crosshair }
+            guard let model, let t = lastMouseTile else { return .arrow }
+
+            switch model.unitOrderIsAttack(tileX: t.x, tileY: t.y) {
+                case true?: return .attack
+                case false?: return .move
+                case nil: return .arrow
+            }
+        }
+
+        /// Apply the desired cursor, touching `NSCursor` only when its meaning changed.
+        private func applyMapCursor() {
+            let kind = mapCursorKind()
+            guard kind != currentMapCursor else { return }
+
+            currentMapCursor = kind
+            nsCursor(kind).set()
+        }
+
+        private func nsCursor(_ kind: MapCursor) -> NSCursor {
+            switch kind {
+                case .arrow: return .arrow
+                case .crosshair: return .crosshair
+                // Authentic Dune II cursors: frame 0 is the pointer (move), frame 5 the target reticle (attack).
+                case .move: return duneCursor(frame: 0, hotSpot: NSPoint(x: 0, y: 0)) ?? .arrow
+                case .attack: return duneCursor(frame: 5, hotSpot: NSPoint(x: 8, y: 8)) ?? .crosshair
+            }
+        }
+
+        /// An `NSCursor` from a `MOUSE.SHP` frame (index 0 transparent), built once and cached. `hotSpot` is in
+        /// the OpenDUNE cursor coordinate space (top-left origin) — `cursorHotSpots` in `gui/viewport.c`. `nil`
+        /// when the asset is missing (the caller falls back to a system cursor).
+        private func duneCursor(frame: Int, hotSpot: NSPoint) -> NSCursor? {
+            if let cached = duneCursorCache[frame] { return cached }
+            guard
+                let assets = model?.assets, let shp = assets.shp("MOUSE.SHP"), frame < shp.frames.count,
+                case let f = shp.frames[frame],
+                let cg = IndexedImage.cgImage(
+                    indices: f.pixels,
+                    width: f.width,
+                    height: f.height,
+                    palette: assets.palette,
+                    transparentIndex: 0
+                )
+            else { return nil }
+
+            let image = NSImage(cgImage: cg, size: NSSize(width: f.width, height: f.height))
+            let cursor = NSCursor(image: image, hotSpot: hotSpot)
+            duneCursorCache[frame] = cursor
+            return cursor
         }
     #endif
 

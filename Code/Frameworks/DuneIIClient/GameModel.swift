@@ -29,7 +29,12 @@ public final class GameModel {
         backend: GameModel.savedMusicBackend()
     )
     /// Master music toggle — also the neutrality switch for goldens (off ⇒ music never plays, sim untouched).
-    var musicEnabled = true { didSet { music.enabled = musicEnabled } }
+    var musicEnabled = Prefs.bool("musicEnabled", default: true) {
+        didSet {
+            music.enabled = musicEnabled
+            Prefs.set("musicEnabled", musicEnabled)
+        }
+    }
     /// Synthesis backend for the music (AdLib FM vs MIDI). Applied live and persisted across launches.
     var musicBackend: MusicBackend = GameModel.savedMusicBackend() {
         didSet {
@@ -38,7 +43,12 @@ public final class GameModel {
         }
     }
     /// Master sound-effects toggle (Settings). Off ⇒ no SFX play; the sim is untouched (presentation only).
-    var soundEnabled = true { didSet { audio.enabled = soundEnabled } }
+    var soundEnabled = Prefs.bool("soundEnabled", default: true) {
+        didSet {
+            audio.enabled = soundEnabled
+            Prefs.set("soundEnabled", soundEnabled)
+        }
+    }
     @ObservationIgnored
     public var scene: GameScene!
 
@@ -60,12 +70,19 @@ public final class GameModel {
     private(set) var playerHouse: HouseID = .atreides
 
     // Debug toggles (the Debug window binds these; the scene/economy/fog read them).
-    var showFog = false { didSet { scene?.applyFog(); if let lastFrame { refreshMinimapBase(lastFrame) } } }
+    var showFog = Prefs.bool("showFog", default: false) {
+        didSet {
+            Prefs.set("showFog", showFog)
+            scene?.applyFog()
+            if let lastFrame { refreshMinimapBase(lastFrame) }
+        }
+    }
     /// Debug: give the AI a fog of war so it only attacks after the player makes contact (instead of
     /// knowing the base from turn one). Applied to the live sim and to every scenario (re)load. Best set
     /// before loading a scenario — toggling mid-game only affects objects placed/sighted afterwards.
-    var aiFogOfWar = false {
+    var aiFogOfWar = Prefs.bool("aiFogOfWar", default: false) {
         didSet {
+            Prefs.set("aiFogOfWar", aiFogOfWar)
             simulation?.state.aiFogOfWar = aiFogOfWar
             // Re-hide (or re-reveal) the already-placed base/army so toggling mid-game or after a scenario load
             // takes effect immediately — otherwise objects keep the visibility they were placed with.
@@ -74,12 +91,18 @@ public final class GameModel {
     }
     /// Whether the per-house unit limit (the scenario's `MaxUnit`) is enforced. On (default) = follow the
     /// limit faithfully; off = build past it. Applied to the live sim and to every scenario (re)load.
-    var enforceUnitLimit = true { didSet { simulation?.state.enforceUnitLimit = enforceUnitLimit } }
+    var enforceUnitLimit = Prefs.bool("enforceUnitLimit", default: true) {
+        didSet {
+            Prefs.set("enforceUnitLimit", enforceUnitLimit)
+            simulation?.state.enforceUnitLimit = enforceUnitLimit
+        }
+    }
     /// Play indefinitely: skip the win/lose evaluation so the game never ends. Applied to the live sim and to
     /// every scenario (re)load. Turning it on also clears any already-latched outcome (and dismisses the
     /// banner) so a finished game can resume.
-    var playIndefinitely = false {
+    var playIndefinitely = Prefs.bool("playIndefinitely", default: false) {
         didSet {
+            Prefs.set("playIndefinitely", playIndefinitely)
             simulation?.state.disableLevelEnd = playIndefinitely
             if playIndefinitely, simulation?.state.gameEndState != .playing {
                 simulation?.state.gameEndState = .playing
@@ -87,11 +110,18 @@ public final class GameModel {
             }
         }
     }
-    var showAllEconomies = false
-    var showHealthOverlay = true  // health/state bars over units + buildings are on by default (a normal HUD element)
+    var showAllEconomies = Prefs.bool("showAllEconomies", default: false) {
+        didSet { Prefs.set("showAllEconomies", showAllEconomies) }
+    }
+    // health/state bars over units + buildings are on by default (a normal HUD element)
+    var showHealthOverlay = Prefs.bool("showHealthOverlay", default: true) {
+        didSet { Prefs.set("showHealthOverlay", showHealthOverlay) }
+    }
     /// Debug: force the minimap on regardless of radar availability. Off (default) ⇒ the minimap obeys the
     /// player's radar (`radarActive`) — blank until an outpost + power bring it online, as in Dune II.
-    var forceMinimap = false
+    var forceMinimap = Prefs.bool("forceMinimap", default: false) {
+        didSet { Prefs.set("forceMinimap", forceMinimap) }
+    }
     /// The campaign (mission) level 1…9 — OpenDUNE's `g_campaignID`, which gates build availability (the
     /// construction-yard `availableCampaign` check) and the upgrade chain. Our scenario `.INI`s don't carry
     /// it, so it's derived from the loaded scenario's mission number (`ScenarioID.campaign`) and set on load.
@@ -125,7 +155,9 @@ public final class GameModel {
 
     /// Wall-clock speed multiplier (0.5×…4×). The scene paces sim ticks against real time × this — see
     /// `GameScene.update`. 1× ≈ the base 60-ticks/second cadence (one tick per drawn frame at 60 fps).
-    public var gameSpeed: Double = 1
+    public var gameSpeed: Double = Prefs.double("gameSpeed", default: 1) {
+        didSet { Prefs.set("gameSpeed", gameSpeed) }
+    }
     /// Freeze the simulation (the two-clock pause — `Simulation.tick` no-ops while `state.paused`). The
     /// camera, selection, and orders still work; only game time stops. The **effective** pause: the player's
     /// own pause (`userPaused`) OR any open UI surface (`uiPauseCount` — a save/load dialog, the options or
@@ -242,6 +274,12 @@ public final class GameModel {
         self.assets = assets
         scene = GameScene(model: self)
         setupAudio()
+        // Apply the persisted preferences whose effect a property `didSet` can't carry at init (the audio
+        // engines default to enabled; the camera starts at its own default zoom). Everything else is read
+        // live by the views/renderer or applied in `load`, so the persisted defaults take hold there.
+        audio.enabled = soundEnabled
+        music.enabled = musicEnabled
+        viewport.setZoom(Prefs.double("zoom", default: viewport.zoom))
         if let first = assets.scenarioNames.first { load(first) }
     }
 
@@ -1131,12 +1169,25 @@ public final class GameModel {
         pendingOrder = controller.pendingOrder
     }
 
+    /// Whether a right-click at tile `(x, y)` would **attack** (`true`) or **move** (`false`) given the current
+    /// unit selection — drives the map cursor (`GameScene`). `nil` ⇒ no unit order would be issued (nothing, or
+    /// a building, is selected) so the caller shows the plain pointer. Mirrors `rightClickTile`'s resolution: a
+    /// lone harvester only ever moves/harvests (never attacks), and a tile under the player's fog always
+    /// resolves to a move — you can't target what you haven't revealed (`isEnemy` enforces the fog rule).
+    func unitOrderIsAttack(tileX x: Int, tileY y: Int) -> Bool? {
+        guard !controller.selectedUnits.isEmpty else { return nil }
+        if isSelectedHarvester() { return false }
+        return isEnemy(x, y)
+    }
+
     /// Right-clicking a **player-owned building** with no units selected opens its context popup (state +
-    /// actions + build items) instead of ordering units: select the building (so the sidebar + popup read its
-    /// live state — `structureActions`/`buildOptions` refresh on the next frame via the selection change) and
-    /// record the anchor point. Returns `true` when it opened the popup (the caller then does nothing further);
-    /// `false` ⇒ the caller falls back to `rightClickTile` (the units-selected / not-a-player-building cases).
-    /// `point` is in SwiftUI map-overlay coordinates (top-left origin).
+    /// actions + build items) instead of ordering units: select the building and record the anchor point.
+    /// The selection-derived state the popup reads (`structureActions`/`buildOptions`/`buildProgress`/…) is
+    /// recomputed **synchronously** here so the popup shows full information the instant it opens — whether or
+    /// not this building was already selected — rather than lagging a frame behind the selection change.
+    /// Returns `true` when it opened the popup (the caller then does nothing further); `false` ⇒ the caller
+    /// falls back to `rightClickTile` (the units-selected / not-a-player-building cases). `point` is in SwiftUI
+    /// map-overlay coordinates (top-left origin).
     func rightClickOpensBuildingMenu(tileX x: Int, tileY y: Int, at point: CGPoint) -> Bool {
         guard controller.selectedUnits.isEmpty, let state = simulation?.state else { return false }
         guard
@@ -1150,6 +1201,10 @@ public final class GameModel {
         selection = currentInfo()
         inspectedTile = nil
         refreshTileInfo()
+        // Populate the popup's derived state now (it normally refreshes on the next throttled frame, by which
+        // point the popup would already be on screen showing the previous selection's actions / build list).
+        refreshBuild()
+        refreshStructureActions()
         buildingMenu = BuildingMenu(slot: slot, point: point)
         audio.play(.select)
         return true
@@ -1375,15 +1430,17 @@ public final class GameModel {
 
     // MARK: - Viewport (scroll/zoom + minimap)
 
-    func zoomIn() { viewport.zoomIn() }
+    func zoomIn() { setZoom(viewport.zoom * 2) }
 
-    func zoomOut() { viewport.zoomOut() }
+    func zoomOut() { setZoom(viewport.zoom / 2) }
 
     /// Set the magnification directly (the continuous pinch gesture + the Options zoom slider); clamped to
     /// `[Viewport.minZoom, Viewport.maxZoom]` and re-clamps the centre so the playable area stays on screen.
+    /// The chosen magnification is persisted so it survives launches.
     func setZoom(_ z: Double) {
         viewport.setZoom(z)
         viewport.clamp(viewSize: viewSize)
+        Prefs.set("zoom", viewport.zoom)
     }
 
     func scroll(dx: Double, dy: Double) { viewport.scroll(dx: dx, dy: dy, viewSize: viewSize) }

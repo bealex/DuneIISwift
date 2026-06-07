@@ -320,6 +320,7 @@ struct MinimapView: View {
         }
         .frame(maxWidth: .infinity)
         .aspectRatio(1, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }
 
