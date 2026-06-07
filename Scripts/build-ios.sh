@@ -16,6 +16,12 @@
 #
 set -euo pipefail
 
+# Make Homebrew-installed tools (xcodegen, xcbeautify) resolvable even when this script runs from a
+# non-interactive shell that never sourced the user's profile — e.g. an agent/CI shell whose PATH lacks
+# /opt/homebrew/bin. Without this, `command -v xcodegen` fails and the script wrongly reports it as missing
+# although it is installed, so you had to export PATH by hand every run.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 MODE="${1:-sim}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 IOS_DIR="$ROOT/Code/Apps/duneii-ios"
@@ -121,23 +127,32 @@ deploy_device() {
     udid=$(resolve_device "$want")
     [ -n "$udid" ] || die "Device '$want' not found. List devices: xcrun xctrace list devices"
   else
-    udid=$(xcrun devicectl list devices -j /dev/stdout 2>/dev/null | /usr/bin/python3 -c '
+    # `devicectl list devices -j /dev/stdout | python` is unreliable — the JSON frequently arrives empty over
+    # the pipe, which made auto-detect wrongly report "no device". Write it to a file and parse that, picking
+    # the first *connected* iOS device.
+    local devjson="$DD/_devices.json"; mkdir -p "$DD"
+    xcrun devicectl list devices -j "$devjson" >/dev/null 2>&1 || true
+    udid=$(/usr/bin/python3 -c '
 import json,sys
-try: d=json.load(sys.stdin)
+try: d=json.load(open(sys.argv[1]))
 except Exception: sys.exit()
 for x in d.get("result",{}).get("devices",[]):
-    cp=x.get("connectionProperties",{})
-    if cp.get("tunnelState")!="unavailable" and x.get("hardwareProperties",{}).get("platform","")=="iOS":
-        print(x["hardwareProperties"]["udid"]); break' || true)
+    hp=x.get("hardwareProperties",{}); cp=x.get("connectionProperties",{})
+    if hp.get("platform")=="iOS" and cp.get("tunnelState")=="connected":
+        print(hp.get("udid","")); break' "$devjson" || true)
   fi
   [ -n "$udid" ] || die "No connected iPhone/iPad found. Plug one in, unlock it, and Trust this Mac."
-  say "Building + signing for device $udid (team $TEAM)…"
+  # Build for a *generic* iOS destination, not `id=$udid`. A device-targeted build makes xcodebuild prepare/
+  # connect to that device first, which hangs indefinitely for a wireless-only (localNetwork) device. Building
+  # generic compiles + signs offline; `devicectl` then handles the (wireless) install.
+  say "Building + signing for iOS (team $TEAM)…"
   xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
-    -destination "id=$udid" -derivedDataPath "$DD" \
+    -destination 'generic/platform=iOS' -derivedDataPath "$DD" \
     DEVELOPMENT_TEAM="$TEAM" -allowProvisioningUpdates build | xcbeautify_or_cat
   local app; app=$(app_path Debug-iphoneos); [ -n "$app" ] || die "Build produced no .app"
-  say "Installing on device…"
-  xcrun devicectl device install app --device "$udid" "$app"
+  say "Installing on device $udid…"
+  xcrun devicectl device install app --device "$udid" "$app" \
+    || die "Install failed — make sure the iPhone is unlocked and on the same network (or plug in via USB)."
   xcrun devicectl device process launch --device "$udid" "$BUNDLE_ID" || true
   say "Installed $BUNDLE_ID on the device."
 }
