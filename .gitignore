@@ -10,6 +10,8 @@
 /Resources/
 /Code/Tests/*/Fixtures/ParityGoldens/*.jsonl
 /Saves
+# Savegames (incl. original Dune II saves used as local test fixtures) — never committed.
+*.sav
 /SwiftOPL3
 /Traces
 .swiftpm
