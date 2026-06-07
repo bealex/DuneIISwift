@@ -114,12 +114,29 @@ structure-decision traces (opcode-identical EMC), and **render goldens** (pixel-
 - **[SwiftOPL3](https://github.com/bealex/SwiftOLP3)** (LGPL-2.1) — a pure-Swift OPL3/YMF262 FM synth +
   Westwood `.ADL` driver; this project's AdLib-music backend (a SwiftPM dependency, not vendored).
 
+## Other Dune II reimplementations
+
+This is far from the only effort to keep *Dune II* alive — worth a look, and credit to all of them:
+
+- **[OpenDUNE](https://github.com/OpenDUNE/OpenDUNE)** — the reverse-engineered C engine (GPL-2.0) this
+  project ports from and verifies against.
+- **[Dune Dynasty](https://github.com/gameflorist/dunedynasty)** — a remaster/enhancement built on the
+  reverse-engineered engine, with modern conveniences; Windows/macOS/Linux.
+- **[Dune Legacy](https://dunelegacy.com/)** — an SDL-based open-source remake (higher resolutions, smarter
+  controls, multiplayer).
+- **[Dune II — The Maker (D2TM)](https://github.com/stefanhendriks/Dune-II---The-Maker)** — a long-running
+  remake with zoom, multi-select, skirmish, and higher resolutions.
+- **[Dune2JS](https://github.com/oklemenz/Dune2JS)** — a Dune II reimplementation in HTML5 / JavaScript.
+
+(This project's distinct angle: a behaviorally **bit-faithful** Swift port, cross-verified against OpenDUNE,
+rather than a remaster — see above.)
+
 ## License
 
 This project is a **faithful port of [OpenDUNE](https://github.com/OpenDUNE/OpenDUNE)** — its simulation
 primitives, scripting state machines, stat tables, and codecs are exact transcriptions of OpenDUNE's C
 source. OpenDUNE is licensed under the **GNU General Public License, version 2.0**, so this derivative work
-is likewise licensed under **[GPL-2.0](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html)**.
+is likewise licensed under **GPL-2.0** — see the [`LICENSE`](LICENSE) file for the full text.
 
 The FM-music dependency [SwiftOPL3](https://github.com/bealex/SwiftOLP3) is LGPL-2.1, which is
 GPL-compatible.
