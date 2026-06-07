@@ -2,10 +2,12 @@
 /.worktrees
 .build
 /Logs
-/Repositories/patched_107_unofficial
 /tmp
-/Repositories/OpenDUNE/objs
-/Repositories/OpenDUNE/bin/opendune
+# External references — clone locally, never committed: the original Dune II install
+# (patched_107_unofficial), the OpenDUNE oracle, the dunepak packer.
+/Repositories/
+# Game assets are generated locally from your Dune II install by `assetgen` — never committed.
+/Resources/
 /Code/Tests/*/Fixtures/ParityGoldens/*.jsonl
 /Saves
 /SwiftOPL3
