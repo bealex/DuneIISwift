@@ -1159,6 +1159,11 @@ public final class GameModel {
                 UnitInfo[ut].flags.contains(.isNormalUnit)
             else { continue }
 
+            // Only group units near the clicked one — within 3 tiles of it (Chebyshev) — so a double-click
+            // selects the local cluster, not every same-type unit across the whole map.
+            let ix = Int(u.o.position.packed % 64), iy = Int(u.o.position.packed / 64)
+            if abs(ix - x) > 3 || abs(iy - y) > 3 { continue }
+
             slots.append(i)
         }
         let group = InputController.sameTypeGroup(slots, clicked: slot, typeOf: { Int(state.units[$0].o.type) })
