@@ -418,7 +418,7 @@ public final class GameScene: SKScene {
         for s in frame.structures {
             if FrameComposer.isHiddenByFog(frame, worldX: s.positionX, worldY: s.positionY, showFog: fog) { continue }
             let frac = s.hitpointsMax > 0 ? Double(s.hitpoints) / Double(s.hitpointsMax) : 1
-            let (w, _) = Self.structureFootprint(s.type)
+            let (w, h) = Self.structureFootprint(s.type)
             let widthPx = Double(w) * tile
             let cornerX = Double(s.positionX) * tile / 256
             let cornerY = Double(s.positionY) * tile / 256
@@ -429,10 +429,12 @@ public final class GameScene: SKScene {
             placeBar(usedBars, left: barLeft, y: healthY, width: barW, frac: frac)
             usedBars += 1
 
-            // A white production-progress bar directly under the health bar (same width/height/rules) while
-            // the factory/CY is building or repairing something. `barHeight` lower in scene space = just below.
+            // The production-progress bar (blue) sits at the **bottom** edge of the building footprint while the
+            // factory/CY is building or repairing — the health bar is at the top. Its lower edge sits just inside
+            // the building's bottom row.
             if let progress = s.buildProgress {
-                placeBuildBar(usedBuildBars, left: barLeft, y: healthY - Self.barHeight, width: barW, frac: progress)
+                let buildY = side - (cornerY + Double(h) * tile) + Self.barHeight / 2
+                placeBuildBar(usedBuildBars, left: barLeft, y: buildY, width: barW, frac: progress)
                 usedBuildBars += 1
             }
         }
@@ -442,11 +444,11 @@ public final class GameScene: SKScene {
         for i in usedChips ..< stateChips.count { stateChips[i].isHidden = true }
     }
 
-    /// A white build-progress bar (`buildBars` pool), same geometry + rules as `placeBar` but a fixed white
+    /// A blue build-progress bar (`buildBars` pool), same geometry + rules as `placeBar` but a fixed blue
     /// colour: full width at 100% readiness, zero width at 0% — left-anchored, so it fills left→right.
     private func placeBuildBar(_ i: Int, left: Double, y: Double, width: Double, frac: Double) {
         while i >= buildBars.count {
-            let bar = SKSpriteNode(color: .white, size: CGSize(width: Self.barWidth, height: Self.barHeight))
+            let bar = SKSpriteNode(color: .systemBlue, size: CGSize(width: Self.barWidth, height: Self.barHeight))
             bar.anchorPoint = CGPoint(x: 0, y: 0.5)
             buildBars.append(bar); healthLayer.addChild(bar)
         }
@@ -454,7 +456,7 @@ public final class GameScene: SKScene {
         let clamped = min(1, max(0, frac))
         bar.size = CGSize(width: width * clamped, height: Self.barHeight)
         bar.position = CGPoint(x: left, y: y)
-        bar.color = .white
+        bar.color = .systemBlue
         bar.isHidden = false
     }
 
