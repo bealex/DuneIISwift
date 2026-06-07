@@ -120,6 +120,14 @@ public struct GameState: Sendable, Codable {
     /// the whole player base). Always 0 with the flag off.
     public var housesFoundPlayer: UInt8 = 0
 
+    /// **Client/presentation toggle.** When true, a moving player-allied unit lifts the player's fog over
+    /// its **full `fogUncoverRadius`** on every tile it steps onto, so the whole sight disc tracks the unit
+    /// — matching the original game's look. Default `false` keeps the OpenDUNE-faithful behaviour: the
+    /// per-tile reveal is only radius 1 (`Unit_UpdateMap`, `unit.c:2498`), and the full disc is lifted only
+    /// when the unit's script runs `Unit_RemoveFog` (once when an order starts). Golden-neutral when off.
+    /// See `unitUpdateMap` (`GameState+Lifecycle.swift`).
+    public var fullSightMovementReveal: Bool = false
+
     /// Whether the per-house unit cap (`House.unitCountMax`) is enforced in `Unit_Allocate`. `true` is the
     /// faithful Dune II behaviour (a house at its cap can't make more ground units); set `false` (a debug/test
     /// toggle) to build past the limit. Golden-safe — the default `true` is exactly the original check.

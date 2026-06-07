@@ -372,6 +372,14 @@ struct DebugToggleRows: View {
                 .font(.caption).foregroundStyle(.secondary)
             }
             Toggle(
+                "Full sight while moving",
+                isOn: Binding(get: { model.fullSightMovementReveal }, set: { model.fullSightMovementReveal = $0 })
+            )
+            if !model.fullSightMovementReveal {
+                Text("Off = OpenDUNE-faithful: a moving unit clears only a 1-tile trail; the full sight disc lags behind.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Toggle(
                 "Follow unit limit",
                 isOn: Binding(get: { model.enforceUnitLimit }, set: { model.enforceUnitLimit = $0 })
             )

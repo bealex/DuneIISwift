@@ -1024,12 +1024,23 @@ public extension GameState {
 
         if type == 1 {
             // `Unit_UpdateMap` (`unit.c:2498`): a player-allied, non-sandworm unit lifts the player's fog
-            // (radius 1) on the tile it now occupies. This is the **continuous** reveal — it fires every
-            // time the unit steps onto a new tile (each move step re-stamps via `unitUpdateMap(1)`), not
-            // only when the unit's script happens to call `Script_Unit_RemoveFog`.
+            // on the tile it now occupies. This is the **continuous** reveal — it fires every time the unit
+            // steps onto a new tile (each move step re-stamps via `unitUpdateMap(1)`), not only when the
+            // unit's script happens to call `Script_Unit_RemoveFog`.
+            //
+            // Stock (faithful) path: radius 1, only when the new tile is still fogged. OpenDUNE's full-disc
+            // reveal (`fogUncoverRadius`) fires just once per order from the unit's EMC move loop, so the
+            // sight disc lags behind a moving unit. With `fullSightMovementReveal` on (a client toggle) we
+            // re-stamp the unit's **full** `fogUncoverRadius` every tile, so the whole disc tracks it — the
+            // original game's look. (Off by default ⇒ golden/oracle-neutral.)
             if House.areAllied(unitHouseID(u), playerHouseID, playerHouseID: playerHouseID),
-                    u.o.type != UInt8(UnitType.sandworm.rawValue), !map[Int(packed)].isUnveiled {
-                tileRemoveFogInRadius(u.o.position, radius: 1)
+                    u.o.type != UInt8(UnitType.sandworm.rawValue) {
+                if fullSightMovementReveal {
+                    let r = UnitType(rawValue: Int(u.o.type)).map { max(1, UnitInfo[$0].o.fogUncoverRadius) } ?? 1
+                    tileRemoveFogInRadius(u.o.position, radius: r)
+                } else if !map[Int(packed)].isUnveiled {
+                    tileRemoveFogInRadius(u.o.position, radius: 1)
+                }
             }
             let occupied = map[Int(packed)].hasUnit || map[Int(packed)].hasStructure
             if !occupied {
