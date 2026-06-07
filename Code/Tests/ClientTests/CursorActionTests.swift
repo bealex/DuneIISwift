@@ -1,5 +1,6 @@
 import AppKit
 import DuneIIContracts
+import DuneIIInput
 import DuneIISimulation
 import DuneIIWorld
 import Foundation
@@ -57,6 +58,16 @@ struct CursorActionTests {
             )
         } else {
             print("cursor-action: whole map revealed — fog assertion skipped")
+        }
+
+        // Arming Attack (the `a` shortcut / sidebar Attack button) must put the model into the attack order
+        // state — the signal the map cursor keys off to show the attack reticle regardless of what's hovered.
+        if let ut = UnitType(rawValue: Int(sim.state.units[slot].o.type)),
+                UnitInfo[ut].o.actionsPlayer.contains(.attack) {
+            model.issueAction(.attack)
+            #expect(model.pendingOrder == .attack, "arming Attack should set pendingOrder = .attack")
+        } else {
+            print("cursor-action: selected unit can't attack — arm assertion skipped")
         }
     }
 }

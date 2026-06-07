@@ -720,11 +720,14 @@ public final class GameScene: SKScene {
             nsCursor(kind).set()
         }
 
-        /// The cursor the map should show right now: the targeting crosshair while an order / placement /
-        /// missile is armed; otherwise, with units selected, the attack reticle over an enemy and the move
-        /// pointer over everything else (including fog of war); the plain arrow when nothing actionable is
-        /// selected or the pointer is off the map.
+        /// The cursor the map should show right now. An *armed* order (the `a`/`m`/`h`/`e` shortcut or a
+        /// sidebar action button) dictates it for the whole "now pick a target" state: attack arms the reticle,
+        /// the move-like orders the move pointer. Structure placement / palace target-select use the plain
+        /// crosshair. Otherwise, with units selected, the attack reticle over an enemy and the move pointer over
+        /// everything else (including fog of war); the plain arrow when nothing actionable is selected or the
+        /// pointer is off the map.
         private func mapCursorKind() -> MapCursor {
+            if let order = model?.pendingOrder { return order == .attack ? .attack : .move }
             if targetingActive { return .crosshair }
             guard let model, let t = lastMouseTile else { return .arrow }
 

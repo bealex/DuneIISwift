@@ -89,6 +89,15 @@ public final class GameModel {
             simulation?.state.reapplyPlayerVisibility()
         }
     }
+    /// Whether a moving unit lifts the player's fog over its **full sight radius** every tile (the original
+    /// game's look) rather than the OpenDUNE radius-1 trail. On by default in the client; the engine default
+    /// is off (golden/oracle-neutral). Applied to the live sim and to every scenario (re)load.
+    var fullSightMovementReveal = Prefs.bool("fullSightMovementReveal", default: true) {
+        didSet {
+            Prefs.set("fullSightMovementReveal", fullSightMovementReveal)
+            simulation?.state.fullSightMovementReveal = fullSightMovementReveal
+        }
+    }
     /// Whether the per-house unit limit (the scenario's `MaxUnit`) is enforced. On (default) = follow the
     /// limit faithfully; off = build past it. Applied to the live sim and to every scenario (re)load.
     var enforceUnitLimit = Prefs.bool("enforceUnitLimit", default: true) {
@@ -301,6 +310,7 @@ public final class GameModel {
         var state = GameState()
         state.aiFogOfWar = aiFogOfWar  // before unit placement, so the player units honour the AI-fog mask
         state.enforceUnitLimit = enforceUnitLimit
+        state.fullSightMovementReveal = fullSightMovementReveal
         // Don't pin the AI houses active at load (that's a parity-harness shortcut). Like OpenDUNE's real game,
         // each AI house wakes (`isAIActive`) only when it first makes contact with an enemy — driven by our
         // fog/visibility path (`unitUpdateMap`/`mapUnveilTile` → `unitHouseUnitCountAdd`). Pinning it on made the
@@ -1408,13 +1418,11 @@ public final class GameModel {
     }
 
     private func isEnemy(_ x: Int, _ y: Int) -> Bool {
-        guard
-            let state = simulation?.state,
-            let slot = controller.selection.unitSlot,
-            slot < state.units.count
-        else {
-            return false
-        }
+        // Compare the hovered target to the *player's* house, not a single selected unit's — the selected
+        // units are all the player's anyway, and keying off `selection.unitSlot` (only set for a lone unit)
+        // made the check fail whenever *multiple* units were selected, so the attack cursor / attack order
+        // never engaged for a group.
+        guard let state = simulation?.state, !controller.selectedUnits.isEmpty else { return false }
 
         let packed = UInt16(y * 64 + x)
         // A target in the player's fog of war is never an attack target — you can't aim at what you haven't
@@ -1422,7 +1430,7 @@ public final class GameModel {
         // there). Matches the original, where an attack order needs a revealed tile.
         guard Int(packed) < state.map.count, state.map[Int(packed)].isUnveiled else { return false }
 
-        let mine = state.unitHouseID(state.units[slot])
+        let mine = state.playerHouseID
         if let u = state.unitGetByPackedTile(packed) { return state.unitHouseID(state.units[u]) != mine }
         if let s = state.structureGetByPackedTile(packed) { return state.structures[s].o.houseID != mine }
         return false
