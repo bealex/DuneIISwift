@@ -232,7 +232,8 @@ struct FactoryBuildList: View {
                                 in: RoundedRectangle(cornerRadius: 6)
                             )
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.plain)  // .borderless draws an accent focus ring in the popover; .plain doesn't
+                        .focusable(false)
                         .frame(maxWidth: .infinity)
                         .help(buildHelp(option))
                         .popover(
