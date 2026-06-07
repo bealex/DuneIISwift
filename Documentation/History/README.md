@@ -6,6 +6,7 @@ Do not rewrite a past entry; if one is wrong, add a dated correction. The period
 
 ## Days
 
+- [2026-06-07](2026-06-07.md) — 
 - [2026-06-06](2026-06-06.md) — 
 - [2026-06-05](2026-06-05.md) — 
 - [2026-06-03](2026-06-03.md) — 

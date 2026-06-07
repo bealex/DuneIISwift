@@ -167,6 +167,29 @@ import SwiftUI
         }
         let tw = tiles.tileWidth, th = tiles.tileHeight
 
+        // Concrete slabs (1×1 and 2×2) share the 1×1 concrete icon group (group 8), so the generic per-state
+        // layout maths below overruns the group's tile list for the 2×2 and fell back to the gridded
+        // foundation frame ("black lines"). A slab is a single uniform tile, so render its footprint by
+        // repeating the clean **built** concrete tile (group offset 2 = past the foundation/construction
+        // frames). This gives a correct 2×2 (and an unchanged 1×1).
+        if type == .slab1x1 || type == .slab2x2 {
+            let builtConcrete = group.tileIDs.indices.contains(2) ? group.tileIDs[2] : first
+            let cell = tiles.tile(builtConcrete)
+            let fw = w * tw, fh = h * th
+            var indices = [UInt8](repeating: 0, count: fw * fh)
+            for cy in 0 ..< h {
+                for cx in 0 ..< w {
+                    let ox = cx * tw, oy = cy * th
+                    for y in 0 ..< th {
+                        for x in 0 ..< tw where y * tw + x < cell.count {
+                            indices[(oy + y) * fw + ox + x] = cell[y * tw + x]
+                        }
+                    }
+                }
+            }
+            return IndexedImage.cgImage(indices: indices, width: fw, height: fh, palette: assets.palette, remap: remap)
+        }
+
         // OpenDUNE `Structure_UpdateMap` (`structure.c:1779`): the *built* tiles begin at group offset
         // `2 * layoutSize` — the first two states are the foundation / under-construction frames. So the
         // finished icon is `tileIDs[2*perState ..< 3*perState]`. This is what makes turrets show their gun,
