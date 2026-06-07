@@ -178,6 +178,65 @@ struct StructureBuildTests {
         #expect(s.structures[aiCY].upgradeTimeLeft == 0)
     }
 
+    /// The Rocket Turret is special: `availableCampaign == 0`, so OpenDUNE's `g_campaignID >= availableCampaign
+    /// - 1` (`structure.c:1908`) int-promotes to `g_campaignID >= -1` — always true. It is gated **only** by
+    /// `upgradeLevelRequired = 2` (a level-2 Construction Yard), which itself is unreachable before campaign 5
+    /// (CY `upgradeCampaign[1] = 6 ⇒ campaignID >= 5`). A bare `UInt16` `0 &- 1` wrapped to 65535 and made the
+    /// turret unbuildable at *every* level — this guards that regression.
+    @Test("Rocket Turret: campaign gate never blocks it; gated by the level-2 CY (reachable at campaign 5+)")
+    func rocketTurretGatedByUpgradeNotCampaign() {
+        let rTurret = UInt16(StructureType.rocketTurret.rawValue)
+
+        func cyOption(campaign: UInt8, cyLevel: UInt8) -> BuildOption? {
+            var s = GameState(); s.playerHouseID = 0
+            _ = s.houseAllocate(index: 0)
+            // Outpost + Windtrap built (the Rocket Turret's prerequisites).
+            s.houses[0].structuresBuilt =
+                (1 << StructureType.windtrap.rawValue) | (1 << StructureType.outpost.rawValue)
+            s.campaignID = campaign
+            let cy = addFactory(&s, .constructionYard)
+            s.structures[cy].upgradeLevel = cyLevel
+            let sm = Simulation(state: s, scriptInfo: info)
+            return sm.buildOptions(forStructure: cy).first { $0.item.objectType == rTurret }
+        }
+
+        // Listed (never excluded by a phantom campaign gate), but locked on the upgrade level when the CY is low.
+        let lowCampaign = cyOption(campaign: 4, cyLevel: 0)
+        #expect(lowCampaign != nil)
+        #expect(lowCampaign?.isCampaignGated == false)  // the bug made it campaign-gated (level -1) at every campaign
+        #expect(lowCampaign?.isAvailable == false)
+        #expect(lowCampaign?.blockers == [ .upgradeLevel(2) ])
+        // A level-2 CY (only reachable from campaign 5) unlocks it outright.
+        let upgraded = cyOption(campaign: 5, cyLevel: 2)
+        #expect(upgraded?.isAvailable == true)
+        #expect(upgraded?.blockers.isEmpty == true)
+    }
+
+    /// The CY upgrade chain that the Rocket Turret depends on: `Structure_IsUpgradable` (`structure.c:1102`)
+    /// gates the level-1→2 CY upgrade on `upgradeCampaign[1] = 6 ⇒ campaignID >= 5` (and the rocket-turret
+    /// prerequisites). So at scenario level 8 (campaign 4) the CY tops out at level 1 — the Rocket Turret can
+    /// never reach its level-2 requirement there; it first becomes achievable at level 11 (campaign 5).
+    @Test("Construction Yard reaches level 2 only from campaign 5 (gating the Rocket Turret)")
+    func constructionYardLevelTwoNeedsCampaignFive() {
+        func cyMaxLevel(campaign: UInt8) -> Int {
+            var s = GameState(); s.playerHouseID = 0
+            _ = s.houseAllocate(index: 0)
+            s.houses[0].structuresBuilt =
+                (1 << StructureType.windtrap.rawValue) | (1 << StructureType.outpost.rawValue)
+            s.campaignID = campaign
+            let cy = addFactory(&s, .constructionYard)
+            var level = 0
+            while s.structureIsUpgradable(cy), level < 4 {
+                s.structures[cy].upgradeLevel += 1
+                level += 1
+            }
+            return Int(s.structures[cy].upgradeLevel)
+        }
+
+        #expect(cyMaxLevel(campaign: 4) == 1)  // scenario level 8: no level-2 CY ⇒ no Rocket Turret
+        #expect(cyMaxLevel(campaign: 5) == 2)  // scenario level 11: level-2 CY ⇒ Rocket Turret achievable
+    }
+
     @Test("buildState reports progress and readiness across a build")
     func buildStateProgress() {
         var simulation = self.sim()

@@ -192,7 +192,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 | Repair branch (1.07 cost + heal +5/+3) | ✅ | `structureTickStructure` |
 | Upgrade branch (bill 1/40, `upgradeTimeLeft`, Ordos HV jump) | ✅ | `structureTickStructure` |
 | `Structure_IsUpgradable` gating | ✅ | `GameState+Lifecycle.structureIsUpgradable` |
-| `Structure_GetBuildable` availability (campaign/tech/house/upgrade) | ✅ | `StructureBuild.buildables` |
+| `Structure_GetBuildable` availability (campaign/tech/house/upgrade) | ✅ | `StructureBuild.buildables`; campaign gate uses signed `Int(availableCampaign) - 1` (OpenDUNE int-promotes `uint16 - 1`) so the Rocket Turret (`availableCampaign 0`) isn't wrong-wrapped to 65535 — `StructureBuildTests.rocketTurretGatedByUpgradeNotCampaign` |
 | `Structure_IsValidBuildLocation`: bounds | ✅ | `UnitCombat.structureIsValidBuildLocation` |
 | …terrain (`isValidForStructure`/`…2`, `notOnConcrete`) | ✅ | same |
 | …occupancy | ✅ | same |

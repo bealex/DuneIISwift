@@ -158,8 +158,12 @@ public extension Simulation {
                     }
 
                     if s.o.houseID != harkonnen && stType == .lightVehicle { availableCampaign = 2 }
+                    // OpenDUNE's `g_campaignID >= availableCampaign - 1` (`structure.c:1908`): both operands are
+                    // `uint16` but C integer-promotes them to `int`, so `availableCampaign == 0` (the Rocket
+                    // Turret) yields `-1`, not a wraparound. Compute in signed `Int` — a bare `&- 1` on `UInt16`
+                    // would wrap to 65535 and make the Rocket Turret unbuildable at every campaign level.
                     guard
-                        campaign >= availableCampaign &- 1,
+                        Int(campaign) >= Int(availableCampaign) - 1,
                         (lsi.availableHouse & (1 << s.o.houseID)) != 0
                     else {
                         continue
@@ -249,7 +253,10 @@ public extension Simulation {
                     }
                     if s.o.houseID != harkonnen && stType == .lightVehicle { availableCampaign = 2 }
                     var blockers = Self.missingStructureBlockers(required: structuresRequired, built: structuresBuilt)
-                    if campaign < availableCampaign &- 1 {
+                    // Signed comparison, matching OpenDUNE's int-promoted `availableCampaign - 1` (see
+                    // `buildables`): `availableCampaign == 0` (Rocket Turret) ⇒ threshold `-1`, never a `UInt16`
+                    // wraparound — so the Rocket Turret is gated only by its upgrade level, not a phantom campaign.
+                    if Int(campaign) < Int(availableCampaign) - 1 {
                         blockers.append(.campaign(level: Int(availableCampaign) - 1))
                     }
                     if UInt16(s.upgradeLevel) < UInt16(lsi.upgradeLevelRequired) {
