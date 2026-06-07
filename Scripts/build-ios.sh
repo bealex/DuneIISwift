@@ -156,7 +156,7 @@ for x in d.get("result",{}).get("devices",[]):
     -destination 'generic/platform=iOS' -derivedDataPath "$DD" \
     DEVELOPMENT_TEAM="$TEAM" -allowProvisioningUpdates build | xcbeautify_or_cat
   local app; app=$(app_path Debug-iphoneos); [ -n "$app" ] || die "Build produced no .app"
-  say "Installing on device $udid…"
+  say "Installing on device ${udid}…"
   xcrun devicectl device install app --device "$udid" "$app" \
     || die "Install failed — make sure the iPhone is unlocked and on the same network (or plug in via USB)."
   xcrun devicectl device process launch --device "$udid" "$BUNDLE_ID" || true
