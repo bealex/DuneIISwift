@@ -111,6 +111,23 @@ struct PalaceTests {
         #expect(sm.state.structures[palace].countDown == HouseInfo[.atreides].specialCountDown)
     }
 
+    @Test("Fremen call spawns even when the Fremen house isn't a scenario house (unit cap 0)")
+    func fremenWithoutAllocatedFremenHouse() {
+        var s = GameState(); s.playerHouseID = 1
+        s.enforceUnitLimit = true  // the in-game default — the condition that exposed the bug
+        _ = s.houseAllocate(index: 1); s.houses[1].flags.insert(.human)  // Atreides palace owner
+        // Deliberately do NOT allocate HOUSE_FREMEN (3): in a real scenario it isn't a house, so its
+        // `unitCountMax` is 0 and `Unit_Allocate` would refuse the foot soldiers — unless the create is wrapped
+        // in the `validateStrictIfZero` bypass (as OpenDUNE does, and now we do). Without the fix this is 0.
+        let palace = addPalace(&s, house: 1)
+
+        var sm = Simulation(state: s, scriptInfo: info, structureScriptInfo: info)
+        let handled = sm.applyPalaceCommand(.activateSuperWeapon(structure: UInt16(palace)))
+        #expect(handled)
+        let fremen = countUnits(&sm.state, type: .trooper) + countUnits(&sm.state, type: .troopers)
+        #expect(fremen >= 1, "Fremen must appear even though the Fremen house has no unit-cap allocation")
+    }
+
     @Test("human launch gating: no fire when not ready, enemy-owned, or non-super-weapon command")
     func humanLaunchGating() {
         var s = GameState(); s.playerHouseID = 0

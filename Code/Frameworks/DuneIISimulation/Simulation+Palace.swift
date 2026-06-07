@@ -126,16 +126,20 @@ public extension Simulation {
                     )
                     let orientation = state.randomLCG.range(0, 3)
                     let unitType: UnitType = orientation == 1 ? .trooper : .troopers
-                    guard
-                        let u = combat.unitCreate(
-                            index: Pool.unitIndexInvalid,
-                            type: UInt8(unitType.rawValue),
-                            houseID: UInt8(HouseID.fremen.rawValue),
-                            position: position,
-                            orientation: Int8(truncatingIfNeeded: Int(orientation)),
-                            in: &state
-                        )
-                    else { continue }
+                    // Bypass the per-house unit cap while creating the Fremen — the Fremen house (3) isn't a
+                    // scenario house, so its `unitCountMax` is 0 and `Unit_Allocate` would otherwise refuse
+                    // every foot soldier. OpenDUNE brackets the create with `g_validateStrictIfZero++/--`.
+                    state.validateStrictIfZero &+= 1
+                    let created = combat.unitCreate(
+                        index: Pool.unitIndexInvalid,
+                        type: UInt8(unitType.rawValue),
+                        houseID: UInt8(HouseID.fremen.rawValue),
+                        position: position,
+                        orientation: Int8(truncatingIfNeeded: Int(orientation)),
+                        in: &state
+                    )
+                    state.validateStrictIfZero &-= 1
+                    guard let u = created else { continue }
 
                     actions.setAction(
                         slot: u,
