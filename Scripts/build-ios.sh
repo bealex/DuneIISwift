@@ -6,13 +6,14 @@
 #
 #     sim      Build for the iOS Simulator, then install + launch on a booted/first simulator.
 #     device   Build for a connected iPhone/iPad, then install + launch (needs your Apple ID logged into
-#              Xcode for automatic signing — team REDACTED_TEAM). Pass a device name substring or UDID as the
-#              2nd arg (or set DUNEII_DEVICE); default = the first connected device.
-#              e.g.  Scripts/build-ios.sh device "a specific device"
+#              Xcode for automatic signing — set DUNEII_TEAM to your team ID). Pass a device name substring or
+#              UDID as the 2nd arg (or set DUNEII_DEVICE); default = the first connected device.
+#              e.g.  Scripts/build-ios.sh device "<name substring or UDID>"
 #     archive  Release archive + export a signed .ipa under build/ios/export (for TestFlight / Ad-Hoc).
 #
 # Prereqs: Xcode, and `xcodegen` (the script offers to `brew install` it if missing). The original game
-# PAKs are bundled into the app from the install dir — set DUNEII_INSTALL to override.
+# PAKs are bundled into the app from the install dir — set DUNEII_INSTALL to override. Device/team identifiers
+# are read from a git-ignored `.env` (DUNEII_DEVICE / DUNEII_TEAM) — see `.env.example`.
 #
 set -euo pipefail
 
@@ -24,11 +25,16 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 MODE="${1:-sim}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Local, git-ignored config: device + Apple Developer team identifiers (DUNEII_DEVICE / DUNEII_TEAM). Kept
+# out of version control so personal IDs aren't published; see `.env.example`.
+[ -f "$ROOT/.env" ] && set -a && . "$ROOT/.env" && set +a
+
 IOS_DIR="$ROOT/Code/Apps/duneii-ios"
 PROJECT="$IOS_DIR/duneii-ios.xcodeproj"
 SCHEME="duneii-ios"
 BUNDLE_ID="com.lonelybytes.duneii"
-TEAM="REDACTED_TEAM"
+TEAM="${DUNEII_TEAM:-}"
 INSTALL="${DUNEII_INSTALL:-$ROOT/Repositories/patched_107_unofficial}"
 DD="$ROOT/build/ios/dd"          # DerivedData
 GAMEDATA="$IOS_DIR/GameData"
@@ -190,7 +196,7 @@ stage_assets
 generate
 case "$MODE" in
   sim)     deploy_sim ;;
-  device)  deploy_device "${2:-}" ;;       # e.g.  build-ios.sh device "a specific device"
+  device)  deploy_device "${2:-}" ;;       # e.g.  build-ios.sh device "<name substring or UDID>"
   archive|testflight) archive ;;
   *) die "Unknown mode '$MODE'. Use: sim | device | archive" ;;
 esac
