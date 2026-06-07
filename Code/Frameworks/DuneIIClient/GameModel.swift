@@ -379,8 +379,12 @@ public final class GameModel {
         currentScenario = scenarioName
         playerHouse = HouseID(rawValue: Int(state.playerHouseID)) ?? .atreides
         registerHouseVoices()  // the player-house announcement voices (the prefix can change per scenario)
-        userPaused = state.paused  // fresh scenario ⇒ false; a restored save ⇒ its saved pause
-        applyPause()  // keep any open UI surface's pause (e.g. the load dialog) in effect
+        // A loaded game starts playing. The saved `state.paused` is unreliable as a "should be paused" signal
+        // — a save is written while the save/load UI has the game paused, so it almost always carries `true`,
+        // which left a restored save stuck paused. (A fresh scenario was already unpaused.)
+        userPaused = false
+        applyPause()  // still honour any UI surface open right now (e.g. the load dialog) until it closes
+        simulation?.state.paused = paused  // sync the freshly-loaded sim (it may carry a saved `true`)
         gameEnd = state.gameEndState
         // Reset the transient hint state so the new base doesn't false-fire build-complete / under-attack.
         wasLowPower = false; readyFactories = []
