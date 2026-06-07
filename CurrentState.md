@@ -10,8 +10,10 @@ The engine is **feature-complete and cross-engine-verified against OpenDUNE 1.07
 
 ## Active task
 
-**▶ No active task — clean stopping point.** Most recent session (2026-06-06), newest first — full detail in `Documentation/History/2026-06-06.md`:
+**▶ No active task — clean stopping point.** Most recent session (2026-06-07), newest first — full detail in `Documentation/History/2026-06-07.md`:
 
+- **Mentat help: build requirements + name-sorted sidebar (2026-06-07)** — each help page shows a "Requires" line (prerequisite buildings decoded from `structuresRequired` + the Construction-Yard/factory upgrade level, with the Harkonnen-WOR / Ordos-Siege-Tank house special cases); the topic sidebar is now sorted by name within each section. Pure helpers `MentatView.requirements(for:house:)` / `MentatView.sectioned(_:)` (both `nonisolated`); presentation seam ⇒ unit coverage `ClientTests/MentatHelpInfoTests` (5).
+- **Rocket Turret buildability fix (2026-06-07)** — `StructureBuild`'s construction-yard campaign gate computed `availableCampaign &- 1` on `UInt16`; the Rocket Turret's `availableCampaign = 0` wrapped to 65535, so `campaign >= 65535` was always false and the turret (also for the AI) was unbuildable at **every** level. Now signed `Int(availableCampaign) - 1`, matching OpenDUNE's int-promoted `g_campaignID >= availableCampaign - 1` (`structure.c:1908`). The R-Turret is now gated only by its level-2 Construction Yard — first achievable at campaign 5 (mission 11). Scenario goldens unchanged (neutral). New `StructureBuildTests` (2). NB: at scenario **level 8 (mission 8 = campaign 4)** the R-Turret is *correctly* still unbuildable — the CY can't reach upgrade level 2 until campaign 5.
 - **Client UI polish (2026-06-07)** — Concrete 2×2 build icon now tiles the clean built concrete (it shared the 1×1 group, so the generic per-state offset overran and showed the gridded foundation frame); double-click select-same-type limited to units within 3 tiles; context-sensitive map cursor (attack reticle / move pointer / armed-order); right-click building popup shows full info instantly + matches the sidebar (shared `BuildingControls`); persisted game options (`Prefs`); radar tuning animation paced by the render loop (game-speed-independent); Upgrade button hidden when not upgradable at this campaign level. Full detail in History.
 - **Full sight disc while moving** — new `GameState.fullSightMovementReveal` (engine default **off** = OpenDUNE-faithful radius-1 trail; client toggle default **on**, debug-panel "Full sight while moving"). On, a moving player unit re-stamps its full `fogUncoverRadius` every tile in `unitUpdateMap(1)`, so the sight circle tracks the unit like the original game (OpenDUNE only lifts the full disc once per order, from the EMC move loop, so it lags behind). Off ⇒ scenario goldens byte-identical (neutrality). `MovementFogRevealTests` (5).
 - **Right-click into fog = Move, never Attack** (`GameModel.isEnemy` requires `isUnveiled`).
@@ -34,7 +36,7 @@ The engine is **feature-complete and cross-engine-verified against OpenDUNE 1.07
 
 ## Test status
 
-`Scripts/check.sh` (`--full` = clean-build zero-warnings audit): **636 tests, all green**, clean `--full` build (0 warnings). iOS cross-compile clean (`Scripts/check-ios.sh`). **0 known issues.**
+`Scripts/check.sh` (`--full` = clean-build zero-warnings audit): **646 tests, all green**, clean `--full` build (0 warnings). iOS cross-compile clean (`Scripts/check-ios.sh`). **0 known issues.**
 
 **Parity:** cross-engine scenario goldens for the full four-phase sim (11+ scenarios — movement/combat/structures/houses/teams, plus map-tile wall/slab goldens), a per-tick **RNG draw-stream golden** (`Random256`/`RandomLCG` byte-identical to the oracle), a **structure decision-trace** (opcode-identical EMC), and **render goldens** (pixel-exact via `SpriteKitRenderer.snapshot`) — all full matches. Detail + regeneration: `Architecture/ScenarioHarness.md` + `Testing.md`. Regen: `Scripts/gen-scenario-goldens.sh`, `Scripts/gen-render-goldens.sh`; rebuild the oracle with `Scripts/build-oracle.sh`.
 

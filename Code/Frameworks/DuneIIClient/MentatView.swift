@@ -14,7 +14,9 @@ struct MentatView: View {
     @State
     private var selected: String?
 
-    private static let sectionOrder: [MentatHelp.Section] = [ .structures, .vehicles, .specials, .houses ]
+    nonisolated private static let sectionOrder: [MentatHelp.Section] = [
+        .structures, .vehicles, .specials, .houses,
+    ]
 
     /// What a Mentat topic refers to, for the sprite + stat lookup (houses / lore have none).
     private enum Subject { case structure(StructureType), unit(UnitType), none }
@@ -46,23 +48,39 @@ struct MentatView: View {
 
     private var topicList: some View {
         List(selection: $selected) {
-            ForEach(Self.sectionOrder, id: \.self) { section in
-                let items = topics.filter { $0.section == section }
-                if !items.isEmpty {
-                    Section(sectionTitle(section)) {
-                        ForEach(items, id: \.name) { topic in
-                            HStack(spacing: 7) {
-                                thumbnail(topic, size: 20)
-                                Text(topic.name).font(.callout).lineLimit(1)
-                            }
-                            .tag(topic.name)
+            ForEach(Self.sectioned(topics)) { group in
+                Section(sectionTitle(group.section)) {
+                    ForEach(group.items, id: \.name) { topic in
+                        HStack(spacing: 7) {
+                            thumbnail(topic, size: 20)
+                            Text(topic.name).font(.callout).lineLimit(1)
                         }
+                        .tag(topic.name)
                     }
                 }
             }
         }
         .listStyle(.sidebar)
         .frame(width: 252)  // 20% wider than the old 210
+    }
+
+    /// One sidebar section with its topics. `id` is the section so `ForEach` can iterate the groups.
+    struct TopicGroup: Identifiable {
+        let section: MentatHelp.Section
+        let items: [MentatHelp.Topic]
+        var id: MentatHelp.Section { section }
+    }
+
+    /// Group the topics into the fixed section order, each section's entries **sorted by name** (natural,
+    /// case-insensitive). Pure + testable; empty sections are dropped.
+    nonisolated static func sectioned(_ topics: [MentatHelp.Topic]) -> [TopicGroup] {
+        sectionOrder.compactMap { section in
+            let items =
+                topics
+                .filter { $0.section == section }
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            return items.isEmpty ? nil : TopicGroup(section: section, items: items)
+        }
     }
 
     // MARK: Detail
@@ -84,6 +102,7 @@ struct MentatView: View {
                                 }
                             }
                             statsGrid(topic)
+                            requirementsBlock(topic)
                             Spacer(minLength: 0)
                         }
                         Spacer(minLength: 0)
@@ -156,6 +175,55 @@ struct MentatView: View {
         }
     }
 
+    /// The build prerequisites for the topic (prerequisite buildings + the required Construction-Yard / factory
+    /// upgrade level), shown for the player's house. Hidden for items with no prerequisites and lore topics.
+    @ViewBuilder private func requirementsBlock(_ topic: MentatHelp.Topic) -> some View {
+        let reqs = Self.requirements(for: topic.name, house: model.playerHouse)
+        if !reqs.isEmpty {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Requires").font(.caption2).foregroundStyle(.secondary)
+                Text(reqs.joined(separator: ", "))
+                    .font(.callout.weight(.medium))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// The build prerequisites for a Mentat topic, in words: the prerequisite buildings (decoded from the
+    /// item's `structuresRequired` bitmask) plus the builder's required upgrade level. Mirrors
+    /// `Structure_GetBuildable`'s gating, including the player-house special cases (Harkonnen WOR needs no
+    /// Barracks; the Ordos Siege Tank needs one upgrade level fewer). Empty for the Construction Yard
+    /// (`FLAG_STRUCTURE_NEVER`), prerequisite-free items, and house/lore topics. Pure + testable.
+    nonisolated static func requirements(for name: String, house: HouseID) -> [String] {
+        let required: UInt32
+        var upgrade: Int
+        let builder: String
+        if let t = structures[name] {
+            var req = StructureInfo[t].o.structuresRequired
+            if t == .worTrooper, house == .harkonnen {  // Harkonnen WOR drops the Barracks prerequisite.
+                req &= ~(UInt32(1) << StructureType.barracks.rawValue)
+            }
+            required = req
+            upgrade = Int(StructureInfo[t].o.upgradeLevelRequired)
+            builder = StructureType.constructionYard.displayName
+        } else if let t = units[name] {
+            required = UnitInfo[t].o.structuresRequired
+            upgrade = Int(UnitInfo[t].o.upgradeLevelRequired)
+            if t == .siegeTank, house == .ordos { upgrade -= 1 }  // Ordos gets the Siege Tank a level early.
+            builder = "Factory"
+        } else {
+            return []
+        }
+        guard required != 0xFFFF_FFFF else { return [] }  // Construction Yard: never a build prerequisite list.
+
+        var reqs: [String] = []
+        for i in 0 ..< StructureType.allCases.count where (required & (UInt32(1) << i)) != 0 {
+            if let s = StructureType(rawValue: i) { reqs.append(s.displayName) }
+        }
+        if upgrade > 0 { reqs.append("\(builder) upgrade ×\(upgrade)") }
+        return reqs
+    }
+
     // MARK: Picture
 
     /// Each topic's icon is the original Mentat picture — the `*.WSA` named in its description (`MENTAT.PAK`),
@@ -222,7 +290,7 @@ struct MentatView: View {
 
     // Topic names vary slightly between the per-house Mentat files (e.g. "Wind Trap" vs "Windtrap",
     // "Deviator" vs "Ordos Deviator"), so every spelling is mapped to keep the sprite + stats panel populated.
-    private static let structures: [String: StructureType] = [
+    nonisolated private static let structures: [String: StructureType] = [
         "Barracks": .barracks, "Concrete Slab": .slab1x1, "Construction Yard": .constructionYard,
         "Heavy Factory": .heavyVehicle, "High-Tech Factory": .highTech, "IX": .houseOfIx,
         "Light Factory": .lightVehicle, "Outpost": .outpost, "Palace": .palace, "Refinery": .refinery,
@@ -230,7 +298,7 @@ struct MentatView: View {
         "Starport": .starport, "Turret": .turret, "Wall": .wall,
         "Windtrap": .windtrap, "Wind Trap": .windtrap, "Wor": .worTrooper,
     ]
-    private static let units: [String: UnitType] = [
+    nonisolated private static let units: [String: UnitType] = [
         "Carryall": .carryall, "Combat Tank": .tank, "Harvester": .harvester, "Heavy Troopers": .troopers,
         "Light Infantry": .infantry, "MCV": .mcv, "Ordos Raider": .raiderTrike, "Ornithopter": .ornithopter,
         "Quad": .quad, "Rocket Tank": .launcher, "Siege Tank": .siegeTank, "Trike": .trike,
