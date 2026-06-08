@@ -10,7 +10,7 @@ struct DuneIIApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self)
     private var delegate
     @State
-    private var model = GameModel(assets: AssetStore(installURL: DuneIIApp.installURL()))
+    private var model = GameModel(assets: AssetStore(installURL: DuneIIApp.installURL()), audioEnabled: true)
 
     var body: some Scene {
         WindowGroup("Dune II") {

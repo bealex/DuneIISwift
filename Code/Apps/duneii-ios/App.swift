@@ -18,7 +18,7 @@ struct DuneIIiOSApp: App {
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .default)
         try? session.setActive(true)
-        _model = State(initialValue: GameModel(assets: AssetStore(installURL: DuneIIiOSApp.gameDataURL)))
+        _model = State(initialValue: GameModel(assets: AssetStore(installURL: DuneIIiOSApp.gameDataURL), audioEnabled: true))
     }
 
     var body: some Scene {

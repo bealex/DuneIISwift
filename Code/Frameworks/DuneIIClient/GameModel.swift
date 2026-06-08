@@ -49,6 +49,10 @@ public final class GameModel {
             Prefs.set("soundEnabled", soundEnabled)
         }
     }
+    /// Whether this client drives real audio. Off ⇒ the SFX engine is never started and both master gates stay
+    /// shut, so loading a scenario plays nothing. Defaults off under the test/headless harness (see `init`).
+    @ObservationIgnored
+    let audioEnabled: Bool
     @ObservationIgnored
     public var scene: GameScene!
 
@@ -279,15 +283,20 @@ public final class GameModel {
     @ObservationIgnored
     private var minimapTilesHash = 0
 
-    public init(assets: AssetStore) {
+    /// Audio is **opt-in**: it defaults off so headless hosts and the test harness load a scenario in silence
+    /// (no `AVAudioEngine`, no music). The real game clients pass `audioEnabled: true`; an audio-specific test
+    /// does the same. Off ⇒ the SFX engine is never started and both master gates stay shut.
+    public init(assets: AssetStore, audioEnabled: Bool = false) {
         self.assets = assets
+        self.audioEnabled = audioEnabled
         scene = GameScene(model: self)
-        setupAudio()
+        if audioEnabled { setupAudio() }
         // Apply the persisted preferences whose effect a property `didSet` can't carry at init (the audio
         // engines default to enabled; the camera starts at its own default zoom). Everything else is read
-        // live by the views/renderer or applied in `load`, so the persisted defaults take hold there.
-        audio.enabled = soundEnabled
-        music.enabled = musicEnabled
+        // live by the views/renderer or applied in `load`, so the persisted defaults take hold there. With
+        // audio off, both master gates stay shut regardless of the saved toggles.
+        audio.enabled = audioEnabled && soundEnabled
+        music.enabled = audioEnabled && musicEnabled
         viewport.setZoom(Prefs.double("zoom", default: viewport.zoom))
         if let first = assets.scenarioNames.first { load(first) }
     }
@@ -417,7 +426,9 @@ public final class GameModel {
         radarActive = frame.houses.first { $0.id == playerHouse }?.radarActivated ?? false
         radarStaticFrameIndex = nil
         refreshDerived(frame)
-        music.startInGame()  // a random in-mission map theme (musicID 8–15), rolling into the next at its end
+        if audioEnabled {
+            music.startInGame()  // a random in-mission map theme (musicID 8–15), rolling into the next at its end
+        }
     }
 
     /// Where the player's base sits, in **world points** — for the initial camera. Prefers the Construction
