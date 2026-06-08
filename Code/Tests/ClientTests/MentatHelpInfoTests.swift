@@ -45,6 +45,27 @@ struct MentatHelpInfoTests {
         #expect(MentatView.requirements(for: "Siege Tank", house: .ordos) == [ "Factory upgrade ×2" ])
     }
 
+    // MARK: detail image aspect ratio
+
+    /// The detail picture is framed at its true width÷height so its top aligns with the title (the WSA pictures
+    /// are wider than tall — a square box used to letterbox + vertically-centre them). A zero height guards to 1.
+    @Test func imageAspectRatioIsWidthOverHeightAndGuardsZero() {
+        #expect(MentatView.imageAspectRatio(width: 184, height: 92) == 2)
+        #expect(MentatView.imageAspectRatio(width: 100, height: 200) == 0.5)
+        #expect(MentatView.imageAspectRatio(width: 64, height: 0) == 1)  // guard: no divide-by-zero
+    }
+
+    // MARK: house home planet (subtitle)
+
+    /// Each house page's subtitle shows the home planet, consistently for any loaded mentat file (the original
+    /// only carries it in the Atreides file). Non-house topics get none.
+    @Test func houseTopicsResolveTheirHomePlanet() {
+        #expect(MentatView.homePlanet(forHouseTopic: "House Atreides") == "Caladan")
+        #expect(MentatView.homePlanet(forHouseTopic: "House Harkonnen") == "Giedi Prime")
+        #expect(MentatView.homePlanet(forHouseTopic: "House Ordos") == "Unknown")
+        #expect(MentatView.homePlanet(forHouseTopic: "Rocket Turret") == nil)
+    }
+
     // MARK: sectioned (sidebar order)
 
     private func topic(_ name: String, _ section: MentatHelp.Section) -> MentatHelp.Topic {

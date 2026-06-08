@@ -1,3 +1,4 @@
+import CoreGraphics
 import DuneIIContracts
 import DuneIIFormats
 import DuneIIWorld
@@ -91,8 +92,9 @@ struct MentatView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 16) {
-                        // The original Mentat picture (large, unchanged).
-                        thumbnail(topic, size: 256)
+                        // The original Mentat picture — framed by width with its true height (it isn't square),
+                        // so its top aligns with the title beside it.
+                        detailImage(topic, width: 256)
                         // Title + stats to the right of the image.
                         VStack(alignment: .leading, spacing: 10) {
                             VStack(alignment: .leading, spacing: 3) {
@@ -135,13 +137,24 @@ struct MentatView: View {
         return topic.title.isEmpty ? topic.name : topic.title
     }
 
-    /// The grey sub-lines under the heading: a house's lead-in line (when it isn't just the house name again),
-    /// otherwise the topic's attribute lines (unit/structure stat blurbs).
+    /// The grey sub-lines under the heading: a house's **home planet** (the original game only fills this in
+    /// the Atreides mentat file's title, e.g. "Caladan:"; we show it for every house from whichever house's
+    /// mentat is loaded), otherwise the topic's attribute lines (unit/structure stat blurbs).
     private func subheadings(_ topic: MentatHelp.Topic) -> [String] {
         if topic.section == .houses {
+            if let planet = Self.homePlanet(forHouseTopic: topic.name) { return [ "Home planet: \(planet)" ] }
             return (!topic.title.isEmpty && topic.title != topic.name) ? [ topic.title ] : []
         }
         return topic.attributes
+    }
+
+    /// Each playable house's home planet, for the houses-section subtitle. Ordos's homeworld is canonically
+    /// unrecorded (the Atreides mentat itself reads "Name: Unknown"). `nil` for any non-house topic.
+    nonisolated static func homePlanet(forHouseTopic name: String) -> String? {
+        if name.contains("Atreides") { return "Caladan" }
+        if name.contains("Harkonnen") { return "Giedi Prime" }
+        if name.contains("Ordos") { return "Unknown" }
+        return nil
     }
 
     /// Cost / HP / power (structures) or cost / HP / damage / range (units), from our stat tables.
@@ -237,6 +250,25 @@ struct MentatView: View {
         } else {
             spriteFallback(topic, size: size)
         }
+    }
+
+    /// The large detail picture, framed by **width** at the image's natural height. The Mentat WSA pictures
+    /// aren't square (buildings are wider than tall), so the old fixed square box `.fit`-letterboxed them —
+    /// centring the image vertically while the title started at the box top, leaving the two misaligned.
+    /// Sizing the box to the real picture lines its top up with the title. Falls back to a square sprite.
+    @ViewBuilder private func detailImage(_ topic: MentatHelp.Topic, width: CGFloat) -> some View {
+        if !topic.wsa.isEmpty, let picture = provider.wsaImage(name: topic.wsa, assets: model.assets) {
+            let ratio = Self.imageAspectRatio(width: picture.width, height: picture.height)
+            Image(decorative: picture, scale: 1).interpolation(.none).resizable()
+                .frame(width: width, height: width / ratio)
+        } else {
+            spriteFallback(topic, size: width)
+        }
+    }
+
+    /// A picture's width÷height aspect ratio, guarding a zero height (→ 1, a square). Pure + testable.
+    nonisolated static func imageAspectRatio(width: Int, height: Int) -> CGFloat {
+        height > 0 ? CGFloat(width) / CGFloat(height) : 1
     }
 
     @ViewBuilder private func spriteFallback(_ topic: MentatHelp.Topic, size: CGFloat) -> some View {
