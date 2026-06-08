@@ -36,7 +36,7 @@ The engine is **feature-complete and cross-engine-verified against OpenDUNE 1.07
 
 ## Test status
 
-`Scripts/check.sh` (`--full` = clean-build zero-warnings audit): **646 tests, all green**, clean `--full` build (0 warnings). iOS cross-compile clean (`Scripts/check-ios.sh`). **0 known issues.**
+`Scripts/check.sh` (`--full` = clean-build zero-warnings audit): **648 tests, all green**, clean `--full` build (0 warnings). iOS cross-compile clean (`Scripts/check-ios.sh`). **0 known issues.**
 
 **Parity:** cross-engine scenario goldens for the full four-phase sim (11+ scenarios — movement/combat/structures/houses/teams, plus map-tile wall/slab goldens), a per-tick **RNG draw-stream golden** (`Random256`/`RandomLCG` byte-identical to the oracle), a **structure decision-trace** (opcode-identical EMC), and **render goldens** (pixel-exact via `SpriteKitRenderer.snapshot`) — all full matches. Detail + regeneration: `Architecture/ScenarioHarness.md` + `Testing.md`. Regen: `Scripts/gen-scenario-goldens.sh`, `Scripts/gen-render-goldens.sh`; rebuild the oracle with `Scripts/build-oracle.sh`.
 
@@ -44,7 +44,7 @@ The engine is **feature-complete and cross-engine-verified against OpenDUNE 1.07
 
 ## Self-review tracker
 
-Last review: **2026-06-03 at `dffaece`**. Next trigger: **+32 commits** (`git rev-list --count dffaece..HEAD`) or the next completed phase (`CLAUDE.md` → "Periodic self-review"). Durable outcomes from all past reviews are already folded into `CLAUDE.md` standing rules + `Documentation/Insights/` (e.g. `host-presentation-gap-not-sim`, `sim-rng-stream-unpinned-wobble`, `sim-isaiactive-contact-not-load`, `build-exec-eperm`, `build-gamestate-layout-stale-module`). The 2026-06-03 review's theme: a "missing" client feature is usually the sim already doing it while the host doesn't surface it. **Nothing new has risen to a standing rule recently.** Prior review points: `4438003` (2026-06-01), `b5caa09` (2026-05-31).
+Last review: **2026-06-03 at `521c2aca`**. Next trigger: **+32 commits** (`git rev-list --count 521c2aca..HEAD`) or the next completed phase (`CLAUDE.md` → "Periodic self-review"). Prior review points: `603ee8da` (2026-06-01), `a38d89e5` (2026-05-31). **Hash note:** these were remapped on 2026-06-07 — a full-history rewrite (author-email change, force-pushed) gave every commit a new hash, so the old review hashes (`dffaece`/`4438003`/`b5caa09`) no longer resolve; the values above are the new equivalents. Durable outcomes from all past reviews are already folded into `CLAUDE.md` standing rules + `Documentation/Insights/` (e.g. `host-presentation-gap-not-sim`, `sim-rng-stream-unpinned-wobble`, `sim-isaiactive-contact-not-load`, `build-exec-eperm`, `build-gamestate-layout-stale-module`). Recurring theme: a "missing" client feature is usually the sim already doing it while the host doesn't surface it. **Nothing new has risen to a standing rule recently.**
 
 ## Open decisions
 

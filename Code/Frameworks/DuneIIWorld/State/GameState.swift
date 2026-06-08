@@ -16,9 +16,9 @@ public struct UnitTickCursors: Sendable, Equatable, Codable {
 }
 
 /// "Next-due" tick timestamps for each `GameLoop_Structure` sub-activity (OpenDUNE's `s_tickStructure*`).
-/// An activity fires when its cursor is `<= timerGame`, then advances by its interval. Only `script` drives
-/// logic today; `degrade`/`structure`/`palace` advance their cursors but their bodies are still seams
-/// (the campaign-degrade, BUILD/REPAIR/factory production, and palace special-weapon slices).
+/// An activity fires when its cursor is `<= timerGame`, then advances by its interval. All four drive logic
+/// (see `Simulation.gameLoopStructure`): `script` runs the structure EMC, `structure` the BUILD/REPAIR/
+/// production slice, `degrade` the campaign degradation, and `palace` the special-weapon countdown.
 public struct StructureTickCursors: Sendable, Equatable, Codable {
     public var degrade: UInt32 = 0
     public var structure: UInt32 = 0
@@ -104,10 +104,10 @@ public struct GameState: Sendable, Codable {
     public var validateStrictIfZero: UInt16 = 0
 
     /// Scenario map scale (0 = 62×62, 1 = 32×32, 2 = 21×21). OpenDUNE's `g_scenario.mapScale`; indexes
-    /// `MapInfo.scales`. Set by scenario loading (not yet ported).
+    /// `MapInfo.scales`. Set by scenario loading (`ScenarioLoader`).
     public var mapScale: UInt8 = 0
 
-    /// The local player's house. OpenDUNE's `g_playerHouseID`; set by scenario loading (not yet ported).
+    /// The local player's house. OpenDUNE's `g_playerHouseID`; set by scenario loading (`ScenarioLoader`).
     public var playerHouseID: UInt8 = 0
 
     /// **Debug/test only.** When true, the AI gets a crude fog of war: player-owned objects are no longer

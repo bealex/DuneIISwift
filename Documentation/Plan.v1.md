@@ -198,11 +198,11 @@ Per-phase **done-bar** is what makes the phase complete. Parallelism is noted.
 
 **Phase 3 — `DuneIISimulation`.** The heart. Each state machine is an **exact transcription of its disassembled EMC script** (from Phase 1's `emc-disasm`), verified by **per-object decision-trace equivalence** (Tier 2a) before integration. Order: loop + two-clock model + speed/pause → world-mutation primitives (movement, rotation, pathfinder, damage, fog/spice) → **one unit type end-to-end** (move/guard/attack) → harvester + refinery economy → structures + production → houses + teams + AI → projectiles + explosions. *Done per slice:* per-object decision traces match the EMC interpreter; Tier-2 deterministic scenario passes exact state-diff vs OpenDUNE; the whole sim runs headless + sped-up + deterministic; Tier-3 envelope holds on at least one full `SCEN*.INI`.
 
-**Phases 4–5 — `DuneIIRenderer`, `rendertest`, and `DuneIIInput` (parallel with Phase 3 once Contracts is stable).** Renderer: `Renderer` protocol + `NullRenderer` + `SpriteKitRenderer` rendering **pixel-faithful world content from `FrameInfo`, upscaled (nearest-neighbor) into a resizable, scalable window**, plus reusable sprite/animation drawing services. Build the **`rendertest`** app (§4.7): browse any sprite frame/phase, play any animation, for any house. Input: `InputSource` + `ScriptedInput` (unlocks scripted Phase-3 test scenarios) + `CatalystInput`. *Done:* `rendertest` displays every sprite/animation for every house, and a sampled sprite frame diffs pixel-exact against a reference PNG; the renderer reproduces a recorded `FrameInfo` correctly; scripted input drives a headless scenario.
+**Phases 4–5 — `DuneIIRenderer`, `rendertest`, and `DuneIIInput` (parallel with Phase 3 once Contracts is stable).** Renderer: `Renderer` protocol + `NullRenderer` + `SpriteKitRenderer` rendering **pixel-faithful world content from `FrameInfo`, upscaled (nearest-neighbor) into a resizable, scalable window**, plus reusable sprite/animation drawing services. Build the **`rendertest`** app (§4.7): browse any sprite frame/phase, play any animation, for any house. Input: `InputSource` + `ScriptedInput` (unlocks scripted Phase-3 test scenarios) + the host's native input (`NSEvent` on macOS, touch on iOS — the early "Catalyst" plan was dropped 2026-05-31). *Done:* `rendertest` displays every sprite/animation for every house, and a sampled sprite frame diffs pixel-exact against a reference PNG; the renderer reproduces a recorded `FrameInfo` correctly; scripted input drives a headless scenario.
 
-**Phase 6 — Hosts + multi-window UI.** `duneii` (**native macOS** AppKit + SwiftUI app) hosts the **multi-window UI** (§4.6): a SwiftUI map window + floating `NSPanel` tool windows (minimap, selection, economy, debug), each consuming `FrameInfo` / the live state and emitting `Command`s. `duneii-headless` (oracle/test driver) wires the headless path. *First version done (2026-05-31):* the map window (pixel-perfect pan/zoom, click-select/order) + all four tool windows + scenario loading. *Remaining:* the build dialog/factory window, richer selection (drag-group), wiring the sim's sound/voice events.
+**Phase 6 — Hosts + multi-window UI.** `duneii` (**native macOS** AppKit + SwiftUI app) hosts the **multi-window UI** (§4.6): a SwiftUI map window + floating `NSPanel` tool windows (minimap, selection, economy, debug), each consuming `FrameInfo` / the live state and emitting `Command`s. `duneii-headless` (oracle/test driver) wires the headless path. *Done (2026-06-07):* the map window (pixel-perfect pan/zoom, click-select/order), all four tool windows, scenario loading, the build/factory flow (sidebar build list + context popovers + place/pause/resume), double-click group selection, and sim sound/voice events wired through `DuneIIAudio`. Both clients — **native-macOS `duneii`** and **iOS `duneii-ios`** — share everything via `DuneIIClient`. The frontier here is presentation polish (see `CurrentState.md`), not missing structure. *Remaining (presentation only):* the original factory-window art, drag-group selection box sprite, per-house spoken `%c` announcement voices.
 
-**Phase 7 — `DuneIIAudio` (postponed).** `AudioSink` + `NullAudio` exists from Phase 0; add a Core Audio implementation consuming `SoundEvent`s when prioritized.
+**Phase 7 — `DuneIIAudio`.** *Done (2026-05-31):* `AudioSink` + `NullAudio` (Phase 0) plus a low-latency polyphonic `AVAudioEngine` sink consuming `SoundEvent`s, AdLib/MIDI music, and combat/acknowledge/under-attack/destroyed voice cues.
 
 ---
 
@@ -218,12 +218,16 @@ Documented so they are never mistaken for bugs:
 
 ## 8. Open items / immediate next steps
 
-1. Execute **Phase 0** (rewrite `CLAUDE.md`, write the architecture/testing/parity docs, recreate `CurrentState.md`, scaffold the target graph).
-2. Confirm the **package names** and the single-package-multi-target layout (vs. truly separate packages) before scaffolding.
-3. Decide whether `assetgen` + committed `Resources/` are regenerated fresh in Phase 1 or carried forward.
-4. Stand up the **OpenDUNE oracle tooling** (extend the existing parity hooks to dump Tier-1/2/3 fixtures, including per-object decision traces for Tier 2a) early in Phase 1–2 so fixtures exist before Phase 3 needs them.
-5. ~~Decide the multi-window UI tech.~~ **Resolved (2026-05-31): native macOS (AppKit + SwiftUI), non-Catalyst** — SwiftUI map window + floating `NSPanel` tool windows. The UI panels live in the `duneii` host for now (factorable into a `DuneIIUI` library if they grow).
-6. Confirm the **v1 window set** (map, inspector, game-info, build dialog) and which additional tool windows are wanted.
+**All resolved** — this section captured the decisions to make before/while scaffolding; they are now settled. Kept for the record:
+
+1. ~~Execute **Phase 0**.~~ Done — `CLAUDE.md`, the architecture/testing/parity docs, `CurrentState.md`, and the target graph all exist.
+2. ~~Confirm the **package names** / single-package-multi-target layout.~~ Resolved: one `Code` package, multiple targets (`Package.swift`).
+3. ~~Decide whether `assetgen` + committed `Resources/` are regenerated fresh.~~ Resolved: `Resources/` is committed and `assetgen`-regenerated.
+4. ~~Stand up the **OpenDUNE oracle tooling**.~~ Done — the parity oracle + fixture dumps are in place (`Architecture/ScenarioHarness.md`).
+5. ~~Decide the multi-window UI tech.~~ **Resolved (2026-05-31): native macOS (AppKit + SwiftUI), non-Catalyst** — SwiftUI map window + floating `NSPanel` tool windows. The shared UI lives in `DuneIIClient`.
+6. ~~Confirm the **v1 window set**.~~ Resolved: map + inspector + economy + debug tool windows, plus the in-window build sidebar; the build flow is in the sidebar/context popovers rather than a separate dialog.
+
+The live next-steps list now lives in `CurrentState.md` → "Next up (candidates)".
 
 ---
 

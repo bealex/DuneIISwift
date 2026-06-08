@@ -26,7 +26,7 @@ Evidence is `file` + symbol (line numbers drift; symbols don't). Audited 2026-05
 | Palace special-weapon cursor + body | ✅ | `Simulation.gameLoopStructure` + `structureActivateSpecial` (AI auto-fires; human launch wired in duneii via `applyPalaceCommand` — see §P) |
 | Reinforcement cursor | ✅ | `gameLoopHouse` → `tickReinforcements` (see §S) |
 | House-missile countdown cursor | ⊘ pres | the human target-select is a duneii UI mode, not sim state (the AI launches directly, see §P) |
-| Campaign-degrade cursor | ⊘ gameplay | `Simulation` — cursor only (see §Q) |
+| Campaign-degrade cursor | ✅ | `Simulation` tick fires the degrade body each cursor tick (see §Q) |
 | `Random256` (3-byte feedback) | ✅ | `Random256` — bit-exact, golden-verified |
 | `RandomLCG` (Borland 0x015A4E35) | ✅ | `RandomLCG` — bit-exact, golden-verified |
 | RNG **draw-order** parity (the verification bar) | ✅ | per-tick draw stream byte-identical to oracle across 9 scenarios |
@@ -135,7 +135,7 @@ Every opcode is routed. The eight `noOperation` entries are audio/GUI seams (pre
 
 | Unit / behaviour | Status | Evidence / note |
 |---|---|---|
-| Harvester: harvest → return → dock → refine → redeploy | ◐ | harvest/return/dock/**refine**/**deploy** all work (the script-VM engine-copy fix, 2026-05-31); the deployed *empty* harvester then goes STOP instead of resuming HARVEST — `HarvesterCycleTests` + insight `sim-script-vm-engine-copy` |
+| Harvester: harvest → return → dock → refine → redeploy | ✅ | the full loop closes — the redeployed empty harvester resumes HARVEST and gathers again (script-VM engine-copy fix, 2026-05-31 → 06-02); it only STOPs when no spice is in range, exactly as OpenDUNE — `HarvesterCycleTests.fullCycle` + insight `sim-script-vm-engine-copy` |
 | Harvester death → spice spill (radius-5) | ✅ | `UnitMovement.damage` |
 | Carryall: pickup / transport / deliver / summon | ✅ | natives 0x22/0x14/0x1E/0x23 (`UnitCombat`) |
 | Carryall: harvester ferry (full→refinery, empty→spice) | ✅ | `UnitCombat` transport paths |
