@@ -4,10 +4,9 @@ import SwiftUI
 /// The app's Settings window (⌘,). Audio toggles for now — more preferences can join later. Bindings write
 /// straight through to `GameModel`, which applies them live to the audio sink / music director.
 public struct SettingsView: View {
-    @State
     var model: GameModel
 
-    public init(model: GameModel) { _model = State(initialValue: model) }
+    public init(model: GameModel) { self.model = model }
 
     public var body: some View {
         TabView {
@@ -23,19 +22,16 @@ public struct SettingsView: View {
 /// can sit in the macOS Settings window *and* be embedded as a section of the in-game Options form (iOS has
 /// no ⌘, Settings scene, so this is the only place those toggles live there).
 struct AudioSettingsRows: View {
+    @Bindable
     var model: GameModel
 
     var body: some View {
         Group {
-            Toggle("Sound effects", isOn: Binding(get: { model.soundEnabled }, set: { model.soundEnabled = $0 }))
-            Toggle("Music", isOn: Binding(get: { model.musicEnabled }, set: { model.musicEnabled = $0 }))
-            Picker(
-                "Music engine",
-                selection: Binding(get: { model.musicBackend }, set: { model.musicBackend = $0 }),
-                content: {
-                    ForEach(MusicBackend.allCases, id: \.self) { Text($0.displayName).tag($0) }
-                }
-            )
+            Toggle("Sound effects", isOn: $model.soundEnabled)
+            Toggle("Music", isOn: $model.musicEnabled)
+            Picker("Music engine", selection: $model.musicBackend) {
+                ForEach(MusicBackend.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            }
             .disabled(!model.musicEnabled)
         }
     }

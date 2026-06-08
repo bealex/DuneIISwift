@@ -279,11 +279,10 @@ struct ActionIcon: View {
 
 // MARK: - Sidebar
 
-/// The in-game sidebar: a fixed 200pt right column — radar, house + economy, the current selection (sprite,
+/// The in-game sidebar: a fixed 250pt right column — radar, house + economy, the current selection (sprite,
 /// HP, command icons), a build/order list for a selected factory/starport, and a bottom button row
 /// (Mentat / Options / Save / Load). Replaces the old floating Inspector + Economy + Minimap tool windows.
 public struct GameSidebar: View {
-    @State
     var model: GameModel
     @State
     private var sprites = SpriteImageProvider()
@@ -296,7 +295,7 @@ public struct GameSidebar: View {
     private var systemScheme
 
     public init(model: GameModel, fullScreen: Bool = false) {
-        _model = State(initialValue: model)
+        self.model = model
         self.fullScreen = fullScreen
     }
 
@@ -406,10 +405,10 @@ public struct GameSidebar: View {
 // MARK: - Options popover
 
 /// The Options button's content: the scenario chooser, the game speed, the game toggles (fog, health bars,
-/// AI fog, force-minimap, unit limit, …) — the same `DebugPanel` controls — plus a link to the macOS Settings
+/// AI fog, force-minimap, unit limit, …) — the `DebugToggleRows` controls — plus a link to the macOS Settings
 /// window (audio). This is the only place the scenario is chosen now (there's no window toolbar).
 struct OptionsPopover: View {
-    @State
+    @Bindable
     var model: GameModel
     @Binding
     var isPresented: Bool
@@ -421,7 +420,7 @@ struct OptionsPopover: View {
     #endif
 
     init(model: GameModel, isPresented: Binding<Bool>) {
-        _model = State(initialValue: model)
+        _model = Bindable(wrappedValue: model)
         _isPresented = isPresented
     }
 
@@ -476,7 +475,7 @@ struct OptionsPopover: View {
         Form {
             Section {
                 scenarioRow
-                Picker("Game speed", selection: Binding(get: { model.gameSpeed }, set: { model.gameSpeed = $0 })) {
+                Picker("Game speed", selection: $model.gameSpeed) {
                     Text("0.5×").tag(0.5)
                     Text("1×").tag(1.0)
                     Text("2×").tag(2.0)

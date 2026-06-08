@@ -9,12 +9,22 @@ struct MapViewApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self)
     private var delegate
     @State
-    private var model = MapModel(assets: AssetStore(installURL: MapViewApp.installURL()))
+    private var model: MapModel?
 
     var body: some Scene {
         WindowGroup("Dune II — Map Viewer") {
-            ContentView(model: model)
-                .frame(minWidth: 640, minHeight: 480)
+            Group {
+                if let model {
+                    ContentView(model: model)
+                } else {
+                    ProgressView("Loading assets…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(minWidth: 640, minHeight: 480)
+            // Build the model — which decodes the install's PAKs and loads the first scenario — only after the
+            // window first paints. Apple's Observation guidance warns against this kind of heavy work in a
+            // `@State` default value, which runs synchronously before the first frame and stalls launch.
+            .task { if model == nil { model = MapModel(assets: AssetStore(installURL: Self.installURL())) } }
         }
     }
 

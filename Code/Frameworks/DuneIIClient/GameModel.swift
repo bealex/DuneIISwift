@@ -265,8 +265,15 @@ public final class GameModel {
     /// Build/place/cancel commands queued from the UI, applied next `advance()` (alongside unit orders).
     @ObservationIgnored
     private var pendingCommands: [Command] = []
-    /// The latest frame — observed, so the minimap redraws each tick (units/viewport move).
+    /// The latest frame. `@ObservationIgnored` so this large value type is never routed through Observation:
+    /// the minimap reads it imperatively and depends on the cheap `minimapVersion` token instead, so
+    /// republishing it ~60×/sec can't invalidate any SwiftUI view that merely reads it.
+    @ObservationIgnored
     private(set) var lastFrame: FrameInfo?
+    /// A monotonically-bumped redraw token for the live minimap, incremented each time `lastFrame` is
+    /// republished. `MinimapView` observes this (a cheap `Int`) to know when to redraw, then reads `lastFrame`
+    /// imperatively — preserving the radar's per-tick cadence without observing the frame value type itself.
+    private(set) var minimapVersion = 0
     /// Throttles the steady-state HUD derivations (economy/credits/build/structure-actions/tile-info/hints)
     /// to ~10 Hz instead of the display rate, the bulk of the per-frame SwiftUI re-layout cost. Interaction
     /// (a selection/order change) overrides it so the panels still respond instantly. ~6 of the ~60 display
@@ -402,6 +409,7 @@ public final class GameModel {
         scene.load(simulation: sim, assets: assets)
         let frame = sim.makeFrameInfo()
         lastFrame = frame
+        minimapVersion &+= 1
         // Clamp the camera to the scenario's playable rectangle (so it can't scroll onto the black border)
         // and start centred on it. The renderer blacks the border out independently (`FrameComposer`).
         viewport = Viewport()
@@ -639,6 +647,7 @@ public final class GameModel {
         simulation = sim
         let frame = sim.makeFrameInfo()
         lastFrame = frame
+        minimapVersion &+= 1
         refreshMinimapBase(frame)  // keep the minimap terrain current (structures, walls, craters, spice)
         refreshDerived(frame)
         return frame
@@ -1158,7 +1167,10 @@ public final class GameModel {
     /// double-click on empty ground / a structure / an enemy / a winger / a worm falls back to the plain
     /// single-select (`leftClickTile`), so it never deselects or misbehaves.
     func doubleClickSelectSameType(tileX x: Int, tileY y: Int) {
-        guard case let .unit(slot) = pick(x, y), let state = simulation?.state else {
+        guard
+            case let .unit(slot) = pick(x, y),
+            let state = simulation?.state
+        else {
             leftClickTile(x, y)  // not a unit under the cursor — behave like a normal click
             return
         }
@@ -1182,7 +1194,9 @@ public final class GameModel {
             slots.append(i)
         }
         let group = InputController.sameTypeGroup(slots, clicked: slot, typeOf: { Int(state.units[$0].o.type) })
-        guard !group.isEmpty else {
+        guard
+            !group.isEmpty
+        else {
             leftClickTile(x, y)  // an enemy / winger / worm / non-normal unit — just select it singly
             return
         }
@@ -1215,6 +1229,7 @@ public final class GameModel {
     /// resolves to a move — you can't target what you haven't revealed (`isEnemy` enforces the fog rule).
     func unitOrderIsAttack(tileX x: Int, tileY y: Int) -> Bool? {
         guard !controller.selectedUnits.isEmpty else { return nil }
+
         if isSelectedHarvester() { return false }
         return isEnemy(x, y)
     }

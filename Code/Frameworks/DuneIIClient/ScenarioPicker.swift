@@ -6,7 +6,6 @@ import SwiftUI
 /// level below. Picking one loads it — which also sets the campaign level that gates its tech tree (derived
 /// from the mission number). Replaces the old two-control "scenario menu + campaign picker" toolbar.
 public struct ScenarioPicker: View {
-    @State
     var model: GameModel
     @Environment(\.dismiss)
     private var dismiss
@@ -14,7 +13,7 @@ public struct ScenarioPicker: View {
     private var house: HouseID
 
     public init(model: GameModel) {
-        _model = State(initialValue: model)
+        self.model = model
         // Open on the current scenario's house (or Atreides if none/unparseable).
         let current = model.currentScenario.flatMap { ScenarioID(fileName: $0) }
         _house = State(initialValue: current?.house ?? .atreides)

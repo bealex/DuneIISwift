@@ -9,13 +9,21 @@ struct RenderTestApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self)
     private var delegate
     @State
-    private var library = AssetLibrary(installURL: RenderTestApp.installURL())
+    private var library: AssetLibrary?
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(library)
-                .frame(minWidth: 960, minHeight: 640)
+            Group {
+                if let library {
+                    ContentView().environment(library)
+                } else {
+                    ProgressView("Loading assets…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(minWidth: 960, minHeight: 640)
+            // Build the library (decodes every PAK) after first paint rather than in a `@State` default value,
+            // which would block launch on the synchronous decode.
+            .task { if library == nil { library = AssetLibrary(installURL: Self.installURL()) } }
         }
     }
 

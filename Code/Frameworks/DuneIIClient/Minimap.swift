@@ -109,13 +109,14 @@ enum Minimap {
 }
 
 struct MinimapView: View {
-    @State
     var model: GameModel
 
     var body: some View {
         // Read the live, observed state in `body` so the Canvas redraws every tick (units/structures move,
         // the viewport pans) — establishing the observation dependency here is more reliable than inside the
-        // Canvas drawing closure.
+        // Canvas drawing closure. `minimapVersion` is the per-tick redraw token (bumped whenever `lastFrame`
+        // republishes); `lastFrame` itself is `@ObservationIgnored`, so it's read imperatively for the data.
+        let _ = model.minimapVersion
         let frame = model.lastFrame
         let viewport = model.viewport
         let playerHouse = model.playerHouse

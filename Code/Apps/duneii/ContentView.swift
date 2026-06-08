@@ -8,16 +8,14 @@ import SwiftUI
 /// the +/- and arrow keys). The window is normally resizable + fullscreen-able; the tool windows float over
 /// it (even in fullscreen) via the `ToolWindowManager`.
 struct ContentView: View {
-    @State
     var model: GameModel
     @State
-    private var tools: ToolWindowManager
+    private var tools = ToolWindowManager()
     @State
     private var isFullScreen = false
 
     init(model: GameModel) {
-        _model = State(initialValue: model)
-        _tools = State(initialValue: ToolWindowManager(model: model))
+        self.model = model
     }
 
     var body: some View {
@@ -152,13 +150,31 @@ final class FirstMouseSKView: SKView {
 struct WindowAccessor: NSViewRepresentable {
     let onResolve: (NSWindow) -> Void
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        DispatchQueue.main.async { if let window = view.window { onResolve(window) } }
+        resolve(view, context.coordinator)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { if let window = nsView.window { onResolve(window) } }
+        resolve(nsView, context.coordinator)
     }
+
+    /// Resolve the backing window exactly once. `makeNSView` runs before the view is in a window (so
+    /// `view.window` is nil and the first hop no-ops); the window appears by the first `updateNSView`. Once
+    /// resolved, later updates short-circuit instead of scheduling a fresh main-queue hop every invalidation.
+    private func resolve(_ view: NSView, _ coordinator: Coordinator) {
+        guard !coordinator.resolved else { return }
+
+        DispatchQueue.main.async {
+            guard !coordinator.resolved, let window = view.window else { return }
+
+            coordinator.resolved = true
+            onResolve(window)
+        }
+    }
+
+    @MainActor final class Coordinator { var resolved = false }
 }

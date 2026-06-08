@@ -9,7 +9,6 @@ import SwiftUI
 /// what's unlocked at the scenario's campaign level. Each topic shows the original description text alongside
 /// the unit/building sprite and key stats from our tables. Replaces the old single-object info card.
 struct MentatView: View {
-    @State
     var model: GameModel
     let provider: SpriteImageProvider
     @State

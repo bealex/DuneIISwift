@@ -7,7 +7,6 @@ import SwiftUI
 /// handled inside `GameScene` (`#if os(iOS)`): tap to select/place, drag to pan, pinch to zoom, long-press to
 /// order. Save/Load use a simple quicksave slot in the app's Documents directory.
 struct ContentView: View {
-    @State
     var model: GameModel
     @State
     private var notice: String?
