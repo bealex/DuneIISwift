@@ -531,6 +531,13 @@ public final class GameScene: SKScene {
     /// Convert a point in scene coordinates (already camera-adjusted) to a `(tileX, tileY)`, or nil if it
     /// falls outside the 64×64 map. Every platform's input layer funnels through this.
     public func tile(atScenePoint p: CGPoint) -> (Int, Int)? {
+        // Reject points outside the playable square *before* dividing: integer division truncates toward zero,
+        // so a small negative coord (a click in the scrollable border margin, p.x ∈ [-borderPx, 0)) would
+        // otherwise collapse to tile 0 and slip past the `0 ..< 64` guard.
+        guard p.x >= 0, p.y >= 0, p.x < CGFloat(Self.worldSidePx), p.y < CGFloat(Self.worldSidePx) else {
+            return nil
+        }
+
         let x = Int(p.x) / Self.tileSize
         let y = (Self.worldSidePx - Int(p.y)) / Self.tileSize
         guard (0 ..< 64).contains(x), (0 ..< 64).contains(y) else { return nil }
