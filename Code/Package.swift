@@ -137,7 +137,9 @@ let package = Package(
         .executableTarget(
             name: "duneii",
             dependencies: [ "DuneIIClient" ],
-            path: "Apps/duneii"
+            path: "Apps/duneii",
+            // The app-bundle icon, consumed by Scripts/bundle-mac.sh (copied into duneii.app), not by SwiftPM.
+            exclude: [ "AppIcon.icns" ]
         ),
         .executableTarget(
             name: "rendertest",
