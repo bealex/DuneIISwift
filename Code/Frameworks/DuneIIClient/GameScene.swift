@@ -70,19 +70,14 @@ public final class GameScene: SKScene {
         private var pinchStartZoom: Double?  // the magnification when the two-finger pinch began
         private var longPressWork: DispatchWorkItem?
         private var longPressFired = false
-        // Single-finger panning is held back for a short settle window after touch-down: the two fingers of a
-        // pinch never land at the same instant, so without this the first finger would pan (lurching the map)
-        // before the pinch is recognised. A second finger arriving in the window cancels the pan entirely.
-        private var panEnabled = false
-        private var panEnableWork: DispatchWorkItem?
-        private static let panSettleDelay = 0.18
         // Touches that start within this many points of a view edge are ignored — they're usually system
         // edge-swipes (Control Center / app switcher / back) or an accidental palm/grip, not gameplay.
         private static let edgeMargin = 15.0
-        // Double-tap: a second tap on the same tile within this window selects every same-type unit (the
-        // macOS double-click). The first tap already single-selects, so we just upgrade the selection.
+        // Multi-tap: repeated taps on the same tile within this window escalate the selection — one tap
+        // single-selects, two select the same-type cluster, three select every same-type unit on the map.
         private var lastTapTime: TimeInterval = 0
         private var lastTapTile: (Int, Int)?
+        private var tapCount = 0
         private static let doubleTapWindow = 0.35
     #endif
     #if os(macOS)
@@ -614,8 +609,11 @@ public final class GameScene: SKScene {
                 model?.launchMissileAt(tileX: x, tileY: y)
             } else if model?.placement != nil {
                 model?.placeAt(tileX: x, tileY: y)
-            } else if event.clickCount >= 2 {
-                // Double-click a unit → select every same-type unit (the first click already single-selected it).
+            } else if event.clickCount >= 3 {
+                // Triple-click a unit → select every same-type unit on the map.
+                model?.tripleClickSelectAllSameType(tileX: x, tileY: y)
+            } else if event.clickCount == 2 {
+                // Double-click a unit → select its same-type cluster (the first click already single-selected it).
                 model?.doubleClickSelectSameType(tileX: x, tileY: y)
             } else {
                 model?.leftClickTile(x, y)
@@ -680,6 +678,16 @@ public final class GameScene: SKScene {
         }
 
         override public func keyDown(with event: NSEvent) {
+            // Control groups: Cmd+digit saves the current unit selection (slots + formation) under that digit;
+            // the plain digit recalls it. Checked before the shortcut switch so the digits don't fall through.
+            if let digit = controlGroupDigit(event) {
+                if event.modifierFlags.contains(.command) {
+                    model?.saveControlGroup(digit)
+                } else {
+                    model?.recallControlGroup(digit)
+                }
+                return
+            }
             switch event.keyCode {
                 case 24, 69: model?.zoomIn()  // '=' / '+' / keypad +
                 case 27, 78: model?.zoomOut()  // '-' / keypad -
@@ -718,6 +726,19 @@ public final class GameScene: SKScene {
                         default: super.keyDown(with: event)
                     }
             }
+        }
+
+        /// The 0…9 control-group digit a key event names, or `nil`. Accepts a bare digit (recall) or Command+digit
+        /// (save) — any other modifier (Option/Control/Shift) means it's a different chord, so we pass it through.
+        private func controlGroupDigit(_ event: NSEvent) -> Int? {
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard mods.subtracting([ .command, .numericPad ]).isEmpty else { return nil }
+            guard
+                let chars = event.charactersIgnoringModifiers, chars.count == 1, let n = Int(chars),
+                (0 ... 9).contains(n)
+            else { return nil }
+
+            return n
         }
 
         /// AppKit's authoritative cursor hook (fires as the mouse moves over the view), so our cursor sticks
@@ -802,8 +823,8 @@ public final class GameScene: SKScene {
             }
             let count = event?.allTouches?.count ?? touches.count
             if count >= 2 {
+                // A second finger landed: stop panning and start a pinch from the fingers' current spread/zoom.
                 cancelLongPress()
-                cancelPanEnable(); panEnabled = false  // a pinch began — the first finger must not also pan
                 pinchStartDistance = pinchDistance(event)
                 pinchStartZoom = model?.viewport.zoom
                 return
@@ -813,12 +834,8 @@ public final class GameScene: SKScene {
             let p = t.location(in: self)
             touchStartScene = p; touchLastScene = p; touchLastView = t.location(in: view)
             touchDidPan = false; longPressFired = false
-            // Hold panning back briefly so the onset of a pinch (second finger landing a moment later) doesn't
-            // first register as a one-finger pan.
-            panEnabled = false
-            let enable = DispatchWorkItem { [weak self] in self?.panEnabled = true }
-            panEnableWork = enable
-            DispatchQueue.main.asyncAfter(deadline: .now() + Self.panSettleDelay, execute: enable)
+            // Panning starts immediately (no settle delay) so a one-finger drag follows the finger right away;
+            // if a second finger lands mid-drag, `touchesBegan`/`touchesMoved` switch to pinch-to-zoom.
             // A stationary long-press = the macOS right-click (default order / cancel a mode). Disabled during
             // structure placement, which has its own tap-to-place / tap-outside-to-cancel scheme.
             let work = DispatchWorkItem { [weak self] in
@@ -867,8 +884,8 @@ public final class GameScene: SKScene {
                 return
             }
             // Hand-tool pan: drag content with the finger 1:1 (view-space delta → `scroll`'s screen-point space),
-            // once past the settle window and not while a target-select / armed-order mode is active.
-            if touchDidPan, panEnabled, let last = touchLastView,
+            // unless a target-select / armed-order mode is active.
+            if touchDidPan, let last = touchLastView,
                     model?.missileTargeting == nil, model?.pendingOrder == nil {
                 model?.scroll(dx: -Double(curView.x - last.x), dy: -Double(curView.y - last.y))
             }
@@ -891,19 +908,23 @@ public final class GameScene: SKScene {
                 }
                 return
             }
-            if touchDidPan { return }
+            if touchDidPan { tapCount = 0; return }
             // A plain tap = the macOS left-click: launch in missile mode, else select / apply an armed order.
             if model?.missileTargeting != nil {
                 model?.launchMissileAt(tileX: x, tileY: y)
             } else {
                 let now = event?.timestamp ?? 0
-                if now - lastTapTime < Self.doubleTapWindow, let lt = lastTapTile, lt.0 == x, lt.1 == y {
-                    // Second tap on the same tile → select every same-type unit (the first tap selected it).
-                    model?.doubleClickSelectSameType(tileX: x, tileY: y)
-                    lastTapTime = 0; lastTapTile = nil
-                } else {
-                    model?.leftClickTile(x, y)
-                    lastTapTime = now; lastTapTile = (x, y)
+                let repeated = now - lastTapTime < Self.doubleTapWindow && lastTapTile.map { $0 == (x, y) } == true
+                tapCount = repeated ? tapCount + 1 : 1
+                lastTapTime = now; lastTapTile = (x, y)
+                // One tap selects; a same-tile second selects the same-type cluster; a third selects every
+                // same-type unit on the map (then the count resets).
+                switch tapCount {
+                    case 1: model?.leftClickTile(x, y)
+                    case 2: model?.doubleClickSelectSameType(tileX: x, tileY: y)
+                    default:
+                        model?.tripleClickSelectAllSameType(tileX: x, tileY: y)
+                        lastTapTime = 0; lastTapTile = nil; tapCount = 0
                 }
             }
         }
@@ -925,12 +946,9 @@ public final class GameScene: SKScene {
 
         private func cancelLongPress() { longPressWork?.cancel(); longPressWork = nil }
 
-        private func cancelPanEnable() { panEnableWork?.cancel(); panEnableWork = nil }
-
         private func resetTouchState() {
             touchStartScene = nil; touchLastScene = nil; touchLastView = nil; touchDidPan = false
             pinchStartDistance = nil; pinchStartZoom = nil
-            cancelPanEnable(); panEnabled = false
         }
     #endif
 }

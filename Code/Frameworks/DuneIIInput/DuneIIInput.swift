@@ -22,6 +22,19 @@ public enum Selection: Sendable, Equatable {
 /// the tile): `m`ove, `a`ttack, `h`arvest, `r`etreat. (`s`top is immediate — no target — via `stopSelected`.)
 public enum OrderKind: Sendable, Hashable { case move, attack, harvest, retreat }
 
+/// A unit's tile offset from its group's anchor — the stored **formation**. When a multi-unit group moves,
+/// each unit is sent to the destination tile plus its offset, so the group keeps its relative arrangement
+/// instead of piling onto one tile. Captured by the host at selection time from the units' live positions.
+public struct TileOffset: Sendable, Equatable {
+    public var dx: Int
+    public var dy: Int
+
+    public init(dx: Int, dy: Int) {
+        self.dx = dx
+        self.dy = dy
+    }
+}
+
 /// A source of player `Command`s, drained by the host once per tick.
 public protocol InputSource: Sendable {
     /// Return and clear the commands queued since the last drain.
@@ -52,10 +65,17 @@ public struct InputController: InputSource {
     public private(set) var selectedUnits: [Int] = []
     /// An order armed by an inspector button (`move`/`attack`); the next map click is its target.
     public private(set) var pendingOrder: OrderKind?
+    /// The selected group's formation: each unit's tile offset from the group anchor, applied to `move`
+    /// orders so the group keeps its shape. Empty ⇒ no formation (every unit targets the exact clicked tile).
+    public private(set) var formation: [Int: TileOffset] = [:]
     private var queue: [Command] = []
     private let mapWidth: Int
+    private let mapHeight: Int
 
-    public init(mapWidth: Int = 64) { self.mapWidth = mapWidth }
+    public init(mapWidth: Int = 64, mapHeight: Int = 64) {
+        self.mapWidth = mapWidth
+        self.mapHeight = mapHeight
+    }
 
     public mutating func drainCommands() -> [Command] { defer { queue.removeAll() }; return queue }
 
@@ -69,6 +89,7 @@ public struct InputController: InputSource {
         } else {
             selection = hit
             selectedUnits = hit.unitSlot.map { [ $0 ] } ?? []
+            formation = [:]
             pendingOrder = nil
         }
     }
@@ -88,21 +109,35 @@ public struct InputController: InputSource {
         return best.value.sorted()
     }
 
-    /// All slots whose unit-type matches the **clicked** slot's type — the "double-click a unit selects every
-    /// same-type unit" group. The host pre-filters `slots` to the eligible units (player-owned, on-map, normal),
-    /// then passes the clicked slot; `typeOf` maps a slot to its unit-type id. Returns the kept slots (sorted),
-    /// or `[]` if `clicked` isn't among the eligible `slots` (so the host can fall back to a plain single select).
-    public static func sameTypeGroup(_ slots: [Int], clicked: Int, typeOf: (Int) -> Int) -> [Int] {
-        guard slots.contains(clicked) else { return [] }
+    /// The connected cluster of same-type units reachable from the clicked unit by hops of at most `radius`
+    /// tiles (Chebyshev) — the "double-click a unit selects the local group" behaviour. The host pre-filters
+    /// `units` to the eligible same-type slots (player-owned, on-map, normal) and supplies each one's tile.
+    /// Starting at `clicked`, the set grows to include any unit within `radius` of a unit *already* in it, so
+    /// a continuous row/column of units is fully selected — not merely those within `radius` of the click.
+    /// Returns the cluster's slots (sorted), or `[]` if `clicked` isn't among `units` (the host then falls
+    /// back to a plain single select).
+    public static func clusterGroup(_ units: [(slot: Int, x: Int, y: Int)], clicked: Int, radius: Int) -> [Int] {
+        guard let seed = units.first(where: { $0.slot == clicked }) else { return [] }
 
-        let type = typeOf(clicked)
-        return slots.filter { typeOf($0) == type }.sorted()
+        var included: Set<Int> = [ seed.slot ]
+        var frontier = [ seed ]
+        while let cur = frontier.popLast() {
+            for u in units
+                where !included.contains(u.slot) && abs(u.x - cur.x) <= radius && abs(u.y - cur.y) <= radius {
+                included.insert(u.slot)
+                frontier.append(u)
+            }
+        }
+        return included.sorted()
     }
 
-    /// Replace the selection with a drag-selected group of player unit slots (the host computes which units
-    /// fall in the box). `selection` mirrors the first for the inspector; empty ⇒ deselect.
-    public mutating func selectGroup(_ units: [Int]) {
+    /// Replace the selection with a group of player unit slots (drag / double- or triple-click / control-group
+    /// recall — the host computes which units). `selection` mirrors the first for the inspector; empty ⇒
+    /// deselect. `formation` records each unit's tile offset from the group anchor so a later `move` keeps the
+    /// arrangement (pass `[:]` for none).
+    public mutating func selectGroup(_ units: [Int], formation: [Int: TileOffset] = [:]) {
         selectedUnits = units
+        self.formation = formation
         selection = units.first.map { .unit(slot: $0) } ?? .none
         pendingOrder = nil
     }
@@ -130,10 +165,22 @@ public struct InputController: InputSource {
     }
 
     /// Clear the selection + any armed order (Escape).
-    public mutating func deselect() { selection = .none; selectedUnits = []; pendingOrder = nil }
+    public mutating func deselect() {
+        selection = .none
+        selectedUnits = []
+        formation = [:]
+        pendingOrder = nil
+    }
 
     private func order(_ kind: OrderKind, slot: Int, tileX x: Int, tileY y: Int) -> Command {
-        let tile = UInt16(y * mapWidth + x)
+        // A `move` keeps formation: send each unit to the destination plus its stored offset (clamped to the
+        // map). Other orders (attack/harvest/retreat) target the exact tile for the whole group.
+        var tx = x, ty = y
+        if kind == .move, let off = formation[slot] {
+            tx = min(max(x + off.dx, 0), mapWidth - 1)
+            ty = min(max(y + off.dy, 0), mapHeight - 1)
+        }
+        let tile = UInt16(ty * mapWidth + tx)
         return switch kind {
             case .move: .move(unit: UInt16(slot), tile: tile)
             case .attack: .attack(unit: UInt16(slot), tile: tile)

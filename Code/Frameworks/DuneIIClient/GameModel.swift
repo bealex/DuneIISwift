@@ -1153,56 +1153,132 @@ public final class GameModel {
         // Keep only the most-numerous unit type — a mixed group (e.g. trike + harvester) can't share one
         // order, so the box selects the dominant type.
         let dominant = InputController.dominantGroup(slots, typeOf: { Int(state.units[$0].o.type) })
-        controller.selectGroup(dominant)
+        controller.selectGroup(dominant, formation: formationOffsets(for: dominant, state: state))
         selection = currentInfo()
         inspectedTile = nil; refreshTileInfo()
         if !dominant.isEmpty { playSelectVoice(unitSlot: dominant.first) }
     }
 
-    /// Double-click a unit: select **every** player-owned, on-map, normal unit of the *same type*, anywhere on
-    /// the map (a verification-client convenience; the original Dune II selects one unit at a time). A
-    /// double-click on empty ground / a structure / an enemy / a winger / a worm falls back to the plain
-    /// single-select (`leftClickTile`), so it never deselects or misbehaves.
+    /// Double-click a unit: select its **local cluster** — every player-owned, on-map, normal unit of the same
+    /// type connected to it by hops of ≤3 tiles (so a whole row/column of like units is selected, not just the
+    /// ones within 3 tiles of the click). A double-click on empty ground / a structure / an enemy / a winger /
+    /// a worm falls back to the plain single-select (`leftClickTile`), so it never deselects or misbehaves.
     func doubleClickSelectSameType(tileX x: Int, tileY y: Int) {
-        guard
-            case let .unit(slot) = pick(x, y),
-            let state = simulation?.state
-        else {
+        guard case let .unit(slot) = pick(x, y), let state = simulation?.state else {
             leftClickTile(x, y)  // not a unit under the cursor — behave like a normal click
             return
         }
 
+        let eligible = sameTypeEligibleUnits(clickedSlot: slot, state: state)
+        let group = InputController.clusterGroup(eligible, clicked: slot, radius: 3)
+        guard !group.isEmpty else {
+            leftClickTile(x, y)  // an enemy / winger / worm / non-normal unit — just select it singly
+            return
+        }
+        applyUnitSelection(group, state: state)
+    }
+
+    /// Triple-click a unit: select **every** player-owned, on-map, normal unit of the same type, anywhere on
+    /// the map (the whole-map escalation of the double-click cluster). Falls back to a single-select when the
+    /// click isn't on an eligible player unit.
+    func tripleClickSelectAllSameType(tileX x: Int, tileY y: Int) {
+        guard case let .unit(slot) = pick(x, y), let state = simulation?.state else {
+            leftClickTile(x, y)
+            return
+        }
+
+        let group = sameTypeEligibleUnits(clickedSlot: slot, state: state).map(\.slot).sorted()
+        guard group.contains(slot) else {
+            leftClickTile(x, y)
+            return
+        }
+        applyUnitSelection(group, state: state)
+    }
+
+    /// All player-owned, on-map, normal units sharing the clicked slot's unit type, with each one's tile
+    /// coordinates — the candidate set for the double/triple-click select. (If the clicked slot isn't itself an
+    /// eligible player unit it simply won't appear in the result, and the caller falls back to a single select.)
+    private func sameTypeEligibleUnits(clickedSlot: Int, state: GameState) -> [(slot: Int, x: Int, y: Int)] {
         let ph = UInt8(playerHouse.rawValue)
-        var slots: [Int] = []
+        let type = state.units[clickedSlot].o.type
+        var out: [(slot: Int, x: Int, y: Int)] = []
         for i in state.units.indices where state.units[i].o.flags.contains(.used) {
             let u = state.units[i]
             guard
                 u.o.houseID == ph,
+                u.o.type == type,
                 !u.o.flags.contains(.isNotOnMap),
                 let ut = UnitType(rawValue: Int(u.o.type)),
                 UnitInfo[ut].flags.contains(.isNormalUnit)
             else { continue }
 
-            // Only group units near the clicked one — within 3 tiles of it (Chebyshev) — so a double-click
-            // selects the local cluster, not every same-type unit across the whole map.
-            let ix = Int(u.o.position.packed % 64), iy = Int(u.o.position.packed / 64)
-            if abs(ix - x) > 3 || abs(iy - y) > 3 { continue }
-
-            slots.append(i)
+            out.append((slot: i, x: Int(u.o.position.packed) % 64, y: Int(u.o.position.packed) / 64))
         }
-        let group = InputController.sameTypeGroup(slots, clicked: slot, typeOf: { Int(state.units[$0].o.type) })
-        guard
-            !group.isEmpty
-        else {
-            leftClickTile(x, y)  // an enemy / winger / worm / non-normal unit — just select it singly
-            return
-        }
+        return out
+    }
 
-        controller.selectGroup(group)
+    /// Commit a multi-unit selection, capturing its formation so a later move keeps the arrangement.
+    private func applyUnitSelection(_ group: [Int], state: GameState) {
+        controller.selectGroup(group, formation: formationOffsets(for: group, state: state))
         selection = currentInfo()
         inspectedTile = nil
         refreshTileInfo()
         playSelectVoice(unitSlot: group.first)
+    }
+
+    /// The group's **formation**: each unit's tile offset from the group anchor (the rounded centroid of the
+    /// members' tiles). Replayed on a move so the units spread around the destination instead of stacking. An
+    /// empty / single-unit group has no meaningful formation (`[:]`).
+    func formationOffsets(for slots: [Int], state: GameState) -> [Int: TileOffset] {
+        guard slots.count > 1 else { return [:] }
+
+        let coords = slots.map { (slot: $0, x: Int(state.units[$0].o.position.packed) % 64,
+                                  y: Int(state.units[$0].o.position.packed) / 64) }
+        let cx = coords.map(\.x).reduce(0, +) / coords.count
+        let cy = coords.map(\.y).reduce(0, +) / coords.count
+        var out: [Int: TileOffset] = [:]
+        for c in coords { out[c.slot] = TileOffset(dx: c.x - cx, dy: c.y - cy) }
+        return out
+    }
+
+    // MARK: Control groups (macOS Cmd+digit save / digit recall)
+
+    private struct ControlGroup {
+        var slots: [Int]
+        var formation: [Int: TileOffset]
+    }
+
+    private var controlGroups: [Int: ControlGroup] = [:]
+
+    /// Save the current unit selection (slots + formation) under control-group `digit` (0…9). A no-op when no
+    /// units are selected — a structure/empty selection doesn't clear an existing group.
+    func saveControlGroup(_ digit: Int) {
+        let slots = controller.selectedUnits
+        guard !slots.isEmpty else { return }
+
+        controlGroups[digit] = ControlGroup(slots: slots, formation: controller.formation)
+    }
+
+    /// Recall control-group `digit`: reselect its still-living, on-map, player-owned units (dropping any that
+    /// have since died or left the map) and restore the saved formation. A no-op for an empty/stale group.
+    func recallControlGroup(_ digit: Int) {
+        guard let group = controlGroups[digit], let state = simulation?.state else { return }
+
+        let ph = UInt8(playerHouse.rawValue)
+        let alive = group.slots.filter { slot in
+            slot < state.units.count
+                && state.units[slot].o.flags.contains(.used)
+                && state.units[slot].o.houseID == ph
+                && !state.units[slot].o.flags.contains(.isNotOnMap)
+        }
+        guard !alive.isEmpty else { return }
+
+        let formation = group.formation.filter { alive.contains($0.key) }
+        controller.selectGroup(alive, formation: formation)
+        selection = currentInfo()
+        inspectedTile = nil
+        refreshTileInfo()
+        playSelectVoice(unitSlot: alive.first)
     }
 
     /// How many units are in the current (drag) selection — shown in the inspector header.

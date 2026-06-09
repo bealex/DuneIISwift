@@ -116,16 +116,43 @@ struct InputControllerTests {
         #expect(InputController.dominantGroup([], typeOf: { _ in 0 }).isEmpty)
     }
 
-    @Test("sameTypeGroup keeps every slot matching the clicked unit's type (double-click select-all)")
-    func sameTypeGroup() {
-        // slots 0,2,4 are type 5; 1,3 are type 9. Double-clicking slot 2 (type 5) selects 0,2,4 (sorted).
-        let types: [Int: Int] = [ 0: 5, 1: 9, 2: 5, 3: 9, 4: 5 ]
-        #expect(InputController.sameTypeGroup([ 0, 1, 2, 3, 4 ], clicked: 2, typeOf: { types[$0]! }) == [ 0, 2, 4 ])
-        // Double-clicking a type-9 unit selects only the type-9 slots.
-        #expect(InputController.sameTypeGroup([ 0, 1, 2, 3, 4 ], clicked: 3, typeOf: { types[$0]! }) == [ 1, 3 ])
-        // The clicked slot not being among the eligible set ⇒ empty (host falls back to a single select).
-        #expect(InputController.sameTypeGroup([ 0, 1 ], clicked: 9, typeOf: { types[$0]! }).isEmpty)
-        #expect(InputController.sameTypeGroup([], clicked: 0, typeOf: { _ in 0 }).isEmpty)
+    @Test("clusterGroup grows the connected same-type cluster by ≤radius hops (a whole row, not just near the click)")
+    func clusterGroup() {
+        // A row of five units one tile apart at x = 0,2,4,6,8 (all y = 0). With radius 3 every neighbour is a
+        // hop away, so clicking the leftmost (slot 0) reaches the whole row via chained hops — even slot 4 at
+        // x = 8, which is 8 tiles (> 3) from the click point itself.
+        let row: [(slot: Int, x: Int, y: Int)] = [
+            (0, 0, 0), (1, 2, 0), (2, 4, 0), (3, 6, 0), (4, 8, 0),
+        ]
+        #expect(InputController.clusterGroup(row, clicked: 0, radius: 3) == [ 0, 1, 2, 3, 4 ])
+        // A gap wider than the radius splits the cluster: slot 9 at x = 20 is unreachable from the row.
+        let split = row + [ (9, 20, 0) ]
+        #expect(InputController.clusterGroup(split, clicked: 0, radius: 3) == [ 0, 1, 2, 3, 4 ])
+        #expect(InputController.clusterGroup(split, clicked: 9, radius: 3) == [ 9 ])
+        // The clicked slot absent ⇒ empty (host falls back to a single select).
+        #expect(InputController.clusterGroup(row, clicked: 7, radius: 3).isEmpty)
+        #expect(InputController.clusterGroup([], clicked: 0, radius: 3).isEmpty)
+    }
+
+    @Test("a move keeps the group's formation (offset per unit); attack targets the exact tile; edges clamp")
+    func formationMove() {
+        var c = InputController(mapWidth: 64, mapHeight: 64)
+        // Two units offset (-1,0) and (+1,0) from the anchor. A move to (10,10) sends them to (9,10)/(11,10).
+        c.selectGroup([ 3, 7 ], formation: [ 3: TileOffset(dx: -1, dy: 0), 7: TileOffset(dx: 1, dy: 0) ])
+        c.rightClick(tileX: 10, tileY: 10, enemyTarget: false, harvester: false)
+        let left: UInt16 = 10 * 64 + 9, right: UInt16 = 10 * 64 + 11
+        #expect(c.drainCommands() == [ Command.move(unit: 3, tile: left), Command.move(unit: 7, tile: right) ])
+        // Attack ignores formation — the whole group targets the one tile.
+        c.beginOrder(.attack)
+        c.leftClick(tileX: 5, tileY: 5, hit: .none)
+        let at: UInt16 = 5 * 64 + 5
+        #expect(c.drainCommands() == [ Command.attack(unit: 3, tile: at), Command.attack(unit: 7, tile: at) ])
+        // Off-map offsets clamp into the map: a move to (0,0) keeps unit 3's −1 offset at column 0.
+        c.rightClick(tileX: 0, tileY: 0, enemyTarget: false, harvester: false)
+        #expect(c.drainCommands() == [ Command.move(unit: 3, tile: 0), Command.move(unit: 7, tile: 1) ])
+        // A fresh single-unit click clears the formation (a later move targets the exact tile).
+        c.leftClick(tileX: 0, tileY: 0, hit: .unit(slot: 3))
+        #expect(c.formation.isEmpty)
     }
 
     @Test("a group order (right-click + armed) is issued to every selected unit")
