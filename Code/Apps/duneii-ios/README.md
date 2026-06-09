@@ -34,10 +34,13 @@ The script stages the PAKs, runs `xcodegen`, then `xcodebuild`. Override the ins
 `DUNEII_INSTALL=/path/to/dune2`. Bundle id `com.lonelybytes.duneii`, automatic signing. Set your device and
 Apple Developer team via a git-ignored `.env` (`DUNEII_DEVICE` / `DUNEII_TEAM`) — see `.env.example`.
 
-**`device`/`archive` prereqs:** `xcodegen` installed (the script offers `brew install xcodegen`), **and** your
-developer Apple ID for your team (`DUNEII_TEAM`) logged into **Xcode ▸ Settings ▸ Accounts** — `-allowProvisioningUpdates`
-then mints a development certificate + provisioning profile automatically (a one-time interactive trust/sign-in
-may be needed). The **`sim`** path needs neither and is the quickest smoke test.
+**`device`/`archive` prereqs:** `xcodegen` installed (the script offers `brew install xcodegen`), **and** a
+signing cert + provisioning profile for your team (`DUNEII_TEAM`) **already cached locally** (Xcode ▸ Settings
+▸ Accounts → log in once and let Xcode generate them, or open the project in Xcode and Run once). The `device`
+build **does not** pass `-allowProvisioningUpdates`: that flag mints the cert/profile on the fly via a call to
+Apple's portal, which **hangs ~30 min then `curl: (28) timed out`** in a headless/non-interactive context.
+Without it, signing uses the cached profile and **fails fast** with the real error if it's missing/expired —
+fix it once in Xcode (it caches) and re-run. The **`sim`** path needs no signing and is the quickest smoke test.
 
 ## Verify iOS-compat without a device
 

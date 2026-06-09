@@ -151,10 +151,20 @@ for x in d.get("result",{}).get("devices",[]):
   # Build for a *generic* iOS destination, not `id=$udid`. A device-targeted build makes xcodebuild prepare/
   # connect to that device first, which hangs indefinitely for a wireless-only (localNetwork) device. Building
   # generic compiles + signs offline; `devicectl` then handles the (wireless) install.
+  # NOTE: `-allowProvisioningUpdates` is deliberately omitted. With it, xcodebuild calls Apple's Developer
+  # portal to create/refresh the signing cert + profile — a network round-trip that, in a headless/non-
+  # interactive context, hangs ~30 min and dies with `curl: (28) Operation timed out`. Without it, signing
+  # uses only the locally-cached cert/profile and **fails fast** with the real error (e.g. "No profiles for
+  # 'com.lonelybytes.duneii' were found") instead of hanging. `set -euo pipefail` then breaks the build. If
+  # signing fails this way, fix the profile/cert in Xcode once (it'll cache them) and re-run.
   say "Building + signing for iOS (team $TEAM)…"
-  xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
-    -destination 'generic/platform=iOS' -derivedDataPath "$DD" \
-    DEVELOPMENT_TEAM="$TEAM" -allowProvisioningUpdates build | xcbeautify_or_cat
+  if ! run_capped xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
+      -destination 'generic/platform=iOS' -derivedDataPath "$DD" \
+      DEVELOPMENT_TEAM="$TEAM" build | xcbeautify_or_cat; then
+    die "Build/sign failed or exceeded ${DUNEII_BUILD_TIMEOUT:-300}s. Most likely signing couldn't reach Apple \
+or there's no valid cached profile/cert for $BUNDLE_ID. Fix signing once in Xcode (open the project, select a \
+team, Run), then re-run — or use 'Scripts/build-ios.sh sim' which needs no signing."
+  fi
   local app; app=$(app_path Debug-iphoneos); [ -n "$app" ] || die "Build produced no .app"
   say "Installing on device ${udid}…"
   xcrun devicectl device install app --device "$udid" "$app" \
@@ -189,6 +199,24 @@ PLIST
 }
 
 xcbeautify_or_cat() { if command -v xcbeautify >/dev/null 2>&1; then xcbeautify; else cat; fi }
+
+# Run a command with a hard wall-clock cap so a stuck signing/network call BREAKS instead of hanging ~30 min.
+# macOS ships no coreutils `timeout` (and perl isn't guaranteed), so use a pure-bash watchdog: run the command
+# in the background and SIGTERM it after DUNEII_BUILD_TIMEOUT seconds (default 600). Even without
+# `-allowProvisioningUpdates`, automatic signing still contacts Apple's portal; if that's unreachable the call
+# hangs to curl's 30-min timeout — this caps it. Returns the command's exit (143 if the watchdog killed it).
+run_capped() {
+  local secs="${DUNEII_BUILD_TIMEOUT:-600}"
+  "$@" &
+  local pid=$!
+  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) &
+  local guard=$!
+  local rc=0
+  wait "$pid" || rc=$?
+  kill -TERM "$guard" 2>/dev/null || true
+  wait "$guard" 2>/dev/null || true
+  return "$rc"
+}
 
 # -------------------------------------------------------------------- main ----
 ensure_xcodegen
