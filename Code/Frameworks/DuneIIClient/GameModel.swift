@@ -1175,7 +1175,7 @@ public final class GameModel {
             leftClickTile(x, y)  // an enemy / winger / worm / non-normal unit — just select it singly
             return
         }
-        applyUnitSelection(group, state: state)
+        applyUnitSelection(leaderFirst(group, leader: slot), state: state)
     }
 
     /// Triple-click a unit: select **every** player-owned, on-map, normal unit of the same type, anywhere on
@@ -1192,7 +1192,13 @@ public final class GameModel {
             leftClickTile(x, y)
             return
         }
-        applyUnitSelection(group, state: state)
+        applyUnitSelection(leaderFirst(group, leader: slot), state: state)
+    }
+
+    /// Move `leader` to the front of `group` (the rest keep their order) so it becomes the selection's leader —
+    /// the formation anchor + flagged unit.
+    private func leaderFirst(_ group: [Int], leader: Int) -> [Int] {
+        [ leader ] + group.filter { $0 != leader }
     }
 
     /// All player-owned, on-map, normal units sharing the clicked slot's unit type, with each one's tile
@@ -1226,20 +1232,26 @@ public final class GameModel {
         playSelectVoice(unitSlot: group.first)
     }
 
-    /// The group's **formation**: each unit's tile offset from the group anchor (the rounded centroid of the
-    /// members' tiles). Replayed on a move so the units spread around the destination instead of stacking. An
-    /// empty / single-unit group has no meaningful formation (`[:]`).
+    /// The group's **formation**: each unit's tile offset from the **leader** (`slots.first`, the clicked unit).
+    /// Replayed on a move — the clicked tile is the leader's destination (its offset is `(0,0)`) and the rest
+    /// keep their relative places around it. An empty / single-unit group has no formation (`[:]`).
     func formationOffsets(for slots: [Int], state: GameState) -> [Int: TileOffset] {
-        guard slots.count > 1 else { return [:] }
+        guard slots.count > 1, let leader = slots.first else { return [:] }
 
-        let coords = slots.map { (slot: $0, x: Int(state.units[$0].o.position.packed) % 64,
-                                  y: Int(state.units[$0].o.position.packed) / 64) }
-        let cx = coords.map(\.x).reduce(0, +) / coords.count
-        let cy = coords.map(\.y).reduce(0, +) / coords.count
+        let lx = Int(state.units[leader].o.position.packed) % 64
+        let ly = Int(state.units[leader].o.position.packed) / 64
         var out: [Int: TileOffset] = [:]
-        for c in coords { out[c.slot] = TileOffset(dx: c.x - cx, dy: c.y - cy) }
+        for slot in slots {
+            let x = Int(state.units[slot].o.position.packed) % 64
+            let y = Int(state.units[slot].o.position.packed) / 64
+            out[slot] = TileOffset(dx: x - lx, dy: y - ly)
+        }
         return out
     }
+
+    /// The selected group's leader slot (the first/clicked unit), or `nil` for a single/empty selection — the
+    /// `GameScene` draws a flag on it.
+    var leaderSlot: Int? { controller.leaderSlot }
 
     // MARK: Control groups (macOS Cmd+digit save / digit recall)
 
@@ -1607,8 +1619,10 @@ public final class GameModel {
 
     /// The selection outline boxes, in **world pixels** (16 px/tile). A **structure** selection ⇒ one
     /// footprint box; a **unit (drag) group** ⇒ one tile-size box per live selected unit (each follows its
-    /// sub-tile `position` smoothly). Empty when nothing live is selected.
-    func selectionBoxes() -> [(centerX: Double, centerY: Double, width: Double, height: Double, isStructure: Bool)] {
+    /// sub-tile `position` smoothly). `isLeader` marks the group's leader box (the flagged unit). Empty when
+    /// nothing live is selected.
+    func selectionBoxes()
+        -> [(centerX: Double, centerY: Double, width: Double, height: Double, isStructure: Bool, isLeader: Bool)] {
         guard let state = simulation?.state else { return [] }
 
         let tile = 16.0
@@ -1620,15 +1634,17 @@ public final class GameModel {
             return [
                 (
                     cornerX + Double(w) * tile / 2, cornerY + Double(h) * tile / 2, Double(w) * tile, Double(h) * tile,
-                    true
+                    true, false
                 )
             ]
         }
-        var boxes: [(centerX: Double, centerY: Double, width: Double, height: Double, isStructure: Bool)] = []
+        let leader = controller.leaderSlot
+        var boxes:
+            [(centerX: Double, centerY: Double, width: Double, height: Double, isStructure: Bool, isLeader: Bool)] = []
         for slot in controller.selectedUnits where slot < state.units.count && state.units[slot].o.flags.contains(.used)
         {
             let p = state.units[slot].o.position
-            boxes.append((Double(p.x) * tile / 256, Double(p.y) * tile / 256, tile, tile, false))
+            boxes.append((Double(p.x) * tile / 256, Double(p.y) * tile / 256, tile, tile, false, slot == leader))
         }
         return boxes
     }

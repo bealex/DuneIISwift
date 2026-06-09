@@ -45,6 +45,7 @@ public final class GameScene: SKScene {
     private var selectionNodes: [SKShapeNode] = []  // pulsating square outline(s) for a selected building
     private var unitSelectNodes: [SKSpriteNode] = []  // the MOUSE.SHP[6] selection box around each selected unit
     private lazy var unitSelectTexture: SKTexture? = makeUnitSelectTexture()  // MOUSE/006, built once
+    private lazy var leaderFlagNode: SKShapeNode = makeLeaderFlag()  // a small pennant over the group's leader
     private let dragBoxNode = SKShapeNode()  // the drag-select rubber-band box
     // Left-drag (drag-select) gesture state.
     private var leftDragStartWindow: CGPoint?
@@ -106,6 +107,8 @@ public final class GameScene: SKScene {
         addChild(borderLayer)
         selectionLayer.zPosition = 30
         addChild(selectionLayer)
+        leaderFlagNode.isHidden = true
+        selectionLayer.addChild(leaderFlagNode)
         dragBoxNode.strokeColor = .green
         dragBoxNode.lineWidth = 1
         dragBoxNode.fillColor = SKColor.green.withAlphaComponent(0.12)
@@ -294,7 +297,17 @@ public final class GameScene: SKScene {
     private func updateSelection() {
         let boxes = model?.selectionBoxes() ?? []
         var usedSquares = 0, usedSprites = 0
+        leaderFlagNode.isHidden = true
         for box in boxes {
+            if box.isLeader {
+                // Plant the leader's flag at the top-centre of its tile (pole rises from there). One leader
+                // per group, so a single shared node suffices.
+                leaderFlagNode.position = CGPoint(
+                    x: box.centerX,
+                    y: Double(Self.worldSidePx) - box.centerY + box.height / 2
+                )
+                leaderFlagNode.isHidden = false
+            }
             if box.isStructure {
                 // A building: a white square outline that pulsates (alpha 0↔1, 3 s period).
                 let node = pooledSelectionSquare(usedSquares); usedSquares += 1
@@ -330,6 +343,32 @@ public final class GameScene: SKScene {
             selectionNodes.append(n); selectionLayer.addChild(n)
         }
         return selectionNodes[i]
+    }
+
+    /// A small pennant marking the selection's leader: a thin white pole rising from the unit's top with a
+    /// filled triangular flag near the tip. Built in world pixels (it scales with the camera, anchored at the
+    /// pole base so `position` plants it on the unit). `zPosition` above the selection boxes.
+    private func makeLeaderFlag() -> SKShapeNode {
+        let pole = CGMutablePath()
+        pole.move(to: CGPoint(x: 0, y: 0))
+        pole.addLine(to: CGPoint(x: 0, y: 13))
+        let pennant = CGMutablePath()  // a right-pointing triangle near the pole tip
+        pennant.move(to: CGPoint(x: 0, y: 13))
+        pennant.addLine(to: CGPoint(x: 8, y: 10.5))
+        pennant.addLine(to: CGPoint(x: 0, y: 8))
+        pennant.closeSubpath()
+
+        let node = SKShapeNode()
+        let combined = CGMutablePath()
+        combined.addPath(pole)
+        combined.addPath(pennant)
+        node.path = combined
+        node.strokeColor = .white
+        node.lineWidth = 1
+        node.fillColor = SKColor(red: 1, green: 0.82, blue: 0.1, alpha: 1)  // a Dune-yellow pennant
+        node.isAntialiased = false
+        node.zPosition = 1  // above the sibling selection-box sprites in `selectionLayer`
+        return node
     }
 
     private func pooledUnitSelect(_ i: Int) -> SKSpriteNode {

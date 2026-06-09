@@ -44,7 +44,7 @@ struct ControlGroupFormationTests {
         return (best.key, best.value)
     }
 
-    @Test func formationOffsetsAreCentroidRelative() throws {
+    @Test func formationOffsetsAreLeaderRelative() throws {
         guard let installURL else { print("formation: no install — skipped"); return }
 
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -54,18 +54,36 @@ struct ControlGroupFormationTests {
             return
         }
 
+        // The leader is the first slot; its own offset is (0,0) so a move sends it to the exact clicked tile.
+        let leader = group.slots[0], other = group.slots[1]
         let offsets = model.formationOffsets(for: group.slots, state: state)
         #expect(offsets.count == group.slots.count, "one offset per unit")
-        // The offsets are relative to the group centroid, so the *difference* of two units' offsets equals the
-        // difference of their tiles — the arrangement is preserved exactly regardless of the anchor.
-        let a = group.slots[0], b = group.slots[1]
-        let ax = Int(state.units[a].o.position.packed) % 64, ay = Int(state.units[a].o.position.packed) / 64
-        let bx = Int(state.units[b].o.position.packed) % 64, by = Int(state.units[b].o.position.packed) / 64
-        #expect(offsets[a]!.dx - offsets[b]!.dx == ax - bx)
-        #expect(offsets[a]!.dy - offsets[b]!.dy == ay - by)
+        #expect(offsets[leader] == TileOffset(dx: 0, dy: 0), "the leader anchors the formation")
+        // Each non-leader offset is its tile minus the leader's tile.
+        let lx = Int(state.units[leader].o.position.packed) % 64, ly = Int(state.units[leader].o.position.packed) / 64
+        let ox = Int(state.units[other].o.position.packed) % 64, oy = Int(state.units[other].o.position.packed) / 64
+        #expect(offsets[other] == TileOffset(dx: ox - lx, dy: oy - ly))
 
         // A single-unit group has no meaningful formation.
-        #expect(model.formationOffsets(for: [ a ], state: state).isEmpty)
+        #expect(model.formationOffsets(for: [ leader ], state: state).isEmpty)
+    }
+
+    @Test func clickedUnitBecomesLeader() throws {
+        guard let installURL else { print("leader: no install — skipped"); return }
+
+        NSApplication.shared.setActivationPolicy(.accessory)
+        let model = GameModel(assets: AssetStore(installURL: installURL))
+        guard let group = dominantPlayerGroup(model), group.slots.count >= 2 else {
+            print("leader: no ≥2-unit player group — skipped")
+            return
+        }
+
+        // Triple-click on a *non-first* member: it must become the selection's leader regardless of slot order.
+        let pick = group.slots[1]
+        let packed = model.simulation!.state.units[pick].o.position.packed
+        model.tripleClickSelectAllSameType(tileX: Int(packed) % 64, tileY: Int(packed) / 64)
+        #expect(model.selectedUnitCount >= 2)
+        #expect(model.leaderSlot == pick, "the clicked unit leads the group")
     }
 
     @Test func saveAndRecallControlGroup() throws {

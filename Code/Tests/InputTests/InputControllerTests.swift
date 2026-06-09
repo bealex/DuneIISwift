@@ -139,6 +139,7 @@ struct InputControllerTests {
         var c = InputController(mapWidth: 64, mapHeight: 64)
         // Two units offset (-1,0) and (+1,0) from the anchor. A move to (10,10) sends them to (9,10)/(11,10).
         c.selectGroup([ 3, 7 ], formation: [ 3: TileOffset(dx: -1, dy: 0), 7: TileOffset(dx: 1, dy: 0) ])
+        #expect(c.leaderSlot == 3, "the first unit leads a multi-unit group")
         c.rightClick(tileX: 10, tileY: 10, enemyTarget: false, harvester: false)
         let left: UInt16 = 10 * 64 + 9, right: UInt16 = 10 * 64 + 11
         #expect(c.drainCommands() == [ Command.move(unit: 3, tile: left), Command.move(unit: 7, tile: right) ])
@@ -150,9 +151,10 @@ struct InputControllerTests {
         // Off-map offsets clamp into the map: a move to (0,0) keeps unit 3's −1 offset at column 0.
         c.rightClick(tileX: 0, tileY: 0, enemyTarget: false, harvester: false)
         #expect(c.drainCommands() == [ Command.move(unit: 3, tile: 0), Command.move(unit: 7, tile: 1) ])
-        // A fresh single-unit click clears the formation (a later move targets the exact tile).
+        // A fresh single-unit click clears the formation (a later move targets the exact tile) and has no leader.
         c.leftClick(tileX: 0, tileY: 0, hit: .unit(slot: 3))
         #expect(c.formation.isEmpty)
+        #expect(c.leaderSlot == nil)
     }
 
     @Test("a group order (right-click + armed) is issued to every selected unit")

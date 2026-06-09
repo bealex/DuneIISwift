@@ -65,9 +65,13 @@ public struct InputController: InputSource {
     public private(set) var selectedUnits: [Int] = []
     /// An order armed by an inspector button (`move`/`attack`); the next map click is its target.
     public private(set) var pendingOrder: OrderKind?
-    /// The selected group's formation: each unit's tile offset from the group anchor, applied to `move`
-    /// orders so the group keeps its shape. Empty ⇒ no formation (every unit targets the exact clicked tile).
+    /// The selected group's formation: each unit's tile offset from the **leader** (the first/clicked unit),
+    /// applied to `move` orders so the group keeps its shape. Empty ⇒ no formation (every unit targets the
+    /// exact clicked tile). The leader's own offset is `(0,0)` — a move sends it to the clicked tile.
     public private(set) var formation: [Int: TileOffset] = [:]
+    /// The group's leader — its first (clicked) unit. Move orders treat the clicked tile as the leader's
+    /// destination and place the rest relative to it; the host marks it with a flag. `nil` unless ≥2 selected.
+    public var leaderSlot: Int? { selectedUnits.count > 1 ? selectedUnits.first : nil }
     private var queue: [Command] = []
     private let mapWidth: Int
     private let mapHeight: Int
