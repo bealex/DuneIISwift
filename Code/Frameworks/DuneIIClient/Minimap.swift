@@ -70,6 +70,21 @@ enum Minimap {
         }
     }
 
+    /// The map-boundary ring: a one-tile-wide band immediately **outside** the playable rectangle (`mapArea`),
+    /// mirroring the main map's concrete border (`Viewport.borderPx` = one tile). An even-odd-filled path
+    /// (outer rect minus the playable rect) so only the ring is painted, never the playable terrain.
+    static func borderRing(area: FrameInfo.MapArea, tile: CGFloat) -> Path {
+        let inner = CGRect(
+            x: CGFloat(area.minX) * tile,
+            y: CGFloat(area.minY) * tile,
+            width: CGFloat(area.width) * tile,
+            height: CGFloat(area.height) * tile
+        )
+        var path = Path(inner.insetBy(dx: -tile, dy: -tile))
+        path.addRect(inner)
+        return path
+    }
+
     /// A structure's tile footprint `(width, height)` — its minimap blip spans the whole footprint, not
     /// just the top-left corner tile (`positionX/Y` is the corner). Mirrors `GameScene.structureFootprint`.
     static func footprint(_ type: StructureType) -> (Int, Int) {
@@ -136,6 +151,11 @@ struct MinimapView: View {
             green: Double(c12.green) / 255,
             blue: Double(c12.blue) / 255
         )
+        // The concrete map-boundary ring colour (the slab tile's minimap pixel) — drawn around the playable
+        // rectangle in every radar state so the map limits are always visible, matching the main map's border.
+        let borderColour = model.assets.concreteMinimapColor().map {
+            Color(.sRGB, red: Double($0.red) / 255, green: Double($0.green) / 255, blue: Double($0.blue) / 255)
+        }
         GeometryReader { geo in
             let side = min(geo.size.width, geo.size.height)
             let scale = side / Viewport.worldSize  // world points → minimap points
@@ -186,6 +206,13 @@ struct MinimapView: View {
                                         )
                                     ),
                                     with: .color(.cyan)
+                                )
+                            }
+                            if let borderColour {
+                                context.fill(
+                                    Minimap.borderRing(area: frame.mapArea, tile: side / 64),
+                                    with: .color(borderColour),
+                                    style: FillStyle(eoFill: true)
                                 )
                             }
                         }
@@ -266,6 +293,13 @@ struct MinimapView: View {
                                 with: .color(mine ? .green : .red)
                             )
                         }
+                        if let borderColour {
+                            context.fill(
+                                Minimap.borderRing(area: area, tile: tile),
+                                with: .color(borderColour),
+                                style: FillStyle(eoFill: true)
+                            )
+                        }
                     }
                     // The viewport rectangle.
                     let v = viewport.visibleWorldRect(viewSize: model.viewSize)
@@ -278,17 +312,24 @@ struct MinimapView: View {
                     context.stroke(Path(r.intersection(rect)), with: .color(.white), lineWidth: 1)
                 }
                 .frame(width: side, height: side)
-                // An AppKit click/drag layer: recentres the map on click and follows the cursor while
-                // dragging — and works even when the minimap panel isn't the key window (first-mouse). Only
-                // active while the radar is up + settled (a dark / tuning screen isn't clickable, as in Dune II).
-                if radarOn, staticIndex == nil {
+                // An AppKit click/drag layer: a primary click recentres the map (or, when a unit order is
+                // armed, confirms the move/attack/harvest at that tile — the minimap doubles as a target
+                // picker); a right click issues the default order. Works even when the panel isn't the key
+                // window (first-mouse). Active whenever the minimap is settled — only the tuning animation
+                // (`staticIndex`) blocks it, so navigation/targeting work even before the radar is online.
+                if staticIndex == nil {
                     #if os(macOS)
                         MinimapMouse(side: side) { point in
-                            // Left click / drag: recentre the main map on the clicked world point.
+                            // Left click / drag: recentre on the clicked point, or confirm an armed order there.
+                            let tx = min(63, max(0, Int(Double(point.x) / side * 64)))
+                            let ty = min(63, max(0, Int(Double(point.y) / side * 64)))
                             let world = Viewport.worldSize / side
-                            let x = min(max(0, Double(point.x)), side) * world
-                            let y = min(max(0, Double(point.y)), side) * world
-                            model.centerOn(worldX: x, worldY: y)
+                            model.minimapPrimaryClick(
+                                tileX: tx,
+                                tileY: ty,
+                                worldX: min(max(0, Double(point.x)), side) * world,
+                                worldY: min(max(0, Double(point.y)), side) * world
+                            )
                         } onRightPoint: { point in
                             // Right click: order the selected unit(s) to that tile — same default order
                             // (move / attack / harvest) as right-clicking the big map (`rightClickTile`).
@@ -298,16 +339,20 @@ struct MinimapView: View {
                         }
                         .frame(width: side, height: side)
                     #else
-                        // iOS: tap/drag the radar to recentre the main map. `highPriorityGesture` so it wins over
-                        // the enclosing sidebar ScrollView's pan — otherwise the scroll swallows the touch and a
-                        // tap never recentres. `minimumDistance: 0` ⇒ `onChanged` fires on touch-down, so a plain
-                        // tap centres immediately (and a drag scrubs).
+                        // iOS: tap/drag the radar to recentre the main map — or, with an order armed, tap to
+                        // confirm the target. `highPriorityGesture` so it wins over the enclosing sidebar
+                        // ScrollView's pan; `minimumDistance: 0` ⇒ `onChanged` fires on touch-down, so a plain
+                        // tap acts immediately (and a drag scrubs the view when not targeting).
                         Color.clear.contentShape(Rectangle())
                             .frame(width: side, height: side)
                             .highPriorityGesture(
                                 DragGesture(minimumDistance: 0).onChanged { g in
+                                    let tx = min(63, max(0, Int(g.location.x / side * 64)))
+                                    let ty = min(63, max(0, Int(g.location.y / side * 64)))
                                     let world = Viewport.worldSize / side
-                                    model.centerOn(
+                                    model.minimapPrimaryClick(
+                                        tileX: tx,
+                                        tileY: ty,
                                         worldX: min(max(0, g.location.x), side) * world,
                                         worldY: min(max(0, g.location.y), side) * world
                                     )

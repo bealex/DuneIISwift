@@ -123,9 +123,6 @@ public final class GameModel {
             }
         }
     }
-    var showAllEconomies = Prefs.bool("showAllEconomies", default: false) {
-        didSet { Prefs.set("showAllEconomies", showAllEconomies) }
-    }
     // health/state bars over units + buildings are on by default (a normal HUD element)
     var showHealthOverlay = Prefs.bool("showHealthOverlay", default: true) {
         didSet { Prefs.set("showHealthOverlay", showHealthOverlay) }
@@ -705,7 +702,7 @@ public final class GameModel {
         // Only houses actually present on the map (≥1 unit or structure) — drop merely-activated empty houses.
         let present = housesOnMap()
         let econ = frame.houses
-            .filter { (showAllEconomies || $0.id == playerHouse) && present.contains(UInt8($0.id.rawValue)) }
+            .filter { $0.id == playerHouse && present.contains(UInt8($0.id.rawValue)) }
             .map {
                 HouseEconomy(
                     house: $0.id.displayName,
@@ -1500,6 +1497,22 @@ public final class GameModel {
     /// Centre the map on a world point (a minimap click), in world points.
     func centerOn(worldX: Double, worldY: Double) {
         viewport.center(onWorldX: worldX, worldY: worldY, viewSize: viewSize)
+    }
+
+    /// True while a unit order is armed: units are selected **and** a Move/Attack/Harvest has been chosen
+    /// (the cursor is "loaded"), so the next click confirms the target. Drives the minimap's click-to-target.
+    var isOrderArmed: Bool { !controller.selectedUnits.isEmpty && controller.pendingOrder != nil }
+
+    /// A primary (left) click/tap on the minimap at tile `(tx, ty)` — `worldX/Y` is the same point in world
+    /// pixels (sub-tile precision) for recentring. When an order is armed (`isOrderArmed`), the click confirms
+    /// the move/attack/harvest at that tile (`leftClickTile`); otherwise it recentres the main map there. This
+    /// lets the minimap both navigate and serve as a target picker for selected units.
+    func minimapPrimaryClick(tileX tx: Int, tileY ty: Int, worldX: Double, worldY: Double) {
+        if isOrderArmed {
+            leftClickTile(tx, ty)
+        } else {
+            centerOn(worldX: worldX, worldY: worldY)
+        }
     }
 
     // MARK: - Selection info derivation

@@ -41,7 +41,6 @@ struct DebugToggleRows: View {
                 Text("Off: the minimap obeys radar (needs an outpost + power). On: always shown.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Toggle("Show all economies", isOn: $model.showAllEconomies)
             Toggle("Health bars (units + buildings)", isOn: $model.showHealthOverlay)
             LabeledContent("Player house", value: model.playerHouse.displayName)
             LabeledContent("Scenario", value: model.scenarioTitle)

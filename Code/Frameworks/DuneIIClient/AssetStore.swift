@@ -96,6 +96,18 @@ public final class AssetStore {
         return result
     }
 
+    /// The single palette colour the minimap paints the map-boundary ring with: the concrete-slab tile's
+    /// centre pixel (the same sampling `Minimap.baseImage` uses for terrain), so the minimap border matches
+    /// the main map's concrete border. `nil` when the tile assets are unavailable.
+    func concreteMinimapColor() -> (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8)? {
+        guard let tile = concreteTile(), let tileSet else { return nil }
+
+        let centre = (tileSet.tileHeight / 2) * tileSet.tileWidth + tileSet.tileWidth / 2
+        guard centre < tile.indices.count else { return nil }
+
+        return tile.palette.rgba8(Int(tile.indices[centre]))
+    }
+
     private var mentatCache: [Character: [MentatHelp.Topic]] = [:]
 
     /// The Mentat help topics for a house, parsed from `MENTAT<letter>.ENG` (`H`/`A`/`O`). Cached per house.
