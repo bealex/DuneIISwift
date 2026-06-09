@@ -16,8 +16,11 @@ packages:
 
 settings:
   base:
+    # Manual signing: no on-the-fly profile minting (that's the call to Apple's portal that hangs headless).
+    # Both values come from the git-ignored repo-root .env (exported by build-ios.sh, substituted by xcodegen).
     DEVELOPMENT_TEAM: ${DUNEII_TEAM}
-    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_STYLE: Manual
+    PROVISIONING_PROFILE_SPECIFIER: ${DUNEII_PROFILE}
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "6.0"
