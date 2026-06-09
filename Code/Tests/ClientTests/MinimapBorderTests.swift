@@ -27,4 +27,16 @@ struct MinimapBorderTests {
         #expect(!ring.isEmpty)
         #expect(ring.boundingRect.width == CGFloat(66 * 4))
     }
+
+    @Test func projectilesAreNotPlottedOnTheMinimap() {
+        // Bullets / rockets / the sonic blast (every `.isBullet` type) are skipped …
+        #expect(!Minimap.showsOnMinimap(.bullet))
+        #expect(!Minimap.showsOnMinimap(.missileRocket))
+        // … while real units — including the non-"normal" ones (sandworm, wingers, frigate) — still show.
+        #expect(Minimap.showsOnMinimap(.tank))
+        #expect(Minimap.showsOnMinimap(.harvester))
+        #expect(Minimap.showsOnMinimap(.sandworm))
+        #expect(Minimap.showsOnMinimap(.carryall))
+        #expect(Minimap.showsOnMinimap(.frigate))
+    }
 }

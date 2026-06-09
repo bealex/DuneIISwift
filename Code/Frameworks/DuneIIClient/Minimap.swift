@@ -92,6 +92,11 @@ enum Minimap {
         return (Int(layout.size.width), Int(layout.size.height))
     }
 
+    /// Whether a unit of `type` is plotted on the minimap. Projectiles (bullets, rockets, the sonic blast —
+    /// every `.isBullet` type) are skipped: they're transient and clutter the radar. Real units (incl.
+    /// sandworms, wingers, the frigate) still show.
+    static func showsOnMinimap(_ type: UnitType) -> Bool { !UnitInfo[type].flags.contains(.isBullet) }
+
     /// Build a `CGImage` from `width×height` row-major palette indices.
     static func rgbaImage(indices: [UInt8], width: Int, height: Int, palette: Palette) -> CGImage? {
         guard width > 0, height > 0, indices.count >= width * height else { return nil }
@@ -270,7 +275,8 @@ struct MinimapView: View {
                             )
                         }
                         for unit in frame.units
-                        where area.contains(tileX: unit.positionX / 256, tileY: unit.positionY / 256)
+                        where Minimap.showsOnMinimap(unit.type)
+                            && area.contains(tileX: unit.positionX / 256, tileY: unit.positionY / 256)
                             && !FrameComposer.isHiddenByFog(
                                 frame,
                                 worldX: unit.positionX,
