@@ -69,6 +69,9 @@ enum RenderHarness {
         let renderer: SpriteKitRenderer
         let frame: FrameInfo
         let tileSize: Int
+        /// The advanced simulation behind `frame` — kept so a profiling test can re-build `FrameInfo`
+        /// (`makeFrameInfo()`, a pure read) repeatedly and time it separately from the GPU snapshot.
+        let sim: Simulation
     }
 
     /// Render `c` to a `CGImage`, or `nil` when the install is absent or no GPU context is available.
@@ -148,7 +151,12 @@ enum RenderHarness {
         // A graphics-session connection for off-screen SpriteKit rendering, without showing a window.
         NSApplication.shared.setActivationPolicy(.accessory)
         let renderer = SpriteKitRenderer(source: assets.spriteSource, basePalette: assets.palette, showFog: c.fog)
-        return Prepared(renderer: renderer, frame: sim.makeFrameInfo(), tileSize: assets.spriteSource.terrainTileSize)
+        return Prepared(
+            renderer: renderer,
+            frame: sim.makeFrameInfo(),
+            tileSize: assets.spriteSource.terrainTileSize,
+            sim: sim
+        )
     }
 }
 

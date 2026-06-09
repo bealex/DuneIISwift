@@ -121,17 +121,34 @@ public struct Simulation: Sendable {
     /// One simulation tick: advance the clocks (pause-aware) then run the four game-loop phases.
     /// Mirrors the headless parity driver (`src/parity.c` `Parity_Run`).
     public mutating func tick() {
+        _ = runTick(profile: false)
+    }
+
+    /// The single tick implementation. `profile == false` is the ordinary `tick()` (the four `if profile`
+    /// branches are predicted-not-taken no-ops that touch no logic or RNG, so the parity build is unchanged);
+    /// `profile == true` (via `tickProfiled()`) additionally clocks each phase into the returned `PhaseTimings`.
+    @discardableResult
+    mutating func runTick(profile: Bool) -> PhaseTimings {
+        var timings = PhaseTimings()
+        let clock = ContinuousClock()
+
         state.soundEvents.removeAll(keepingCapacity: true)  // the host drained last tick's sounds
         state.pendingFeedback.removeAll(keepingCapacity: true)  // …and last tick's global UI feedback
         if !state.scenario.spiceFields.isEmpty { applyScenarioSpiceFields() }  // [MAP] Field — once, at start
         state.timerGUI &+= 1
-        if state.paused { return }
+        if state.paused { return timings }
         state.timerGame &+= 1
+        timings.ticks = 1
+        var mark = clock.now
 
         gameLoopTeam()
+        if profile { let n = clock.now; timings.team = seconds(mark.duration(to: n)); mark = n }
         gameLoopUnit()
+        if profile { let n = clock.now; timings.unit = seconds(mark.duration(to: n)); mark = n }
         gameLoopStructure()
+        if profile { let n = clock.now; timings.structure = seconds(mark.duration(to: n)); mark = n }
         gameLoopHouse()
+        if profile { let n = clock.now; timings.house = seconds(mark.duration(to: n)); mark = n }
         evaluateLevelEnd()  // latch won/lost when a WinFlags condition is met (RNG-free; doesn't halt)
         // Visual subsystems the oracle's parity harness doesn't tick (both draw RNG) — gated off the
         // golden/oracle-matched path, on for the visual apps. See `tickAnimations`/`tickExplosions`.
@@ -142,6 +159,8 @@ public struct Simulation: Sendable {
             drainCraters()  // stamp the crater overlay a TILE_DAMAGE blast left
             drainCrashAnimations()  // place the ornithopter/carryall crash wreck (Explosion_Func_SetAnimation)
         }
+        if profile { timings.other = seconds(mark.duration(to: clock.now)) }
+        return timings
     }
 
     /// Realize the bloom detonations the explosion VM queued this tick (`Explosion_Func_BloomExplosion`):
@@ -233,6 +252,7 @@ public struct Simulation: Sendable {
         for crash in pending {
             let packed = Int(crash.position.packed)
             guard packed >= 0, packed < state.map.count else { continue }
+
             if state.map[packed].hasStructure { continue }  // Structure_Get_ByPackedTile != NULL → no wreck
 
             var id = crash.baseID
